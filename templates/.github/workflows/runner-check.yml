@@ -1,0 +1,75 @@
+# Proves a self-hosted Windows runner can run this project's steps, with
+# the four things that cost real projects hours baked in:
+#
+#   1. Windows picks the wrong bash. With WSL installed, "bash" on PATH is
+#      System32\bash.exe, not Git's. Name Git's bash by path in the job's
+#      default shell, so every step gets the one with the project's tools.
+#   2. PowerShell's execution policy refuses the step. The runner starts a
+#      "shell: powershell" step as powershell -command ". '{0}'", so a
+#      machine policy of AllSigned refuses the step's own unsigned script
+#      file. Name the policy for that one process in the shell line:
+#        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
+#      Not "pwsh": a
+#      PowerShell 7 installed from the Store lives in the user's WindowsApps
+#      folder, which the runner service cannot see, and the step fails.
+#      Running powershell yourself from a bash step does not get that.
+#   3. A step-level shell cannot use expressions. "shell:" is read before
+#      ${{ }} is evaluated, so no `shell: ${{ ... }}`; pick the shell with a
+#      job-level default and switch per step by name only.
+#   4. NoDefaultCurrentDirectoryInExePath. Git Bash sets it; a runner
+#      started from Git Bash passes it to every job, and then cmd refuses to
+#      run a program from the current folder by its bare name (gradlew.bat
+#      is "not recognized" though the file is there). Run the runner as a
+#      service, call repository programs with a path (.\gradlew.bat), or
+#      clear it in the step. The last step below shows which one you have.
+#
+# Run it by hand from the Actions tab after setting up a runner, and again
+# after any change to the machine. The runner doctor (scripts/ci/runner-doctor.sh)
+# checks the same things from the machine itself, before any run.
+name: Runner check
+
+on:
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: [self-hosted, windows]
+    defaults:
+      run:
+        # Fix 1: Git's bash by path, never "bash" from PATH.
+        # The short path: the runner splits this line on spaces, so "Program Files" breaks it.
+        shell: 'C:\PROGRA~1\Git\bin\bash.exe --noprofile --norc -eo pipefail {0}'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Which bash and which tools this job sees
+        run: |
+          echo "bash: $(command -v bash) ($(bash --version | head -n 1))"
+          echo "git:  $(command -v git) ($(git --version))"
+          echo "node: $(command -v node) ($(node --version 2>/dev/null || echo 'not found'))"
+          echo "gh:   $(command -v gh || echo 'not found')"
+      - name: A PowerShell step, with the policy set for this process
+        # Fix 2: the shell line sets the policy for this one process; a bare "shell: powershell" takes the machine's, and AllSigned refuses the step's script. "pwsh" from the Store lives in a user folder the service cannot see.
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
+        run: |
+          Write-Output "powershell $($PSVersionTable.PSVersion) with policy $(Get-ExecutionPolicy -Scope Process)"
+          Write-Output "user $env:USERNAME on $env:COMPUTERNAME"
+      - name: Choose behavior with env, not with an expression in shell
+        # Fix 3: the condition goes in the script; the shell name stays fixed.
+        env:
+          OUTAGE: ${{ vars.CI_OUTAGE }}
+        run: |
+          if [ "$OUTAGE" = "1" ]; then echo "outage switch is on; a real job would skip the hosted-only steps"; else echo "outage switch is off"; fi
+      - name: A cmd step, and whether jobs inherited NoDefaultCurrentDirectoryInExePath
+        # Fix 4: a program from the repository is called with a path, which
+        # works whatever the setting; the check says whether the runner
+        # leaked the setting into its jobs.
+        shell: cmd
+        run: |
+          if defined NoDefaultCurrentDirectoryInExePath (
+            echo WARNING: this job inherited NoDefaultCurrentDirectoryInExePath=%NoDefaultCurrentDirectoryInExePath%. Bare names like gradlew.bat will not run from the current folder. Run the runner as a service, see scripts\ci\RUNNERS.md.
+          ) else (
+            echo NoDefaultCurrentDirectoryInExePath is not set for jobs on this runner.
+          )
+          echo @echo ran from the current folder> here-check.bat
+          call .\here-check.bat
+          move /y here-check.bat here-check.bat.done >nul

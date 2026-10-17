@@ -1,0 +1,13 @@
+pr	41	Add retries	SUCCESS	MERGEABLE	retries	src/client.ts,tests/client.test.ts
+pr	42	Fix the parser	FAILURE	CONFLICTING	parser	src/parse.ts
+pr	45	Rename the page	PENDING	UNKNOWN	rename	docs/page.md
+pr	47	Docs only	NONE	MERGEABLE	docs	README.md
+issue	12	Add the exporter	task,state:ready
+issue	13	Set the price of the plan	state: ready
+issue	20	Billing	state:in-progress,task
+issue	21	Search	state: in progress
+issue	30	Choose the logo	state:waiting-on-owner
+issue	33	Old idea	state:parked
+issue	34	Loose end	task
+issue	77	main is red	ci-red,state:ready
+total	57

@@ -1,0 +1,51 @@
+# Nightly board sync, an hour before the audit, so the audit reads a board
+# that agrees with the labels. Also runs when an issue is closed or
+# reopened, so Status follows at once.
+#
+# Writing to a project needs a token with the project scope; the default
+# workflow token cannot. Create a token and store it as the repository
+# secret PROJECT_TOKEN, and set two Actions variables: BOARD_NUMBER and
+# BOARD_OWNER. The simplest token that works is a classic one with the
+# "project" scope (and "repo" for a private repository), created by a user
+# who can read this repository; fine-grained tokens do not offer a Projects
+# permission for every owner type. Only the gh call that writes to the
+# board uses it. The checkout uses the default token, which is why this
+# workflow needs "contents: read" below: without it the checkout fails with
+# "repository not found" on every issue event.
+name: Board sync
+
+on:
+  schedule:
+    - cron: "17 2 * * *"
+  issues:
+    types: [closed, reopened]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+# One batch merge closes many issues at once and would start one run per
+# issue within seconds, each spending GraphQL points on the same board;
+# ten such runs tripped GitHub's secondary limit together. The group
+# collapses a burst to one run, and the sync reads every issue anyway.
+concurrency:
+  group: board-sync
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Make labels, State and Status agree
+        env:
+          GH_TOKEN: ${{ secrets.PROJECT_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        shell: sh
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "PROJECT_TOKEN is not set; the sync cannot write to the board. See the comment at the top of this workflow."
+            exit 0
+          fi
+          sh scripts/board-sync.sh "${{ vars.BOARD_NUMBER }}" "${{ vars.BOARD_OWNER }}"

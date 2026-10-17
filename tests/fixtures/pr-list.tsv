@@ -1,0 +1,4 @@
+41	Add retries to the client	MERGEABLE	3	0	0
+42	Fix the date parser	CONFLICTING	2	1	0
+45	Rename the status page	UNKNOWN	0	0	2
+47	Docs only	MERGEABLE	0	0	0

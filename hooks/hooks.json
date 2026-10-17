@@ -1,0 +1,135 @@
+{
+  "description": "Enforces the SipNShip rules: no deletes, no forced pushes, no full test sweeps, no direct edits to generated pages, no issue filed without a State label, no GraphQL call when the hour's budget is nearly spent, no agent dispatched without a fitting model, no serial merge of more than two pull requests without a named mode, no pull request closed without a comment, no detached worktree; refuses to finish a task in a worktree that is not clean; and prints the project's live state and the drive's proposal at session start; and notes what an agent did after each refusal, for the console's resolution feed.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/session-brief.sh\"",
+            "timeout": 20,
+            "statusMessage": "Reading the project's live state"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/require-clean-worktree.sh\"",
+            "timeout": 20,
+            "statusMessage": "Checking the worktree is clean"
+          },
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/watch-resolution.sh\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/require-clean-worktree.sh\"",
+            "timeout": 20,
+            "statusMessage": "Checking the worktree is clean"
+          },
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/watch-resolution.sh\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/block-loose-ends.sh\"",
+            "timeout": 10,
+            "statusMessage": "Checking for a loose end"
+          },
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/block-delete.sh\"",
+            "timeout": 10,
+            "statusMessage": "Checking for deletes"
+          },
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/block-force-push.sh\"",
+            "timeout": 10,
+            "statusMessage": "Checking for a forced push"
+          },
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/block-full-test-sweep.sh\"",
+            "timeout": 10,
+            "statusMessage": "Checking for a full test sweep"
+          },
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/require-state-label.sh\"",
+            "timeout": 10,
+            "statusMessage": "Checking the issue has a State label"
+          },
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/require-batch-merge.sh\"",
+            "timeout": 10,
+            "statusMessage": "Checking the merge names its mode"
+          },
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/require-gh-budget.sh\"",
+            "timeout": 10,
+            "statusMessage": "Checking the GitHub API budget"
+          }
+        ]
+      },
+      {
+        "matcher": "Agent|Workflow",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/require-agent-model.sh\"",
+            "timeout": 10,
+            "statusMessage": "Checking the agent's model fits its task"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/block-generated-page.sh\"",
+            "timeout": 10,
+            "statusMessage": "Checking the file is not a generated page"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/watch-resolution.sh\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

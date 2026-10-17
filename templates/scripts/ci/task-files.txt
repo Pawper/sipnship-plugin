@@ -1,0 +1,11 @@
+# Files where tasks are listed, if the project keeps any besides issues.
+# A pull request that adds a task here with a running number ("## 14.",
+# "- [ ] 7:") instead of its issue number ("#123") fails the numbering
+# check. One path per line. Empty means the check is off.
+#
+# Empty on purpose. Tasks live in issues, one per task, where the board
+# reads their State; a tasks.md that every pull request appends to is the
+# shared page the rules forbid, and each append moved main under every
+# other green pull request. A spec tool's tasks.md is written once when the
+# feature is planned, each task becomes an issue, and the file is not
+# touched again. Name a file here only for a project that must keep one.

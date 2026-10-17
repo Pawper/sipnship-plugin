@@ -1,0 +1,17 @@
+{
+  "name": "sipnship",
+  "description": "SipNShip's free local part (formerly Bitblitzin Bootstrap): a skill, enforcement hooks, and templates for projects where many coding agents work at once.",
+  "owner": {
+    "name": "Phillip A. Wessels",
+    "url": "https://github.com/Pawper"
+  },
+  "plugins": [
+    {
+      "name": "sipnship",
+      "source": "./",
+      "description": "Decide the homes and the rules for a multi-agent project, then enforce them with hooks and CI.",
+      "category": "workflow",
+      "tags": ["agents", "hooks", "ci"]
+    }
+  ]
+}

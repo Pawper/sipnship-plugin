@@ -1,0 +1,40 @@
+# Keeps the state label on an issue in step with the State field from the
+# task template, so the board and the audits can trust the label.
+name: State label
+
+on:
+  issues:
+    types: [opened, edited]
+
+# "contents: read" is for the checkout; a permissions block that names
+# only issues takes contents away, and the checkout fails with
+# "repository not found".
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set the state label from the State field
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          BODY: ${{ github.event.issue.body }}
+          NUMBER: ${{ github.event.issue.number }}
+        shell: sh
+        run: |
+          . scripts/ci/lib.sh
+          label=$(state_label_from_body "$BODY")
+          if [ -z "$label" ]; then
+            echo "No State field in the body; leaving labels as they are."
+            exit 0
+          fi
+          remove=""
+          for l in state:ready state:in-progress state:waiting-on-owner state:waiting-on-service state:parked state:dated state:after-launch state:blocked; do
+            [ "$l" = "$label" ] || remove="$remove --remove-label $l"
+          done
+          gh issue edit "$NUMBER" --add-label "$label" $remove
+          echo "Set $label"

@@ -1,0 +1,19 @@
+# One scratch folder. Probe scripts, screenshots and notes go here and
+# nowhere else, so any other untracked file means real work.
+.scratch/
+
+# Generated files that make a clean worktree look dirty. Add the project's
+# own; the stop hook and the merge queue trust git status.
+node_modules/
+.next/
+dist/
+build/
+out/
+coverage/
+next-env.d.ts
+supabase/.temp/
+*.log
+
+# Local settings and secrets
+.env
+.claude/settings.local.json

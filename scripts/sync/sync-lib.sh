@@ -1,0 +1,188 @@
+#!/bin/sh
+# Pure helpers for the template refresh. Text in, text out.
+
+# owned_paths OWNED
+# OWNED is the text of templates/OWNED.txt. Print the plugin-owned paths,
+# one per line.
+owned_paths() {
+  printf '%s\n' "$1" | tr -d '\r' | awk 'NF && $1 !~ /^#/ && $1 != "default" && $1 != "feature" { print $1 }'
+}
+
+# owned_features OWNED
+# Each plugin-owned path with its feature, "feature<TAB>path", one per line,
+# from the "feature NAME" lines that group them. A path before any feature
+# line is in "core".
+owned_features() {
+  printf '%s\n' "$1" | tr -d '\r' | awk '
+    $1 == "feature" && NF >= 2 { f = $2; next }
+    NF && $1 !~ /^#/ && $1 != "default" { printf "%s\t%s\n", (f == "" ? "core" : f), $1 }'
+}
+
+# feature_of FEATURES PATH
+# The feature PATH belongs to, from owned_features' output.
+feature_of() {
+  printf '%s\n' "$1" | awk -F'\t' -v p="$2" '$2 == p { print $1; exit }'
+}
+
+# adopted_features FEATURES PRESENT
+# The features a project uses: those whose anchor, the first file listed
+# for the feature, is in PRESENT (one path per line). Space separated, in
+# order. One stray file is not use: a project with the plugin's audit
+# workflow and its own board-state script does not use the plugin's board.
+adopted_features() {
+  printf '%s\n' "$1" | awk -F'\t' -v present="$2" '
+    BEGIN { n = split(present, a, "\n"); for (i = 1; i <= n; i++) if (a[i] != "") have[a[i]] = 1 }
+    NF >= 2 { if (!($1 in seen)) { seen[$1] = 1; order[++c] = $1; if ($2 in have) used[$1] = 1 } }
+    END { s = ""; for (i = 1; i <= c; i++) if (order[i] in used) s = s (s == "" ? "" : " ") order[i]; print s }'
+}
+
+# default_paths OWNED [FEATURE]
+# The config files with defaults: added when missing, never replaced. A
+# default belongs to the feature it is listed under (core before any
+# feature line); with FEATURE, only that feature's.
+default_paths() {
+  printf '%s\n' "$1" | tr -d '\r' | awk -v want="${2:-}" '
+    $1 == "feature" && NF >= 2 { f = $2; next }
+    $1 == "default" && NF >= 2 { cur = (f == "" ? "core" : f); if (want == "" || cur == want) print $2 }'
+}
+
+# same_text A B
+# "yes" when two texts are equal ignoring carriage returns and a trailing
+# newline, "no" otherwise. A Windows checkout is not a change.
+same_text() {
+  st_a=$(printf '%s' "$1" | tr -d '\r')
+  st_b=$(printf '%s' "$2" | tr -d '\r')
+  if [ "$st_a" = "$st_b" ]; then echo yes; else echo no; fi
+}
+
+# workflow_jobs YAML
+# The job names a workflow defines: keys indented two spaces under "jobs:".
+workflow_jobs() {
+  printf '%s\n' "$1" | tr -d '\r' | awk '
+    /^jobs:[ \t]*$/ { in_jobs = 1; next }
+    /^[^ \t#]/ { in_jobs = 0 }
+    in_jobs && /^  [A-Za-z0-9_-]+:[ \t]*$/ { k = $1; sub(/:$/, "", k); print k }'
+}
+
+# missing_jobs TEMPLATE_YAML PROJECT_YAML
+# Jobs the template workflow has that the project's copy does not. The
+# project owns its ci.yml, so these are reported, not added.
+missing_jobs() {
+  mj_have=$(workflow_jobs "$2")
+  workflow_jobs "$1" | while IFS= read -r mj_j; do
+    printf '%s\n' "$mj_have" | grep -qxF "$mj_j" || printf '%s\n' "$mj_j"
+  done
+}
+
+# split_checks PROJECT_YML
+# The cheap rule checks a project's ci.yml still runs as jobs of their
+# own, one per line. Before 0.9.8 the template ran each as its own job;
+# on self-hosted runners every job pays a pickup and a checkout, and ten
+# jobs on two runners queued ten minutes for two of work. Two or more
+# such jobs are worth moving into one "checks" job; fewer print nothing.
+split_checks() {
+  sc_have=$(workflow_jobs "$1")
+  sc_out=$(for sc_j in classify line-endings status-page numbering-check spec-check setup-check shared-check; do
+    printf '%s\n' "$sc_have" | grep -qxF "$sc_j" && printf '%s\n' "$sc_j"
+  done)
+  [ "$(printf '%s' "$sc_out" | grep -c .)" -ge 2 ] && printf '%s\n' "$sc_out"
+  return 0
+}
+
+# missing_lines TEMPLATE PROJECT
+# Lines of a template file (not comments, not blank) that the project's
+# copy lacks, such as an attribute in .gitattributes or a path in
+# .gitignore. Reported, not added.
+missing_lines() {
+  ml_have=$(printf '%s\n' "$2" | tr -d '\r')
+  printf '%s\n' "$1" | tr -d '\r' | awk 'NF && $0 !~ /^[ \t]*#/' | while IFS= read -r ml_l; do
+    printf '%s\n' "$ml_have" | grep -qxF "$ml_l" || printf '%s\n' "$ml_l"
+  done
+}
+
+# workflow_needs TEXT
+# The secrets and variables a workflow reads, from its ${{ secrets.X }} and
+# ${{ vars.X }} expressions: one line, "secrets A, B; variables C", or
+# nothing when it reads none. The sync prints it for each workflow it
+# adds, so the owner knows what to set before the first run.
+workflow_needs() {
+  wn_s=$(printf '%s\n' "$1" | grep -o 'secrets\.[A-Z0-9_]*' | sed 's/secrets\.//' | sort -u | tr '\n' ' ' | sed 's/ $//; s/ /, /g')
+  wn_v=$(printf '%s\n' "$1" | grep -o 'vars\.[A-Z0-9_]*' | sed 's/vars\.//' | sort -u | tr '\n' ' ' | sed 's/ $//; s/ /, /g')
+  [ -n "$wn_s" ] && printf 'secrets %s' "$wn_s"
+  [ -n "$wn_s" ] && [ -n "$wn_v" ] && printf '; '
+  [ -n "$wn_v" ] && printf 'variables %s' "$wn_v"
+  { [ -n "$wn_s" ] || [ -n "$wn_v" ]; } && echo
+  return 0
+}
+
+# ci_runs_on TEXT
+# The first "runs-on:" value in a workflow that is a plain value, as
+# written ("ubuntu-latest" or "[self-hosted, windows]"), or nothing when
+# there is none. Placeholders and expressions are skipped: one project's
+# first runs-on read another job's outputs, and copying it would have
+# broken the workflow it was copied into.
+ci_runs_on() {
+  printf '%s\n' "$1" | tr -d '\r' | sed -n 's/^[ \t]*runs-on:[ \t]*//p' | sed 's/[ \t]*#.*//; s/[ \t]*$//' | awk '$0 != "" && $0 != "RUNS_ON" && index($0, "${{") == 0 { print; exit }'
+}
+
+# ci_shell TEXT
+# The first "shell:" value in a workflow, quotes kept, or nothing when it
+# is absent or still the RUN_SHELL placeholder.
+ci_shell() {
+  printf '%s\n' "$1" | tr -d '\r' | sed -n 's/^[ \t]*shell:[ \t]*//p' | sed 's/[ \t]*$//' | awk '$0 != "" && $0 != "RUN_SHELL" { print; exit }'
+}
+
+# fill_placeholder TEXT NAME VALUE
+# TEXT with every occurrence of NAME replaced by VALUE, literally: VALUE
+# goes in through the environment, never through awk -v or a format
+# string, which both turn "\b" into a backspace byte; and the replacement
+# is by position, never gsub, so "&" and backslashes in VALUE are kept.
+# A Windows shell path once lost its backslashes this way and GitHub
+# refused the workflow. Only a whole word is replaced: NAME inside a longer
+# name (RUNS_ON in DEPLOY_RUNS_ON) is left alone.
+fill_placeholder() {
+  FP_NAME=$2 FP_VALUE=$3 awk '
+    function word(c) { return c ~ /[A-Za-z0-9_]/ }
+    BEGIN { name = ENVIRON["FP_NAME"]; val = ENVIRON["FP_VALUE"]; n = length(name) }
+    {
+      line = $0; out = ""
+      while (n > 0 && (i = index(line, name)) > 0) {
+        before = (i > 1) ? substr(line, i - 1, 1) : ""; after = substr(line, i + n, 1)
+        if (word(before) || word(after)) { out = out substr(line, 1, i + n - 1) }
+        else { out = out substr(line, 1, i - 1) val }
+        line = substr(line, i + n)
+      }
+      print out line
+    }' <<FPEOF
+$1
+FPEOF
+}
+
+# control_bytes TEXT
+# Print "yes" when TEXT holds a control character other than tab or
+# newline, which no workflow file should; "no" otherwise. The sync checks
+# a workflow it wrote before committing it.
+control_bytes() {
+  if printf '%s' "$1" | LC_ALL=C tr -d '\011\012\015' | LC_ALL=C grep -q '[[:cntrl:]]'; then echo yes; else echo no; fi
+}
+
+# per_merge_release WORKFLOW_TEXT
+# Print "yes" when a workflow starts on workflow_run of CI: then every
+# merge to main builds and ships a release. One project uploaded 29 Play
+# versions in an afternoon that way, each a full Gradle build on a
+# self-hosted runner. A release follows Deploy (workflow_run of Deploy,
+# plus workflow_dispatch), which the queue starts once per drain.
+per_merge_release() {
+  printf '%s\n' "$1" | tr -d '\r' | awk '
+    /^[ \t]*workflow_run:/ { inrun = 1; next }
+    inrun && /^[ \t]*workflows:/ { if ($0 ~ /[\[ ,"\x27]CI[\] ,"\x27]|[\[ ,"\x27]CI$/) found = 1 }
+    inrun && /^[^ \t]/ { inrun = 0 }
+    END { if (found) print "yes" }'
+}
+
+# release_workflows DEPLOY_JSON
+# The release workflows a project lists in .claude/deploy.json under
+# "releases" (["play-internal.yml", "app-distribution.yml"]), one a line.
+release_workflows() {
+  printf '%s' "$1" | tr -d '\r\n' | sed -n 's/.*"releases"[ \t]*:[ \t]*\[\([^]]*\)\].*/\1/p' | tr ',' '\n' | sed 's/[" \t]//g; /^$/d'
+}

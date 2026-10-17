@@ -1,0 +1,29 @@
+{
+  "_comment": "Every icon by a stable lowercase key, drawn on a size by size view box. Each part is a stroked SVG path (circles written as two arcs) unless filled is true; strokeWidth and opacity on a part override the icon's. Keys are permanent once shipped: a screen names an icon by its key on every platform.",
+  "version": 1,
+  "linecap": "round",
+  "linejoin": "round",
+  "icons": [
+    {
+      "key": "check",
+      "name": "Check",
+      "group": "interface",
+      "size": 24,
+      "strokeWidth": 2,
+      "parts": [
+        { "path": "M5 12.5l4.5 4.5L19 7" }
+      ]
+    },
+    {
+      "key": "sun",
+      "name": "Sun",
+      "group": "interface",
+      "size": 24,
+      "strokeWidth": 1.6,
+      "parts": [
+        { "path": "M7 12a5 5 0 1 0 10 0a5 5 0 1 0 -10 0z" },
+        { "path": "M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1l2.1-2.1M17 7l2.1-2.1" }
+      ]
+    }
+  ]
+}

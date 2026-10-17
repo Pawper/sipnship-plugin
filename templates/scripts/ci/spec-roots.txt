@@ -1,0 +1,6 @@
+# The source roots the spec check reads, one folder per line: a pull
+# request that changes a file under one of these names its spec in its body
+# ("Spec: specs/<feature>") or changes a specs/<feature>/ folder. Add the
+# project's other platforms here (android/, ios/) rather than editing the
+# check.
+src/

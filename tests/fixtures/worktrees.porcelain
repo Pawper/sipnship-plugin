@@ -1,0 +1,19 @@
+worktree C:/Users/me/Documents/GitHub/app
+HEAD 1111111111111111111111111111111111111111
+branch refs/heads/main
+
+worktree C:/Users/me/Documents/GitHub/app-retries
+HEAD 2222222222222222222222222222222222222222
+branch refs/heads/retries
+
+worktree C:/Users/me/Documents/GitHub/app-parser
+HEAD 3333333333333333333333333333333333333333
+branch refs/heads/parser
+
+worktree C:/Users/me/Documents/GitHub/app/.claude/worktrees/rename
+HEAD 4444444444444444444444444444444444444444
+branch refs/heads/rename
+
+worktree C:/Users/me/Documents/GitHub/app/.claude/worktrees/loose
+HEAD 5555555555555555555555555555555555555555
+detached

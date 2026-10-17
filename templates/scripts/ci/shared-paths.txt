@@ -1,0 +1,8 @@
+# Shared code: files many features build on. A fix here gets its own issue
+# and its own pull request, so it reaches main on purpose and not by luck.
+# One shell glob per line; * matches a slash too. A pull request that
+# changes one of these and also changes files outside this list fails the
+# shared-check job. Empty by default: list the project's own shared paths.
+# Examples:
+# scripts/build/*
+# src/lib/*

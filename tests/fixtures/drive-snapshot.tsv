@@ -1,0 +1,15 @@
+pr	41	Add retries	green	mergeable	app
+pr	42	Fix the parser	green	mergeable	app
+pr	45	Rename the page	green	mergeable	app
+pr	46	Docs touch	green	mergeable	other
+pr	47	Broken build	red	mergeable	app
+pr	48	Still running	pending	mergeable	app
+issue	12	Add the exporter	ready	no
+issue	13	Set the price of the plan	ready	yes
+issue	14	Fix the date format	ready	no
+issue	15	Rework the search	ready	no
+issue	20	Billing	in-progress	no
+issue	30	Choose the logo	waiting-on-owner	no
+audit	Open issues with no State label: #33
+red	77
+queue	stale

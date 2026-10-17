@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="amber" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFBD51"/><stop offset=".5" stop-color="#FFB347"/><stop offset="1" stop-color="#FFA844"/></linearGradient>
+    <linearGradient id="pink" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FF76A0"/><stop offset=".5" stop-color="#FF6EC7"/><stop offset="1" stop-color="#EA76D7"/></linearGradient>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#50B8FF"/><stop offset=".5" stop-color="#3FD6FF"/><stop offset="1" stop-color="#3AD9F0"/></linearGradient>
+    <linearGradient id="lime" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#86E285"/><stop offset=".5" stop-color="#A8E36B"/><stop offset="1" stop-color="#C0DF6B"/></linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="96" fill="#110F17"/>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="28">
+    <path d="M112 128 C 220 128, 230 256, 330 256" stroke="#FFB347"/>
+    <path d="M112 256 L 330 256" stroke="#FF6EC7"/>
+    <path d="M112 384 C 220 384, 230 256, 330 256" stroke="#3FD6FF"/>
+    <path d="M330 256 L 400 256" stroke="#A8E36B"/>
+  </g>
+  <rect x="84" y="100" width="56" height="56" rx="16" fill="url(#amber)"/>
+  <rect x="84" y="228" width="56" height="56" rx="16" fill="url(#pink)"/>
+  <rect x="84" y="356" width="56" height="56" rx="16" fill="url(#sky)"/>
+  <rect x="368" y="216" width="80" height="80" rx="22" fill="url(#lime)"/>
+</svg>

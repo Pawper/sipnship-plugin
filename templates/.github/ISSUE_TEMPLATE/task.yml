@@ -1,0 +1,43 @@
+name: Task
+description: One unit of work for one agent. File it before the work starts.
+title: "[Task] "
+labels: ["task"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        One issue per task. The PR that does the work closes it. Decisions about the task are comments here, not in a status file.
+  - type: dropdown
+    id: state
+    attributes:
+      label: State
+      description: Where this task stands right now. The same eight values as the board's State field; a workflow turns this into the matching state label.
+      options:
+        - Ready
+        - In progress
+        - Waiting on owner
+        - Waiting on a service
+        - Parked
+        - Dated
+        - After launch
+        - Blocked
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Outcome
+      description: What is true when this is done, in one or two sentences.
+    validations:
+      required: true
+  - type: input
+    id: spec
+    attributes:
+      label: Spec
+      description: Path to the feature's spec folder, if one exists.
+      placeholder: specs/sign-in
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: Anything the agent needs that is not in the spec. Leave empty when there is nothing.

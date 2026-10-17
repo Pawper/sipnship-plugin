@@ -1,0 +1,6 @@
+41	pr	2026-10-04T10:00:00Z	reviewer	review and merge	-	Retries added to the client; CI is green and nobody has reviewed yet.
+20	issue	2026-10-04T08:00:00Z	owner	owner picks monthly or yearly first	-	Billing is half built; the agent asked which plan to ship first and has no answer.
+30	issue	2026-10-03T15:00:00Z	owner	owner picks a logo	-	Three logo options were posted; no reply yet.
+31	issue	2026-10-02T11:30:00Z	agent	set the price to 48 and continue	-	The owner answered: 48 a year.
+40	issue	2026-10-01T07:00:00Z	service	wait for the mail provider	the provider's outage	Bounces traced to the provider; a ticket is open with them.
+99	issue	2026-09-20T07:00:00Z	nobody	nothing	-	Closed since; should drop out.

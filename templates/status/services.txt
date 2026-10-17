@@ -1,0 +1,3 @@
+# One line per outside service: name, colon, state. Shown on STATUS.md.
+Database: running
+Object storage: running

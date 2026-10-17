@@ -1,0 +1,10 @@
+node_modules/
+tests/*.log
+tests/*.log.last
+tests/*.unused
+.env
+.tmp-brief/
+.claude/session-brief.json
+.claude/project-drive.json*
+assets/icon.html
+.scratch/

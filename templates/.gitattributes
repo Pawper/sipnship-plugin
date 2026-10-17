@@ -1,0 +1,19 @@
+# Keep every text file on LF so diffs never fight over line endings and
+# shell scripts run under Git Bash on Windows. The line-endings CI check
+# catches anything that slips past this.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+
+# A generated append-only list, where every release adds a line at the end
+# and two of them conflict there without meaning to: a union merge keeps
+# both sides' lines. It applies to merges git does locally, which includes
+# the merge queue's batch branch; GitHub's own conflict check ignores it.
+# Use it only for a file a tool writes. Never give it to a page agents
+# edit by hand (a tasks file, a spec, the manual): the conflict is the one
+# signal that two pull requests are appending to a shared page, and hiding
+# it is how one project reached 64 appends to one file in a week.
+CHANGELOG.md merge=union

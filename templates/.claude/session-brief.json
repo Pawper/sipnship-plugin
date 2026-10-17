@@ -1,0 +1,7 @@
+{
+  "_comment": "Read by the session-brief hook at every session start. queueLogGlob: where the merge queue writes its logs, a shell glob relative to the project root; the brief says whether one was written in the last two hours and shows its last line. memoryDir: the agent's memory folder, where handoff notes are files named handoff-*; the brief shows the first two lines of the newest. Leave it empty and the brief uses Claude Code's own memory folder for this project, ~/.claude/projects/<slug>/memory, where the slug is the project path with every non-alphanumeric character turned into a dash. timezone: the owner's IANA zone, such as America/Los_Angeles; the brief prints today's date and names the zone every date in the repository is written in, since gh and runner timestamps are UTC. maxLines: the most the brief prints. Without this file the brief prints only the git and gh sections.",
+  "timezone": "TIMEZONE",
+  "queueLogGlob": "logs/merge-queue-*.log",
+  "memoryDir": "",
+  "maxLines": 40
+}

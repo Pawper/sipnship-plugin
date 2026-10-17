@@ -1,0 +1,55 @@
+# Load the deployed site in a real browser after each production deploy
+# and fail on any console error or uncaught exception, then open the
+# red-main issue. Tests and the type-check passed on a client bug that
+# made every screen throw in production; only loading the pages shows it.
+#
+# It runs when the host reports a successful production deployment (Vercel
+# and Netlify both send deployment_status), and by hand. Set the Actions
+# variable SMOKE_PATHS to the pages to load, space separated, for example
+# "/ /sign-in /today"; without it only "/" is loaded. Pages behind a
+# sign-in show their sign-in screen, which still catches a client that
+# cannot start.
+name: Smoke
+
+on:
+  deployment_status:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: The deployed site's address
+        required: true
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  smoke:
+    if: github.event_name == 'workflow_dispatch' || (github.event.deployment_status.state == 'success' && github.event.deployment.environment == 'Production')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the browser in a scratch folder
+        run: |
+          mkdir -p "$RUNNER_TEMP/smoke" && cd "$RUNNER_TEMP/smoke"
+          npm init -y >/dev/null
+          npm install --no-audit --no-fund playwright@1 >/dev/null
+          npx playwright install --with-deps chromium
+      - name: Load the pages
+        env:
+          URL: ${{ github.event.inputs.url || github.event.deployment_status.environment_url }}
+          SMOKE_PATHS: ${{ vars.SMOKE_PATHS }}
+          NODE_PATH: ${{ runner.temp }}/smoke/node_modules
+        run: |
+          cp scripts/ci/smoke.mjs "$RUNNER_TEMP/smoke/smoke.mjs"
+          node "$RUNNER_TEMP/smoke/smoke.mjs" "$URL" $SMOKE_PATHS
+      - name: Open the red-main issue when the deployed site is broken
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          open=$(gh issue list --label ci-red --state open --json number -q length)
+          [ "$open" = "0" ] && gh issue create --title "The deployed site is broken" --label "ci-red,state:ready" \
+            --body "The smoke check found console errors on the production site: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" || true

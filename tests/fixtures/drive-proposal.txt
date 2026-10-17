@@ -1,0 +1,9 @@
+1. merge-batch 41 42 45 46
+2. fix-pr 47	Broken build
+3. ask-owner 13	Set the price of the plan
+4. dispatch 12	Add the exporter
+defer 2 ready issue(s): no free runner this round
+5. fix-main 77
+6. audit Open issues with no State label: #33
+7. restart-queue
+stop: proposal ready for approval

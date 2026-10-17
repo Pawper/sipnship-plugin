@@ -1,0 +1,8 @@
+{
+  "_comment": "Read by the project-drive skill at the start of each round. The skill proposes before it acts; nothing in this file lets it skip the approval. runners: how many agents may work at once; a proposal lists ready issues to start up to this, less what is already in progress. maxAgents: the most one round dispatches once approved. maxMinutes: the most one round runs before it reports and stops. queueLogGlob: where the merge queue writes its logs, so a stale one can be proposed for restart. ownerDecisions: short phrases naming what is always the owner's; a ready issue whose title or body mentions one is asked about, never started.",
+  "runners": 2,
+  "maxAgents": 4,
+  "maxMinutes": 90,
+  "queueLogGlob": "logs/merge-queue-*.log",
+  "ownerDecisions": ["prices", "policy", "holders to ask"]
+}

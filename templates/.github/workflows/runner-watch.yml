@@ -1,0 +1,73 @@
+# Hourly, on a hosted runner so it still runs when ours are down: notice a
+# self-hosted runner that is offline, a single runner carrying everything,
+# and any run that has sat queued for more than ten minutes. A runner that
+# fails silently is the problem; this makes it loud. It comments on the
+# issue labeled "audit" only when something is wrong, and says nothing when
+# all is well.
+#
+# Listing runners needs a token with the repository's administration read
+# permission; the default workflow token cannot. Store a fine-grained token
+# with "Administration: read" and "Issues: read and write" as the secret
+# RUNNER_WATCH_TOKEN. Without it, the runner half is skipped with a note and
+# the stuck-run half still works.
+name: Runner watch
+
+on:
+  schedule:
+    - cron: "41 * * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  issues: write
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Look for stuck runs and offline runners
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ADMIN_TOKEN: ${{ secrets.RUNNER_WATCH_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        shell: sh
+        run: |
+          . scripts/ci/run-lib.sh
+          now=$(date +%s)
+          runs=$(gh run list --limit 50 --json databaseId,workflowName,headBranch,status,createdAt \
+            --jq '.[] | [.databaseId, .workflowName, .headBranch, .status, (.createdAt | fromdate)] | @tsv')
+          stuck=$(stuck_runs "$runs" "$now" 10)
+
+          problems=""
+          if [ -n "$ADMIN_TOKEN" ]; then
+            runners=$(GH_TOKEN="$ADMIN_TOKEN" gh api "repos/$GH_REPO/actions/runners" \
+              --jq '.runners[] | [.name, .status, (.busy | tostring)] | @tsv')
+            problems=$(runner_problems "$runners")
+          else
+            echo "RUNNER_WATCH_TOKEN is not set; checking stuck runs only."
+          fi
+
+          if [ -z "$stuck" ] && [ -z "$problems" ]; then
+            echo "Runners are fine and nothing is stuck."
+            exit 0
+          fi
+          body="Runner watch found a problem."
+          [ -n "$problems" ] && body="$body
+
+          $problems"
+          if [ -n "$stuck" ]; then
+            body="$body
+
+          Runs queued for more than ten minutes, which usually means no runner is picking them up:
+          $(printf '%s\n' "$stuck" | awk -F'\t' '{ printf "- %s on %s, queued %s minutes (run %s)\n", $2, $3, $4, $1 }')"
+          fi
+          body="$body
+
+          On the runner machine, run sh scripts/ci/runner-doctor.sh. See scripts/ci/RUNNERS.md."
+          tracking=$(gh issue list --label audit --state open --limit 1 --json number --jq '.[0].number')
+          if [ -z "$tracking" ]; then
+            tracking=$(gh issue create --title "Audit" --label "audit,state:parked" \
+              --body "The audits comment here when something is wrong." | sed 's#.*/##')
+          fi
+          gh issue comment "$tracking" --body "$body"

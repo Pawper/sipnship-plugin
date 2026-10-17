@@ -1,0 +1,15 @@
+# Files whose change is a setup step a person must take: a migration to
+# run, a variable to set, a container to rebuild. A PR that changes one of
+# these must also change the manual. One shell glob per line; * matches a
+# slash too. The manual is SETUP.md unless a line here says otherwise, for
+# a project that already has one, for example:  manual docs/setup.md
+#
+# Not here: package.json, pyproject.toml, go.mod, Cargo.toml and the
+# workflows. A dependency bump or a CI edit is not a setup step, and
+# listing them made every such pull request add a line to the manual, which
+# is the shared-page append the rules forbid.
+migrations/*
+supabase/migrations/*
+.env.example
+Dockerfile
+docker-compose*

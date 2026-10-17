@@ -1,0 +1,15 @@
+# Checked-in build output: one shell glob per line (* matches a slash too),
+# and one line "rebuild: COMMAND" that regenerates it from source, run in
+# the batch checkout. Two pull requests that each commit their own rebuild
+# conflict on these files even when their sources do not; six green ones
+# once landed one at a time for it, an hour of landings for twenty minutes
+# of work. When a pull request conflicts with the batch only in these
+# files, the queue takes either side, runs the rebuild, and lets the
+# batch's one full run prove it, instead of dropping the pull request.
+# The rebuild runs with the queue's environment and nothing more; give a
+# tool's home a default so it runs on any machine that runs the queue. A
+# drain on a hosted Linux runner cannot run a Windows-only rebuild: point
+# QUEUE_RUNS_ON at a runner that can.
+# Empty by default. Example:
+# packages/core/*
+# rebuild: JAVA_HOME="${JAVA_HOME:-/opt/jdk-21}" ./gradlew :core:jsPackage

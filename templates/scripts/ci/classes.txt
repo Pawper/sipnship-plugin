@@ -1,0 +1,19 @@
+# Change classes for CI. Each line is a class name followed by the shell
+# globs that belong to it, separated by spaces. A path takes the class of the
+# first line it matches, so the narrow lines come before the broad ones. A
+# path that matches nothing is class "other", which runs every job. In these
+# globs * also matches a slash, so src/* covers the whole tree under src.
+#
+# The "!rerun-free" line names the classes whose moves on main can never
+# make a green pull request red: specs, docs and the status page. The merge
+# queue ignores them when deciding whether a green pull request must run
+# CI again after main moved, so ten pull requests that each name a spec do
+# not invalidate one another on every merge.
+!rerun-free docs specs status
+ci     .github/* scripts/ci/*
+status status/* STATUS.md
+specs  specs/*
+data   seed/* migrations/* supabase/*
+tests  tests/* test/*
+app    src/* package.json package-lock.json pyproject.toml go.mod Cargo.toml
+docs   docs/* *.md

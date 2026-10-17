@@ -1,0 +1,9 @@
+# The UI files the design literal check reads, one glob per line: a pull
+# request that adds a raw hex colour, a px/dp/sp size or a font name to one
+# of these fails, unless its body says why ("Design: <reason>"). The
+# generated design files, design/ itself and this list are never checked.
+src/**/*.tsx
+src/**/*.ts
+src/**/*.css
+android/**/*.kt
+ios/**/*.swift

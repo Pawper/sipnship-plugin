@@ -1,0 +1,4 @@
+# Pages the block-generated-page hook refuses to edit directly.
+# One shell glob per line. A pattern without a slash matches a file name
+# anywhere; a pattern with a slash matches a path relative to the project.
+STATUS.md

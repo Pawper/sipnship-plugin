@@ -1,0 +1,5 @@
+# When each screen pair (scripts/ci/parity.txt) was last compared across
+# platforms by eye: NAME DATE BY, the owner's local day. A pair not listed
+# here was never compared; the session brief names those and any older
+# than 14 days. Record a comparison with:
+#   sh scripts/design/screens.sh compare NAME [NAME...]

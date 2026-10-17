@@ -1,0 +1,96 @@
+# The merge queue on a timer that does not die with a chat session. A
+# drain run with /loop stops when the app closes; six green pull requests
+# once sat all night for that. This runs --drain every thirty minutes.
+#
+# Where it runs: a GitHub-hosted runner by default. The drain needs only
+# git, gh and Node (to type-check a batch), which hosted runners have, and
+# the batch checkout installs its own packages. On a project's own
+# runners it queued behind the pull request checks it was waiting for and
+# then held a runner while it waited, so a two-runner project ran CI on
+# one. To run it on a self-hosted Linux or macOS runner instead, set the
+# repository variable QUEUE_RUNS_ON to its label. Not a Windows runner:
+# this file's shell is bash.
+#
+# Each run drains for at most QUEUE_DRAIN_MINUTES (variable, default 25)
+# and skips itself when a drain finished in the last QUEUE_DRAIN_GAP
+# minutes (default 10), so runs never stack and hosted minutes stay low:
+# a run with nothing to merge ends in about a minute.
+#
+# The merge needs a token. The default GITHUB_TOKEN can merge, but a push
+# it makes does not start other workflows, so the full run on main would
+# not happen. Give it a classic token with "repo" (and "workflow" if the
+# queue ever touches workflows), created by a user who can push to main,
+# as the repository secret QUEUE_TOKEN. Without the secret the job says so
+# and stops.
+name: Queue drain
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+concurrency:
+  group: queue-drain
+  cancel-in-progress: false
+
+jobs:
+  drain:
+    runs-on: ${{ vars.QUEUE_RUNS_ON || 'ubuntu-latest' }}
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Skip when a drain just ran
+        id: recent
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GAP: ${{ vars.QUEUE_DRAIN_GAP || '10' }}
+        run: |
+          now=$(date -u +%s)
+          # Paused from a session (merge-queue.sh --pause 2h), or a session's
+          # own drain is working: skip, and let that one do it.
+          for v in "${{ vars.QUEUE_PAUSED_UNTIL }}" "${{ vars.QUEUE_LOCAL_DRAIN_UNTIL }}"; do
+            if [ -n "$v" ] && [ "$(date -u -d "$v" +%s 2>/dev/null || echo 0)" -gt "$now" ] && [ "${{ github.event_name }}" = schedule ]; then
+              echo "Paused, or a session's drain is running, until $v; skipping this one."
+              echo "skip=yes" >> "$GITHUB_OUTPUT"; exit 0
+            fi
+          done
+          last=$(gh api "repos/${{ github.repository }}/actions/workflows/queue-drain.yml/runs?status=completed&per_page=1" --jq '.workflow_runs[0].updated_at // ""' 2>/dev/null || true)
+          if [ -n "$last" ] && [ "${{ github.event_name }}" = schedule ]; then
+            age=$(( $(date -u +%s) - $(date -u -d "$last" +%s) ))
+            if [ "$age" -lt $(( GAP * 60 )) ]; then
+              echo "A drain finished $((age / 60)) minute(s) ago; skipping this one."
+              echo "skip=yes" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+      - uses: actions/checkout@v4
+        if: steps.recent.outputs.skip != 'yes'
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.QUEUE_TOKEN || github.token }}
+      - name: Say so when a rebuild may not run here
+        if: steps.recent.outputs.skip != 'yes' && runner.environment == 'github-hosted'
+        run: |
+          if grep -qs '^[[:space:]]*rebuild:' scripts/ci/generated-paths.txt; then
+            echo "::warning title=The rebuild runs on a hosted runner::scripts/ci/generated-paths.txt names a rebuild, and this drain runs on a hosted $RUNNER_OS runner. If the rebuild needs your machine (a JDK, Windows), set the repository variable QUEUE_RUNS_ON to that runner's label."
+          fi
+      - name: Drain the queue
+        if: steps.recent.outputs.skip != 'yes'
+        env:
+          GH_TOKEN: ${{ secrets.QUEUE_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          QUEUE_DRAIN_MINUTES: ${{ vars.QUEUE_DRAIN_MINUTES || '25' }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "QUEUE_TOKEN is not set; a merge by the default token would not start the full run on main. See the comment at the top of this workflow."
+            exit 0
+          fi
+          git config user.name "merge-queue"
+          git config user.email "merge-queue@users.noreply.github.com"
+          sh scripts/ci/merge-queue.sh --drain

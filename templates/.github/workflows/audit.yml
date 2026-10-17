@@ -1,0 +1,103 @@
+# Nightly audit. It speaks only when something is wrong: an open issue with
+# no State label, a PR merged in the last day whose issue is still open and
+# still labeled ready, or a red-main issue nobody has closed. It leaves one
+# comment on the tracking issue labeled "audit" and says nothing when clean.
+name: Audit
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  pull-requests: read
+  actions: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Find issues without a State and issues left stale by a merge
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        shell: sh
+        run: |
+          . scripts/ci/lib.sh
+
+          issues=$(gh issue list --state open --limit 500 --json number,labels \
+            --jq '.[] | "\(.number) \([.labels[].name] | join(","))"')
+          missing=$(issues_without_state "$issues")
+
+          since=$(date -u -d '1 day ago' +%Y-%m-%d 2>/dev/null || date -u -v-1d +%Y-%m-%d)
+          merged=$(gh pr list --state merged --search "merged:>=$since" --limit 100 --json number,body \
+            --jq '.[] | "\(.number) \(.body | gsub("\n"; " "))"')
+          stale=""
+          printf '%s\n' "$merged" | while IFS= read -r line; do
+            [ -n "$line" ] || continue
+            pr=${line%% *}
+            for n in $(issue_refs "$line"); do
+              labels=$(gh issue view "$n" --json state,labels --jq 'select(.state == "OPEN") | [.labels[].name] | join(",")' 2>/dev/null || true)
+              case ",$labels," in *",state:ready,"*) printf '%s %s\n' "$pr" "$n" ;; esac
+            done
+          done > stale.txt
+          stale=$(cat stale.txt)
+
+          red=$(gh issue list --label ci-red --state open --limit 20 --json number --jq '.[].number')
+
+          # Branches left on the remote after their pull request ended. The
+          # audit runs here and cannot see folders on anyone's machine, so
+          # this is the half of the worktree check it can do; the session
+          # brief and scripts/worktrees.sh audit do the local half.
+          ended=$(gh pr list --state closed --limit 300 --json headRefName --jq '.[].headRefName' | sort -u)
+          remote=$(git ls-remote --heads origin | sed 's#.*refs/heads/##')
+          branches=$(ended_remote_branches "$remote" "$ended" "${{ github.event.repository.default_branch }}")
+
+          # Deploys: the scheduled path's last run and recorded commit, or,
+          # for the guard path, the commit Vercel reports in production.
+          deploy=""
+          if [ -f .claude/deploy.json ] && [ -f scripts/ci/deploy-health.sh ]; then
+            last=$(gh run list --workflow deploy.yml --limit 1 --json databaseId,conclusion --jq '.[0] | "\(.databaseId) \(.conclusion // "")"' 2>/dev/null || true)
+            last_run=${last#* }
+            if [ "$last_run" = success ] && [ -n "${last%% *}" ]; then
+              fell=$(gh run view "${last%% *}" --json jobs --jq '[.jobs[] | select(.name == "build-on-runner" and .conclusion == "failure")] | length' 2>/dev/null || echo 0)
+              [ "${fell:-0}" = 0 ] || last_run=fellback
+            fi
+            in_prod=""
+            if grep -q '"guard"' .claude/deploy.json && [ -n "$VERCEL_TOKEN" ] && [ -n "$VERCEL_PROJECT_ID" ]; then
+              in_prod=$(curl -s -H "Authorization: Bearer $VERCEL_TOKEN" "https://api.vercel.com/v6/deployments?projectId=$VERCEL_PROJECT_ID&teamId=$VERCEL_ORG_ID&target=production&state=READY&limit=1" \
+                | sed -n 's/.*"githubCommitSha":"\([0-9a-f]*\)".*/\1/p' | head -n 1)
+            fi
+            deploy=$(sh scripts/ci/deploy-health.sh "$in_prod" "$last_run")
+          fi
+
+          # Serial merges: more than two within an hour means pull requests
+          # that were ready together landed alone, each with its own CI run
+          # and deploy. The queue writes the reason into the merge title.
+          serial=""
+          if [ -f scripts/ci/batch-lib.sh ]; then
+            . scripts/ci/batch-lib.sh
+            serial=$(serial_bursts "$(git log --first-parent --since='1 day ago' --format='%ct%x09%s' "origin/${{ github.event.repository.default_branch }}" 2>/dev/null)")
+          fi
+
+          body=$(audit_comment "$missing" "$stale" "$red" "$branches")
+          if [ -n "$serial" ]; then body=$(printf '%s\n\n- %s' "$body" "$serial" | sed '/./,$!d'); fi
+          if [ -n "$deploy" ]; then body=$(printf '%s\n\n- %s' "$body" "$deploy" | sed '/./,$!d'); fi
+          if [ -z "$body" ]; then
+            echo "Clean. Nothing to say."
+            exit 0
+          fi
+          tracking=$(gh issue list --label audit --state open --limit 1 --json number --jq '.[0].number')
+          if [ -z "$tracking" ]; then
+            tracking=$(gh issue create --title "Audit" --label "audit,state:parked" \
+              --body "The nightly audit comments here when something is wrong. It says nothing when all is clean." | sed 's#.*/##')
+          fi
+          gh issue comment "$tracking" --body "$body"
+          echo "Commented on issue $tracking."

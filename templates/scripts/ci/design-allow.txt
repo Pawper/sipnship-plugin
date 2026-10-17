@@ -1,0 +1,4 @@
+# Lines the design literal check lets through, one regex per line. Comment
+# lines and @media queries are allowed already. Add a pattern only for a
+# value that is not design: a canvas's pixel buffer, a test fixture.
+box-shadow

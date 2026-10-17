@@ -1,0 +1,137 @@
+{
+  "project": "PROJECT_NAME",
+  "app": [
+    { "id": "web", "name": "Web app" },
+    { "id": "worker", "name": "Background jobs" },
+    { "id": "admin", "name": "Admin" }
+  ],
+  "todo": [
+    { "id": "database", "title": "Connect the database", "how": "Run sh scripts/supabase-create.sh NAME; it creates the project and writes the password only to .env. Then set the database address from the project's connection string.", "link": "SETUP.md", "done_when": { "system": "database" } },
+    { "id": "storage", "title": "Connect file storage", "how": "Create the storage bucket in Supabase and set its name and keys.", "link": "SETUP.md", "done_when": { "system": "storage" } },
+    { "id": "email", "title": "Connect email sending", "how": "Verify the sending domain and set the key.", "link": "SETUP.md", "done_when": { "system": "email" } },
+    { "id": "runners", "title": "Set up the self-hosted runners", "how": "Install at least two runners as services with add-runner.ps1, run the doctor and the Runner check workflow, then set the done flag.", "link": "scripts/ci/RUNNERS.md", "done_when": { "flag": "DONE_RUNNERS" } },
+    { "id": "signing-key", "title": "Set the session signing key", "how": "Copy the JWT secret from the Supabase project's settings into the environment.", "link": "SETUP.md", "done_when": { "settings": ["SESSION_SIGNING_KEY"] } },
+    { "id": "backup", "title": "Schedule the backup", "how": "Turn on the nightly dump to the backup bucket and set the done flag once the first one has run.", "link": "SETUP.md", "done_when": { "flag": "DONE_BACKUP" } },
+    { "id": "vercel-machine", "title": "Use the Standard build machine on Vercel", "how": "In the Vercel project's Settings, Build and Deployment, set the build machine to Standard, the cheapest; a bigger one bills more for every build. Then set the done flag.", "link": "https://vercel.com/docs/builds/managing-builds#build-machine-types", "done_when": { "flag": "DONE_VERCEL_MACHINE" } },
+    { "id": "vercel-spend-cap", "title": "Set a spend cap on Vercel", "how": "In the team's Settings, Billing, Spend Management, set a monthly cap and an alert below it, so a runaway week of builds stops at a number you chose. Then set the done flag.", "link": "https://vercel.com/docs/spend-management", "done_when": { "flag": "DONE_VERCEL_SPEND_CAP" } },
+    { "id": "branch-protection", "title": "Set branch protection on main", "how": "Run sh scripts/protect-main.sh, which sets the only check (CI passed), up to date off and a pull request required, then set the done flag.", "link": "CLAUDE.md", "done_when": { "flag": "DONE_BRANCH_PROTECTION" } }
+  ],
+  "systems": [
+    {
+      "id": "hosting", "name": "Hosting", "vendor": "Vercel",
+      "does": "Builds and serves the web app from the main branch; every pull request gets a preview.",
+      "settings": [{ "name": "VERCEL_PROJECT", "label": "the project name on Vercel" }],
+      "optional": [{ "name": "VERCEL_TEAM", "label": "the team the project belongs to" }],
+      "links": [{ "label": "Dashboard", "url": "https://vercel.com/dashboard" }],
+      "flows": [{ "from": "browser", "label": "pages" }]
+    },
+    {
+      "id": "database", "name": "Database", "vendor": "Supabase Postgres",
+      "does": "Holds every account, item and record; migrations live in supabase/migrations.",
+      "settings": [{ "name": "DATABASE_URL", "label": "the database address" }],
+      "links": [{ "label": "Supabase dashboard", "url": "https://supabase.com/dashboard" }],
+      "flows": [{ "from": "web", "label": "reads and writes" }, { "from": "worker", "label": "jobs" }]
+    },
+    {
+      "id": "storage", "name": "File storage", "vendor": "Supabase Storage",
+      "does": "Keeps uploaded files and generated images in a bucket next to the database.",
+      "settings": [
+        { "name": "STORAGE_BUCKET", "label": "the bucket name" },
+        { "name": "SUPABASE_URL", "label": "the project address" },
+        { "name": "SUPABASE_SERVICE_KEY", "label": "the service key" }
+      ],
+      "links": [{ "label": "Storage", "url": "https://supabase.com/dashboard" }],
+      "flows": [{ "from": "web", "label": "uploads" }]
+    },
+    {
+      "id": "email", "name": "Email", "vendor": "Resend",
+      "does": "Sends sign-in links, receipts and notices.",
+      "settings": [{ "name": "EMAIL_API_KEY", "label": "the email sending key" }],
+      "optional": [{ "name": "EMAIL_FROM", "label": "the sender address" }],
+      "links": [{ "label": "Dashboard", "url": "https://resend.com/emails" }],
+      "flows": [{ "from": "worker", "label": "messages" }]
+    },
+    {
+      "id": "sign-in", "name": "Sign-in", "vendor": "Supabase Auth, with Google as an option",
+      "does": "Lets people sign in with a magic link or their Google account.",
+      "settings": [{ "name": "SESSION_SIGNING_KEY", "label": "the session signing key" }],
+      "optional": [
+        { "name": "GOOGLE_CLIENT_ID", "label": "the Google sign-in id" },
+        { "name": "GOOGLE_CLIENT_SECRET", "label": "the Google sign-in secret" }
+      ],
+      "links": [{ "label": "Auth settings", "url": "https://supabase.com/dashboard" }],
+      "flows": [{ "from": "browser", "label": "sign-in" }]
+    },
+    {
+      "id": "dns", "name": "DNS and domain", "vendor": "Cloudflare",
+      "does": "Points the domain at Vercel and holds the email records.",
+      "settings": [{ "name": "PUBLIC_DOMAIN", "label": "the public domain" }],
+      "links": [{ "label": "DNS", "url": "https://dash.cloudflare.com" }],
+      "flows": [{ "from": "browser", "label": "lookups" }]
+    },
+    {
+      "id": "media", "name": "Images and media", "vendor": "Vercel and Supabase",
+      "does": "Resizes images on the way out and streams large files from the bucket.",
+      "parts": [
+        { "name": "Image cache", "does": "Resizes and caches images at the edge.", "settings": [{ "name": "MEDIA_CACHE_ZONE", "label": "the image cache zone" }] },
+        { "name": "Media relay", "does": "Streams large files from the bucket without holding them.", "settings": [{ "name": "MEDIA_RELAY_URL", "label": "the relay address" }] }
+      ],
+      "links": [{ "label": "Vercel images", "url": "https://vercel.com/docs/image-optimization" }],
+      "flows": [{ "from": "browser", "label": "images" }]
+    },
+    {
+      "id": "sibling", "name": "Sibling app", "vendor": "Another Bitblitzin app",
+      "does": "The studio app this one links to or shares accounts with. Remove the card when there is none.",
+      "settings": [{ "name": "SIBLING_APP_URL", "label": "the sibling app's address" }],
+      "links": [{ "label": "The sibling app", "url": "https://bitblitzin.com" }],
+      "flows": [{ "from": "web", "label": "links" }]
+    },
+    {
+      "id": "backups", "name": "Backups", "vendor": "Nightly dump to a second bucket",
+      "does": "Copies the database and the files off-site every night, beyond what Supabase keeps itself.",
+      "settings": [{ "name": "BACKUP_BUCKET", "label": "the backup bucket" }],
+      "links": [{ "label": "Backup bucket", "url": "https://supabase.com/dashboard" }],
+      "flows": [{ "from": "worker", "label": "nightly copy" }]
+    },
+    {
+      "id": "source", "name": "Source control and CI", "vendor": "GitHub, Actions on the studio's runners",
+      "does": "Holds the code, runs the checks on the self-hosted runners, and merges the queue.",
+      "settings": [{ "name": "GITHUB_REPOSITORY", "label": "the repository name" }],
+      "links": [
+        { "label": "Repository", "url": "https://github.com/OWNER/REPO" },
+        { "label": "Actions", "url": "https://github.com/OWNER/REPO/actions" },
+        { "label": "The CI workflow", "url": ".github/workflows/ci.yml" }
+      ],
+      "flows": [{ "from": "worker", "label": "deploys" }]
+    }
+  ],
+  "faq": {
+    "required": {
+      "how": ["merge-queue", "migration", "service-key", "signing-key", "backup", "old-files", "report"],
+      "when": ["runners-offline", "main-red", "preview-fails", "database-paused", "storage-near-plan"]
+    },
+    "how": [
+      { "id": "merge-queue", "q": "Merge what is ready?", "a": "Run the merge queue with --drain. It merges every green pull request, as a batch when there are more than two, waits for the rest, and names anything that needs a person. Never merge directly.", "link": "scripts/ci/QUEUE.md", "link_label": "The queue" },
+      { "id": "migration", "q": "Add a database migration?", "a": "Take the next number with the next-number script, write the file under supabase/migrations, run it against the project, mark its line Done in the setup document on the same branch, then queue the pull request. The queue refuses a migration that has not run.", "link": "SETUP.md", "link_label": "Setup" },
+      { "id": "service-key", "q": "Add a service key?", "a": "Create the key in the service's dashboard, store it in the password manager under the project's entry, set it in the environment, and add a line to the setup document. The card for that service turns ready on its own.", "link": "SETUP.md", "link_label": "Setup" },
+      { "id": "signing-key", "q": "Rotate the signing key?", "a": "Rotate the JWT secret in the Supabase project's settings, set the new value in every environment the same hour, and record the date in the setup document. Open sessions sign in again.", "built": false, "link": "SETUP.md", "link_label": "Setup" },
+      { "id": "backup", "q": "Back up by hand?", "a": "Run the nightly backup job from the Actions tab with the manual trigger. It writes a dated dump to the backup bucket.", "built": false, "link": ".github/workflows/ci.yml", "link_label": "Workflows" },
+      { "id": "old-files", "q": "Delete old files?", "a": "Nothing in this project deletes. Move files to the archive folder in the bucket; a nightly job moves anything older than a year there on its own.", "built": false, "link": "SETUP.md", "link_label": "Setup" },
+      { "id": "report", "q": "Answer a report?", "a": "Reports arrive as issues labeled report. Reply on the issue, change what needs changing in a pull request, and close the issue; the reporter gets the reply by email.", "link": "https://github.com/OWNER/REPO/issues", "link_label": "Issues" }
+    ],
+    "when": [
+      { "id": "runners-offline", "q": "The runners are offline?", "a": "Jobs wait; there is no hosted fallback on a personal account. The hourly runner watch comments on the audit issue within the hour, and the merge queue says so rather than merging. Start the runner service and the queued jobs run.", "link": "#source", "link_label": "Source control and CI" },
+      { "id": "main-red", "q": "Main goes red?", "a": "The full run opens an issue labeled ci-red. Nothing else merges until it is closed. The nightly audit keeps mentioning it while it is open.", "link": ".github/workflows/ci.yml", "link_label": "The CI workflow" },
+      { "id": "preview-fails", "q": "A pull request's preview fails to build?", "a": "Vercel comments on the pull request with the build log. The pull request is not green until the preview builds, so the queue leaves it alone; fix the build on the branch.", "link": "#hosting", "link_label": "Hosting" },
+      { "id": "database-paused", "q": "The database is paused?", "a": "A free Supabase project pauses after a week without traffic. The app shows its plain outage page and the console card turns to do. Resume it from the dashboard; nothing is lost.", "built": false, "link": "#database", "link_label": "Database" },
+      { "id": "storage-near-plan", "q": "Storage nears the plan limit?", "a": "Supabase emails the owner at eighty percent. The nightly audit comments on the tracking issue when the bucket passes ninety percent.", "built": false, "link": "#storage", "link_label": "File storage" }
+    ]
+  },
+  "numbers": {
+    "items": [
+      { "key": "accounts", "label": "Accounts" },
+      { "key": "items", "label": "Items" },
+      { "key": "storage_used", "label": "Storage used" }
+    ]
+  }
+}

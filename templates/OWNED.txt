@@ -1,0 +1,98 @@
+# Files the plugin owns, by feature. A project gets them from the templates
+# and should not edit them by hand; scripts/sync/sync-templates.sh brings
+# them up to date with the installed plugin. Everything not listed here
+# belongs to the project once copied (CLAUDE.md, ci.yml, the manual, the
+# config files) and is never replaced, only reported on.
+#
+# A "feature NAME" line starts a group; the first file under it is the
+# feature's anchor. The sync refreshes every plugin file the project has,
+# and adds the missing files only of a feature in use, one whose anchor is
+# here; any other is reported, not added, because the project may have
+# its own tools for it. One
+# project had its own board-state script and status page builder, and an
+# apply would have added a second, competing set. --only NAME applies one
+# feature, adopted or not.
+feature core
+scripts/ci/lib.sh
+scripts/ci/classify.sh
+scripts/ci/line-endings.sh
+scripts/ci/spec-check.sh
+scripts/ci/setup-check.sh
+scripts/ci/shared-check.sh
+scripts/ci/numbering-check.sh
+scripts/ci/numbering-lib.sh
+scripts/ci/client-env-check.sh
+scripts/next-number.sh
+scripts/pr-open.sh
+scripts/issue-open.sh
+scripts/gh-budget.sh
+scripts/protect-main.sh
+# Config with defaults: added when missing to a project using the feature
+# they sit under, never replaced.
+default .claude/generated-pages.txt
+default .github/pull_request_template.md
+default .claude/numbering.txt
+default scripts/ci/classes.txt
+default scripts/ci/setup-paths.txt
+default scripts/ci/shared-paths.txt
+default scripts/ci/task-files.txt
+feature queue
+scripts/ci/merge-queue.sh
+scripts/ci/batch-lib.sh
+scripts/ci/run-lib.sh
+scripts/ci/run-test-file.mjs
+scripts/ci/QUEUE.md
+scripts/ci/deploy-gate.sh
+default scripts/ci/generated-paths.txt
+default scripts/ci/spec-roots.txt
+scripts/pr-checks.sh
+scripts/worktrees-lib.sh
+scripts/worktrees.sh
+.github/workflows/queue-drain.yml
+feature board
+scripts/board-lib.sh
+scripts/board-sync.sh
+scripts/board.sh
+scripts/labels.sh
+scripts/state.sh
+.github/workflows/board-sync.yml
+.github/workflows/state-label.yml
+.github/workflows/audit.yml
+feature status
+status/build.sh
+status/check.sh
+status/lib.sh
+feature runners
+scripts/ci/RUNNERS.md
+scripts/ci/add-runner.ps1
+scripts/ci/doctor-lib.sh
+scripts/ci/runner-doctor.sh
+.github/workflows/runner-check.yml
+.github/workflows/runner-watch.yml
+feature deploy
+scripts/ci/deploy-lib.sh
+scripts/ci/deploy-health.sh
+scripts/ci/vercel-ignore.sh
+scripts/deploy-setup.sh
+.github/workflows/deploy.yml
+feature smoke
+scripts/ci/smoke.mjs
+.github/workflows/smoke.yml
+feature decisions
+scripts/decisions.sh
+scripts/decisions-lib.sh
+feature design
+scripts/design/design-lib.sh
+scripts/design/generate.mjs
+scripts/design/screens.sh
+scripts/ci/design-check.sh
+# The design source and its config are the project's: added once, never replaced.
+default design/tokens.json
+default design/icons.json
+default design/screens.txt
+default design/README.md
+default scripts/ci/design-ui.txt
+default scripts/ci/design-allow.txt
+feature supabase
+scripts/supabase-create.sh
+scripts/env-lib.sh

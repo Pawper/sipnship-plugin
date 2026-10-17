@@ -1,0 +1,173 @@
+# Deploy main to Vercel on a schedule, building on the project's own runner
+# when it can, so Vercel hosts the output and builds nothing. Build CPU was
+# nearly all of one owner's Vercel bill, because every push to every branch
+# was a build. Here nothing but this workflow deploys: vercel.json turns Git
+# deploys off, and this deploys at most once per interval and only when
+# main has moved in something the app ships since the last deployed commit.
+#
+# Paths, chosen by scripts/deploy-setup.sh into the DEPLOY_PATH variable:
+#   runner  build on a self-hosted Linux or macOS runner, deploy the output
+#           prebuilt; when no runner is online or the build fails, that run
+#           deploys with a build on Vercel instead. Never a Windows runner:
+#           its build cannot write the output without Developer Mode, and
+#           with it Vercel rejects the upload.
+#   vercel  a deploy that Vercel builds, on the same schedule.
+#
+# Where each job runs comes from repository variables, never from editing
+# this file, so the sync can keep it current:
+#   DEPLOY_RUNNER    the runner path's build machine, a JSON array such as
+#                    ["self-hosted","Linux"]
+#   DEPLOY_JOBS_ON   where the plan and the Vercel-built deploy run:
+#                    "ubuntu-latest" (the default), or the runner's array
+#                    when the repository has no hosted minutes
+# The interval comes from .claude/deploy.json; the schedule only wakes the
+# plan. Every step runs in bash on Linux or macOS; nothing needs jq.
+#
+# Needs repository secrets VERCEL_TOKEN, VERCEL_ORG_ID, VERCEL_PROJECT_ID.
+# ADMIN_TOKEN (administration: read), the same one the runner watch uses,
+# lets the plan see whether a runner is online; without it the plan assumes
+# one is, and a failed build still falls back. The last deployed commit is
+# recorded as refs/deploy/production, which the brief and the audit read.
+#
+# A project that shows its version (in Settings, say) adds
+# scripts/ci/build-id.sh, printing one id for a commit; both build paths
+# pass it to the app as NEXT_PUBLIC_BUILD_ID, so no project forks this file.
+name: Deploy
+
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ${{ fromJSON(vars.DEPLOY_JOBS_ON || '"ubuntu-latest"') }}
+    outputs:
+      deploy: ${{ steps.plan.outputs.deploy }}
+      path: ${{ steps.plan.outputs.path }}
+      sha: ${{ steps.plan.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - id: plan
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+          HAS_TOKEN: ${{ secrets.VERCEL_TOKEN != '' }}
+          FORCED: ${{ github.event_name == 'workflow_dispatch' }}
+        run: |
+          . scripts/ci/deploy-lib.sh
+          cfg=$(cat .claude/deploy.json 2>/dev/null || true)
+          app=$(json_string "$cfg" appRoot); app=${app:-.}
+          extra=$(json_words "$cfg" neverShips)
+          interval=$(json_number "$cfg" intervalMinutes); interval=${interval:-60}
+          path=${DEPLOY_PATH:-$(json_string "$cfg" path)}; path=${path:-vercel}
+          sha=$(git rev-parse HEAD)
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          no() { echo "deploy=no" >> "$GITHUB_OUTPUT"; exit "${1:-0}"; }
+          if [ "$path" = guard ]; then
+            echo "This project deploys by the guard path (Git deploys from main, guarded in vercel.json); this workflow has nothing to do."
+            no
+          fi
+          if [ "$HAS_TOKEN" != true ]; then
+            echo "VERCEL_TOKEN is not set; nothing can deploy. Set VERCEL_TOKEN, VERCEL_ORG_ID and VERCEL_PROJECT_ID as repository secrets."
+            no 1
+          fi
+          deployed=$(git ls-remote origin refs/deploy/production | cut -f1)
+          if [ "$deployed" = "$sha" ]; then echo "main ($sha) is already in production."; no; fi
+          if [ -n "$deployed" ] && git cat-file -e "$deployed^{commit}" 2>/dev/null; then
+            if [ "$(deploy_skip "$(git diff --name-only "$deployed" "$sha")" "$app" "$extra")" = skip ]; then
+              echo "Nothing the app ships changed since $deployed; recording $sha as deployed without a build."
+              gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/deploy/production" -f sha="$sha" -F force=true > /dev/null
+              no
+            fi
+            # The interval, from when the deployed commit landed; a run by
+            # hand deploys now.
+            if [ "$FORCED" != true ]; then
+              t=$(deploy_throttle "$(git log -1 --format=%ct "$deployed")" "$(date +%s)" "$interval")
+              case "$t" in wait*) echo "The last deploy is under $interval minutes old; the next run in ${t#wait } minute(s) or later ships this."; no ;; esac
+            fi
+          fi
+          if [ "$path" = runner ] && [ -n "$ADMIN_TOKEN" ]; then
+            online=$(GH_TOKEN="$ADMIN_TOKEN" gh api "repos/$GITHUB_REPOSITORY/actions/runners" --jq '[.runners[] | select(.status == "online" and (.os | ascii_downcase) != "windows")] | length' 2>/dev/null || echo 1)
+            if [ "${online:-0}" = 0 ]; then echo "No Linux or macOS runner is online; this run builds on Vercel instead."; path=vercel; fi
+          fi
+          echo "Deploying $sha by the $path path."
+          echo "deploy=yes" >> "$GITHUB_OUTPUT"
+          echo "path=$path" >> "$GITHUB_OUTPUT"
+
+  build-on-runner:
+    needs: plan
+    if: needs.plan.outputs.deploy == 'yes' && needs.plan.outputs.path == 'runner'
+    runs-on: ${{ fromJSON(vars.DEPLOY_RUNNER || '["self-hosted","Linux"]') }}
+    timeout-minutes: 30
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+      - name: Build here and deploy the output; Vercel builds nothing
+        shell: bash
+        run: |
+          npx --yes vercel@latest pull --yes --environment=production --token="$VERCEL_TOKEN"
+          if [ -f scripts/ci/build-id.sh ]; then NEXT_PUBLIC_BUILD_ID=$(sh scripts/ci/build-id.sh HEAD); export NEXT_PUBLIC_BUILD_ID; echo "Build $NEXT_PUBLIC_BUILD_ID"; fi
+          npx --yes vercel@latest build --prod --token="$VERCEL_TOKEN"
+          npx --yes vercel@latest deploy --prebuilt --prod --token="$VERCEL_TOKEN"
+      - name: Record the deployed commit
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ needs.plan.outputs.sha }}
+        run: |
+          if ! gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/deploy/production" -f sha="$SHA" -F force=true > /dev/null 2>&1; then
+            gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref=refs/deploy/production -f sha="$SHA" > /dev/null
+          fi
+
+  build-on-vercel:
+    # The fallback: the path is vercel, or the runner build failed.
+    needs: [plan, build-on-runner]
+    if: always() && needs.plan.outputs.deploy == 'yes' && (needs.plan.outputs.path == 'vercel' || needs.build-on-runner.result == 'failure')
+    runs-on: ${{ fromJSON(vars.DEPLOY_JOBS_ON || '"ubuntu-latest"') }}
+    timeout-minutes: 30
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+      - name: Say so when this is a fallback
+        if: needs.build-on-runner.result == 'failure'
+        shell: bash
+        run: |
+          echo "::warning title=Deploy fell back to a Vercel build::The runner build failed, so this deploy is built on Vercel and bills its build minutes. Look at the build-on-runner job; the nightly audit repeats this until a runner build succeeds."
+      - name: Deploy, built on Vercel
+        shell: bash
+        run: |
+          set -- --prod --yes --token="$VERCEL_TOKEN"
+          if [ -f scripts/ci/build-id.sh ]; then bid=$(sh scripts/ci/build-id.sh HEAD); echo "Build $bid"; set -- "$@" --build-env NEXT_PUBLIC_BUILD_ID="$bid" --env NEXT_PUBLIC_BUILD_ID="$bid"; fi
+          npx --yes vercel@latest deploy "$@"
+      - name: Record the deployed commit
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ needs.plan.outputs.sha }}
+        run: |
+          if ! gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/deploy/production" -f sha="$SHA" -F force=true > /dev/null 2>&1; then
+            gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref=refs/deploy/production -f sha="$SHA" > /dev/null
+          fi

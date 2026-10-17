@@ -1,0 +1,7 @@
+pr	41	Add retries	SUCCESS	MERGEABLE	retries	src/client.ts	2026-10-04T10:00:00Z
+issue	12	Add the exporter	task,state:ready	2026-10-03T09:00:00Z	Export items as CSV.
+issue	20	Billing	state:in-progress	2026-10-04T08:00:00Z	Take payments for the yearly plan.
+issue	30	Choose the logo	state:waiting-on-owner	2026-10-04T11:30:00Z	Three options attached.
+issue	31	Pick the price	state:waiting-on-owner	2026-10-02T11:30:00Z	What should the yearly plan cost?
+issue	40	Mail is bouncing	state:blocked	2026-10-01T07:00:00Z	Bounces since Monday.
+total	5
