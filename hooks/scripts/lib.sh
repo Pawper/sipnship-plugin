@@ -100,7 +100,10 @@ mask_command() {
         c = substr(s, i, 1)
         if (q == "s") { if (c == "\047") q = ""; out = out ((c == "\047") ? c : mask(c)); continue }
         if (q == "d") {
-          if (c == "\\") { out = out c substr(s, i + 1, 1); i++; continue }
+          # An escaped character is text, never syntax: a body holding
+          # \` once reached the splitter as a backtick, cut the command
+          # before its labels, and the state-label hook refused it.
+          if (c == "\\") { out = out c mask(substr(s, i + 1, 1)); i++; continue }
           if (c == "$" && substr(s, i + 1, 1) == "(") { q = "c"; d = 1; out = out "$("; i++; continue }
           if (c == "\"") { q = ""; out = out c; continue }
           out = out mask(c); continue
@@ -110,7 +113,7 @@ mask_command() {
           if (c == ")") { d--; if (d == 0) { q = "d"; out = out c; continue } }
           out = out c; continue
         }
-        if (c == "\\") { out = out c substr(s, i + 1, 1); i++; continue }
+        if (c == "\\") { out = out c mask(substr(s, i + 1, 1)); i++; continue }
         if (c == "\047") { q = "s"; out = out c; continue }
         if (c == "\"") { q = "d"; out = out c; continue }
         out = out c
@@ -584,17 +587,21 @@ budget_cached() {
     NR == 1 && NF >= 7 && now - $1 >= 0 && now - $1 < max { print $2 "\t" $3 "\t" $4 "\t" $5 "\t" $6 "\t" $7 }'
 }
 
-# budget_line RECORD NOW [FLOOR]
+# budget_line RECORD NOW [FLOOR] [WARN]
 # One line for the brief and the hook: "GraphQL 4,120 of 5,000 left, resets
 # 09:19Z (in 23 min); REST 3,469 of 5,000 left." Under FLOOR GraphQL points
-# (default 500) it ends with what to do; nothing for an empty record.
+# (default 500) it ends with what to do; under WARN (default 1,500) it says
+# so early, while there is still room to switch: four agents and a queue
+# once ran the budget out three times in an afternoon, each found out at 0.
+# Nothing for an empty record.
 budget_line() {
-  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v now="$2" -v floor="${3:-500}" '
+  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v now="$2" -v floor="${3:-500}" -v warn="${4:-1500}" '
     function commas(n,  s) { s = sprintf("%d", n); while (s ~ /[0-9][0-9][0-9][0-9]/) sub(/[0-9][0-9][0-9]$|[0-9][0-9][0-9],/, ",&", s); return s }
     NR == 1 && NF >= 6 && $1 != "" {
       mins = int(($3 - now + 59) / 60); if (mins < 0) mins = 0
       printf "GraphQL %s of %s left, resets %s (in %d min); REST %s of %s left.", commas($1), commas($2), sprintf("%02d:%02dZ", int(($3 % 86400) / 3600), int(($3 % 3600) / 60)), mins, commas($4), commas($5)
       if ($1 + 0 < floor) printf " Low: use the REST forms (scripts/issue-open.sh, pr-open.sh, pr-checks.sh, gh api) and wait for the reset; never retry before it."
+      else if ($1 + 0 < warn) printf " Getting low: switch to the REST forms now (scripts/issue-open.sh, pr-open.sh, pr-checks.sh, gh api); gh pr, gh issue and gh project spend these points."
       printf "\n"
     }'
 }

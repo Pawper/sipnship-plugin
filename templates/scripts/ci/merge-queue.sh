@@ -176,7 +176,10 @@ gh_err=$flaky_dir/gh.err
 log_file=$flaky_dir/log
 say() { echo "$1"; printf '%s %s\n' "$(date '+%H:%M')" "$1" >> "$log_file" 2>/dev/null || true; }
 hhmm() { date -u -d "@$1" +%H:%M 2>/dev/null || date -u -r "$1" +%H:%M 2>/dev/null || echo "$1"; }
-rate_budget() { gh api rate_limit --jq '[.resources.core, .resources.graphql] | min_by(.remaining) | "\(.remaining)\t\(.reset)"' 2>/dev/null || true; }
+# The REST budget only: every call the queue makes is REST, so a spent
+# GraphQL budget (gh pr, gh issue, the board) never holds it. It once waited
+# for the GraphQL reset with REST half full.
+rate_budget() { gh api rate_limit --jq '.resources.core | "\(.remaining)\t\(.reset)"' 2>/dev/null || true; }
 rate_guard() {
   rg=$(rate_budget)
   w=$(rate_wait "$rg" "$(date +%s)" "${QUEUE_RATE_FLOOR:-500}")

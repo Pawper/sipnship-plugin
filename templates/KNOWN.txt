@@ -141,6 +141,7 @@ scripts/ci/merge-queue.sh 1298ed09e066dcba241afca32cd1a152f94da611
 scripts/ci/merge-queue.sh 1a97828bf5aa7944d0c912bc19421a23e9d01a28
 scripts/ci/merge-queue.sh 1d9a90e24cd2412fa94b5b4d9d5c7e7950b762fe
 scripts/ci/merge-queue.sh 244af9db86685a685b7cf6d2a026146621093dd4
+scripts/ci/merge-queue.sh 249ef40837f5dc0da9170d8468db93ce70e87dfd
 scripts/ci/merge-queue.sh 25f1fc06a0f5b412c051bcc1b6693c16feb842dc
 scripts/ci/merge-queue.sh 26028f2609ec6ca65f04f880e0a2566f4602f1a3
 scripts/ci/merge-queue.sh 3116041cf5152ce3c676305a602d5e9b5dac6b91
