@@ -138,6 +138,73 @@ if [ -z "$only" ]; then
   for af in $adopted; do for p in $(default_paths "$owned" "$af"); do [ -f "$p" ] || defaults="$defaults $p"; done; done
 fi
 
+# A workflow or script the sync writes brings the plugin-owned scripts it
+# runs, and theirs, whatever feature they belong to: runner-watch.yml runs
+# scripts/ci/runner-doctor.sh, which loads doctor-lib.sh, and a project
+# that had the workflow but not the doctor was told "0 missing" and then
+# had the workflow refused on --apply.
+owned_list=" $(owned_paths "$owned" | tr '\n' ' ') "
+dep_todo="$(printf '%s' "$present" | tr '\n' ' ') $missing"
+while [ -n "$(printf '%s' "$dep_todo" | tr -d ' ')" ]; do
+  dep_next=""
+  for p in $dep_todo; do
+    [ -f "$tpl/$p" ] || continue
+    case "
+$project_owned
+" in *"
+$p
+"*) continue ;; esac
+    case "$p" in
+      .github/workflows/*.yml) deps=$(sourced_scripts "$(cat "$tpl/$p")") ;;
+      *.sh) deps=$(printf '%s\n%s\n' "$(loaded_scripts "$(cat "$tpl/$p")")" "$(here_scripts "$(cat "$tpl/$p")" "$(dirname "$p")")") ;;
+      *) continue ;;
+    esac
+    for d in $deps; do
+      [ -f "$d" ] && continue
+      case "$owned_list" in *" $d "*) ;; *) continue ;; esac
+      case " $missing " in *" $d "*) continue ;; esac
+      case "
+$project_owned
+" in *"
+$d
+"*) continue ;; esac
+      missing="$missing $d"; dep_next="$dep_next $d"
+      echo "  brings:   $d, which $p runs"
+    done
+  done
+  dep_todo=$dep_next
+done
+willwrite=" $changed $missing $defaults "
+# refusal_of PATH: why a workflow cannot be written here, or nothing. The
+# dry run and --apply both ask, so what one says the other does.
+refusal_of() {
+  case "$1" in .github/workflows/*.yml) ;; *) return 0 ;; esac
+  r_text=$(filled_text "$(cat "$tpl/$1")" "$runs_on" "$run_shell")
+  if printf '%s\n' "$r_text" | grep -qw 'RUNS_ON\|RUN_SHELL'; then
+    echo "needs to know where this project's jobs run, and ci.yml has no plain runs-on or shell to copy (none, or an expression); not written. Give ci.yml's first job a plain runs-on and shell, or write this file by hand."
+    return 0
+  fi
+  r_missing=""
+  for r_s in $(sourced_scripts "$r_text"); do
+    [ -f "$r_s" ] && continue
+    case "$willwrite" in *" $r_s "*) continue ;; esac
+    r_missing="$r_missing $r_s"
+  done
+  if [ -n "$r_missing" ]; then
+    echo "runs$r_missing, which this project does not have and the plugin does not ship; not written, since it would fail on every run."
+    return 0
+  fi
+  if [ "$(control_bytes "$r_text")" = yes ]; then
+    echo "would hold a control character after filling; not written. Check the shell line in ci.yml."
+  fi
+  return 0
+}
+refused=""
+for p in $changed $missing; do
+  if [ "$force" = no ]; then case " $edited " in *" $p "*) continue ;; esac; fi
+  why=$(refusal_of "$p")
+  if [ -n "$why" ]; then refused="$refused $p"; fi
+done
 echo "Plugin $version. Plugin-owned files here: $current current, $(printf '%s' "$changed" | wc -w | tr -d ' ') older or edited, $(printf '%s' "$missing" | wc -w | tr -d ' ') missing."
 for p in $changed; do
   case " $edited " in
@@ -148,6 +215,7 @@ for p in $changed; do
   esac
 done
 for p in $missing; do echo "  missing:  $p"; done
+for p in $refused; do echo "  refused:  $p $(refusal_of "$p")"; done
 if [ -n "$unadopted" ] && [ -z "$only" ]; then
   for f in $(printf '%s\n' $unadopted | awk '!seen[$0]++'); do
     n=$(printf '%s\n' "$features" | awk -F'\t' -v f="$f" '$1 == f' | wc -l | tr -d ' ')
@@ -259,36 +327,16 @@ esac
 # (read above), and written only when nothing is left unfilled and every
 # script it runs is here or written now; otherwise it is refused and said.
 written=""
-willwrite=" $changed $missing $defaults "
 for p in $changed $missing $defaults; do
   if [ "$force" = no ]; then
     case " $edited " in *" $p "*) echo "  kept:     $p (edited here; pass --force to replace it)"; continue ;; esac
   fi
   case "$p" in
     .github/workflows/*.yml)
+      case " $refused " in *" $p "*) continue ;; esac
       w_text=$(filled_text "$(cat "$tpl/$p")" "$runs_on" "$run_shell")
-      if printf '%s
-' "$w_text" | grep -qw 'RUNS_ON\|RUN_SHELL'; then
-        echo "  refused:  $p needs to know where this project's jobs run, and ci.yml has no plain runs-on or shell to copy (none, or an expression); not written. Give ci.yml's first job a plain runs-on and shell, or write this file by hand."
-        continue
-      fi
-      w_missing=""
-      for w_s in $(sourced_scripts "$w_text"); do
-        [ -f "$w_s" ] && continue
-        case "$willwrite" in *" $w_s "*) continue ;; esac
-        w_missing="$w_missing $w_s"
-      done
-      if [ -n "$w_missing" ]; then
-        echo "  refused:  $p runs$w_missing, which this project does not have and this sync does not add; not written, since it would fail on every run."
-        continue
-      fi
-      if [ "$(control_bytes "$w_text")" = yes ]; then
-        echo "  refused:  $p would hold a control character after filling; not written. Check the shell line in ci.yml." >&2
-        continue
-      fi
       mkdir -p "$(dirname "$p")"
-      printf '%s
-' "$w_text" > "$p"
+      printf '%s\n' "$w_text" > "$p"
       if [ -n "$runs_on" ] && grep -qw 'RUNS_ON' "$tpl/$p"; then echo "  filled:   RUNS_ON in $p from ci.yml ($runs_on)"; fi
       if [ -n "$run_shell" ] && grep -qw 'RUN_SHELL' "$tpl/$p"; then echo "  filled:   RUN_SHELL in $p from ci.yml"; fi
       needs=$(workflow_needs "$w_text")

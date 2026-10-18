@@ -254,10 +254,38 @@ sourced_scripts() {
       }
       line = $0
       while (match(line, /(^|[ \t;&|(])(\.|sh)[ \t]+scripts\/[A-Za-z0-9_.\/-]+/)) {
-        s = substr(line, RSTART, RLENGTH); sub(/^.*(\.|sh)[ \t]+/, "", s)
+        s = substr(line, RSTART, RLENGTH); sub(/^.*(\.|sh)[ \t]+/, "", s); sub(/\.+$/, "", s)
         if (!(s in seen)) { seen[s] = 1; order[++n] = s }
         line = substr(line, RSTART + RLENGTH)
       }
     }
     END { for (i = 1; i <= n; i++) if (!(order[i] in guarded)) print order[i] }'
+}
+
+# here_scripts TEXT DIR
+# The scripts a script loads from its own folder (". \"$here/x.sh\""), as
+# paths under DIR, one per line: runner-doctor.sh loads doctor-lib.sh this
+# way, and one without the other fails.
+here_scripts() {
+  printf '%s\n' "$1" | tr -d '\r' | awk -v dir="$2" '
+    {
+      line = $0
+      while (match(line, /\$here\/[A-Za-z0-9_.-]+/)) {
+        s = substr(line, RSTART + 6, RLENGTH - 6); sub(/\.+$/, "", s)
+        if (!(s in seen)) { seen[s] = 1; print dir "/" s }
+        line = substr(line, RSTART + RLENGTH)
+      }
+    }'
+}
+
+# loaded_scripts TEXT
+# The repository scripts a script loads (a line that starts with
+# ". scripts/x.sh"), one per line. A command a script only prints for a
+# person ("run sh scripts/worktrees.sh") is not one of its own.
+loaded_scripts() {
+  printf '%s\n' "$1" | tr -d '\r' | awk '
+    /^[ \t]*\.[ \t]+scripts\// {
+      s = $0; sub(/^[ \t]*\.[ \t]+/, "", s); sub(/[ \t;].*$/, "", s); sub(/\.+$/, "", s)
+      if (!(s in seen)) { seen[s] = 1; print s }
+    }'
 }

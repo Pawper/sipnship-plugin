@@ -1350,13 +1350,23 @@ git -C "$ss_d" add -A; git -C "$ss_d" commit -q -m start
 ss_out=$(cd "$ss_d" && sh "$root/scripts/sync/sync-templates.sh" --apply --force --no-commit 2>&1)
 eq "a project's own workflow is named as its own" "1" "$(printf '%s\n' "$ss_out" | grep -c 'own:      .github/workflows/audit.yml')"
 eq "and never replaced, --force included" "name: Our own audit" "$(head -n 1 "$ss_d/.github/workflows/audit.yml")"
-eq "a workflow whose script is missing is refused, not written" "1 no" "$(printf '%s\n' "$ss_out" | grep -c 'refused:  .github/workflows/state-label.yml runs scripts/ci/lib.sh') $([ -f "$ss_d/.github/workflows/state-label.yml" ] && echo yes || echo no)"
+eq "a workflow's missing plugin script comes with it" "1 yes yes" "$(printf '%s\n' "$ss_out" | grep -c 'brings:   scripts/ci/lib.sh') $([ -f "$ss_d/scripts/ci/lib.sh" ] && echo yes || echo no) $([ -f "$ss_d/.github/workflows/state-label.yml" ] && echo yes || echo no)"
 
 ss_d=$(ss_new)
 mkdir -p "$ss_d/scripts/ci"; cp "$root/templates/scripts/ci/lib.sh" "$ss_d/scripts/ci/lib.sh"
 git -C "$ss_d" add -A; git -C "$ss_d" commit -q -m start
 ss_out=$(cd "$ss_d" && sh "$root/scripts/sync/sync-templates.sh" --apply --no-commit 2>&1)
 eq "with no runner to copy, a workflow is refused, not written with RUNS_ON" "1 no" "$(printf '%s\n' "$ss_out" | grep -c 'refused:  .github/workflows/state-label.yml needs to know') $([ -f "$ss_d/.github/workflows/state-label.yml" ] && echo yes || echo no)"
+eq "a script name at the end of a sentence loses its period" "scripts/ci/runner-doctor.sh" "$(sourced_scripts 'Run sh scripts/ci/runner-doctor.sh.')"
+eq "a script's loads are its dependencies, a command it only prints is not" "scripts/ci/lib.sh" "$(loaded_scripts "$(printf '. scripts/ci/lib.sh\necho "run sh scripts/worktrees.sh"\n')")"
+eq "a script's own-folder dependencies are found" "scripts/ci/doctor-lib.sh" "$(here_scripts '. "$here/doctor-lib.sh"' scripts/ci)"
+ss_d=$(ss_new)
+printf 'jobs:\n  checks:\n    runs-on: [self-hosted, windows]\n    defaults:\n      run:\n        shell: bash\n' > "$ss_d/.github/workflows/ci.yml"
+cp "$root/templates/.github/workflows/runner-watch.yml" "$ss_d/.github/workflows/runner-watch.yml"
+git -C "$ss_d" add -A; git -C "$ss_d" commit -q -m start
+ss_dry=$(cd "$ss_d" && sh "$root/scripts/sync/sync-templates.sh" 2>&1)
+eq "a workflow's missing plugin scripts are brought and counted" "2" "$(printf '%s\n' "$ss_dry" | grep -c 'brings:   scripts/ci/runner-doctor.sh\|brings:   scripts/ci/doctor-lib.sh')"
+eq "the dry run prints the same refusals as --apply" "$(printf '%s\n' "$ss_dry" | grep '^  refused:' | sort)" "$(cd "$ss_d" && sh "$root/scripts/sync/sync-templates.sh" --apply --no-commit 2>&1 | grep '^  refused:' | sort)"
 eq "a placeholder inside a longer name is left alone" "vars.DEPLOY_RUNS_ON and [self-hosted]" "$(fill_placeholder 'vars.DEPLOY_RUNS_ON and RUNS_ON' RUNS_ON '[self-hosted]')"
 eq "an ampersand in the value is literal" "runs-on: a & b" "$(fill_placeholder 'runs-on: RUNS_ON' RUNS_ON 'a & b')"
 eq "every occurrence on a line is filled" "x [self-hosted] y [self-hosted]" "$(fill_placeholder 'x RUNS_ON y RUNS_ON' RUNS_ON '[self-hosted]')"
