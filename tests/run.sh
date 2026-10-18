@@ -241,6 +241,14 @@ eq "a cached budget younger than a minute is read" "4120	5000	1760000000	3469	50
 eq "a stale cache is not" "" "$(budget_cached '1759999900	4120	5000	1760000000	3469	5000	1760000000' 1760000000)"
 eq "an empty cache is not" "" "$(budget_cached '' 1760000000)"
 eq "the budget is one line" "GraphQL 4,120 of 5,000 left, resets 09:19Z (in 23 min); REST 3,469 of 5,000 left." "$(budget_line "4120	5000	1760001540	3469	5000	1760001540" 1760000200)"
+# issue-open.sh passes each label as one argument, spaces and all.
+io_dir=$(mktemp -d)
+mkdir -p "$io_dir/bin"
+printf '#!/bin/sh\nfor a in "$@"; do printf "[%%s]\\n" "$a"; done > "%s/args"\nprintf "7\\thttps://example/7\\n"\n' "$io_dir" > "$io_dir/bin/gh"
+chmod +x "$io_dir/bin/gh"
+printf 'body\n' > "$io_dir/body.md"
+io_out=$(PATH="$io_dir/bin:$PATH" sh "$root/templates/scripts/issue-open.sh" "A title" "$io_dir/body.md" "state: ready" bug 2>&1)
+eq "a label with a space is filed as one label" "Filed issue #7: https://example/7 | [labels[]=state: ready] [labels[]=bug]" "$io_out | $(grep '^\[labels' "$io_dir/args" | tr '\n' ' ' | sed 's/ $//')"
 eq "a low budget says what to do" "GraphQL 312 of 5,000 left, resets 09:19Z (in 23 min); REST 3,469 of 5,000 left. Low: use the REST forms (scripts/issue-open.sh, pr-open.sh, pr-checks.sh, gh api) and wait for the reset; never retry before it." "$(budget_line "312	5000	1760001540	3469	5000	1760001540" 1760000200)"
 eq "no record, no line" "" "$(budget_line '' 1760000200)"
 eq "under the floor is low" "yes" "$(budget_low "312	5000	1760001540	3469	5000	1760001540")"
