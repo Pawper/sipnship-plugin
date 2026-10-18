@@ -1320,6 +1320,43 @@ eq "only runner-watch stays hosted" "1" "$(grep -c 'runs-on: ubuntu-latest' "$ro
 eq "runner-watch runs every six hours" "1" "$(grep -c '41 \*/6 \* \* \*' "$root/templates/.github/workflows/runner-watch.yml")"
 eq "state-label runs once per issue per burst" "1" "$(grep -c 'group: state-label-\${{ github.event.issue.number }}' "$root/templates/.github/workflows/state-label.yml")"
 eq "a scheduled deploy with interval 0 does nothing" "1" "$(grep -c 'intervalMinutes is 0' "$root/templates/.github/workflows/deploy.yml")"
+# --- The sync judges a file by its content against every released version.
+eq "unfill puts a project's runner back to its placeholder" "    runs-on: RUNS_ON
+    shell: RUN_SHELL" "$(unfill_text "$(printf '    runs-on: [self-hosted, windows]\n    shell: bash')" '[self-hosted, windows]' bash)"
+eq "unfill leaves another runner alone" "    runs-on: ubuntu-latest" "$(unfill_text '    runs-on: ubuntu-latest' '[self-hosted, windows]' bash)"
+eq "a workflow's scripts are found" "scripts/ci/lib.sh
+scripts/board-sync.sh" "$(sourced_scripts "$(printf '        run: |\n          . scripts/ci/lib.sh\n          sh scripts/board-sync.sh 8 me\n')")"
+eq "a script tested for first is optional" "" "$(sourced_scripts "$(printf '          if [ -f scripts/ci/batch-lib.sh ]; then\n            . scripts/ci/batch-lib.sh\n          fi\n')")"
+km_known="$(printf 'a/x.yml %s\n' "$(norm_hash "$(printf '    runs-on: RUNS_ON')")")"
+eq "a filled workflow matches its released version" "yes" "$(known_match "$km_known" a/x.yml '    runs-on: [self-hosted]' '[self-hosted]' '')"
+eq "a project's own file matches none" "no" "$(known_match "$km_known" a/x.yml '    runs-on: [mine]' '[self-hosted]' '')"
+km_missing=$(for p in $(owned_paths "$(cat "$root/templates/OWNED.txt")"); do grep -qxF "$p $(norm_hash "$(cat "$root/templates/$p")")" "$root/templates/KNOWN.txt" || echo "$p"; done)
+eq "every current template is in KNOWN.txt (run scripts/sync/known-hashes.sh before a release)" "" "$km_missing"
+
+# The sync in a throwaway project: its own workflow is never replaced, and
+# a workflow is refused rather than written broken.
+ss_new() {
+  ss_d=$(mktemp -d)
+  git -C "$ss_d" init -q -b main
+  git -C "$ss_d" config user.email t@example.com; git -C "$ss_d" config user.name t
+  mkdir -p "$ss_d/scripts" "$ss_d/.github/workflows"
+  cp "$root/templates/scripts/board-lib.sh" "$ss_d/scripts/board-lib.sh"
+  echo "$ss_d"
+}
+ss_d=$(ss_new)
+printf 'name: Our own audit\non: workflow_dispatch\njobs:\n  a:\n    runs-on: [self-hosted]\n    steps:\n      - run: echo ours\n' > "$ss_d/.github/workflows/audit.yml"
+printf 'jobs:\n  checks:\n    runs-on: [self-hosted, windows]\n    defaults:\n      run:\n        shell: bash\n' > "$ss_d/.github/workflows/ci.yml"
+git -C "$ss_d" add -A; git -C "$ss_d" commit -q -m start
+ss_out=$(cd "$ss_d" && sh "$root/scripts/sync/sync-templates.sh" --apply --force --no-commit 2>&1)
+eq "a project's own workflow is named as its own" "1" "$(printf '%s\n' "$ss_out" | grep -c 'own:      .github/workflows/audit.yml')"
+eq "and never replaced, --force included" "name: Our own audit" "$(head -n 1 "$ss_d/.github/workflows/audit.yml")"
+eq "a workflow whose script is missing is refused, not written" "1 no" "$(printf '%s\n' "$ss_out" | grep -c 'refused:  .github/workflows/state-label.yml runs scripts/ci/lib.sh') $([ -f "$ss_d/.github/workflows/state-label.yml" ] && echo yes || echo no)"
+
+ss_d=$(ss_new)
+mkdir -p "$ss_d/scripts/ci"; cp "$root/templates/scripts/ci/lib.sh" "$ss_d/scripts/ci/lib.sh"
+git -C "$ss_d" add -A; git -C "$ss_d" commit -q -m start
+ss_out=$(cd "$ss_d" && sh "$root/scripts/sync/sync-templates.sh" --apply --no-commit 2>&1)
+eq "with no runner to copy, a workflow is refused, not written with RUNS_ON" "1 no" "$(printf '%s\n' "$ss_out" | grep -c 'refused:  .github/workflows/state-label.yml needs to know') $([ -f "$ss_d/.github/workflows/state-label.yml" ] && echo yes || echo no)"
 eq "a placeholder inside a longer name is left alone" "vars.DEPLOY_RUNS_ON and [self-hosted]" "$(fill_placeholder 'vars.DEPLOY_RUNS_ON and RUNS_ON' RUNS_ON '[self-hosted]')"
 eq "an ampersand in the value is literal" "runs-on: a & b" "$(fill_placeholder 'runs-on: RUNS_ON' RUNS_ON 'a & b')"
 eq "every occurrence on a line is filled" "x [self-hosted] y [self-hosted]" "$(fill_placeholder 'x RUNS_ON y RUNS_ON' RUNS_ON '[self-hosted]')"

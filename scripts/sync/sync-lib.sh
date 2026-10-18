@@ -197,3 +197,67 @@ per_merge_release() {
 release_workflows() {
   printf '%s' "$1" | tr -d '\r\n' | sed -n 's/.*"releases"[ \t]*:[ \t]*\[\([^]]*\)\].*/\1/p' | tr ',' '\n' | sed 's/[" \t]//g; /^$/d'
 }
+
+# norm_hash TEXT
+# A content hash of TEXT that ignores carriage returns and trailing
+# newlines, the same way same_text does, so a Windows checkout of a file
+# hashes as its template does.
+norm_hash() {
+  printf '%s\n' "$1" | tr -d '\r' | git hash-object --stdin
+}
+
+# unfill_text TEXT RUNS_ON RUN_SHELL
+# TEXT with a "runs-on:" line whose value is exactly RUNS_ON, and a
+# "shell:" line whose value is exactly RUN_SHELL, put back to the
+# placeholders: a workflow the sync filled, as its template was. An empty
+# value leaves its lines alone.
+unfill_text() {
+  UF_RO=$2 UF_RS=$3 awk '
+    function rest(line, key,   i) { i = index(line, key); return substr(line, i + length(key)) }
+    function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t\r]+$/, "", s); return s }
+    {
+      line = $0
+      if (ENVIRON["UF_RO"] != "" && line ~ /^[ \t]*runs-on:/ && trim(rest(line, "runs-on:")) == ENVIRON["UF_RO"]) {
+        sub(/runs-on:.*/, "runs-on: RUNS_ON", line)
+      } else if (ENVIRON["UF_RS"] != "" && line ~ /^[ \t]*shell:/ && trim(rest(line, "shell:")) == ENVIRON["UF_RS"]) {
+        sub(/shell:.*/, "shell: RUN_SHELL", line)
+      }
+      print line
+    }' <<UFEOF
+$1
+UFEOF
+}
+
+# known_match KNOWN PATH TEXT RUNS_ON RUN_SHELL
+# "yes" when TEXT is a released version of the plugin file PATH: its hash,
+# as written or with the project's runner and shell put back to their
+# placeholders, is a "PATH HASH" line of KNOWN (templates/KNOWN.txt).
+known_match() {
+  km_a=$(norm_hash "$3")
+  km_b=$(norm_hash "$(unfill_text "$3" "$4" "$5")")
+  if printf '%s\n' "$1" | grep -qxF -e "$2 $km_a" -e "$2 $km_b"; then echo yes; else echo no; fi
+}
+
+# sourced_scripts TEXT
+# The repository scripts a workflow sources or runs (". scripts/x.sh",
+# "sh scripts/x.sh"), one per line, except those it first tests for with
+# "-f scripts/x.sh": a guarded one is optional. A workflow written without
+# a script it needs fails on every run, and one sync once did that to a
+# project that had its own board tools.
+sourced_scripts() {
+  printf '%s\n' "$1" | tr -d '\r' | awk '
+    {
+      line = $0
+      while (match(line, /-f[ \t]+scripts\/[A-Za-z0-9_.\/-]+/)) {
+        g = substr(line, RSTART, RLENGTH); sub(/^-f[ \t]+/, "", g); guarded[g] = 1
+        line = substr(line, RSTART + RLENGTH)
+      }
+      line = $0
+      while (match(line, /(^|[ \t;&|(])(\.|sh)[ \t]+scripts\/[A-Za-z0-9_.\/-]+/)) {
+        s = substr(line, RSTART, RLENGTH); sub(/^.*(\.|sh)[ \t]+/, "", s)
+        if (!(s in seen)) { seen[s] = 1; order[++n] = s }
+        line = substr(line, RSTART + RLENGTH)
+      }
+    }
+    END { for (i = 1; i <= n; i++) if (!(order[i] in guarded)) print order[i] }'
+}

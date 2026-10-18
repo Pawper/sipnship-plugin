@@ -17,10 +17,22 @@
 #
 # What it does with each kind of file:
 #   - Plugin-owned scripts and workflows (templates/OWNED.txt): reported when
-#     missing or different; with --apply, written from the plugin. One the
-#     project has edited since it was copied (more than one commit touches
-#     it) is kept and named, unless --force: a local exception in a check
-#     was once replaced without a word, and CI went red on the next push.
+#     missing or different; with --apply, written from the plugin. A file is
+#     judged by its content against every released version
+#     (templates/KNOWN.txt), never by its name or its commit messages:
+#       matches a version now      the plugin's, refreshed;
+#       matched one once, not now  edited here, kept and named unless
+#                                  --force (a local exception in a check
+#                                  was once replaced without a word);
+#       never matched one          the project's own: never compared or
+#                                  replaced, --force included, and not a
+#                                  sign the feature is in use. A sync once
+#                                  replaced a project's own audit and
+#                                  state-label workflows and they failed
+#                                  every night after.
+#     A workflow is built in memory and written only when its RUNS_ON and
+#     RUN_SHELL could be filled and every script it runs is here or written
+#     in the same sync.
 #   - Config with defaults: added when missing; never replaced.
 #   - The project's own files (ci.yml, .gitattributes, .gitignore):
 #     never touched; it reports the jobs and lines the template has that
@@ -53,13 +65,43 @@ self="sh \"$plugin/scripts/sync/sync-templates.sh\""
 git rev-parse --git-dir >/dev/null 2>&1 || { echo "Run this from the project's root, inside its git repository." >&2; exit 2; }
 version=$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$plugin/.claude-plugin/plugin.json" | head -n 1)
 owned=$(cat "$tpl/OWNED.txt")
+known=$(cat "$tpl/KNOWN.txt" 2>/dev/null || true)
+# Where the project's jobs run and in which shell, from its own ci.yml:
+# filled into the workflows the sync writes, and used to recognise a filled
+# workflow as a released version.
+runs_on=""; run_shell=""
+if [ -f .github/workflows/ci.yml ]; then
+  runs_on=$(ci_runs_on "$(cat .github/workflows/ci.yml)")
+  run_shell=$(ci_shell "$(cat .github/workflows/ci.yml)")
+fi
 
 # Features: refresh and complete the ones this project uses; report, never
 # add, the ones it has none of, since it may have its own tools for them.
 # --only names the features to touch, adopted or not.
 features=$(owned_features "$owned")
-present=""; for p in $(owned_paths "$owned"); do [ -f "$p" ] && present="$present$p
-"; done
+# origin_of PATH: "plugin" when the file here is a released version,
+# "edited" when an earlier commit of it was and it has changed since, "own"
+# when it never was one.
+origin_of() {
+  [ -n "$known" ] || { echo plugin; return; }
+  [ "$(known_match "$known" "$1" "$(cat "$1")" "$runs_on" "$run_shell")" = yes ] && { echo plugin; return; }
+  for o_rev in $(git log --format=%H -- "$1" 2>/dev/null); do
+    o_t=$(git show "$o_rev:$1" 2>/dev/null) || continue
+    if [ "$(known_match "$known" "$1" "$o_t" "$runs_on" "$run_shell")" = yes ]; then echo edited; return; fi
+  done
+  echo own
+}
+present=""; own=""; edited=""
+for p in $(owned_paths "$owned"); do
+  [ -f "$p" ] || continue
+  case "$(origin_of "$p")" in
+    plugin) present="$present$p
+" ;;
+    edited) present="$present$p
+"; edited="$edited $p" ;;
+    own) own="$own $p" ;;
+  esac
+done
 adopted=$(adopted_features "$features" "$present")
 # A file the project already has is always refreshed (within --only); a
 # missing one is added only for a feature in use or named with --only.
@@ -69,14 +111,6 @@ in_scope() {
   [ -f "$1" ] && return 0
   case " $adopted " in *" $is_f "*) return 0 ;; *) return 1 ;; esac
 }
-# Where the project's jobs run and in which shell, from its own ci.yml:
-# filled into the workflows the sync writes, and into the template a
-# workflow is compared against.
-runs_on=""; run_shell=""
-if [ -f .github/workflows/ci.yml ]; then
-  runs_on=$(ci_runs_on "$(cat .github/workflows/ci.yml)")
-  run_shell=$(ci_shell "$(cat .github/workflows/ci.yml)")
-fi
 changed=""; missing=""; current=0; unadopted=""
 project_owned=$(sed 's/#.*//; s/^[[:space:]]*//; s/[[:space:]]*$//; /^$/d' .claude/project-owned.txt 2>/dev/null || true)
 for p in $(owned_paths "$owned"); do
@@ -85,6 +119,7 @@ $project_owned
 " in *"
 $p
 "*) echo "  project:  $p (listed in .claude/project-owned.txt; never compared or written)"; continue ;; esac
+  case " $own " in *" $p "*) echo "  own:      $p is this project's own file (it matches no SipNShip version); never compared or replaced, --force included"; continue ;; esac
   if ! in_scope "$p"; then
     [ -f "$p" ] || unadopted="$unadopted $(feature_of "$features" "$p")"
     continue
@@ -104,17 +139,13 @@ if [ -z "$only" ]; then
 fi
 
 echo "Plugin $version. Plugin-owned files here: $current current, $(printf '%s' "$changed" | wc -w | tr -d ' ') older or edited, $(printf '%s' "$missing" | wc -w | tr -d ' ') missing."
-edited=""
 for p in $changed; do
-  # A file committed more than once has been edited in this project since
-  # it was copied; the refresh would replace that edit, so say so, and
-  # with --apply keep it unless --force.
-  n=$(git log --oneline -- "$p" 2>/dev/null | wc -l | tr -d ' ')
-  if [ "${n:-0}" -gt 1 ]; then
-    echo "  differs:  $p (edited here in $((n - 1)) later commit(s); kept unless --force; check that diff and carry the edit into the template or an issue)"
-    case "$p" in scripts/design/generate.mjs) echo "            a generator that grew blocks of its own is the project's now: add the line scripts/design/generate.mjs to .claude/project-owned.txt, or move the extra output into scripts/design/generate.local.mjs (its extra() hook)" ;; esac
-    edited="$edited $p"
-  else echo "  differs:  $p"; fi
+  case " $edited " in
+    *" $p "*)
+      echo "  differs:  $p (edited here since it was synced; kept unless --force; check that diff and carry the edit into the template or an issue)"
+      case "$p" in scripts/design/generate.mjs) echo "            a generator that grew blocks of its own is the project's now: add the line scripts/design/generate.mjs to .claude/project-owned.txt, or move the extra output into scripts/design/generate.local.mjs (its extra() hook)" ;; esac ;;
+    *) echo "  differs:  $p" ;;
+  esac
 done
 for p in $missing; do echo "  missing:  $p"; done
 if [ -n "$unadopted" ] && [ -z "$only" ]; then
@@ -203,11 +234,11 @@ if [ -f .claude/deploy.json ] && grep -q '"releases"' .claude/deploy.json && ! g
 fi
 # A rebuild a hosted drain may not be able to run.
 if grep -qs '^[[:space:]]*rebuild:' scripts/ci/generated-paths.txt && command -v gh >/dev/null 2>&1; then
-  if gh api "repos/{owner}/{repo}/actions/variables/DEPLOY_JOBS_ON" >/dev/null 2>&1; then
-    echo "  deploy:   the repository variable DEPLOY_JOBS_ON is no longer read; Deploy's plan runs where ci.yml's jobs run. Remove it: gh variable delete DEPLOY_JOBS_ON"
-  fi
   qro=$(gh api "repos/{owner}/{repo}/actions/variables/QUEUE_RUNS_ON" --jq .value 2>/dev/null) || qro=""
   case "$qro" in ''|ubuntu*|windows-latest|macos*) echo "  queue:    scripts/ci/generated-paths.txt names a rebuild, and the scheduled drain runs hosted (${qro:-ubuntu-latest}); if the rebuild needs your machine, set the repository variable QUEUE_RUNS_ON to its runner's label." ;; esac
+fi
+if command -v gh >/dev/null 2>&1 && gh api "repos/{owner}/{repo}/actions/variables/DEPLOY_JOBS_ON" >/dev/null 2>&1; then
+  echo "  deploy:   the repository variable DEPLOY_JOBS_ON is no longer read; Deploy's plan runs where ci.yml's jobs run. Remove it: gh variable delete DEPLOY_JOBS_ON"
 fi
 if [ "$apply" = no ]; then echo "Nothing was changed. To write these on a branch: $self --apply${only:+ --only $(printf '%s' "$only" | tr ' ' ',')}"; exit 0; fi
 
@@ -224,48 +255,60 @@ case "$current" in
     git checkout -q -b "$branch" ;;
   *) branch=$current ;;
 esac
-# A workflow the sync adds carries RUNS_ON and RUN_SHELL, filled from the
-# project's ci.yml (read above).
+# A workflow is built in memory, filled with the project's runner and shell
+# (read above), and written only when nothing is left unfilled and every
+# script it runs is here or written now; otherwise it is refused and said.
 written=""
+willwrite=" $changed $missing $defaults "
 for p in $changed $missing $defaults; do
   if [ "$force" = no ]; then
     case " $edited " in *" $p "*) echo "  kept:     $p (edited here; pass --force to replace it)"; continue ;; esac
   fi
-  mkdir -p "$(dirname "$p")"
-  cp "$tpl/$p" "$p"
-  case "$p" in *.sh) chmod +x "$p" 2>/dev/null || true ;; esac
-  if [ "$p" = .claude/numbering.txt ]; then
-    . "$tpl/scripts/ci/numbering-lib.sh"
-    g=$(migration_glob_guess "$(git ls-files 2>/dev/null)")
-    if [ -n "$g" ]; then
-      awk -v g="$g" '/^migration[ \t]/ && !done { print "migration " g; done = 1; next } { print }' "$p" > "$p.tmp" && mv "$p.tmp" "$p"
-      echo "  numbering: migrations are in $g here; .claude/numbering.txt says so"
-    fi
-  fi
   case "$p" in
     .github/workflows/*.yml)
-      if [ -n "$runs_on" ] && grep -qw 'RUNS_ON' "$p"; then
-        fill_placeholder "$(cat "$p")" RUNS_ON "$runs_on" > "$p.tmp" && mv "$p.tmp" "$p"
-        echo "  filled:   RUNS_ON in $p from ci.yml ($runs_on)"
+      w_text=$(filled_text "$(cat "$tpl/$p")" "$runs_on" "$run_shell")
+      if printf '%s
+' "$w_text" | grep -qw 'RUNS_ON\|RUN_SHELL'; then
+        echo "  refused:  $p needs to know where this project's jobs run, and ci.yml has no plain runs-on or shell to copy (none, or an expression); not written. Give ci.yml's first job a plain runs-on and shell, or write this file by hand."
+        continue
       fi
-      if [ -n "$run_shell" ] && grep -qw 'RUN_SHELL' "$p"; then
-        fill_placeholder "$(cat "$p")" RUN_SHELL "$run_shell" > "$p.tmp" && mv "$p.tmp" "$p"
-        echo "  filled:   RUN_SHELL in $p from ci.yml"
+      w_missing=""
+      for w_s in $(sourced_scripts "$w_text"); do
+        [ -f "$w_s" ] && continue
+        case "$willwrite" in *" $w_s "*) continue ;; esac
+        w_missing="$w_missing $w_s"
+      done
+      if [ -n "$w_missing" ]; then
+        echo "  refused:  $p runs$w_missing, which this project does not have and this sync does not add; not written, since it would fail on every run."
+        continue
       fi
-      needs=$(workflow_needs "$(cat "$p")")
-      [ -n "$needs" ] && echo "  needs:    $p reads $needs; set them in the repository before its first run"
-      grep -qw 'RUNS_ON\|RUN_SHELL' "$p" && echo "  todo:     $p still has a RUNS_ON or RUN_SHELL placeholder to fill"
-      # A workflow with a stray control byte fails every run with no jobs
-      # and nothing says why; refuse to commit one.
-      if [ "$(control_bytes "$(cat "$p")")" = yes ]; then
-        echo "  refused:  $p holds a control character after filling; not committing. Check the shell line in ci.yml." >&2
-        git checkout -q -- "$p" 2>/dev/null || rm -f "$p"
-        exit 1
+      if [ "$(control_bytes "$w_text")" = yes ]; then
+        echo "  refused:  $p would hold a control character after filling; not written. Check the shell line in ci.yml." >&2
+        continue
+      fi
+      mkdir -p "$(dirname "$p")"
+      printf '%s
+' "$w_text" > "$p"
+      if [ -n "$runs_on" ] && grep -qw 'RUNS_ON' "$tpl/$p"; then echo "  filled:   RUNS_ON in $p from ci.yml ($runs_on)"; fi
+      if [ -n "$run_shell" ] && grep -qw 'RUN_SHELL' "$tpl/$p"; then echo "  filled:   RUN_SHELL in $p from ci.yml"; fi
+      needs=$(workflow_needs "$w_text")
+      [ -n "$needs" ] && echo "  needs:    $p reads $needs; set them in the repository before its first run" ;;
+    *)
+      mkdir -p "$(dirname "$p")"
+      cp "$tpl/$p" "$p"
+      case "$p" in *.sh) chmod +x "$p" 2>/dev/null || true ;; esac
+      if [ "$p" = .claude/numbering.txt ]; then
+        . "$tpl/scripts/ci/numbering-lib.sh"
+        g=$(migration_glob_guess "$(git ls-files 2>/dev/null)")
+        if [ -n "$g" ]; then
+          awk -v g="$g" '/^migration[ 	]/ && !done { print "migration " g; done = 1; next } { print }' "$p" > "$p.tmp" && mv "$p.tmp" "$p"
+          echo "  numbering: migrations are in $g here; .claude/numbering.txt says so"
+        fi
       fi ;;
   esac
   written="$written $p"
 done
-[ -n "$(printf '%s' "$written" | tr -d ' ')" ] || { echo "Nothing written: every differing file was edited here. Pass --force to replace them."; git checkout -q -; exit 0; }
+[ -n "$(printf '%s' "$written" | tr -d ' ')" ] || { echo "Nothing written: every differing file was edited here or refused above."; git checkout -q -; exit 0; }
 # Scripts must stay LF: a repository that checks out CRLF breaks every
 # shell script it copies. Pin the types the sync writes, once.
 lf_add=""
