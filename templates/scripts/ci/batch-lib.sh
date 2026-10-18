@@ -482,6 +482,17 @@ deploy_gate() {
   fi
 }
 
+# held_note N
+# The line for N green pull requests on hold, which the gate does not wait
+# for because a drain never lands them; nothing when N is 0.
+held_note() {
+  case "$1" in
+    ''|0) ;;
+    1) echo "deploy: 1 green PR on hold, not waited for" ;;
+    *) echo "deploy: $1 green PRs on hold, not waited for" ;;
+  esac
+}
+
 # deploy_state GREEN LAST_EPOCH NOW INTERVAL_MIN
 # One line for --status and the brief: "deploy: held, 2 green PRs waiting;
 # last deploy 35 min ago" or "deploy: due; last deploy 70 min ago (interval

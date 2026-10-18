@@ -37,14 +37,26 @@ last=""
 if [ -n "$last_at" ]; then
   last=$(date -u -d "$last_at" +%s 2>/dev/null || date -u -j -f %Y-%m-%dT%H:%M:%SZ "$last_at" +%s 2>/dev/null || true)
 fi
-green=0
+# Only a pull request the drain would land holds the deploy: not a draft,
+# and not held (a queue:hold label or a "Queue: hold" line, the drain's own
+# held_reason). A held one never lands in a drain, so waiting for it once
+# kept a merged fix from deploying at all; it is counted apart and said.
+green=0; held_green=0
 if [ "$mode" = full ]; then
-  for sha in $(gh api "repos/{owner}/{repo}/pulls?state=open&base=$base&per_page=100" --jq '.[] | select(.draft == false) | .head.sha' 2>/dev/null); do
+  tab=$(printf '\t')
+  gh api "repos/{owner}/{repo}/pulls?state=open&base=$base&per_page=100" --jq '.[] | select(.draft == false) | "\(.head.sha)\t\([.labels[].name] | join(","))\t\((.body // "") | gsub("[\r\n]+"; " | "))"' 2>/dev/null > "${TMPDIR:-/tmp}/deploy-gate.$$" || true
+  while IFS="$tab" read -r sha g_labels g_body; do
+    [ -n "$sha" ] || continue
     st=$(gh api "repos/{owner}/{repo}/commits/$sha/check-runs?per_page=100" --jq '[.check_runs[] | .conclusion] | if length == 0 then "none" elif all(. == "success" or . == "skipped" or . == "neutral") then "green" else "other" end' 2>/dev/null | tr -d '\r')
-    if [ "$st" = green ]; then green=$((green + 1)); fi
-  done
+    [ "$st" = green ] || continue
+    g_why=$(held_reason "$(printf '%s' "$g_labels" | tr ',' '\n')" "$(printf '%s' "$g_body" | sed 's/ | /\
+/g')")
+    if [ -n "$g_why" ]; then held_green=$((held_green + 1)); else green=$((green + 1)); fi
+  done < "${TMPDIR:-/tmp}/deploy-gate.$$"
+  rm -f "${TMPDIR:-/tmp}/deploy-gate.$$"
 fi
 now=$(date +%s)
 deploy_state "$green" "$last" "$now" "$interval"
+held_note "$held_green"
 if [ -n "$(deploy_gate "$green" "$last" "$now" "$interval")" ]; then exit 1; fi
 exit 0
