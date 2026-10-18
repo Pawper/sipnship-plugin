@@ -12,6 +12,14 @@
 # board uses it. The checkout uses the default token, which is why this
 # workflow needs "contents: read" below: without it the checkout fails with
 # "repository not found" on every issue event.
+# Where it runs: where the project's CI runs. RUNS_ON and RUN_SHELL are
+# filled from .github/workflows/ci.yml by the bootstrap and the template
+# sync, so a project with self-hosted runners spends no hosted minutes here;
+# in a private repository every hosted job bills at least a minute, and
+# these once used up one project's free allowance and stopped its deploys.
+# Not a repository variable: on a Windows runner the shell must change with
+# the runner (a bare "bash" there is the WSL stub), and GitHub reads
+# "shell:" before any expression.
 name: Board sync
 
 on:
@@ -29,20 +37,22 @@ permissions:
 # issue within seconds, each spending GraphQL points on the same board;
 # ten such runs tripped GitHub's secondary limit together. The group
 # collapses a burst to one run, and the sync reads every issue anyway.
+# One run per issue per burst, and the nightly full sync on its own: a later
+# event for the same issue cancels the run before it.
 concurrency:
-  group: board-sync
+  group: board-sync-${{ github.event.issue.number || 'all' }}
   cancel-in-progress: true
 
 jobs:
   sync:
-    runs-on: ubuntu-latest
+    runs-on: RUNS_ON
     steps:
       - uses: actions/checkout@v4
       - name: Make labels, State and Status agree
         env:
           GH_TOKEN: ${{ secrets.PROJECT_TOKEN }}
           GH_REPO: ${{ github.repository }}
-        shell: sh
+        shell: RUN_SHELL
         run: |
           if [ -z "$GH_TOKEN" ]; then
             echo "PROJECT_TOKEN is not set; the sync cannot write to the board. See the comment at the top of this workflow."

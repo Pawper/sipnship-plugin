@@ -2,6 +2,14 @@
 # no State label, a PR merged in the last day whose issue is still open and
 # still labeled ready, or a red-main issue nobody has closed. It leaves one
 # comment on the tracking issue labeled "audit" and says nothing when clean.
+# Where it runs: where the project's CI runs. RUNS_ON and RUN_SHELL are
+# filled from .github/workflows/ci.yml by the bootstrap and the template
+# sync, so a project with self-hosted runners spends no hosted minutes here;
+# in a private repository every hosted job bills at least a minute, and
+# these once used up one project's free allowance and stopped its deploys.
+# Not a repository variable: on a Windows runner the shell must change with
+# the runner (a bare "bash" there is the WSL stub), and GitHub reads
+# "shell:" before any expression.
 name: Audit
 
 on:
@@ -16,7 +24,7 @@ permissions:
 
 jobs:
   audit:
-    runs-on: ubuntu-latest
+    runs-on: RUNS_ON
     steps:
       - uses: actions/checkout@v4
         with:
@@ -28,7 +36,7 @@ jobs:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-        shell: sh
+        shell: RUN_SHELL
         run: |
           . scripts/ci/lib.sh
 

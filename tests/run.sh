@@ -1297,6 +1297,16 @@ eq "the shell from a project workflow, quotes kept" "'C:\\PROGRA~1\\Git\\bin\\ba
     shell: 'C:\\PROGRA~1\\Git\\bin\\bash.exe -eo pipefail {0}'")"
 eq "a RUN_SHELL placeholder is not a value" "" "$(ci_shell '    shell: RUN_SHELL')"
 eq "a Windows shell path is filled with its backslashes intact" "    shell: 'C:\\PROGRA~1\\Git\\bin\\bash.exe -eo pipefail {0}'" "$(fill_placeholder '    shell: RUN_SHELL' RUN_SHELL "'C:\\PROGRA~1\\Git\\bin\\bash.exe -eo pipefail {0}'")"
+eq "a workflow is compared with the project's runner and shell filled" "    runs-on: [self-hosted, windows]
+    shell: bash" "$(filled_text "$(printf '    runs-on: RUNS_ON\n    shell: RUN_SHELL')" '[self-hosted, windows]' bash)"
+eq "an empty value leaves its placeholder" "    runs-on: RUNS_ON" "$(filled_text '    runs-on: RUNS_ON' '' '')"
+for hk in state-label board-sync audit; do
+  eq "$hk runs where the project's CI runs" "0" "$(grep -v '^#' "$root/templates/.github/workflows/$hk.yml" | grep -c 'ubuntu-latest')"
+done
+eq "only runner-watch stays hosted" "1" "$(grep -c 'runs-on: ubuntu-latest' "$root/templates/.github/workflows/runner-watch.yml")"
+eq "runner-watch runs every six hours" "1" "$(grep -c '41 \*/6 \* \* \*' "$root/templates/.github/workflows/runner-watch.yml")"
+eq "state-label runs once per issue per burst" "1" "$(grep -c 'group: state-label-\${{ github.event.issue.number }}' "$root/templates/.github/workflows/state-label.yml")"
+eq "a scheduled deploy with interval 0 does nothing" "1" "$(grep -c 'intervalMinutes is 0' "$root/templates/.github/workflows/deploy.yml")"
 eq "a placeholder inside a longer name is left alone" "vars.DEPLOY_RUNS_ON and [self-hosted]" "$(fill_placeholder 'vars.DEPLOY_RUNS_ON and RUNS_ON' RUNS_ON '[self-hosted]')"
 eq "an ampersand in the value is literal" "runs-on: a & b" "$(fill_placeholder 'runs-on: RUNS_ON' RUNS_ON 'a & b')"
 eq "every occurrence on a line is filled" "x [self-hosted] y [self-hosted]" "$(fill_placeholder 'x RUNS_ON y RUNS_ON' RUNS_ON '[self-hosted]')"

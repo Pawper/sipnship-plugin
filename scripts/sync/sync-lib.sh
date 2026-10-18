@@ -132,6 +132,17 @@ ci_shell() {
   printf '%s\n' "$1" | tr -d '\r' | sed -n 's/^[ \t]*shell:[ \t]*//p' | sed 's/[ \t]*$//' | awk '$0 != "" && $0 != "RUN_SHELL" { print; exit }'
 }
 
+# filled_text TEXT RUNS_ON RUN_SHELL
+# TEXT with the RUNS_ON and RUN_SHELL placeholders filled by the values
+# given, each only when it is not empty: the template as this project would
+# have it, so a workflow the sync filled compares as current, not edited.
+filled_text() {
+  ft_t=$1
+  [ -n "$2" ] && ft_t=$(fill_placeholder "$ft_t" RUNS_ON "$2")
+  [ -n "$3" ] && ft_t=$(fill_placeholder "$ft_t" RUN_SHELL "$3")
+  printf '%s\n' "$ft_t"
+}
+
 # fill_placeholder TEXT NAME VALUE
 # TEXT with every occurrence of NAME replaced by VALUE, literally: VALUE
 # goes in through the environment, never through awk -v or a format

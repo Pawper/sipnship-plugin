@@ -20,6 +20,11 @@
 #   DEPLOY_JOBS_ON   where the plan and the Vercel-built deploy run:
 #                    "ubuntu-latest" (the default), or the runner's array
 #                    when the repository has no hosted minutes
+#                    (deploy-setup.sh sets it so for a private repository;
+#                    unset, every scheduled and per-landing plan bills a
+#                    hosted minute)
+# With intervalMinutes 0 in .claude/deploy.json the queue deploys after each
+# landing, and the scheduled run ends at once.
 # The interval comes from .claude/deploy.json; the schedule only wakes the
 # plan. Every step runs in bash on Linux or macOS; nothing needs jq.
 #
@@ -76,6 +81,10 @@ jobs:
           sha=$(git rev-parse HEAD)
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           no() { echo "deploy=no" >> "$GITHUB_OUTPUT"; exit "${1:-0}"; }
+          if [ "$interval" = 0 ] && [ "$GITHUB_EVENT_NAME" = schedule ]; then
+            echo "intervalMinutes is 0: the queue deploys after each landing, so the scheduled run has nothing to do."
+            no
+          fi
           if [ "$path" = guard ]; then
             echo "This project deploys by the guard path (Git deploys from main, guarded in vercel.json); this workflow has nothing to do."
             no

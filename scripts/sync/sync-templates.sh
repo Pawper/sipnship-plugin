@@ -69,6 +69,14 @@ in_scope() {
   [ -f "$1" ] && return 0
   case " $adopted " in *" $is_f "*) return 0 ;; *) return 1 ;; esac
 }
+# Where the project's jobs run and in which shell, from its own ci.yml:
+# filled into the workflows the sync writes, and into the template a
+# workflow is compared against.
+runs_on=""; run_shell=""
+if [ -f .github/workflows/ci.yml ]; then
+  runs_on=$(ci_runs_on "$(cat .github/workflows/ci.yml)")
+  run_shell=$(ci_shell "$(cat .github/workflows/ci.yml)")
+fi
 changed=""; missing=""; current=0; unadopted=""
 project_owned=$(sed 's/#.*//; s/^[[:space:]]*//; s/[[:space:]]*$//; /^$/d' .claude/project-owned.txt 2>/dev/null || true)
 for p in $(owned_paths "$owned"); do
@@ -82,7 +90,11 @@ $p
     continue
   fi
   if [ ! -f "$p" ]; then missing="$missing $p"; continue; fi
-  if [ "$(same_text "$(cat "$p")" "$(cat "$tpl/$p")")" = yes ]; then current=$((current + 1)); else changed="$changed $p"; fi
+  case "$p" in
+    .github/workflows/*.yml) want=$(filled_text "$(cat "$tpl/$p")" "$runs_on" "$run_shell") ;;
+    *) want=$(cat "$tpl/$p") ;;
+  esac
+  if [ "$(same_text "$(cat "$p")" "$want")" = yes ]; then current=$((current + 1)); else changed="$changed $p"; fi
 done
 defaults=""
 # A feature's config defaults go to a project that uses the feature; one
@@ -209,13 +221,8 @@ case "$current" in
     git checkout -q -b "$branch" ;;
   *) branch=$current ;;
 esac
-# A workflow the sync adds carries RUNS_ON and RUN_SHELL; when the project's
-# own ci.yml already says where jobs run and which shell, use that.
-runs_on=""; run_shell=""
-if [ -f .github/workflows/ci.yml ]; then
-  runs_on=$(ci_runs_on "$(cat .github/workflows/ci.yml)")
-  run_shell=$(ci_shell "$(cat .github/workflows/ci.yml)")
-fi
+# A workflow the sync adds carries RUNS_ON and RUN_SHELL, filled from the
+# project's ci.yml (read above).
 written=""
 for p in $changed $missing $defaults; do
   if [ "$force" = no ]; then

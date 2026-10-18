@@ -14,7 +14,7 @@ name: Runner watch
 
 on:
   schedule:
-    - cron: "41 * * * *"
+    - cron: "41 */6 * * *"
   workflow_dispatch:
 
 permissions:
