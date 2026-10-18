@@ -17,12 +17,12 @@
 # this file, so the sync can keep it current:
 #   DEPLOY_RUNNER    the runner path's build machine, a JSON array such as
 #                    ["self-hosted","Linux"]
-#   DEPLOY_JOBS_ON   where the plan and the Vercel-built deploy run:
-#                    "ubuntu-latest" (the default), or the runner's array
-#                    when the repository has no hosted minutes
-#                    (deploy-setup.sh sets it so for a private repository;
-#                    unset, every scheduled and per-landing plan bills a
-#                    hosted minute)
+# The plan and the Vercel-built deploy run where the project's CI runs:
+# RUNS_ON and RUN_SHELL, filled from .github/workflows/ci.yml by the
+# bootstrap and the template sync, so the runner and its shell always agree.
+# The DEPLOY_JOBS_ON variable this file once read is gone: a variable can
+# choose the runner but never the shell, and on a Windows runner a bare
+# "bash" is the WSL stub, which failed one project's every deploy.
 # With intervalMinutes 0 in .claude/deploy.json the queue deploys after each
 # landing, and the scheduled run ends at once.
 # The interval comes from .claude/deploy.json; the schedule only wakes the
@@ -53,7 +53,7 @@ concurrency:
 
 jobs:
   plan:
-    runs-on: ${{ fromJSON(vars.DEPLOY_JOBS_ON || '"ubuntu-latest"') }}
+    runs-on: RUNS_ON
     outputs:
       deploy: ${{ steps.plan.outputs.deploy }}
       path: ${{ steps.plan.outputs.path }}
@@ -64,7 +64,7 @@ jobs:
           ref: main
           fetch-depth: 0
       - id: plan
-        shell: bash
+        shell: RUN_SHELL
         env:
           GH_TOKEN: ${{ github.token }}
           ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
@@ -150,7 +150,7 @@ jobs:
     # The fallback: the path is vercel, or the runner build failed.
     needs: [plan, build-on-runner]
     if: always() && needs.plan.outputs.deploy == 'yes' && (needs.plan.outputs.path == 'vercel' || needs.build-on-runner.result == 'failure')
-    runs-on: ${{ fromJSON(vars.DEPLOY_JOBS_ON || '"ubuntu-latest"') }}
+    runs-on: RUNS_ON
     timeout-minutes: 30
     env:
       VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
@@ -162,17 +162,17 @@ jobs:
           ref: ${{ needs.plan.outputs.sha }}
       - name: Say so when this is a fallback
         if: needs.build-on-runner.result == 'failure'
-        shell: bash
+        shell: RUN_SHELL
         run: |
           echo "::warning title=Deploy fell back to a Vercel build::The runner build failed, so this deploy is built on Vercel and bills its build minutes. Look at the build-on-runner job; the nightly audit repeats this until a runner build succeeds."
       - name: Deploy, built on Vercel
-        shell: bash
+        shell: RUN_SHELL
         run: |
           set -- --prod --yes --token="$VERCEL_TOKEN"
           if [ -f scripts/ci/build-id.sh ]; then bid=$(sh scripts/ci/build-id.sh HEAD); echo "Build $bid"; set -- "$@" --build-env NEXT_PUBLIC_BUILD_ID="$bid" --env NEXT_PUBLIC_BUILD_ID="$bid"; fi
           npx --yes vercel@latest deploy "$@"
       - name: Record the deployed commit
-        shell: bash
+        shell: RUN_SHELL
         env:
           GH_TOKEN: ${{ github.token }}
           SHA: ${{ needs.plan.outputs.sha }}

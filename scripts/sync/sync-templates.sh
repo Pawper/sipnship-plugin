@@ -203,6 +203,9 @@ if [ -f .claude/deploy.json ] && grep -q '"releases"' .claude/deploy.json && ! g
 fi
 # A rebuild a hosted drain may not be able to run.
 if grep -qs '^[[:space:]]*rebuild:' scripts/ci/generated-paths.txt && command -v gh >/dev/null 2>&1; then
+  if gh api "repos/{owner}/{repo}/actions/variables/DEPLOY_JOBS_ON" >/dev/null 2>&1; then
+    echo "  deploy:   the repository variable DEPLOY_JOBS_ON is no longer read; Deploy's plan runs where ci.yml's jobs run. Remove it: gh variable delete DEPLOY_JOBS_ON"
+  fi
   qro=$(gh api "repos/{owner}/{repo}/actions/variables/QUEUE_RUNS_ON" --jq .value 2>/dev/null) || qro=""
   case "$qro" in ''|ubuntu*|windows-latest|macos*) echo "  queue:    scripts/ci/generated-paths.txt names a rebuild, and the scheduled drain runs hosted (${qro:-ubuntu-latest}); if the rebuild needs your machine, set the repository variable QUEUE_RUNS_ON to its runner's label." ;; esac
 fi
@@ -241,17 +244,17 @@ for p in $changed $missing $defaults; do
   fi
   case "$p" in
     .github/workflows/*.yml)
-      if [ -n "$runs_on" ] && grep -q 'RUNS_ON' "$p"; then
+      if [ -n "$runs_on" ] && grep -qw 'RUNS_ON' "$p"; then
         fill_placeholder "$(cat "$p")" RUNS_ON "$runs_on" > "$p.tmp" && mv "$p.tmp" "$p"
         echo "  filled:   RUNS_ON in $p from ci.yml ($runs_on)"
       fi
-      if [ -n "$run_shell" ] && grep -q 'RUN_SHELL' "$p"; then
+      if [ -n "$run_shell" ] && grep -qw 'RUN_SHELL' "$p"; then
         fill_placeholder "$(cat "$p")" RUN_SHELL "$run_shell" > "$p.tmp" && mv "$p.tmp" "$p"
         echo "  filled:   RUN_SHELL in $p from ci.yml"
       fi
       needs=$(workflow_needs "$(cat "$p")")
       [ -n "$needs" ] && echo "  needs:    $p reads $needs; set them in the repository before its first run"
-      grep -q 'RUNS_ON\|RUN_SHELL' "$p" && echo "  todo:     $p still has a RUNS_ON or RUN_SHELL placeholder to fill"
+      grep -qw 'RUNS_ON\|RUN_SHELL' "$p" && echo "  todo:     $p still has a RUNS_ON or RUN_SHELL placeholder to fill"
       # A workflow with a stray control byte fails every run with no jobs
       # and nothing says why; refuse to commit one.
       if [ "$(control_bytes "$(cat "$p")")" = yes ]; then

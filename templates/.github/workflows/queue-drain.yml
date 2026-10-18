@@ -11,9 +11,11 @@
 # the batch checkout installs its own packages. On a project's own
 # runners it queued behind the pull request checks it was waiting for and
 # then held a runner while it waited, so a two-runner project ran CI on
-# one. To run it on a self-hosted Linux or macOS runner instead, set the
-# repository variable QUEUE_RUNS_ON to its label. Not a Windows runner:
-# this file's shell is bash.
+# one. To run it on a self-hosted runner instead, set the repository
+# variable QUEUE_RUNS_ON to its label. A label naming Windows runs the
+# "drain-windows" job, whose shell is Git's bash by path: on a Windows
+# runner a bare "bash" is the WSL stub, and a shell cannot come from a
+# variable. Both jobs share one list of steps (the YAML anchor below).
 #
 # Each run drains for at most QUEUE_DRAIN_MINUTES (variable, default 25)
 # and skips itself when a drain finished in the last QUEUE_DRAIN_GAP
@@ -44,12 +46,13 @@ concurrency:
 
 jobs:
   drain:
+    if: ${{ !contains(vars.QUEUE_RUNS_ON, 'windows') }}
     runs-on: ${{ vars.QUEUE_RUNS_ON || 'ubuntu-latest' }}
     timeout-minutes: 40
     defaults:
       run:
         shell: bash
-    steps:
+    steps: &drain-steps
       - name: Skip when a drain just ran
         id: recent
         env:
@@ -98,3 +101,12 @@ jobs:
           git config user.name "merge-queue"
           git config user.email "merge-queue@users.noreply.github.com"
           sh scripts/ci/merge-queue.sh --drain
+
+  drain-windows:
+    if: ${{ contains(vars.QUEUE_RUNS_ON, 'windows') }}
+    runs-on: ${{ vars.QUEUE_RUNS_ON }}
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: 'C:\PROGRA~1\Git\bin\bash.exe --noprofile --norc -eo pipefail {0}'
+    steps: *drain-steps

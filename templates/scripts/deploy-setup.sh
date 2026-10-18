@@ -106,13 +106,13 @@ if [ "$path" = guard ]; then
   exit 0
 fi
 
-runs_on='"ubuntu-latest"'; [ "$hosted" = no ] && runs_on=$pick
 setvar() {
   if [ "$have_gh" = yes ] && gh variable set "$1" --body "$2" >/dev/null 2>&1; then echo "Set the repository variable $1 to $2."
   else echo "Set the repository variable $1 to $2 by hand (Settings, Secrets and variables, Actions, Variables)."; fi
 }
 setvar DEPLOY_PATH "$path"
-setvar DEPLOY_JOBS_ON "$runs_on"
+# The plan and the Vercel-built deploy run where ci.yml's jobs run (the
+# RUNS_ON and RUN_SHELL the sync fills), so there is no variable to set.
 [ "$path" = runner ] && setvar DEPLOY_RUNNER "$pick"
 [ -f .github/workflows/deploy.yml ] || echo "Add .github/workflows/deploy.yml: the sync does it with --only deploy."
 cat <<EOF

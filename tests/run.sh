@@ -987,7 +987,7 @@ Closes #64
 Spec: specs/004-dashboard" "$(batch_pr_body "$(printf '79\tAn emote\n')" 'Closes #64
 Spec: specs/004-dashboard
 Closes #64' | tail -n 4)"
-eq "the Deploy workflow has no placeholder for the sync to fill" "0" "$(grep -cw 'RUNS_ON\|RUN_SHELL' "$root/templates/.github/workflows/deploy.yml")"
+eq "the runner-path build keeps its own variable, never a placeholder" "0" "$(awk '/^  build-on-runner:$/{j=1;next} /^  [a-z-]*:$/{j=0} j' "$root/templates/.github/workflows/deploy.yml" | grep -cwE 'RUNS_ON|RUN_SHELL')"
 eq "the Deploy workflow does not need jq" "0" "$(grep -c 'jq -r\| jq ' "$root/templates/.github/workflows/deploy.yml")"
 eq "the queue never reads FETCH_HEAD" "0" "$(grep -c 'rev-parse FETCH_HEAD' "$root/templates/scripts/ci/merge-queue.sh")"
 eq "dirty is conflicting" "CONFLICTING" "$(mergeable_word dirty)"
@@ -1303,6 +1303,11 @@ eq "an empty value leaves its placeholder" "    runs-on: RUNS_ON" "$(filled_text
 for hk in state-label board-sync audit; do
   eq "$hk runs where the project's CI runs" "0" "$(grep -v '^#' "$root/templates/.github/workflows/$hk.yml" | grep -c 'ubuntu-latest')"
 done
+eq "Deploy's plan and Vercel deploy follow ci.yml's runner and shell" "0" "$(grep -c 'DEPLOY_JOBS_ON ||' "$root/templates/.github/workflows/deploy.yml")"
+eq "no bare bash where Deploy follows ci.yml" "0" "$(awk '/^  plan:$/{j=1} /^  build-on-runner:$/{j=0} /^  build-on-vercel:$/{j=1} j && /shell: bash$/{n++} END{print n+0}' "$root/templates/.github/workflows/deploy.yml")"
+eq "a Windows QUEUE_RUNS_ON gets Git's bash" "1" "$(grep -c 'PROGRA~1\\Git\\bin\\bash.exe' "$root/templates/.github/workflows/queue-drain.yml")"
+eq "both drain jobs share one list of steps" "1 1" "$(grep -c 'steps: &drain-steps' "$root/templates/.github/workflows/queue-drain.yml") $(grep -c 'steps: \*drain-steps' "$root/templates/.github/workflows/queue-drain.yml")"
+eq "the placeholder check reads whole words" "0" "$(printf 'runs-on: ${{ vars.QUEUE_RUNS_ON }}\n' | grep -cw 'RUNS_ON\|RUN_SHELL')"
 eq "only runner-watch stays hosted" "1" "$(grep -c 'runs-on: ubuntu-latest' "$root/templates/.github/workflows/runner-watch.yml")"
 eq "runner-watch runs every six hours" "1" "$(grep -c '41 \*/6 \* \* \*' "$root/templates/.github/workflows/runner-watch.yml")"
 eq "state-label runs once per issue per burst" "1" "$(grep -c 'group: state-label-\${{ github.event.issue.number }}' "$root/templates/.github/workflows/state-label.yml")"
