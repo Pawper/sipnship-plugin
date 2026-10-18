@@ -1570,6 +1570,7 @@ eq "and then says so" "Deploys: main has changes waiting 65 minutes that are not
 eq "hourly" "17 * * * *" "$(interval_cron 60)"
 eq "every three hours" "17 */3 * * *" "$(interval_cron 180)"
 eq "every thirty minutes" "*/30 * * * *" "$(interval_cron 30)"
+eq "the scheduled drain runs every two hours" "1" "$(grep -c 'cron: "7 \*/2 \* \* \*"' "$root/templates/.github/workflows/queue-drain.yml")"
 eq "never more often than five minutes" "*/5 * * * *" "$(interval_cron 1)"
 eq "from the root, no way back" "" "$(rel_to_root .)"
 eq "from web, one level" "../" "$(rel_to_root web)"

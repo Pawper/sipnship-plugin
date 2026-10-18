@@ -1,6 +1,10 @@
 # The merge queue on a timer that does not die with a chat session. A
 # drain run with /loop stops when the app closes; six green pull requests
-# once sat all night for that. This runs --drain every thirty minutes.
+# once sat all night for that. This runs --drain every two hours: a
+# backstop, since agents drain after their own work. Every thirty minutes
+# on a hosted runner was up to 1,440 billed minutes a month in a private
+# repository, most of its free allowance, for runs that mostly found
+# nothing to merge.
 #
 # Where it runs: a GitHub-hosted runner by default. The drain needs only
 # git, gh and Node (to type-check a batch), which hosted runners have, and
@@ -26,7 +30,7 @@ name: Queue drain
 
 on:
   schedule:
-    - cron: "*/30 * * * *"
+    - cron: "7 */2 * * *"
   workflow_dispatch:
 
 permissions:
