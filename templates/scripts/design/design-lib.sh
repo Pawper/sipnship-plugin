@@ -100,8 +100,12 @@ role_refs() {
       for (i = 1; i <= n; i++) {
         if (i in hit) continue
         if (match(line, "type-(" lo[i] "|" kb[i] ")([^a-z0-9_-]|$)")) { hit[i] = 1; continue }
-        if (match(line, "[a-z0-9_)\\]]\\." lo[i] "([^a-z0-9_]|$)")) {
-          # a member, unless the name before it is "semantics" (Compose)
+        # A member counts only after a role holder: a name ending in type,
+        # types, role, roles, text or typography (DesignType.Title,
+        # ROLES.body, AtText.sentence). A request body read as
+        # request.body, or foo().body, once made a screen "use" the body
+        # role, and its pair was reported as missing it.
+        if (match(line, "(type|types|role|roles|text|typography)\\." lo[i] "([^a-z0-9_]|$)")) {
           pre = substr(line, 1, RSTART); if (pre !~ /semantics$/) { hit[i] = 1; continue }
         }
         if (index(line, "[\"" lo[i] "\"]") || index(line, "[\047" lo[i] "\047]")) hit[i] = 1
@@ -117,6 +121,17 @@ role_mismatch() {
   rm_a=$(printf '%s\n' "$3" | sed '/^$/d' | sort -u); rm_b=$(printf '%s\n' "$5" | sed '/^$/d' | sort -u)
   printf '%s\n' "$rm_a" | while IFS= read -r k; do [ -n "$k" ] || continue; printf '%s\n' "$rm_b" | grep -qx "$k" || printf '%s: %s uses %s, %s does not\n' "$1" "$2" "$k" "$4"; done
   printf '%s\n' "$rm_b" | while IFS= read -r k; do [ -n "$k" ] || continue; printf '%s\n' "$rm_a" | grep -qx "$k" || printf '%s: %s uses %s, %s does not\n' "$1" "$4" "$k" "$2"; done
+}
+
+# new_lines BEFORE AFTER
+# The lines of AFTER that are not in BEFORE, in AFTER's order: the role
+# mismatches a change adds. A pair that already differed fails no pull
+# request that leaves the gap as it was; one that widens it fails.
+new_lines() {
+  printf '%s\n' "$2" | while IFS= read -r nl_l; do
+    [ -n "$nl_l" ] || continue
+    printf '%s\n' "$1" | grep -qxF -- "$nl_l" || printf '%s\n' "$nl_l"
+  done
 }
 
 # parity_pairs PARITY_TXT

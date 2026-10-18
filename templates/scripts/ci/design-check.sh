@@ -93,13 +93,16 @@ if [ -f scripts/ci/parity.txt ]; then
   # shellcheck disable=SC2086
   changed=$(git diff --name-only $diff_args -- . ':(exclude)**/node_modules/**' ':(exclude)**/build/**' 2>/dev/null)
   # A side is a file, or a folder (ending in "/"): every file under it.
-  rev=${head:-HEAD}
-  listing=$(git ls-tree -r --name-only "$rev" 2>/dev/null)
-  file_roles() {
-    for fr_f in $(side_files "$1" "$listing"); do
-      role_refs "$(git show "$rev:$fr_f" 2>/dev/null || cat "$fr_f" 2>/dev/null)" "$keys"
+  # Roles at a revision: REV empty reads the working tree.
+  file_roles_at() {
+    fr_rev=$2
+    fr_list=$(git ls-tree -r --name-only "${fr_rev:-HEAD}" 2>/dev/null)
+    for fr_f in $(side_files "$1" "$fr_list"); do
+      if [ -n "$fr_rev" ]; then role_refs "$(git show "$fr_rev:$fr_f" 2>/dev/null)" "$keys"
+      else role_refs "$(cat "$fr_f" 2>/dev/null)" "$keys"; fi
     done | sort -u
   }
+  base_rev=$(git merge-base "$base" "${head:-HEAD}" 2>/dev/null || true)
   # A file several pairs name (a native screen holding many web blocks) is
   # compared with the union of its partners' roles, once.
   mism=$(parity_groups "$(parity_pairs "$(cat scripts/ci/parity.txt)")" | while IFS="$(printf '\t')" read -r f partners; do
@@ -108,17 +111,22 @@ if [ -f scripts/ci/parity.txt ]; then
       if [ "$(side_touched "$x" "$changed")" = yes ]; then touched=yes; fi
     done
     [ "$touched" = yes ] || continue
-    rf=$(file_roles "$f")
-    rp=$(for x in $partners; do file_roles "$x"; done | sort -u)
     np=$(printf '%s\n' $partners | wc -l | tr -d ' ')
     if [ "$np" -gt 1 ]; then side="the $np files paired with it"; else
       case "$partners" in */) side="$partners" ;; *) side=$(basename "$partners") ;; esac
     fi
     case "$f" in */) fname=$f ;; *) fname=$(basename "$f") ;; esac
-    role_mismatch "$fname" "$fname" "$rf" "$side" "$rp"
+    # Only what this change adds: the pair's mismatches after it, less
+    # those it already had before. A gap that predates the change passes.
+    after=$(role_mismatch "$fname" "$fname" "$(file_roles_at "$f" "$head")" "$side" "$(for x in $partners; do file_roles_at "$x" "$head"; done | sort -u)")
+    before=""
+    if [ -n "$base_rev" ]; then
+      before=$(role_mismatch "$fname" "$fname" "$(file_roles_at "$f" "$base_rev")" "$side" "$(for x in $partners; do file_roles_at "$x" "$base_rev"; done | sort -u)")
+    fi
+    new_lines "$before" "$after"
   done)
   if [ -n "$mism" ]; then
-    echo "A screen pair references different type roles on its two platforms:" >&2
+    echo "This change makes a screen pair reference different type roles on its two platforms:" >&2
     printf '%s\n' "$mism" | sed 's/^/  /' >&2
     echo "Give both sides the same roles (the role is the unit; its size lives in design/tokens.json), or name the open issue that brings the other side along in a \"Parity: #N\" line." >&2
     if [ -n "$(design_escape "${SPEC_TEXT:-${PR_TEXT:-}}")" ] || printf '%s\n' "${SPEC_TEXT:-${PR_TEXT:-}}" | grep -qiE '^[[:space:]]*parity:'; then

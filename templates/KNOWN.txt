@@ -109,6 +109,7 @@ scripts/ci/deploy-health.sh 80e78147d885a33307203782df32a7dad7f829d9
 scripts/ci/deploy-lib.sh 11c2914d76c712ab8881a2ae3034de01dd9bd18b
 scripts/ci/deploy-lib.sh e0a63fb408591c5af817f252548771989cb3cf70
 scripts/ci/deploy-lib.sh e3316bb09795ecd487470982c4cefcc101b51cb5
+scripts/ci/design-check.sh 019a9c34cf0d4a84844fd0121a66a3442fabad0d
 scripts/ci/design-check.sh 4c41722ab7e78744eb2b048b225a8c5e869aecc4
 scripts/ci/design-check.sh 56932b0b8a8dd47f6e900f9f109b047aa14edbd0
 scripts/ci/design-check.sh 6c29989a5310597373f80079be32c96fa6c697ea
@@ -213,6 +214,7 @@ scripts/deploy-setup.sh 9df664a4c225638c831442c1cf8a14608770cf1b
 scripts/deploy-setup.sh b8493b6f207119aa1d36a3eb03f085fe6a818d8d
 scripts/deploy-setup.sh cfbc11267c503fac49350a3342a3ad461e05e228
 scripts/deploy-setup.sh d749af96733765b13d5fcbe8f51cf366204dcae1
+scripts/design/design-lib.sh 23bcf151c93f9560e118f855f9e24ac592455034
 scripts/design/design-lib.sh 298826faa8343f6bbb042466d1cfa0c65f0c2484
 scripts/design/design-lib.sh 5ecd2b16cec50cd13ed7fa26bb09ed421ff5e65c
 scripts/design/design-lib.sh 652af4d273f04170e0903da3d9cd4005dcb0a159

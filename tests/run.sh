@@ -1515,6 +1515,10 @@ eq "a member after a name and a class are" "heading
 sentence" "$(role_refs "$(printf 'style = AtText.sentence\n<h1 className="type-heading" />')" "$(printf 'heading\nsentence')")"
 eq "a kebab class and a quoted index are" "rowClaim
 body" "$(role_refs "$(printf '<p class="type-row-claim">\nconst b = ROLES["body"]')" "$(printf 'rowClaim\nbody')")"
+eq "a request body is not the body role" "" "$(role_refs "$(printf 'val req = Request(body = json)\nconn.body\nfoo().body')" "$(printf 'body\ntitle')")"
+eq "a role holder's member still is" "body" "$(role_refs 'RoleText(text, DesignType.body)' "$(printf 'body\ntitle')")"
+eq "a gap the pair already had is not new" "" "$(new_lines "$(printf 'S: a uses kicker, b does not')" "$(printf 'S: a uses kicker, b does not')")"
+eq "a one-sided role the change adds is new" "S: a uses label, b does not" "$(new_lines "$(printf 'S: a uses kicker, b does not')" "$(printf 'S: a uses kicker, b does not\nS: a uses label, b does not')")"
 eq "a word that only contains a key is not a reference" "" "$(role_refs 'const subtitle = 1; nobody' "$(token_role_keys "$dtok")")"
 eq "a mismatch names who uses what" "today: a.tsx uses body, T.kt does not
 today: T.kt uses label, a.tsx does not" "$(role_mismatch today a.tsx "$(printf 'title\nbody')" T.kt "$(printf 'title\nlabel')")"
