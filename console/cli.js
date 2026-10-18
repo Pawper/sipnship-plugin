@@ -14,12 +14,16 @@ const config = require('./config');
 
 function usage() {
   process.stdout.write(`Usage:
-  sipnship console [--port 7777] [--root <project>]
+  sipnship console [--port N] [--root <project>]
   sipnship console --check [--root <project>]
   sipnship queue-demo [--out <file>]
 
 Serves the owner console for the project at <project> (default: the current
-folder) on localhost. --check reads the config and the example env file and
+folder) on localhost, on the port this project claimed on this machine the
+first time it ran (kept in ~/.sipnship/console-ports.json; the first free
+unclaimed number from 7777 up), or .claude/console.json's "port". A port
+another project claims is never taken, even while its console is stopped.
+When the port is in use, a console of this project there is reused. --check reads the config and the example env file and
 fails when a setting has no card, a required question is missing, or a link
 does not resolve. --no-delivery leaves out the Delivery section, which
 reads the project's CI runs and pull requests from GitHub. queue-demo
@@ -28,7 +32,7 @@ writes one page that plays a scripted merge queue.
 }
 
 function parseArgs(argv) {
-  const out = { command: argv[0], port: 7777, root: process.cwd(), check: false, delivery: true, out: null };
+  const out = { command: argv[0], port: 0, root: process.cwd(), check: false, delivery: true, out: null };
   for (let i = 1; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--port') out.port = Number(argv[++i]);
@@ -73,7 +77,9 @@ async function main() {
     return;
   }
   config.loadConfig(args.root);
-  const { url } = await serve({ root: args.root, port: args.port, delivery: args.delivery });
+  const { url, reused, skipped } = await serve({ root: args.root, port: args.port, delivery: args.delivery });
+  for (const s of skipped) process.stdout.write(s.claimed ? `Port ${s.port} belongs to ${s.root}; trying the next.\n` : `Port ${s.port} is in use${s.project ? ` by the ${s.project} console${s.root ? ` (${s.root})` : ''}` : ' by something else'}; trying the next.\n`);
+  if (reused) { process.stdout.write(`This project's console is already running: ${url}\n`); return; }
   process.stdout.write(`Owner console for ${args.root}\n${url}\nPress Ctrl+C to stop.\n`);
 }
 

@@ -46,7 +46,7 @@ test('a re-run is judged by its newest attempt, and a run still going is pending
 
 test('what landed on main, and how', () => {
   assert.equal(d.mergedNumber('Fix the chime (#79) [serial: alone]'), 79);
-  assert.equal(d.mergedNumber('Merge pull request #77 from Pawper/x'), 77);
+  assert.equal(d.mergedNumber('Merge pull request #77 from someone/x'), 77);
   assert.equal(d.mergedNumber('A direct commit'), null);
   assert.equal(d.serialReason('Fix the chime (#79) [serial: migration]'), 'migration');
   assert.equal(d.serialReason('Fix the chime (#79)'), null);

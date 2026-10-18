@@ -9,7 +9,8 @@ const fs = require('fs');
 const path = require('path');
 const config = require('../config');
 const render = require('../render');
-const { createConsole } = require('../index');
+const { createConsole, serve, portFor, writeClaim, readClaims } = require('../index');
+const os = require('os');
 
 const root = path.join(__dirname, '..', '..', 'templates');
 const cfg = config.loadConfig(root);
@@ -90,7 +91,7 @@ test('a missing required question is reported', () => {
 
 test('a project declares its own required questions and the default list no longer applies', () => {
   const own = config.normalize({
-    project: 'Stations',
+    project: 'Example',
     faq: {
       required: { how: ['restart-a-station'], when: ['a-station-goes-quiet'] },
       how: [{ id: 'restart-a-station', q: 'Restart a station?', a: 'Press the button.' }],
@@ -157,4 +158,51 @@ test('the local mount leaves the numbers out and says so', async () => {
   const html = await c.html();
   assert.match(html, /This local copy leaves them out/);
   assert.doesNotMatch(html, /<b>12<\/b>/);
+});
+
+test('a project keeps the port it claimed; a newcomer takes the next unclaimed one', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'console-home-'));
+  assert.equal(portFor('/x/app-one', home), 7777);
+  writeClaim('/x/app-one', 7777, home);
+  assert.equal(portFor('/x/app-two', home), 7778);
+  writeClaim('/x/app-two', 7778, home);
+  assert.equal(portFor('/x/app-one', home), 7777);
+  assert.equal(portFor('/x/app-three', home), 7779);
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'console-port-'));
+  fs.mkdirSync(path.join(d, '.claude'));
+  fs.writeFileSync(path.join(d, '.claude', 'console.json'), '{ "port": 7650 }');
+  assert.equal(portFor(d, home), 7650);
+});
+
+test('a port another project claims is passed over even when free', async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'console-home-'));
+  writeClaim('/x/app-one', 7695, home);
+  const mine = await serve({ root, port: 7695, delivery: false, home });
+  try {
+    assert.equal(mine.url, 'http://127.0.0.1:7696/');
+    assert.equal(mine.skipped[0].claimed, true);
+    assert.equal(readClaims(home)[Object.keys(readClaims(home)).find((k) => k !== (process.platform === 'win32' ? '/x/app-one'.toLowerCase() : '/x/app-one') && readClaims(home)[k] === 7696)], 7696);
+  } finally { mine.server.close(); }
+});
+
+test("a taken port: this project's console is reused, another's is named and passed", async () => {
+  const other = fs.mkdtempSync(path.join(os.tmpdir(), 'console-other-'));
+  fs.mkdirSync(path.join(other, 'console'));
+  fs.copyFileSync(path.join(root, 'console', 'services.json'), path.join(other, 'console', 'services.json'));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'console-home-'));
+  const held = await serve({ root: other, port: 7690, delivery: false, home });
+  const again = await serve({ root: other, port: 7690, delivery: false, home });
+  assert.equal(again.reused, true);
+  assert.equal(again.url, held.url);
+  const mine = await serve({ root, port: 7690, delivery: false, home });
+  try {
+    assert.equal(mine.url, 'http://127.0.0.1:7691/');
+    assert.equal(mine.skipped[0].port, 7690);
+    assert.equal(mine.skipped[0].claimed, true);
+    const page = await (await fetch(mine.url)).text();
+    assert.match(page, /class="where"/);
+  } finally {
+    held.server.close();
+    mine.server.close();
+  }
 });

@@ -25,6 +25,7 @@ const CSS = `
 body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
 main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 64px; }
 h1 { font-size: 24px; margin: 0 0 4px; }
+.where { margin: 0 0 8px; font: 12px ui-monospace, Consolas, monospace; opacity: .7; }
 h2 { font-size: 18px; margin: 40px 0 12px; }
 h3 { font-size: 15px; margin: 0 0 4px; }
 p { margin: 0 0 8px; }
@@ -258,6 +259,7 @@ function renderPage(view) {
 <body>
 <main>
 <h1>${esc(view.project)}</h1>
+${view.where ? `<p class="where">${esc(view.where)}</p>` : ''}
 <p class="lede">What this project talks to, what state each system is in, and how to do the routine things. Built from the project's configuration, not written by hand.</p>
 <nav><a href="#todo">Launch to-do</a><a href="#services">Services</a><a href="#faq">FAQ</a>${view.delivery ? '<a href="#delivery">Delivery</a>' : ''}${view.numbers && view.numbers.items && view.numbers.items.length ? '<a href="#numbers">Live numbers</a>' : ''}</nav>
 

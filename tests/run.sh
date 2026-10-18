@@ -431,7 +431,7 @@ eq "a long program in a heredoc still counts" "14 lines" "$(long_command_reason 
 $(seq 1 12 | sed 's/^/print(/; s/$/)/')
 EOF" 'Run it')"
 eq "a rate limit is a refusal, not a sign-out" "yes" "$(gh_refusal 'GraphQL: API rate limit exceeded for user ID 1')"
-eq "unknown owner type is a refusal" "yes" "$(gh_refusal 'unknown owner type: Pawper')"
+eq "unknown owner type is a refusal" "yes" "$(gh_refusal 'unknown owner type: someone')"
 eq "a sign-out is not" "no" "$(gh_refusal 'You are not logged into any GitHub hosts')"
 
 printf '\n# daemon_stop_reason\n'
@@ -1005,7 +1005,7 @@ eq "unknown is unknown" "UNKNOWN" "$(mergeable_word unknown)"
 eq "empty is unknown" "UNKNOWN" "$(mergeable_word '')"
 
 printf '\n# board calls refused for a rate limit\n'
-eq "gh's unknown owner type is a refusal" "yes" "$(board_refusal 'unknown owner type: Pawper')"
+eq "gh's unknown owner type is a refusal" "yes" "$(board_refusal 'unknown owner type: someone')"
 eq "a rate limit message is a refusal" "yes" "$(board_refusal 'GraphQL: API rate limit exceeded for user ID 1')"
 eq "a secondary limit is a refusal" "yes" "$(board_refusal 'You have exceeded a secondary rate limit')"
 eq "a missing field is not" "no" "$(board_refusal 'Project 3 has no State field')"
@@ -1474,7 +1474,7 @@ eq "the type role keys" "title
 body
 label
 button" "$(token_role_keys "$dtok")"
-eq "a list after the roles is never read into them" "title" "$(token_role_keys '{"type": {"roles": [{"key": "title"}]}, "wordmark": {"words": [{"key": "zesty"}]}, "ambient": {"tones": [{"key": "zest"}]}}')"
+eq "a list after the roles is never read into them" "title" "$(token_role_keys '{"type": {"roles": [{"key": "title"}]}, "wordmark": {"words": [{"key": "first"}]}, "ambient": {"tones": [{"key": "word"}]}}')"
 eq "nor one nested inside" "a
 b" "$(token_role_keys '{"roles": [{"key": "a", "x": [1, [2]]}, {"key": "b"}], "other": [{"key": "c"}]}')"
 ddiff='--- a/src/app/a.css
@@ -1514,7 +1514,7 @@ eq "a word that only contains a key is not a reference" "" "$(role_refs 'const s
 eq "a mismatch names who uses what" "today: a.tsx uses body, T.kt does not
 today: T.kt uses label, a.tsx does not" "$(role_mismatch today a.tsx "$(printf 'title\nbody')" T.kt "$(printf 'title\nlabel')")"
 eq "matching sides, nothing" "" "$(role_mismatch today a.tsx "$(printf 'title\nbody')" T.kt "$(printf 'body\ntitle')")"
-eq "a folder side is touched by any file under it" "yes" "$(side_touched 'web/src/app/stations/[key]/' 'web/src/app/stations/[key]/page.tsx')"
+eq "a folder side is touched by any file under it" "yes" "$(side_touched 'web/src/app/items/[key]/' 'web/src/app/items/[key]/page.tsx')"
 eq "a file side only by itself" "no" "$(side_touched 'web/a.tsx' 'web/a.tsx.bak')"
 eq "a folder side is not touched by a sibling" "no" "$(side_touched 'web/screen/' 'web/screens/x.tsx')"
 eq "a folder side stands for its files, not its build output" "web/screen/page.tsx
