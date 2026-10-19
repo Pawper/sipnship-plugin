@@ -248,8 +248,29 @@ unlock() { if [ "$have_lock" = yes ]; then rm -f "$lock_file" 2>/dev/null; fi; h
 # drain exiting 1 with nothing printed, overnight, so nothing merged. A
 # drain run in a session also clears its "draining" mark here.
 queue_step="starting"
+# fetch_base [REFSPEC...]: fetch main (and REFSPEC), retrying when it
+# fails. Another fetch in the same repository moving origin/main at that
+# moment fails ours with "cannot lock ref ... is at X but expected Y"; one
+# lost race once ended a batch of four green pull requests, and the drain
+# called the round "nothing green". Three tries, a few seconds apart; the
+# last failure is said and returned, never read as nothing to merge.
+fetch_base() {
+  fb_try=1
+  while :; do
+    if git fetch -q origin "$base" "$@" 2>"$flaky_dir/fetch.err"; then return 0; fi
+    if [ "$fb_try" -ge 3 ]; then
+      echo "Could not fetch $base: $(head -n 1 "$flaky_dir/fetch.err" 2>/dev/null | tr -d '\r')" >&2
+      return 1
+    fi
+    fb_try=$((fb_try + 1))
+    sleep 3
+  done
+}
+
 queue_exit() {
   qe_rc=$?
+  # The console's "what the queue is doing now" line ends with the run.
+  : > "$flaky_dir/now" 2>/dev/null || true
   if [ "$qe_rc" -ne 0 ]; then
     echo "merge-queue.sh stopped (exit $qe_rc) during: $queue_step" >&2
     printf '%s %s\n' "$(date '+%H:%M')" "stopped (exit $qe_rc) during: $queue_step" >> "$log_file" 2>/dev/null || true
@@ -571,7 +592,11 @@ serial_one() {
   if [ -n "$hw" ] && { [ -n "$QUEUE_IN_DRAIN" ] || [ -z "$because" ]; }; then batch_line "$pr" "not merged" "$hw; remove the hold, or merge it with --serial $pr --because \"why\""; return 0; fi
   why=$(folder_blocks "$pr"); [ -n "$why" ] || why=$(migration_blocks "$pr")
   if [ -n "$why" ]; then batch_line "$pr" "refused" "$why"; return 0; fi
-  git fetch -q origin "$base" "pull/$pr/head"
+  if ! fetch_base "pull/$pr/head"; then
+    batch_line "$pr" "not merged" "could not fetch $base; it is tried again next round"
+    printf '%s\n' "$pr" >> "$flaky_dir/untried" 2>/dev/null || true
+    return 0
+  fi
   head=$(pr_field "$pr" 2)
   hb=$(pr_field "$pr" 1)
   merge_base=$(git merge-base "origin/$base" "$head")
@@ -937,8 +962,15 @@ if [ "$mode" = drain ]; then
     queue_step="drain round $round: merging"
     say "round $round: $n green pull request(s): $(printf '%s' "$pick" | tr '\n' ' ')"
     QUEUE_IN_DRAIN=1; export QUEUE_IN_DRAIN
+    : > "$flaky_dir/untried" 2>/dev/null || true
     if [ "$n" -ge 2 ]; then sh "$0" --batch --base "$base" $pick 2>&1 | tee -a "$log_file" || true; else sh "$0" --serial --base "$base" $pick 2>&1 | tee -a "$log_file" || true; fi
-    tried="$tried $(printf '%s' "$pick" | tr '\n' ' ')"
+    # A pull request the round could not even try (main would not fetch)
+    # is not tried: it stays in for the next round.
+    untried=$(tr -d '\r' < "$flaky_dir/untried" 2>/dev/null | tr '\n' ' ')
+    for t in $pick; do
+      case " $untried " in *" $t "*) ;; *) tried="$tried $t" ;; esac
+    done
+    if [ -n "$(printf '%s' "$untried" | tr -d ' ')" ]; then say "round $round: main could not be fetched; trying$(printf ' #%s' $untried) again next round."; fi
     if [ $(( $(date +%s) - d_start )) -ge $((drain_minutes * 60)) ]; then
       say "Drained for $drain_minutes minutes; stopping. Run --drain again to go on."
       break
@@ -1024,7 +1056,13 @@ b_begin=$(git ls-remote origin "refs/heads/$base" 2>/dev/null | cut -f1)
 # a sibling of the repository called <repo>-wt-batch, which is reused from
 # one batch to the next. Each package's node_modules is linked from the
 # main checkout when the worktree has none, so nothing is installed twice.
-git fetch -q origin "$base"
+if ! fetch_base; then
+  # Not tried: the drain takes these again next round rather than calling
+  # them done.
+  printf '%s\n' $prs >> "$flaky_dir/untried" 2>/dev/null || true
+  echo "Nothing merged this round: main could not be fetched. These are tried again:$(printf ' #%s' $prs)"
+  exit 1
+fi
 day=$(date +%Y-%m-%d)  # the owner's local day, like every date in the repository
 n=1
 stamp=$(date +%H%M%S)
@@ -1171,7 +1209,13 @@ if [ -n "$pairs" ]; then
   done
   prs=$group
 fi
+# The console shows the batch being built here, which takes minutes a
+# pull request on a slow machine and once looked like a stalled queue:
+# "building MERGED TOTAL CURRENT MEMBER...", cleared when the loop ends.
+b_total=$(printf '%s\n' $prs | grep -c .)
+b_merged=0
 for pr in $prs; do
+  printf 'building %s %s %s %s\n' "$b_merged" "$b_total" "$pr" "$(printf '%s ' $prs | sed 's/ $//')" > "$flaky_dir/now" 2>/dev/null || true
   hw=$(pr_held "$pr")
   if [ -n "$hw" ]; then batch_line "$pr" "left out" "$hw"; continue; fi
   # Read fresh, not from the cache: a pull request merged or closed since
@@ -1278,7 +1322,9 @@ package.json"*|*"/package.json"*) ensure_modules ;; esac
   refs="$refs$(carried_refs "$(gh api "repos/{owner}/{repo}/pulls/$pr" --jq '.body // ""' 2>/dev/null)")
 "
   batch_line "$pr" "merged into the batch"
+  b_merged=$((b_merged + 1))
 done
+: > "$flaky_dir/now" 2>/dev/null || true
 
 # One member is not a batch: GitHub refused a one-member batch pull request
 # because its required check had not run yet, and the member's own green

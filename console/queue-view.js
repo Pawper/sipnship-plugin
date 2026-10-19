@@ -460,15 +460,18 @@ const QUEUE_JS = `
 function queueState(view) {
   const note = [];
   if (view.checking && view.checking.length) note.push(`Test-merging ${view.checking.map((n) => 'PR #' + n).join(', ')} to find which go in the batch together.`);
+  const bld = !view.batch && view.building ? view.building : null;
+  if (bld) note.push(`Building the batch here: ${bld.merged} of ${bld.total} merged, checking PR #${bld.current}.`);
   if (view.batch) note.push(`Batch PR #${view.batch.number} is testing ${view.batch.members.length} pull request(s) together.`);
-  const ready = view.open.filter((p) => p.state === 'green').length;
+  const inBuild = bld ? bld.members : [];
+  const ready = view.open.filter((p) => p.state === 'green' && !inBuild.includes(p.number)).length;
   if (ready) note.push(`${ready} green and waiting.`);
   if (!view.batch && !view.open.length) note.push('Nothing waiting.');
   const checking = view.checking || [];
   const anchor = !view.batch && checking.length ? checking[0] : null;
   return {
-    open: view.open.filter((p) => p.number !== anchor).map((p) => ({ ...pick(p), checking: checking.includes(p.number) })),
-    batch: anchor ? { number: null, forming: true, state: 'none', done: 0, total: 0, members: view.open.filter((p) => p.number === anchor).map((p) => ({ ...pick(p), anchor: true })) } : view.batch ? { number: view.batch.number, state: view.batch.state, done: view.batch.done, total: view.batch.total, members: view.batch.members.map(pick) } : null,
+    open: view.open.filter((p) => p.number !== anchor && !inBuild.includes(p.number)).map((p) => ({ ...pick(p), checking: checking.includes(p.number) })),
+    batch: bld ? { number: null, forming: true, state: 'pending', done: bld.merged, total: bld.total, members: view.open.filter((p) => inBuild.includes(p.number)).map((p) => ({ ...pick(p), checking: p.number === bld.current })) } : anchor ? { number: null, forming: true, state: 'none', done: 0, total: 0, members: view.open.filter((p) => p.number === anchor).map((p) => ({ ...pick(p), anchor: true })) } : view.batch ? { number: view.batch.number, state: view.batch.state, done: view.batch.done, total: view.batch.total, members: view.batch.members.map(pick) } : null,
     main: view.main,
     runners: view.runners || null,
     waiting: view.waiting || null,

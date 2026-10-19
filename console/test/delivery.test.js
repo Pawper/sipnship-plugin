@@ -259,3 +259,17 @@ test('the Delivery section renders its numbers and its picture', () => {
   assert.match(html, /data-queue/);
   assert.equal(render.renderDelivery(null), '');
 });
+
+test('a batch being built here is shown with its progress, not as nothing running', () => {
+  const qv = require('../queue-view');
+  const P = (n) => ({ number: n, title: 't' + n, state: 'green', author: 'a', branch: 'b' + n });
+  const st = qv.queueState({ open: [P(905), P(906), P(907), P(909), P(910)], batch: null, main: [], checking: [], building: { merged: 3, total: 4, current: 909, members: [905, 906, 907, 909] }, clashes: [] });
+  assert.equal(st.batch.forming, true);
+  assert.equal(st.batch.done, 3);
+  assert.equal(st.batch.total, 4);
+  assert.deepEqual(st.batch.members.map((m) => m.number), [905, 906, 907, 909]);
+  assert.deepEqual(st.open.map((m) => m.number), [910]);
+  assert.match(st.note, /Building the batch here: 3 of 4 merged, checking PR #909\./);
+  assert.match(st.note, /1 green and waiting/);
+});
+

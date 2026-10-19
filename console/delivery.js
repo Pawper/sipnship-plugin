@@ -293,7 +293,7 @@ function queueView(raw) {
   const landed = (raw.mainCommits || []).map((c) => ({ number: mergedNumber(c.message), title: c.message.split('\n')[0], at: c.date, serial: serialReason(c.message) }))
     .filter((c, i, all) => c.number != null && all.findIndex((x) => x.number === c.number) === i).slice(0, 6);
   const r = raw.runners ? runnerLanes(raw.runners, raw.activeJobs, open) : null;
-  return { open: waiting, batch, main: landed, checking: raw.checking || [], clashes: raw.clashes || [], runners: r ? r.lanes : null, waiting: r ? r.waiting : null, queued: r ? r.queued : null };
+  return { open: waiting, batch, main: landed, checking: raw.checking || [], building: raw.building || null, clashes: raw.clashes || [], runners: r ? r.lanes : null, waiting: r ? r.waiting : null, queued: r ? r.queued : null };
 }
 
 // ---------- reading (the one impure part)
@@ -407,6 +407,11 @@ async function gather(root, opts) {
   // The pairs the last batch left out: "LEFT_OUT WITH", one a line.
   raw.clashes = readLines(path.join(root, '.scratch', 'queue', 'clashes')).map((l) => l.split(' ').map(Number)).filter((c) => c[0] && c[1]);
   raw.checking = /^checking /.test(now) ? now.split(' ').slice(1).map(Number).filter(Boolean) : [];
+  // "building MERGED TOTAL CURRENT MEMBER..." while it builds the batch here.
+  if (/^building /.test(now)) {
+    const b = now.split(' ').slice(1).map(Number);
+    if (b.length >= 3 && b.every((x) => !Number.isNaN(x))) raw.building = { merged: b[0], total: b[1], current: b[2], members: b.slice(3).filter(Boolean) };
+  }
   raw.flaky = readLines(path.join(root, '.scratch', 'queue', 'flaky.tsv'));
   raw.hookLog = readLines(path.join(root, '.scratch', 'hooks.log')).map((l) => {
     const [at, hook, session, id] = l.split('\t');
