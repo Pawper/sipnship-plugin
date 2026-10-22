@@ -104,14 +104,22 @@ if [ "$mode" = idle ]; then
 fi
 
 # 3. Main, landed, runners, deploy.
-main_sha=$(git rev-parse "origin/$base" 2>/dev/null | cut -c1-7)
+# Main and what landed are read from GitHub, not the local origin/main ref:
+# right after the queue merges through the API that ref is stale until a
+# fetch, and the first end-of-drain write once listed everything but the
+# pull request that had just landed. It also lets this run from any
+# checkout.
+main_sha=$(gh api "repos/{owner}/{repo}/commits/$base" --jq '.sha[0:7]' 2>/dev/null | tr -d '\r')
+[ -n "$main_sha" ] || main_sha=$(git rev-parse "origin/$base" 2>/dev/null | cut -c1-7)
 main_run=$(gh api "repos/{owner}/{repo}/actions/workflows/${QUEUE_CI_WORKFLOW:-ci.yml}/runs?branch=$base&event=push&per_page=1" --jq '.workflow_runs[0] | "\(.head_sha[0:7])\t\(.status)\t\(.conclusion // "")"' 2>/dev/null | tr -d '\r')
 main_state=unknown
 if [ -n "$main_run" ]; then
   mr_sha=${main_run%%	*}; mr_rest=${main_run#*	}; mr_status=${mr_rest%%	*}; mr_conc=${mr_rest#*	}
   if [ "$mr_sha" != "$main_sha" ] || [ "$mr_status" != completed ]; then main_state=pending; elif [ "$mr_conc" = success ]; then main_state=green; else main_state=red; fi
 fi
-landed_tsv=$(git log "origin/$base" -n 40 --format='%s%x09%cI' 2>/dev/null | awk -F'\t' '{ if (match($1, /\(#[0-9]+\)/)) { n = substr($1, RSTART + 2, RLENGTH - 3); how = ($1 ~ /\[batch/ || $1 ~ /^batch PR/ || $1 ~ /merged into main/) ? "batch" : "serial"; t = $1; sub(/ \(#[0-9]+\).*$/, "", t); if (!(n in seen)) { seen[n] = 1; printf "%s\t%s\t%s\t%s\n", n, t, how, $2; c++ } } if (c >= 10) exit }')
+landed_src=$(gh api "repos/{owner}/{repo}/commits?sha=$base&per_page=40" --jq '.[] | "\(.commit.message | split("\n")[0])\t\(.commit.committer.date)"' 2>/dev/null | tr -d '\r')
+[ -n "$landed_src" ] || landed_src=$(git log "origin/$base" -n 40 --format='%s%x09%cI' 2>/dev/null)
+landed_tsv=$(printf '%s\n' "$landed_src" | awk -F'\t' '{ if (match($1, /\(#[0-9]+\)/)) { n = substr($1, RSTART + 2, RLENGTH - 3); how = ($1 ~ /\[batch/ || $1 ~ /^batch PR/ || $1 ~ /merged into main/) ? "batch" : "serial"; t = $1; sub(/ \(#[0-9]+\).*$/, "", t); if (!(n in seen)) { seen[n] = 1; printf "%s\t%s\t%s\t%s\n", n, t, how, $2; c++ } } if (c >= 10) exit }')
 runners_tsv=""
 rr=$(gh api "repos/{owner}/{repo}/actions/runners" --jq '"\([.runners[] | select(.status == "online")] | length)\t\([.runners[] | select(.busy)] | length)"' 2>/dev/null | tr -d '\r')
 if [ -n "$rr" ]; then

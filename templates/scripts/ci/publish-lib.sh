@@ -147,7 +147,7 @@ publish_body() {
   fi
   if [ -n "$pb_landed" ]; then
     printf '## Landed lately\n\n'
-    printf '%s\n' "$pb_landed" | sed '/^$/d' | awk -F'\t' '{ printf "- #%s %s (%s, %s)\n", $1, $2, $3, substr($4, 1, 16) }'
+    printf '%s\n' "$pb_landed" | sed '/^$/d' | awk -F'\t' '{ printf "- #%s %s (%s, %s)\n", $1, $2, $3, substr($4, 1, 16) (($4 ~ /Z$/) ? "Z" : "") }'
     printf '\n'
   fi
   printf '<!-- The state as an agent reads it; the sentences above are its say fields. -->\n```json\n%s\n```\n' "$pb_json"
