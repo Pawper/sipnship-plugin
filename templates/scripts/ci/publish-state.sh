@@ -133,7 +133,10 @@ if [ -z "$issue" ] || [ "$issue" = "null	null" ]; then first=yes; fi
 body=$(publish_body "$say" "$open_tsv" "$batch_tsv" "$landed_tsv" "$json" "$first")
 if [ "$print_only" = yes ]; then printf '%s\n' "$body"; exit 0; fi
 # Only when the body changed, apart from the time stamp.
-sig=$(printf '%s' "$body" | sed 's/"updatedAt":"[^"]*"//' | git hash-object --stdin 2>/dev/null)
+# Only a change worth a write: the time stamp and the two numbers that tick
+# with time (how long a queued run has waited, a batch's minutes left) are
+# left out of the signature, or an idle queue would rewrite every minute.
+sig=$(printf '%s' "$body" | sed 's/"updatedAt":"[^"]*"//; s/"longestWaitMinutes":[0-9a-z]*//; s/"minutesLeft":[0-9a-z]*//' | git hash-object --stdin 2>/dev/null)
 if [ -f "$flaky_dir/published.sig" ] && [ "$(cat "$flaky_dir/published.sig")" = "$sig" ]; then exit 0; fi
 printf '%s' "$body" > "$flaky_dir/published.body"
 if [ "$first" = yes ]; then
