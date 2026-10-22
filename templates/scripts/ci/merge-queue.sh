@@ -267,8 +267,19 @@ fetch_base() {
   done
 }
 
+# publish_now MODE: write the queue's state to the Merge queue issue
+# (scripts/ci/publish-state.sh, spec 001), when the project has switched
+# it on. Bounded, never fatal: publishing never stops a merge.
+publish_now() {
+  [ -f "$here/publish-state.sh" ] || return 0
+  QUEUE_BASE="$base" QUEUE_DIR="$flaky_dir" sh "$here/publish-state.sh" --mode "$1" ${2:+--open "$2"} 2>>"$flaky_dir/publish.err" | while IFS= read -r pn_l; do say "$pn_l"; done
+  return 0
+}
+
 queue_exit() {
   qe_rc=$?
+  # The last word on the issue: idle, with what landed.
+  case "${mode:-}" in drain|serial|batch) publish_now idle ;; esac
   # The console's "what the queue is doing now" line ends with the run.
   : > "$flaky_dir/now" 2>/dev/null || true
   if [ "$qe_rc" -ne 0 ]; then
@@ -906,6 +917,9 @@ if [ "$mode" = drain ]; then
     attention=$(printf '%s
 %s
 ' "$attention" "$(drain_attention "$open" "$base" "$retried")" | sed '/^$/d' | sort -u -n)
+    printf '%s\n' "$open" > "$flaky_dir/open.tsv" 2>/dev/null || true
+    printf '%s\n' "$attention" | sed '/^$/d' | awk -v b="$base" '{ printf "%s\tfailed CI twice\tits checks stay red\t\n", $1 }' > "$flaky_dir/attention.tsv" 2>/dev/null || true
+    publish_now draining "$flaky_dir/open.tsv"
     queue_step="drain round $round: choosing what to merge"
     pick=$(drain_candidates "$open" "$base" "$tried")
     waiting=$(drain_waiting "$open" "$base" "$retried")

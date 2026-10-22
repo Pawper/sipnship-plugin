@@ -300,6 +300,11 @@ fi
 if [ -f .claude/deploy.json ] && grep -q '"releases"' .claude/deploy.json && ! grep -q '"releaseOn"' .claude/deploy.json && grep -qE '"intervalMinutes"[[:space:]]*:[[:space:]]*0[^0-9]' .claude/deploy.json; then
   echo "  releases: .claude/deploy.json lists release workflows with intervalMinutes 0 and no releaseOn, so the queue starts them after every landing that ships. To hold them until asked, add \"releaseOn\": \"ask\" and start them with merge-queue.sh --release."
 fi
+# The queue's published state (spec 001) is on when the project says so.
+if [ -f scripts/ci/merge-queue.sh ] && [ -f "$tpl/scripts/ci/publish-state.sh" ] && command -v gh >/dev/null 2>&1; then
+  qps=$(gh api "repos/{owner}/{repo}/actions/variables/QUEUE_PUBLISH_STATE" --jq .value 2>/dev/null) || qps=""
+  [ "$qps" = issue ] || echo "  publish:  the merge queue can keep a \"Merge queue\" issue current with what it is doing, for anyone who can see the repository: gh variable set QUEUE_PUBLISH_STATE --body issue, then pin the issue it creates. sh scripts/ci/publish-state.sh --print shows the body first."
+fi
 # A project with its own runners spends no hosted minutes by default: the
 # scheduled drain runs on them (QUEUE_RUNS_ON, set here with --apply), and
 # the runner watch is a task on their machine, not a hosted job.

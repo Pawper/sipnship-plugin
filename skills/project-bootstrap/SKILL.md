@@ -188,6 +188,7 @@ Create, in order:
 8b. Deploys: `sh scripts/deploy-setup.sh` with the path the survey chose, the app's folder and the interval. It writes `vercel.json` in the app's folder and `.claude/deploy.json`, and for the scheduled paths the Deploy workflow's schedule and the `DEPLOY_PATH` variable; name the secrets it lists to the owner, and the console's two Vercel checks (the Standard build machine, a spend cap), which have no API.
 9. The session brief's config, `.claude/session-brief.json`: the merge queue's log glob, the agent's memory folder, and the line limit.
 10. The drive's config, `.claude/project-drive.json`, and one open issue titled "Drive" labeled `drive`.
+11. The queue's published state (spec 001): the repository variable `QUEUE_PUBLISH_STATE` set to `issue` (`gh variable set QUEUE_PUBLISH_STATE --body issue`), and one open issue titled "Merge queue" labeled `queue` and `state:parked`, which the queue rewrites with what it is doing; the owner pins it from its page. `sh scripts/ci/publish-state.sh --print` shows the body before the first write.
 
 The drive is the loop that moves the project between sessions, and it moves it only where a person said to.
 There is no goals list; the board and the checks are the goal. One round of `/project-drive` reads the state,

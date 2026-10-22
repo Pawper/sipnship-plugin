@@ -401,6 +401,17 @@ async function gather(root, opts) {
       jobLists.forEach((l, i) => ((l && l.jobs) || []).forEach((j) => raw.jobs.push({ ...j, run_id: sample[i].id })));
     }
   }
+  // When the queue's own files are not on this machine, the state it
+  // published to the Merge queue issue (spec 001) says what it is doing.
+  const hasLocal = fs.existsSync(path.join(root, '.scratch', 'queue', 'now'));
+  if (!hasLocal && !queueOnly) {
+    try {
+      const found = await gh(root, ['repos/{owner}/{repo}/issues?labels=queue&state=open&per_page=20']);
+      const issue = (found || []).find((i) => i.title === 'Merge queue');
+      const m = issue && /```json\n([\s\S]*?)\n```/.exec(issue.body || '');
+      if (m) raw.published = JSON.parse(m[1]);
+    } catch (e) { raw.published = null; }
+  }
   // What the queue is doing now, from the file it keeps while it runs:
   // "checking 251 252 254" while it test-merges the batch's candidates.
   const now = readLines(path.join(root, '.scratch', 'queue', 'now'))[0] || '';
@@ -411,6 +422,11 @@ async function gather(root, opts) {
   if (/^building /.test(now)) {
     const b = now.split(' ').slice(1).map(Number);
     if (b.length >= 3 && b.every((x) => !Number.isNaN(x))) raw.building = { merged: b[0], total: b[1], current: b[2], members: b.slice(3).filter(Boolean) };
+  }
+  if (raw.published) {
+    if (!raw.checking.length) raw.checking = raw.published.checking || [];
+    if (!raw.building && raw.published.building) raw.building = raw.published.building;
+    if (!raw.clashes.length) raw.clashes = (raw.published.clashes || []).map((c) => [c.leftOut, c.with]);
   }
   raw.flaky = readLines(path.join(root, '.scratch', 'queue', 'flaky.tsv'));
   raw.hookLog = readLines(path.join(root, '.scratch', 'hooks.log')).map((l) => {

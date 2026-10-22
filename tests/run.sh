@@ -315,6 +315,32 @@ branch refs/heads/main')"
 
 printf '\n# reading a run\n'
 . "$root/templates/scripts/ci/run-lib.sh"
+# --- Spec 001: the queue publishes its state.
+. "$root/templates/scripts/ci/publish-lib.sh"
+po_open="$(printf '12\tAdd retries\tgreen\tgreen and waiting to merge\n13\tFix the chime\twaiting\tstill running CI\n14\tRename\tred\tred; the queue re-runs its failed jobs once, then names it here')"
+po_say=$(publish_say "$po_open" "" "" "" "" "$(printf '2\t1\t0\t0')" "" draining "")
+eq "the doing sentence for a drain" "The queue is running, looking for green pull requests to merge." "$(printf '%s\n' "$po_say" | sed -n 1p)"
+eq "the waiting sentence counts each state" "3 pull requests are open: 1 is green and waiting to merge (#12); 1 is still running CI; 1 is red (#14)." "$(printf '%s\n' "$po_say" | sed -n 2p)"
+eq "nothing needs a person" "Nothing needs you." "$(printf '%s\n' "$po_say" | sed -n 3p)"
+eq "a batch says its members and the time left" "Testing a batch of 3 pull requests together (#12, #13 and #15); about 6 minutes left, 2 of 2 runners busy." "$(publish_say "$po_open" "$(printf '20\t12 13 15\t12\t2\t4\t6')" "" "" "" "$(printf '2\t2\t0\t0')" "" draining "" | sed -n 1p)"
+eq "a local build says its progress" "Building a batch of 4 pull requests on the queue's own machine: 3 merged, checking #909." "$(publish_say "" "" "3 4 909 905 906 907 909" "" "" "" "" batch "" | sed -n 1p)"
+eq "a clash names the files and that the owner was told" "Nothing is waiting. #252 was left out: it clashes with #249 in src/lib/dates.ts, and its owner has been told." "$(publish_say "" "" "" "$(printf '252\t249\tsrc/lib/dates.ts\tyes')" "" "" "" idle "" | sed -n 2p)"
+eq "what needs a person is said with its error line" "Needs you: #14 failed CI twice: FAIL  the chime rings." "$(publish_say "" "" "" "" "$(printf '14\tfailed CI twice\tits checks stay red\tFAIL  the chime rings')" "" "" idle "" | sed -n 3p)"
+eq "no runner online is said" "No runner is online, so nothing can be tested; start one." "$(publish_say "" "" "" "" "" "$(printf '0\t0\t2\t15')" "" idle "" | sed -n 3p)"
+eq "paused says until when" "The scheduled queue is paused until 2026-10-22T20:00:00Z; a drain run by hand still runs." "$(publish_say "" "" "" "" "" "" "" paused 2026-10-22T20:00:00Z | sed -n 1p)"
+po_json=$(publish_json "$po_open" "" "3 4 909 905 906 907 909" "$(printf '252\t249\tsrc/lib/dates.ts\tyes')" "$(printf '11\tFirst\tserial\t2026-10-22T18:00:00Z')" "$(printf '2\t1\t0\t0')" "" "$(printf 'abc1234\tgreen')" "deploy: due; none recorded" draining "" "12 13" "$po_say" 2026-10-22T19:00:00Z)
+eq "the JSON parses and carries the version" "1" "$(printf '%s' "$po_json" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const j=JSON.parse(s);console.log(j.version)})')"
+eq "the JSON's say matches the sentences" "yes" "$(printf '%s' "$po_json" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const j=JSON.parse(s);console.log(j.say.waiting.startsWith("3 pull requests are open")&&j.open.length===3&&j.open[2].state==="red"&&j.building.current===909&&j.clashes[0].files[0]==="src/lib/dates.ts"&&j.landed[0].number===11&&j.checking[1]===13&&j.main.state==="green"?"yes":"no")})')"
+eq "a quote and a newline in a title survive" '"say \"hi\"\nthere"' "$(json_str "$(printf 'say "hi"
+there')")"
+po_body=$(publish_body "$po_say" "$po_open" "" "" "$po_json" yes)
+eq "the first body explains the queue" "1" "$(printf '%s\n' "$po_body" | grep -c "This issue is the merge queue's own page")"
+eq "a later body does not" "0" "$(publish_body "$po_say" "$po_open" "" "" "$po_json" no | grep -c "own page")"
+eq "the body lists each open pull request with its sentence" "- #12 Add retries: green and waiting to merge" "$(printf '%s\n' "$po_body" | grep '^- #12')"
+eq "the JSON block is read back out of the body" "yes" "$(published_json "$po_body" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{console.log(JSON.parse(s).version===1?"yes":"no")})')"
+eq "the queue publishes as it drains and at its end" "2" "$(grep -c 'publish_now draining\|publish_now idle' "$root/templates/scripts/ci/merge-queue.sh")"
+eq "the drain workflow may write issues" "1" "$(grep -c '^  issues: write' "$root/templates/.github/workflows/queue-drain.yml")"
+eq "the queue label exists" "1" "$(grep -c 'mk "queue"' "$root/templates/scripts/labels.sh")"
 eq "the runner count defaults to three" "3" "$(runner_count '')"
 eq "and reads the project's number" "4" "$(runner_count '{ "runners": 4 }')"
 eq "all online, in one line" "3 of 3 online" "$(runner_status "$(printf 'a\tonline\tfalse\nb\tonline\ttrue\nc\tonline\tfalse')" 3)"

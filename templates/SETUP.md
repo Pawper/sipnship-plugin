@@ -18,6 +18,7 @@ Every value comes from the environment. List the name, what it is for, and where
 |---|---|---|
 | `DATABASE_URL` | The main database | The team password manager, entry PROJECT_NAME |
 | `SERVICE_API_KEY` | Access to SERVICE | The team password manager, entry PROJECT_NAME |
+| `QUEUE_PUBLISH_STATE` | `issue`: the merge queue rewrites the "Merge queue" issue with its state; unset or `off`: it does not | A repository variable (Settings, Secrets and variables, Actions, Variables) |
 
 ## First run
 
