@@ -204,6 +204,7 @@ scripts/ci/runner-doctor.sh a3a96fb68e94615b694c86343f60257d9e599fe3
 scripts/ci/runner-doctor.sh af2d9db95b6a6ea3c63ba8e940c2093f2bc3a0f8
 scripts/ci/runner-doctor.sh bba708a7e3f84aac42c1ae9e59ffb3b164345555
 scripts/ci/runner-doctor.sh f5a560977a24e6f1515c605ed75ebc5176f521a4
+scripts/ci/runner-watch-install.ps1 20bf1a01bf9fffc364b8d42e0e78f2d0a1d3d519
 scripts/ci/runner-watch-install.ps1 6ea45a33723679fe8264fcbc764730a2b71c3b33
 scripts/ci/runner-watch.sh 81f61853d1b735ea757d50f5e9b4a0e23a2a84e9
 scripts/ci/setup-check.sh 04952c22633bf3a54dc280c3e57c56cfe4c4613c

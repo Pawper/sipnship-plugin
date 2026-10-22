@@ -1,6 +1,6 @@
 {
   "name": "sipnship",
-  "version": "0.22.0",
+  "version": "0.22.1",
   "description": "A Claude Code plugin for projects where many coding agents work at once, with an owner console that answers what systems the project talks to, what state each is in, and how to do the routine things.",
   "license": "MIT",
   "repository": "github:Pawper/sipnship-plugin",
