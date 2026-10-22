@@ -65,6 +65,10 @@ status/lib.sh
 feature runners
 scripts/ci/RUNNERS.md
 scripts/ci/add-runner.ps1
+scripts/ci/remove-runner.ps1
+scripts/ci/runner-watch.sh
+scripts/ci/runner-watch-install.ps1
+default .claude/runners.json
 scripts/ci/doctor-lib.sh
 scripts/ci/runner-doctor.sh
 .github/workflows/runner-check.yml

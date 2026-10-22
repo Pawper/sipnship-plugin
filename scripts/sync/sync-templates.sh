@@ -300,11 +300,28 @@ fi
 if [ -f .claude/deploy.json ] && grep -q '"releases"' .claude/deploy.json && ! grep -q '"releaseOn"' .claude/deploy.json && grep -qE '"intervalMinutes"[[:space:]]*:[[:space:]]*0[^0-9]' .claude/deploy.json; then
   echo "  releases: .claude/deploy.json lists release workflows with intervalMinutes 0 and no releaseOn, so the queue starts them after every landing that ships. To hold them until asked, add \"releaseOn\": \"ask\" and start them with merge-queue.sh --release."
 fi
-# A rebuild a hosted drain may not be able to run.
-if grep -qs '^[[:space:]]*rebuild:' scripts/ci/generated-paths.txt && command -v gh >/dev/null 2>&1; then
-  qro=$(gh api "repos/{owner}/{repo}/actions/variables/QUEUE_RUNS_ON" --jq .value 2>/dev/null) || qro=""
-  case "$qro" in ''|ubuntu*|windows-latest|macos*) echo "  queue:    scripts/ci/generated-paths.txt names a rebuild, and the scheduled drain runs hosted (${qro:-ubuntu-latest}); if the rebuild needs your machine, set the repository variable QUEUE_RUNS_ON to its runner's label." ;; esac
-fi
+# A project with its own runners spends no hosted minutes by default: the
+# scheduled drain runs on them (QUEUE_RUNS_ON, set here with --apply), and
+# the runner watch is a task on their machine, not a hosted job.
+case "$runs_on" in
+  *self-hosted*)
+    if command -v gh >/dev/null 2>&1; then
+      qro=$(gh api "repos/{owner}/{repo}/actions/variables/QUEUE_RUNS_ON" --jq .value 2>/dev/null) || qro=""
+      q_label=$(printf '%s' "$runs_on" | tr -d '[]' | tr ',' '\n' | sed 's/^[ \t]*//; s/[ \t]*$//' | grep -vix 'self-hosted' | head -n 1)
+      case "$qro" in
+        ''|ubuntu*|windows-latest|macos*)
+          if [ "$apply" = yes ] && [ -n "$q_label" ] && gh variable set QUEUE_RUNS_ON --body "$q_label" >/dev/null 2>&1; then
+            echo "  queue:    the scheduled drain now runs on this project's runners (QUEUE_RUNS_ON=$q_label); it ran hosted before, a billed minute every run in a private repository."
+          else
+            echo "  queue:    the scheduled drain runs hosted (${qro:-ubuntu-latest}) though this project has its own runners; run with --apply to set QUEUE_RUNS_ON=${q_label:-<label>}, or: gh variable set QUEUE_RUNS_ON --body ${q_label:-<label>}"
+          fi ;;
+      esac
+      if [ -f .github/workflows/runner-watch.yml ] && [ -f "$tpl/scripts/ci/runner-watch-install.ps1" ]; then
+        rwh=$(gh api "repos/{owner}/{repo}/actions/variables/RUNNER_WATCH_HOSTED" --jq .value 2>/dev/null) || rwh=""
+        [ "$rwh" = yes ] || echo "  watch:    the runner watch runs on the runners' machine now, not hosted. Once, on that machine: powershell -ExecutionPolicy Bypass -File scripts\\ci\\runner-watch-install.ps1 (cron elsewhere). To keep the hosted copy as well, which alone can say the whole machine is off: gh variable set RUNNER_WATCH_HOSTED --body yes"
+      fi
+    fi ;;
+esac
 if command -v gh >/dev/null 2>&1 && gh api "repos/{owner}/{repo}/actions/variables/DEPLOY_JOBS_ON" >/dev/null 2>&1; then
   echo "  deploy:   the repository variable DEPLOY_JOBS_ON is no longer read; Deploy's plan runs where ci.yml's jobs run. Remove it: gh variable delete DEPLOY_JOBS_ON"
 fi

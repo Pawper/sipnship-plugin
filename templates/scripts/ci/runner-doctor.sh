@@ -8,6 +8,7 @@
 # execution policy, and the runner itself offline.
 here=$(dirname "$0")
 . "$here/doctor-lib.sh"
+. "$here/run-lib.sh"
 
 warns=0
 say() { echo "$1  $2"; [ "$1" = warn ] && warns=$((warns + 1)); }
@@ -92,6 +93,9 @@ if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
     done
     offline=$(printf '%s\n' "$runners" | awk -F'\t' '$2 != "online"' | wc -l | tr -d ' ')
     warns=$((warns + offline))
+    want=$(runner_count "$(cat .claude/runners.json 2>/dev/null)")
+    have=$(printf '%s\n' "$runners" | grep -c .)
+    if [ "$have" -lt "$want" ]; then say warn "runners: $(runner_status "$(printf '%s\n' "$runners" | cut -f1-3)" "$want") (.claude/runners.json wants $want; add one with scripts/ci/add-runner.ps1)"; fi
   fi
 else
   say warn "runners: gh is not signed in, so the registered runners could not be listed"

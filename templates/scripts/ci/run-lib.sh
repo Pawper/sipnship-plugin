@@ -116,3 +116,124 @@ runner_problems() {
     NF >= 2 { total++; if ($2 == "online") on++; else printf "Runner %s is %s.\n", $1, $2 }
     END { if (total > 0 && on < 2) printf "Only %d of %d self-hosted runner(s) online; one runner makes every job wait for the last.\n", on, total }'
 }
+
+# runner_count RUNNERS_JSON
+# The runners a project wants, from .claude/runners.json ("runners": N);
+# 3 when the file is missing or says nothing: two for CI side by side and
+# one a drain may hold while it waits.
+runner_count() {
+  rc=$(printf '%s\n' "$1" | tr -d '\r' | sed -n 's/.*"runners"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' | head -n 1)
+  echo "${rc:-3}"
+}
+
+# runner_status RUNNERS WANT
+# RUNNERS is one self-hosted runner per line, "name<TAB>status<TAB>busy".
+# One line for the brief and the doctor: "3 of 3 online", or "2 of 3
+# online; sipnship-3 offline", or "2 of 3 wanted are registered; 2 online".
+runner_status() {
+  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v want="${2:-3}" '
+    NF >= 2 { total++; if ($2 == "online") on++; else off = off (off == "" ? "" : ", ") $1 " " $2 }
+    END {
+      if (total == 0) { printf "no runner registered; %d wanted\n", want; exit }
+      if (total < want) printf "%d of %d wanted are registered; %d online", total, want, on
+      else printf "%d of %d online", on, total
+      if (off != "") printf "; %s", off
+      printf "\n"
+    }'
+}
+
+# load_verdicts SAMPLE WANT
+# SAMPLE is one line: "cpu_pct<TAB>mem_pct<TAB>disk_free_gb<TAB>jobs_running
+# <TAB>wait_min<TAB>runners_here<TAB>cores" (wait_min: how long jobs waited
+# for a runner on average lately; runners_here: every project's runners on
+# this machine). Print one "id|sentence" per condition that holds, in the
+# builder's words; nothing when the machine is fine. The ids let the watch
+# say a condition once when it starts and once when it ends.
+load_verdicts() {
+  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v want="${2:-3}" '
+    NF >= 7 {
+      cpu = $1 + 0; mem = $2 + 0; disk = $3 + 0; jobs = $4 + 0; wait = $5 + 0; here = $6 + 0; cores = $7 + 0
+      if (wait >= 5 && cpu < 50) printf "idle-wait|jobs waited %d minutes on average and the processor was %d%% busy; one more runner would help\n", wait, cpu
+      if (wait >= 5 && cpu >= 85) printf "saturated|jobs waited %d minutes on average while the processor was %d%% busy with %d running; more runners would make each job slower: fewer runners, or a second machine\n", wait, cpu, jobs
+      if (cpu >= 85 && wait < 5 && jobs > 0) printf "busy|the processor was %d%% busy with %d jobs running; fine while nothing waits\n", cpu, jobs
+      if (mem >= 90) printf "memory|memory is %d%% used with %d jobs running and %d runners on this machine\n", mem, jobs, here
+      if (disk < 5) printf "disk-urgent|only %d GB free on the runners'"'"' drive; a checkout can fail any time\n", disk
+      else if (disk < 15) printf "disk|%d GB free on the runners'"'"' drive; runner work folders grow with every checkout\n", disk
+      if (cores > 0 && here > cores / 2) printf "overcommit|%d runners on %d cores across the projects on this machine; past one runner per two cores each job slows the others\n", here, cores
+    }'
+}
+
+# watch_changes PREV NOW
+# PREV and NOW are "id|sentence" lines. Print "started: sentence" for an id
+# in NOW but not PREV and "ended: sentence" for one in PREV but not NOW,
+# so the watch speaks only when something changes, never on every run.
+watch_changes() {
+  printf '%s\n' "$2" | while IFS='|' read -r id text; do
+    [ -n "$id" ] || continue
+    printf '%s\n' "$1" | grep -q "^$id|" || printf 'started: %s\n' "$text"
+  done
+  printf '%s\n' "$1" | while IFS='|' read -r id text; do
+    [ -n "$id" ] || continue
+    printf '%s\n' "$2" | grep -q "^$id|" || printf 'ended: %s\n' "$text"
+  done
+}
+
+# cron_runs_month CRON
+# Roughly how many times a month a cron line fires: "*/30 * * * *" is
+# 1,440, "17 */2 * * *" 360, "17 3 * * *" 30, "41 */6 * * *" 120. Lines
+# it cannot read count as daily.
+cron_runs_month() {
+  printf '%s\n' "$1" | tr -d '\r' | awk '
+    {
+      gsub(/"/, ""); n = split($0, f, /[ \t]+/)
+      if (n < 5) { print 30; exit }
+      min = f[1]; hr = f[2]; dom = f[3]
+      perday = 1
+      if (min ~ /^\*\/[0-9]+$/) { split(min, a, "/"); perday = (60 / a[2]) * 24 }
+      else if (min == "*") perday = 1440
+      else if (hr ~ /^\*\/[0-9]+$/) { split(hr, a, "/"); perday = 24 / a[2] }
+      else if (hr == "*") perday = 24
+      days = 30
+      if (dom ~ /^\*\/[0-9]+$/) { split(dom, a, "/"); days = 30 / a[2] }
+      print int(perday * days + 0.5)
+    }'
+}
+
+# hosted_estimate WORKFLOWS
+# WORKFLOWS is one line per workflow job that runs hosted in this project:
+# "file<TAB>cron-or-empty<TAB>events" where events is the per-event
+# triggers (issues, pull_request), comma separated or empty. Print one
+# sentence estimating the month: scheduled runs at one billed minute each
+# (a job bills at least a minute), plus "one a <event>" for the rest;
+# nothing when WORKFLOWS is empty.
+hosted_estimate() {
+  [ -n "$(printf '%s' "$1" | tr -d ' \n\r')" ] || return 0
+  he_total=0; he_files=""; he_events=""
+  while IFS="$(printf '\t')" read -r f cron events; do
+    [ -n "$f" ] || continue
+    he_files="$he_files${he_files:+, }$(basename "$f" .yml)"
+    if [ -n "$cron" ]; then he_total=$((he_total + $(cron_runs_month "$cron"))); fi
+    if [ -n "$events" ]; then he_events="$he_events${he_events:+, }$(basename "$f" .yml) once per $(printf '%s' "$events" | tr ',' '/')"; fi
+  done <<HEEOF
+$1
+HEEOF
+  printf 'hosted Actions: %s run hosted in this private repository, about %s scheduled minutes a month%s; the free allowance is 2,000 and is shared by every repository on the account\n' "$he_files" "$(printf '%d' "$he_total" | sed ':a;s/\([0-9]\)\([0-9][0-9][0-9]\)\b/\1,\2/;ta')" "${he_events:+ plus $he_events}"
+}
+
+# hosted_jobs WORKFLOW_FILE TEXT
+# For one workflow: a "file<TAB>cron<TAB>events" line when it has a job on
+# a hosted runner (ubuntu-, windows-, macos-latest) that no "if:" on a
+# variable gates; nothing otherwise. Comments are ignored.
+hosted_jobs() {
+  printf '%s\n' "$2" | tr -d '\r' | awk -v f="$1" '
+    /^[ \t]*#/ { next }
+    # Triggers are read only inside the "on:" block: "issues: write" under
+    # permissions once counted as an issues trigger.
+    /^on:/ { inon = 1; next }
+    /^[A-Za-z]/ { inon = 0 }
+    /^[ \t]*runs-on:[ \t]*(ubuntu|windows|macos)-/ { hosted = 1 }
+    /^[ \t]*if:[ \t]*.*vars\./ { gated = 1 }
+    inon && /^[ \t]*-[ \t]*cron:/ { c = $0; sub(/^[ \t]*-[ \t]*cron:[ \t]*/, "", c); gsub(/["\047]/, "", c); cron = c }
+    inon && /^  (issues|pull_request|push|issue_comment|deployment_status|workflow_run):/ { e = $1; sub(/:$/, "", e); events = events (events == "" ? "" : ",") e }
+    END { if (hosted && !gated) printf "%s\t%s\t%s\n", f, cron, events }'
+}

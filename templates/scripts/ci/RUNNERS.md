@@ -22,6 +22,25 @@ A PowerShell step names its own execution policy: `shell: powershell -NoProfile 
 
 On a Windows runner the service account's `bash` and `sh` resolve to the WSL stub, and every step fails before it starts. `ci.yml` and `queue-drain.yml` carry a `RUN_SHELL` placeholder in their workflow-level `defaults.run.shell`; on Windows runners set it to Git's bash by its short path, `'C:\PROGRA~1\Git\bin\bash.exe --noprofile --norc -eo pipefail {0}'`, and on hosted runners to `bash`. A PowerShell step says `shell: powershell`, never `pwsh`: PowerShell 7 from the Store lives in a user folder the service cannot see. The gh-only workflows (audit, board sync, state label, runner watch) stay on hosted runners and keep `shell: sh`.
 
+## How many: `.claude/runners.json`
+
+`"runners": 3` is the default and the project's choice: two so a pull request's jobs run side by side, one a merge-queue drain may hold while it waits for CI. One suits a quiet project that accepts waiting. Four or more when the watch keeps saying jobs waited while the processor idled. The bootstrap installs that many; the doctor and the session brief say when fewer are registered or online; `add-runner.ps1 -Name NAME` adds one and `remove-runner.ps1 -Name NAME` takes one away (both need the elevated prompt; the folder is moved aside, never deleted). Change the number in the file when you change the count.
+
+The machine, not the count, is the real limit. An idle runner holds about 90 MB of memory and almost no processor (one open request to GitHub at a time); a job's worker exists only while the job runs. What grows is disk: every runner keeps its work folder (the checkout, packages, build output). On a personal account a runner serves one repository, so a studio's projects each need their own, and fifteen on one machine is fine while they are idle.
+
+## The watch runs here
+
+`scripts/ci/runner-watch.sh` runs every fifteen minutes as a scheduled task on the runners' machine (`powershell -ExecutionPolicy Bypass -File scripts\ci\runner-watch-install.ps1`, once, as the signed-in user, no admin; `-Remove` takes it away; cron elsewhere). It spends no hosted minutes and sees what a hosted job cannot: the machine's processor, memory, free disk where the runners work, jobs running, how long jobs waited for a runner lately, and every project's runners on this machine. It keeps a day of samples under `~/.sipnship/runner-watch/` and says one plain line on the issue labeled `audit` when a condition starts and when it ends, never on every run:
+
+- jobs waited while the processor idled: one more runner would help;
+- jobs waited while the processor was saturated: more runners would slow each job; fewer runners, or a second machine;
+- memory above 90%, with the runner count;
+- free disk below 15 GB (urgent below 5), where the runners' work folders are;
+- more runners than half the cores across the projects on this machine;
+- a runner offline, fewer registered than `runners.json` wants, or a run queued over ten minutes.
+
+`sh scripts/ci/runner-watch.sh --print` shows what it sees without writing or commenting. The session brief repeats the conditions that hold. The trade of nothing hosted: when the machine itself is off, nothing reports it; the brief and the queue say "no runner online", which is the same fact from the other side. A project that wants the hosted copy as well sets the repository variable `RUNNER_WATCH_HOSTED` to `yes`.
+
 ## Run two
 
 One runner is a queue of one: a slow job makes every other job wait, and when it goes offline everything stops. Run at least two, on the same machine or on two. Each is one run of `add-runner.ps1` with a different name.
@@ -53,4 +72,4 @@ A build daemon (Gradle's, Nx's, the .NET build server) is one process for every 
 
 ## When it goes wrong anyway
 
-`Runner watch` runs hourly on a hosted runner, so it works when ours are down. It comments on the issue labeled `audit` when a runner is offline, when fewer than two are online, or when any run has sat queued for more than ten minutes, and says nothing otherwise. The merge queue also says "GitHub Actions is down, not your code" when the hosted side is the problem, so the two are never confused.
+`Runner watch` on a hosted runner runs only when `RUNNER_WATCH_HOSTED` is `yes` (see "The watch runs here"); then it works when ours are down. It comments on the issue labeled `audit` when a runner is offline, when fewer than two are online, or when any run has sat queued for more than ten minutes, and says nothing otherwise. The merge queue also says "GitHub Actions is down, not your code" when the hosted side is the problem, so the two are never confused.

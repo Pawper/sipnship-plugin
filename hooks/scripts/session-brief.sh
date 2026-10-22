@@ -159,10 +159,41 @@ fi
 # then CI and the queue wait on a machine, not on tests. One bounded REST
 # call, made only in such a project.
 if grep -qs 'self-hosted' .github/workflows/*.yml 2>/dev/null && command -v gh >/dev/null 2>&1; then
-  rr=$(run_bounded 5 gh api 'repos/{owner}/{repo}/actions/runners' --jq '"\(.total_count)\t\([.runners[] | select(.status == "online")] | length)"' 2>/dev/null || true)
-  rr_total=${rr%%	*}; rr_online=${rr#*	}
-  if [ -n "$rr" ] && [ "${rr_total:-0}" -gt 0 ] 2>/dev/null && [ "$rr_online" = 0 ]; then
+  rr=$(run_bounded 5 gh api 'repos/{owner}/{repo}/actions/runners' --jq '.runners[] | [.name, .status, (.busy | tostring)] | @tsv' 2>/dev/null | tr -d '\r' || true)
+  rr_total=$(printf '%s\n' "$rr" | grep -c . || true); rr_online=$(printf '%s\n' "$rr" | awk -F'\t' '$2 == "online"' | grep -c . || true)
+  if [ -f scripts/ci/run-lib.sh ]; then . scripts/ci/run-lib.sh; fi
+  rr_want=$(runner_count "$(cat .claude/runners.json 2>/dev/null)" 2>/dev/null || echo 3)
+  if [ "${rr_total:-0}" -gt 0 ] && [ "$rr_online" = 0 ]; then
     add "Runners: none of the $rr_total self-hosted runners is online, so CI and the merge queue will wait. Start one (scripts/ci/RUNNERS.md)."
+  elif [ "${rr_total:-0}" -gt 0 ] && { [ "$rr_online" -lt "$rr_total" ] || [ "$rr_total" -lt "$rr_want" ]; } && command -v runner_status >/dev/null 2>&1; then
+    add "Runners: $(runner_status "$rr" "$rr_want")."
+  fi
+  # What the runner watch on this machine last found, if it is running.
+  rw_key=$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null | tr '/' '-')
+  rw_state="${SIPNSHIP_HOME:-$HOME/.sipnship}/runner-watch/$rw_key.state"
+  if [ -n "$rw_key" ] && [ -s "$rw_state" ]; then
+    add "Runner watch: $(sed 's/^[^|]*|//' "$rw_state" | head -n 2 | paste -sd';' - | sed 's/;/; /g')."
+  fi
+fi
+# Hosted minutes, in a private repository: a job on a hosted runner bills
+# at least a minute, the allowance is per account, and one project once
+# spent it all on housekeeping runs. Say what would run hosted and about
+# how much, from the workflows' own schedules; nothing when none would.
+if [ -d .github/workflows ] && [ -f scripts/ci/run-lib.sh ] && command -v gh >/dev/null 2>&1; then
+  hm_private=$(run_bounded 5 gh api 'repos/{owner}/{repo}' --jq .private 2>/dev/null || echo "")
+  if [ "$hm_private" = true ]; then
+    . scripts/ci/run-lib.sh
+  fi
+  if [ "$hm_private" = true ] && command -v hosted_jobs >/dev/null 2>&1; then
+    hm_rows=""
+    for hm_f in .github/workflows/*.yml; do
+      [ -f "$hm_f" ] || continue
+      hm_row=$(hosted_jobs "$hm_f" "$(cat "$hm_f")")
+      [ -n "$hm_row" ] && hm_rows="$hm_rows$hm_row
+"
+    done
+    hm_line=$(hosted_estimate "$hm_rows")
+    [ -n "$hm_line" ] && add "$(printf '%s' "$hm_line" | sed 's/^hosted Actions: /Hosted Actions: /'). Move them onto this project's runners (scripts/ci/RUNNERS.md), or set RUNNER_WATCH_HOSTED and QUEUE_RUNS_ON on purpose."
   fi
 fi
 

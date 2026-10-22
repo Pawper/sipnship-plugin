@@ -23,6 +23,13 @@ permissions:
 
 jobs:
   watch:
+    # Off unless the project asks: the watch runs on the runners' machine
+    # as a scheduled task by default (scripts/ci/runner-watch.sh), where it
+    # also sees the machine's load and spends no hosted minutes. A project
+    # that wants this hosted copy too (it alone can say the whole machine
+    # is off) sets the repository variable RUNNER_WATCH_HOSTED to yes; a
+    # skipped job bills nothing.
+    if: vars.RUNNER_WATCH_HOSTED == 'yes'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
