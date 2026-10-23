@@ -343,7 +343,7 @@ There is no goals list. The board and the checks are the goal: an issue labeled 
 
 The session brief ends with the same proposal when a project has a drive config, under "Proposed next (nothing runs until you approve)," so every session opens with the state and the ask.
 
-To run it: `/loop 10m /project-drive` in a session while work is in flight, `/loop 1h /project-drive` when everything waits on a person, or a scheduled session that runs `claude -p "/project-drive"` in the project folder overnight. A timed wake costs tokens even when nothing changed; the first step is cheap on purpose. The plan script is always dry: `sh "$CLAUDE_PLUGIN_ROOT/scripts/drive/plan.sh" --snapshot` prints the facts and the proposal and does nothing. The config is `.claude/project-drive.json`: runners, the agent and minute budgets per round, the queue log glob, and the owner's list of what is always theirs.
+To run it: in the desktop app, ask the agent in plain words to start the drive loop every ten minutes while work is in flight, or every hour when everything waits on a person; in a terminal session, type `/loop 10m /project-drive` or `/loop 1h /project-drive`; or a scheduled session that runs `claude -p "/project-drive"` in the project folder overnight. A timed wake costs tokens even when nothing changed; the first step is cheap on purpose. The plan script is always dry: `sh "$CLAUDE_PLUGIN_ROOT/scripts/drive/plan.sh" --snapshot` prints the facts and the proposal and does nothing. The config is `.claude/project-drive.json`: runners, the agent and minute budgets per round, the queue log glob, and the owner's list of what is always theirs.
 
 ## Branch protection on main
 

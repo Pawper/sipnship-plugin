@@ -1866,5 +1866,11 @@ else
   printf 'skip  node is not installed, so the console tests did not run\n'
 fi
 
+printf '\n# drive skill scheduling\n'
+drive_sched=$(sed -n '/^## Scheduling/,$p' "$root/skills/project-drive/SKILL.md")
+for w in desktop terminal scheduled; do
+  eq "drive skill scheduling names the $w way" "1" "$(printf '%s\n' "$drive_sched" | grep -qi "$w" && echo 1 || echo 0)"
+done
+
 printf '\n%s passed, %s failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

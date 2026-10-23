@@ -140,6 +140,10 @@ an idle wake is short, but it is not free. Match the interval to how fast the st
 **Inside an open session, with /loop.** Minutes while agents and merges are in flight; an hour when everything
 waits on a person. In a session the approval is the question tool, so the person is present.
 
+In the desktop app, ask the agent in plain words ("start the drive loop every ten minutes"); the input box
+refuses a command typed inside another, so the agent starts the loop itself. In a terminal session, type the
+loop command below. A scheduled session, next, takes `/project-drive` as its prompt, unchanged.
+
 ```text
 /loop 10m /project-drive
 ```
