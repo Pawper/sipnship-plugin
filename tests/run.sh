@@ -620,6 +620,8 @@ eq "wake: median plus a minute, less time spent" "460" "$(wake_after "$(printf '
 eq "wake: past the median floors at 60" "60" "$(wake_after "$(printf '600\n700\n600\n')" 1000 5000)"
 eq "wake: no runs, nothing" "" "$(wake_after '' 1000 1200)"
 eq "wake: no pending run, nothing" "" "$(wake_after "$(printf '600\n')" '' 1200)"
+eq "wake: runs of other workflows are ignored" "600
+700" "$(run_durations "$(printf 'completed\t0\t600\tci.yml\tpull_request\tb\ncompleted\t0\t5\tstate.yml\tpull_request\tb\ncompleted\t0\t900\tci.yml\tpush\tmain\ncompleted\t0\t700\tci.yml\tpull_request\tc\n')" ci.yml pull_request)"
 eq "wake: capped at 1800" "1800" "$(wake_after "$(printf '3000\n3000\n')" 1000 1000)"
 eq "owner decision found" "prices" "$(owner_decision_hit 'Set the Prices for the yearly plan' 'prices
 policy')"

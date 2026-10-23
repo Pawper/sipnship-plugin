@@ -140,9 +140,13 @@ number_proposal "$round"
 # A pending pull request: say when to look again. One REST call for recent runs.
 pend_pr=$(printf '%s\n' "$snapshot" | awk -F'\t' '$1 == "pr" && $4 == "pending" { print $2; exit }')
 if [ -n "$pend_pr" ]; then
-  runs=$(gh api "repos/{owner}/{repo}/actions/runs?per_page=20" --jq '.workflow_runs[] | [.status, (.run_started_at // .created_at | fromdateiso8601), (.updated_at | fromdateiso8601)] | @tsv' 2>/dev/null | tr -d '\r')
-  durations=$(printf '%s\n' "$runs" | awk -F'\t' '$1 == "completed" && $3 > $2 { print $3 - $2 }')
-  started=$(printf '%s\n' "$runs" | awk -F'\t' '$1 != "completed" && $1 != "" { print $2; exit }')
+  runs=$(gh api "repos/{owner}/{repo}/actions/runs?per_page=50" --jq '.workflow_runs[] | [.status, (.run_started_at // .created_at | fromdateiso8601), (.updated_at | fromdateiso8601), .path, .event, .head_branch] | @tsv' 2>/dev/null | tr -d '\r')
+  branch=$(gh api "repos/{owner}/{repo}/pulls/$pend_pr" --jq .head.ref 2>/dev/null | tr -d '\r')
+  # The pending run is the one for that pull request's branch, else the first not completed.
+  pending=$(printf '%s\n' "$runs" | awk -F'\t' -v b="$branch" '$1 != "completed" && $1 != "" && b != "" && $6 == b { print; exit }')
+  [ -n "$pending" ] || pending=$(printf '%s\n' "$runs" | awk -F'\t' '$1 != "completed" && $1 != "" { print; exit }')
+  started=$(printf '%s\n' "$pending" | awk -F'\t' '{ print $2 }')
+  durations=$(run_durations "$runs" "$(printf '%s\n' "$pending" | awk -F'\t' '{ print $4 }')" "$(printf '%s\n' "$pending" | awk -F'\t' '{ print $5 }')")
   secs=$(wake_after "$durations" "$started" "$(date +%s)")
   [ -n "$secs" ] && echo "wake: $secs seconds, PR $pend_pr"
 fi

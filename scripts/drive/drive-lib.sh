@@ -132,6 +132,14 @@ trim_report() {
     function flush() { if (cut > 0) printf "(and %d more)\n", cut; cut = 0 }'
 }
 
+# run_durations RUNS PATH EVENT
+# RUNS is tab-separated lines: status, start epoch, end epoch, workflow path,
+# event, head branch. Print the durations of completed runs of that one
+# workflow and event, so quick housekeeping workflows never set the pace.
+run_durations() {
+  printf '%s\n' "$1" | awk -F'\t' -v p="$2" -v e="$3" '$1 == "completed" && $4 == p && $5 == e && $3 > $2 { print $3 - $2 }'
+}
+
 # wake_after RUNS START NOW
 # How long to wait before looking at a pending pull request again. RUNS is
 # the durations in seconds of recent completed CI runs, one per line; START
