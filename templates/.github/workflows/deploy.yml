@@ -130,14 +130,14 @@ jobs:
         with:
           ref: ${{ needs.plan.outputs.sha }}
       - name: Build here and deploy the output; Vercel builds nothing
-        shell: bash
+        shell: bash --noprofile --norc -eo pipefail {0} # "bash" written out, so the sync never takes it for a filled line
         run: |
           npx --yes vercel@latest pull --yes --environment=production --token="$VERCEL_TOKEN"
           if [ -f scripts/ci/build-id.sh ]; then NEXT_PUBLIC_BUILD_ID=$(sh scripts/ci/build-id.sh HEAD); export NEXT_PUBLIC_BUILD_ID; echo "Build $NEXT_PUBLIC_BUILD_ID"; fi
           npx --yes vercel@latest build --prod --token="$VERCEL_TOKEN"
           npx --yes vercel@latest deploy --prebuilt --prod --token="$VERCEL_TOKEN"
       - name: Record the deployed commit
-        shell: bash
+        shell: bash --noprofile --norc -eo pipefail {0} # "bash" written out, so the sync never takes it for a filled line
         env:
           GH_TOKEN: ${{ github.token }}
           SHA: ${{ needs.plan.outputs.sha }}

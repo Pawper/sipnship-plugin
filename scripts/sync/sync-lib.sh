@@ -138,9 +138,29 @@ ci_shell() {
 # have it, so a workflow the sync filled compares as current, not edited.
 filled_text() {
   ft_t=$1
-  [ -n "$2" ] && ft_t=$(fill_placeholder "$ft_t" RUNS_ON "$2")
-  [ -n "$3" ] && ft_t=$(fill_placeholder "$ft_t" RUN_SHELL "$3")
+  [ -n "$2" ] && ft_t=$(fill_lines "$ft_t" RUNS_ON "$2")
+  [ -n "$3" ] && ft_t=$(fill_lines "$ft_t" RUN_SHELL "$3")
   printf '%s\n' "$ft_t"
+}
+
+# fill_lines TEXT NAME VALUE
+# fill_placeholder on the lines that set a runner or a shell ("runs-on:",
+# "shell:") and no other: a comment that names the placeholders stays as
+# written, so unfill_text gives the template back. A filled comment once
+# made every freshly synced workflow fail to match any released version,
+# and the sync called it the project's own.
+fill_lines() {
+  fl_out=""
+  while IFS= read -r fl_line || [ -n "$fl_line" ]; do
+    case "$fl_line" in
+      *runs-on:*|*shell:*) fl_line=$(fill_placeholder "$fl_line" "$2" "$3") ;;
+    esac
+    fl_out="$fl_out$fl_line
+"
+  done <<FLEOF
+$1
+FLEOF
+  printf '%s' "$fl_out"
 }
 
 # fill_placeholder TEXT NAME VALUE
@@ -191,6 +211,13 @@ per_merge_release() {
     END { if (found) print "yes" }'
 }
 
+# deploy_path_of DEPLOY_JSON
+# The "path" a project's .claude/deploy.json names (runner, vercel or
+# guard), or nothing.
+deploy_path_of() {
+  printf '%s' "$1" | tr -d '\r\n' | sed -n 's/.*"path"[ \t]*:[ \t]*"\([^"]*\)".*/\1/p'
+}
+
 # release_workflows DEPLOY_JSON
 # The release workflows a project lists in .claude/deploy.json under
 # "releases" (["play-internal.yml", "app-distribution.yml"]), one a line.
@@ -235,7 +262,37 @@ UFEOF
 known_match() {
   km_a=$(norm_hash "$3")
   km_b=$(norm_hash "$(unfill_text "$3" "$4" "$5")")
-  if printf '%s\n' "$1" | grep -qxF -e "$2 $km_a" -e "$2 $km_b"; then echo yes; else echo no; fi
+  km_c=$(norm_hash "$(unfill_text "$(unfill_comments "$(unfill_comments "$3" RUNS_ON "$4")" RUN_SHELL "$5")" "$4" "$5")")
+  if printf '%s\n' "$1" | grep -qxF -e "$2 $km_a" -e "$2 $km_b" -e "$2 $km_c"; then echo yes; else echo no; fi
+}
+
+# unfill_comments TEXT NAME VALUE
+# TEXT with VALUE put back to NAME on its comment lines only. Syncs before
+# 0.23.3 filled the placeholders wherever they stood, comments included,
+# and a workflow they wrote matches a released version only this way. An
+# occurrence inside a word or in quotes is left alone: a comment that says
+# a bare "bash" is the WSL stub was written so, not filled. An empty VALUE
+# leaves the text alone.
+unfill_comments() {
+  [ -n "$3" ] || { printf '%s\n' "$1"; return 0; }
+  UC_NAME=$2 UC_VALUE=$3 awk '
+    function edge(c) { return c ~ /[A-Za-z0-9_"\x27]/ }
+    BEGIN { name = ENVIRON["UC_NAME"]; val = ENVIRON["UC_VALUE"]; n = length(val) }
+    {
+      line = $0
+      if (line ~ /^[ \t]*#/) {
+        out = ""
+        while ((i = index(line, val)) > 0) {
+          if (edge(substr(line, i - 1, 1)) || edge(substr(line, i + n, 1))) { out = out substr(line, 1, i + n - 1) }
+          else { out = out substr(line, 1, i - 1) name }
+          line = substr(line, i + n)
+        }
+        line = out line
+      }
+      print line
+    }' <<UCEOF
+$1
+UCEOF
 }
 
 # sourced_scripts TEXT

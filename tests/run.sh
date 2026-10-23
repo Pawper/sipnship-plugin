@@ -1423,6 +1423,44 @@ git -C "$ss_d" add -A; git -C "$ss_d" commit -q -m start
 ss_dry=$(cd "$ss_d" && sh "$root/scripts/sync/sync-templates.sh" 2>&1)
 eq "a workflow's missing plugin scripts are brought and counted" "2" "$(printf '%s\n' "$ss_dry" | grep -c 'brings:   scripts/ci/runner-doctor.sh\|brings:   scripts/ci/doctor-lib.sh')"
 eq "the dry run prints the same refusals as --apply" "$(printf '%s\n' "$ss_dry" | grep '^  refused:' | sort)" "$(cd "$ss_d" && sh "$root/scripts/sync/sync-templates.sh" --apply --no-commit 2>&1 | grep '^  refused:' | sort)"
+# A filled workflow must read back as a released version, whatever the
+# project's runner and shell: the fill leaves comments alone, the
+# templates hold no literal line a fill could produce, and a workflow an
+# earlier sync filled with its comments still matches.
+km_known=$(cat "$root/templates/KNOWN.txt")
+km_bad=""
+for km_wf in audit board-sync state-label deploy queue-drain runner-watch runner-check; do
+  [ -f "$root/templates/.github/workflows/$km_wf.yml" ] || continue
+  for km_sh in bash "'C:\\PROGRA~1\\Git\\bin\\bash.exe --noprofile --norc -eo pipefail {0}'"; do
+    km_t=$(filled_text "$(cat "$root/templates/.github/workflows/$km_wf.yml")" "[self-hosted, windows]" "$km_sh")
+    [ "$(known_match "$km_known" ".github/workflows/$km_wf.yml" "$km_t" "[self-hosted, windows]" "$km_sh")" = yes ] || km_bad="$km_bad $km_wf($km_sh)"
+  done
+done
+eq "every filled workflow reads back as the plugin's, with a bash or a Windows shell" "" "$km_bad"
+eq "a comment that names the placeholders is not filled" "# RUNS_ON and RUN_SHELL here
+    runs-on: [self-hosted]
+    shell: bash" "$(filled_text "$(printf '# RUNS_ON and RUN_SHELL here\n    runs-on: RUNS_ON\n    shell: RUN_SHELL')" '[self-hosted]' bash)"
+km_old=$(fill_placeholder "$(fill_placeholder "$(cat "$root/templates/.github/workflows/audit.yml")" RUNS_ON '[self-hosted, windows]')" RUN_SHELL bash)
+eq "a workflow an earlier sync filled, comments included, still matches" "yes" "$(known_match "$km_known" .github/workflows/audit.yml "$km_old" '[self-hosted, windows]' bash)"
+eq "but a changed one does not" "no" "$(known_match "$km_known" .github/workflows/audit.yml "$(printf '%s\n      - run: echo mine\n' "$km_old")" '[self-hosted, windows]' bash)"
+# On the guard path Deploy has nothing to do, and its scheduled plan still
+# starts on a hosted machine: deploy.yml is neither offered nor kept.
+eq "the deploy path is read from deploy.json" "guard" "$(deploy_path_of '{ "path": "guard", "appRoot": "." }')"
+ss_d=$(ss_new)
+printf 'jobs:\n  checks:\n    runs-on: [self-hosted, windows]\n    defaults:\n      run:\n        shell: bash\n' > "$ss_d/.github/workflows/ci.yml"
+mkdir -p "$ss_d/.claude" "$ss_d/scripts/ci"
+printf '{\n  "path": "guard",\n  "appRoot": ".",\n  "intervalMinutes": 0\n}\n' > "$ss_d/.claude/deploy.json"
+for gf in deploy-lib.sh deploy-health.sh deploy-gate.sh lib.sh; do cp "$root/templates/scripts/ci/$gf" "$ss_d/scripts/ci/$gf"; done
+filled_text "$(cat "$root/templates/.github/workflows/deploy.yml")" "[self-hosted, windows]" bash > "$ss_d/.github/workflows/deploy.yml"
+git -C "$ss_d" add -A; git -C "$ss_d" commit -q -m start
+ss_dry=$(cd "$ss_d" && sh "$root/scripts/sync/sync-templates.sh" 2>&1)
+eq "a guard-path project's plugin deploy.yml is said to go, once" "1 0" "$(printf '%s\n' "$ss_dry" | grep -c 'deploy:   .github/workflows/deploy.yml goes') $(printf '%s\n' "$ss_dry" | grep -c 'missing:  .github/workflows/deploy.yml\|differs:  .github/workflows/deploy.yml')"
+ss_out=$(cd "$ss_d" && sh "$root/scripts/sync/sync-templates.sh" --apply --no-commit 2>&1)
+eq "and --apply removes it, staged" "1 no D" "$(printf '%s\n' "$ss_out" | grep -c 'removed:  .github/workflows/deploy.yml') $([ -f "$ss_d/.github/workflows/deploy.yml" ] && echo yes || echo no) $(git -C "$ss_d" status --porcelain -- .github/workflows/deploy.yml | cut -c1-1)"
+git -C "$ss_d" reset -q --hard; git -C "$ss_d" checkout -q main
+git -C "$ss_d" rm -q .github/workflows/deploy.yml; git -C "$ss_d" commit -q -m "no deploy workflow"
+ss_dry=$(cd "$ss_d" && sh "$root/scripts/sync/sync-templates.sh" --only deploy 2>&1)
+eq "a guard-path project is not offered deploy.yml" "1 0" "$(printf '%s\n' "$ss_dry" | grep -c 'deploy:   .github/workflows/deploy.yml is not offered') $(printf '%s\n' "$ss_dry" | grep -c 'missing:  .github/workflows/deploy.yml')"
 eq "a placeholder inside a longer name is left alone" "vars.DEPLOY_RUNS_ON and [self-hosted]" "$(fill_placeholder 'vars.DEPLOY_RUNS_ON and RUNS_ON' RUNS_ON '[self-hosted]')"
 eq "an ampersand in the value is literal" "runs-on: a & b" "$(fill_placeholder 'runs-on: RUNS_ON' RUNS_ON 'a & b')"
 eq "every occurrence on a line is filled" "x [self-hosted] y [self-hosted]" "$(fill_placeholder 'x RUNS_ON y RUNS_ON' RUNS_ON '[self-hosted]')"

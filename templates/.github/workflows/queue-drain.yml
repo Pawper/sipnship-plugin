@@ -52,7 +52,7 @@ jobs:
     timeout-minutes: 40
     defaults:
       run:
-        shell: bash
+        shell: bash --noprofile --norc -eo pipefail {0} # "bash" written out, so the sync never takes it for a filled line
     steps: &drain-steps
       - name: Skip when a drain just ran
         id: recent

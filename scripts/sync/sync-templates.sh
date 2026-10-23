@@ -131,6 +131,32 @@ $p
   esac
   if [ "$(same_text "$(cat "$p")" "$want")" = yes ]; then current=$((current + 1)); else changed="$changed $p"; fi
 done
+# A project on the guard path (vercel.json guards Git deploys from main)
+# needs no Deploy workflow: under the guard it has nothing to do, but its
+# scheduled plan job still starts, on a hosted machine, and in a private
+# repository with no hosted minutes that was a failed run on every
+# schedule. One project was offered deploy.yml on every sync. It is not
+# offered, and a plugin version of it here is removed with --apply (an
+# edited one is kept unless --force, like any edited file).
+deploy_wf=.github/workflows/deploy.yml
+remove=""
+if [ "$(deploy_path_of "$(cat .claude/deploy.json 2>/dev/null)")" = guard ]; then
+  dw_said=no
+  case " $changed $missing " in *" $deploy_wf "*)
+    changed=$(printf '%s' "$changed" | sed "s# $deploy_wf##"); missing=$(printf '%s' "$missing" | sed "s# $deploy_wf##")
+    [ -f "$deploy_wf" ] || { echo "  deploy:   $deploy_wf is not offered: .claude/deploy.json says the guard path, where Deploy has nothing to do and its scheduled plan would still start, on a hosted machine"; dw_said=yes; } ;;
+  esac
+  if [ -f "$deploy_wf" ]; then
+    case "$(printf '%s\n' "$present")" in *"$deploy_wf"*)
+      present=$(printf '%s\n' "$present" | grep -vxF "$deploy_wf" || true)
+      case " $edited " in
+        *" $deploy_wf "*) [ "$force" = yes ] && remove=$deploy_wf || echo "  deploy:   $deploy_wf is edited here and has nothing to do on the guard path; its scheduled plan still starts on a hosted machine. Remove it, or pass --force" ;;
+        *) remove=$deploy_wf ;;
+      esac ;;
+    esac
+    [ -z "$remove" ] || echo "  deploy:   $deploy_wf goes: .claude/deploy.json says the guard path, where Deploy has nothing to do and its scheduled plan still starts, on a hosted machine. Removed with --apply"
+  fi
+fi
 defaults=""
 # A feature's config defaults go to a project that uses the feature; one
 # that does not use it does not need its config.
@@ -180,7 +206,8 @@ willwrite=" $changed $missing $defaults "
 refusal_of() {
   case "$1" in .github/workflows/*.yml) ;; *) return 0 ;; esac
   r_text=$(filled_text "$(cat "$tpl/$1")" "$runs_on" "$run_shell")
-  if printf '%s\n' "$r_text" | grep -qw 'RUNS_ON\|RUN_SHELL'; then
+  # Only the lines the fill touches: a comment keeps the placeholder names.
+  if printf '%s\n' "$r_text" | grep -E '^[ 	]*(runs-on|shell):' | grep -qw 'RUNS_ON\|RUN_SHELL'; then
     echo "needs to know where this project's jobs run, and ci.yml has no plain runs-on or shell to copy (none, or an expression); not written. Give ci.yml's first job a plain runs-on and shell, or write this file by hand."
     return 0
   fi
@@ -349,6 +376,7 @@ esac
 # (read above), and written only when nothing is left unfilled and every
 # script it runs is here or written now; otherwise it is refused and said.
 written=""
+if [ -n "$remove" ]; then git rm -q -- "$remove"; echo "  removed:  $remove"; fi
 for p in $changed $missing $defaults; do
   if [ "$force" = no ]; then
     case " $edited " in *" $p "*) echo "  kept:     $p (edited here; pass --force to replace it)"; continue ;; esac
@@ -378,7 +406,7 @@ for p in $changed $missing $defaults; do
   esac
   written="$written $p"
 done
-[ -n "$(printf '%s' "$written" | tr -d ' ')" ] || { echo "Nothing written: every differing file was edited here or refused above."; git checkout -q -; exit 0; }
+[ -n "$(printf '%s' "$written$remove" | tr -d ' ')" ] || { echo "Nothing written: every differing file was edited here or refused above."; git checkout -q -; exit 0; }
 # Scripts must stay LF: a repository that checks out CRLF breaks every
 # shell script it copies. Pin the types the sync writes, once.
 lf_add=""
@@ -396,7 +424,7 @@ if [ -n "$lf_add" ]; then
   for p in $written; do git add --renormalize -- "$p" 2>/dev/null || true; done
   echo "  pinned:   $lf_add to LF in .gitattributes, since this repository checks out CRLF"
 fi
-git add -- $written
+[ -z "$written" ] || git add -- $written
 if [ "$no_commit" = yes ]; then
   echo "Staged on branch $branch, not committed (--no-commit). Commit it yourself, with your session's attribution; then push and open a pull request. Secrets and variables named above must exist before the added workflows run."
 else
