@@ -149,11 +149,14 @@ guard_kind() {
 # is. MAIN and DEPLOYED are commit shas (DEPLOYED empty when none is
 # recorded); OLDEST_EPOCH is when the oldest shipping commit not yet
 # deployed landed (empty when there is none); LAST_RUN is the deploy
-# workflow's last conclusion. Overdue means older than twice the interval,
+# workflow's last conclusion, or "fellback" (a runner build that fell back
+# to Vercel) or "billing" (GitHub refused to start it on a hosted machine
+# for billing). Overdue means older than twice the interval,
 # since a scheduled run can land just after a merge.
 deploy_health() {
   case "$1" in runner|vercel|guard) ;; *) return 0 ;; esac
   case "$7" in
+    billing) echo "Deploys: hosted Actions minutes are used up, so the last Deploy run could not start (GitHub refused it for billing: a payment failed or the spending limit is reached); main is not reaching production. Settle billing at github.com/settings/billing, or move Deploy onto a runner of this project's own."; return 0 ;;
     failure|startup_failure|timed_out) echo "Deploys: the last scheduled deploy failed; main is not reaching production. Open the Deploy workflow's last run."; return 0 ;;
     fellback) echo "Deploys: the last deploy fell back to a build on Vercel because the runner build failed, so it billed Vercel build minutes. Open the Deploy workflow's last run, job build-on-runner."; return 0 ;;
   esac

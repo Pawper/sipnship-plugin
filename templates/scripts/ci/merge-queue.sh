@@ -333,8 +333,10 @@ latest_run() {
 jobs_of() { # RUN_ID -> one job per line for run_verdict
   gh run view "$1" --json jobs --jq '.jobs[] | [.name, .status, (.conclusion // ""), (.startedAt // ""), .databaseId] | @tsv' 2>/dev/null \
   | while IFS="$tab" read -r name status conc started jobid; do
+    # Annotations: for a job still waiting (an outage) and for one that
+    # failed with no step run (a billing refusal says so only there).
     ann=""
-    if [ "$status" != "completed" ]; then
+    if [ "$status" != "completed" ] || [ "$conc" = failure ] || [ "$conc" = startup_failure ]; then
       ann=$(gh api "repos/{owner}/{repo}/check-runs/$jobid/annotations" --jq '[.[].message] | join("; ")' 2>/dev/null | tr '\t\n' '  ')
     fi
     printf '%s\t%s\t%s\t%s\t%s\n' "$name" "$status" "$conc" "$(iso_epoch "$started")" "$ann"
@@ -398,6 +400,9 @@ diagnose() {
   case "$d_verdict" in
     green) return 0 ;;
     pending) return 2 ;;
+    billing:*)
+      billing_line "the job(s) ${d_verdict#billing: }" | tr -d '\n'; echo
+      return 1 ;;
     outage:*)
       gs=$(github_status)
       echo "GitHub Actions is down, not your code: ${d_verdict#outage: }${gs:+ ($gs)}"

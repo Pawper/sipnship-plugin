@@ -7,6 +7,8 @@
 # run_verdict JOBS NOW [IDLE_RUNNERS] [QUEUE_MINUTES]
 # JOBS is one job per line: "name<TAB>status<TAB>conclusion<TAB>started_epoch<TAB>annotations".
 # Print one of:
+#   billing: name   GitHub refused to start the job on a hosted machine for
+#                   billing (payments failed or the spending limit reached)
 #   outage: ...     a job annotation says no hosted runner picked it up, or a
 #                   job has sat queued for QUEUE_MINUTES (default 5) while
 #                   IDLE_RUNNERS (default 0) of ours were idle
@@ -18,6 +20,7 @@ run_verdict() {
   printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v now="$2" -v idle="${3:-0}" -v qmin="${4:-5}" '
     NF >= 3 {
       name = $1; status = $2; conc = $3; started = $4 + 0; ann = tolower($5)
+      if (ann ~ /recent account payments have failed|spending limit needs to be increased/) { billing = (billing == "") ? name : billing ", " name; next }
       if (ann ~ /not acquired by runner|no runner|runner.*offline/) { outage = name ": " $5; next }
       if (status == "queued" && started > 0 && (now - started) > qmin * 60 && idle > 0) { outage = name ": queued for " int((now - started) / 60) " minutes while " idle " of our runners were idle"; next }
       if (conc == "cancelled" || conc == "canceled") { canceled = (canceled == "") ? name : canceled ", " name; next }
@@ -25,12 +28,30 @@ run_verdict() {
       if (status != "completed") pending = 1
     }
     END {
-      if (outage != "") print "outage: " outage
+      if (billing != "") print "billing: " billing
+      else if (outage != "") print "outage: " outage
       else if (canceled != "") print "canceled: " canceled
       else if (failed != "") print "failed: " failed
       else if (pending) print "pending"
       else print "green"
     }'
+}
+
+# billing_refused TEXT
+# "yes" when TEXT, a job's annotations or a run's log, says GitHub refused
+# to start a hosted job for billing: the account's payments failed or its
+# spending limit is reached. Nothing otherwise. The run then fails with no
+# step run, and one project's release was skipped for days with no word.
+billing_refused() {
+  printf '%s' "$1" | tr -d '\r' | grep -qiE 'recent account payments have failed|spending limit needs to be increased' && echo yes
+  return 0
+}
+
+# billing_line WHAT
+# The one plain line for that refusal, said by the queue, the brief and the
+# audit alike. WHAT names what could not start ("the Deploy workflow").
+billing_line() {
+  printf 'Hosted Actions minutes are used up: GitHub refused to start %s for billing (a payment failed or the spending limit is reached). Nothing hosted starts until billing is settled at github.com/settings/billing, or the job moves onto a runner of this project'"'"'s own.\n' "$1"
 }
 
 # githubstatus_verdict JSON
