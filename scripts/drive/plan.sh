@@ -136,3 +136,13 @@ if [ -n "$extra" ]; then
   round=$(printf '%s\n%s\n' "$extra" "$round" | awk '/^stop: (nothing to propose|everything left waits|work is in flight)/ { print "stop: proposal ready for approval"; next } { print }')
 fi
 number_proposal "$round"
+
+# A pending pull request: say when to look again. One REST call for recent runs.
+pend_pr=$(printf '%s\n' "$snapshot" | awk -F'\t' '$1 == "pr" && $4 == "pending" { print $2; exit }')
+if [ -n "$pend_pr" ]; then
+  runs=$(gh api "repos/{owner}/{repo}/actions/runs?per_page=20" --jq '.workflow_runs[] | [.status, (.run_started_at // .created_at | fromdateiso8601), (.updated_at | fromdateiso8601)] | @tsv' 2>/dev/null | tr -d '\r')
+  durations=$(printf '%s\n' "$runs" | awk -F'\t' '$1 == "completed" && $3 > $2 { print $3 - $2 }')
+  started=$(printf '%s\n' "$runs" | awk -F'\t' '$1 != "completed" && $1 != "" { print $2; exit }')
+  secs=$(wake_after "$durations" "$started" "$(date +%s)")
+  [ -n "$secs" ] && echo "wake: $secs seconds, PR $pend_pr"
+fi

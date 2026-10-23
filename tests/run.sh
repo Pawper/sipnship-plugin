@@ -616,6 +616,11 @@ eq "queue stale: old and unfinished" "yes" "$(queue_is_stale 1000000 1010000 'me
 eq "queue not stale: old but finished" "no" "$(queue_is_stale 1000000 1010000 'queue done')"
 eq "queue not stale: recent" "no" "$(queue_is_stale 1000000 1003000 'merging PR 41')"
 eq "queue not stale: no log" "no" "$(queue_is_stale '' 1000000 '')"
+eq "wake: median plus a minute, less time spent" "460" "$(wake_after "$(printf '600\n700\n600\n')" 1000 1200)"
+eq "wake: past the median floors at 60" "60" "$(wake_after "$(printf '600\n700\n600\n')" 1000 5000)"
+eq "wake: no runs, nothing" "" "$(wake_after '' 1000 1200)"
+eq "wake: no pending run, nothing" "" "$(wake_after "$(printf '600\n')" '' 1200)"
+eq "wake: capped at 1800" "1800" "$(wake_after "$(printf '3000\n3000\n')" 1000 1000)"
 eq "owner decision found" "prices" "$(owner_decision_hit 'Set the Prices for the yearly plan' 'prices
 policy')"
 eq "owner decision absent" "" "$(owner_decision_hit 'Fix the date parser' 'prices
