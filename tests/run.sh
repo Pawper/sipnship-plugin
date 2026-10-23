@@ -809,6 +809,12 @@ eq "nor one with no run since" "" "$(workflow_breaks "$(printf '.github/workflow
 eq "nor one with a pass since" "" "$(workflow_breaks "$(printf '.github/workflows/audit.yml\tsuccess\t3000\n.github/workflows/audit.yml\tfailure\t2000\n.github/workflows/audit.yml\tsuccess\t900\n')" "$wb_changes")"
 eq "a cancelled run since is not a failure" "" "$(workflow_breaks "$(printf '.github/workflows/audit.yml\tcancelled\t2000\n.github/workflows/audit.yml\tsuccess\t900\n')" "$wb_changes")"
 eq "the brief and the audit both run workflow-breaks.sh" "1 1" "$(grep -c 'sh scripts/ci/workflow-breaks.sh' "$root/hooks/scripts/session-brief.sh") $(grep -c 'sh scripts/ci/workflow-breaks.sh' "$root/templates/.github/workflows/audit.yml")"
+printf '\n# drain_late\n'
+eq "a drain last run 6 h ago on a 2 h schedule is late" "Queue drain: last ran 6 h ago, scheduled every 2 h; GitHub is firing it late. A green pull request waits until then or until a session runs sh scripts/ci/merge-queue.sh --drain." "$(drain_late 1000 $((1000 + 21600)) 2)"
+eq "one 3 h ago is not" "" "$(drain_late 1000 $((1000 + 10800)) 2)"
+eq "exactly twice the interval is not" "" "$(drain_late 1000 $((1000 + 14400)) 2)"
+eq "no last run says nothing" "" "$(drain_late "" 99999 2)"
+eq "the brief and the audit both run drain-late.sh" "1 1" "$(grep -c 'sh scripts/ci/drain-late.sh' "$root/hooks/scripts/session-brief.sh") $(grep -c 'sh scripts/ci/drain-late.sh' "$root/templates/.github/workflows/audit.yml")"
 
 printf '\n# audit helpers\n'
 eq "issues without a state label" "12

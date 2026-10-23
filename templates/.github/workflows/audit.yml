@@ -101,10 +101,17 @@ jobs:
             breaks=$(sh scripts/ci/workflow-breaks.sh "${{ github.event.repository.default_branch }}" | sed 's/^/- /')
           fi
 
+          # The scheduled queue drain fired late or skipped by GitHub.
+          late=""
+          if [ -f scripts/ci/drain-late.sh ]; then
+            late=$(sh scripts/ci/drain-late.sh | sed 's/^/- /')
+          fi
+
           body=$(audit_comment "$missing" "$stale" "$red" "$branches")
           if [ -n "$serial" ]; then body=$(printf '%s\n\n- %s' "$body" "$serial" | sed '/./,$!d'); fi
           if [ -n "$deploy" ]; then body=$(printf '%s\n\n- %s' "$body" "$deploy" | sed '/./,$!d'); fi
           if [ -n "$breaks" ]; then body=$(printf '%s\n\n%s' "$body" "$breaks" | sed '/./,$!d'); fi
+          if [ -n "$late" ]; then body=$(printf '%s\n\n%s' "$body" "$late" | sed '/./,$!d'); fi
           if [ -z "$body" ]; then
             echo "Clean. Nothing to say."
             exit 0
