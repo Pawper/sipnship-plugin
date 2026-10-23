@@ -1417,6 +1417,31 @@ eq "a project's own file matches none" "no" "$(known_match "$km_known" a/x.yml '
 km_missing=$(for p in $(owned_paths "$(cat "$root/templates/OWNED.txt")"); do grep -qxF "$p $(norm_hash "$(cat "$root/templates/$p")")" "$root/templates/KNOWN.txt" || echo "$p"; done)
 eq "every current template is in KNOWN.txt (run scripts/sync/known-hashes.sh before a release)" "" "$km_missing"
 
+# Release bump: one script sets the version everywhere
+rb_pv=$(sed -n 's/^  "version": *"\([^"]*\)".*/\1/p' "$root/.claude-plugin/plugin.json")
+rb_kv=$(sed -n 's/^  "version": *"\([^"]*\)".*/\1/p' "$root/package.json")
+rb_bv=$(grep 'img.shields.io/badge/version-' "$root/README.md" | grep -o '[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*' | sort -u)
+eq "plugin.json, package.json and the README badge agree on the version" "$rb_pv" "$rb_kv"
+eq "the README badge line carries only that version" "$rb_pv" "$rb_bv"
+rb_d=$(mktemp -d)
+mkdir -p "$rb_d/plugin/scripts/release" "$rb_d/plugin/.claude-plugin"
+cp "$root/scripts/release/bump.sh" "$rb_d/plugin/scripts/release/"
+cp "$root/.claude-plugin/plugin.json" "$rb_d/plugin/.claude-plugin/"
+cp "$root/package.json" "$root/README.md" "$rb_d/plugin/"
+rb_run() { (cd "$rb_d" && sh plugin/scripts/release/bump.sh "$@" --no-known >/dev/null 2>&1); }
+rb_ver() { sed -n 's/^  "version": *"\([^"]*\)".*/\1/p' "$1"; }
+rb_all() { cat "$rb_d/plugin/.claude-plugin/plugin.json" "$rb_d/plugin/package.json" "$rb_d/plugin/README.md" | cksum; }
+rb_run 9.8.7
+eq "bump sets plugin.json" "9.8.7" "$(rb_ver "$rb_d/plugin/.claude-plugin/plugin.json")"
+eq "bump sets package.json" "9.8.7" "$(rb_ver "$rb_d/plugin/package.json")"
+eq "bump sets both places on the badge line" "9.8.7" "$(grep 'img.shields.io/badge/version-' "$rb_d/plugin/README.md" | grep -o '[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*' | sort -u)"
+eq "bump leaves the other badges alone" "$(grep -c 'img.shields.io' "$root/README.md")" "$(grep -c 'img.shields.io' "$rb_d/plugin/README.md")"
+rb_sum=$(rb_all)
+rb_run 9.8.7
+eq "bump twice with the same version changes nothing" "$rb_sum" "$(rb_all)"
+eq "bump refuses a bad version" "2" "$(cd "$rb_d" && sh plugin/scripts/release/bump.sh 1.2 --no-known >/dev/null 2>&1; echo $?)"
+eq "bump refuses a version with a suffix" "2" "$(cd "$rb_d" && sh plugin/scripts/release/bump.sh 1.2.3-beta --no-known >/dev/null 2>&1; echo $?)"
+
 # The sync in a throwaway project: its own workflow is never replaced, and
 # a workflow is refused rather than written broken.
 ss_new() {
