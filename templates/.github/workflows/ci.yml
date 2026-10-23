@@ -212,7 +212,7 @@ jobs:
           if [ "$open" = "0" ]; then
             gh issue create \
               --title "main is red" \
-              --label "ci-red,state:ready" \
+              --label "ci-red,$( [ -f scripts/ci/lib.sh ] && . scripts/ci/lib.sh && state_label ready "$(project_label_form)" || echo state:ready )" \
               --body "The full run on main failed: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}. Fix it before merging anything else."
           else
             echo "A ci-red issue is already open; not opening another."

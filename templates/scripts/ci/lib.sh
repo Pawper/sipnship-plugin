@@ -60,7 +60,7 @@ rerun_decision() {
 state_labels_json() {
   printf '%s\n' "$1" | tr -d '\r' | awk -v new="$2" '
     function q(s) { gsub(/\\/, "\\\\", s); gsub(/"/, "\\\"", s); return "\"" s "\"" }
-    NF && $0 !~ /^state:/ && !seen[$0]++ { out = out (out == "" ? "" : ",") q($0) }
+    NF && tolower($0) !~ /^state:/ && !seen[$0]++ { out = out (out == "" ? "" : ",") q($0) }
     END { if (new != "") out = out (out == "" ? "" : ",") q(new); print "{\"labels\":[" out "]}" }'
 }
 
@@ -138,22 +138,75 @@ needs_rerun() {
   echo no
 }
 
-# state_label_from_body BODY
-# Print the state label for the "### State" field in an issue body written
-# by the task template, for example "state:waiting-on-owner". Print nothing
-# when the field is missing or empty.
-state_label_from_body() {
+# The state label's form. The plugin's labels.sh makes "state:in-progress"
+# (compact); a project that named its own "state: in progress" (spaced)
+# keeps them, and every script here writes and reads the project's form.
+# One project's state-label workflow set a second set of labels beside its
+# own. The form is read once from the repository's labels
+# (project_label_form) and passed down, or held in LABEL_FORM.
+
+# state_slug LABEL
+# The state a label names, as a slug: "state:in-progress", "state: in
+# progress" and "State: In Progress" all give "in-progress". Nothing for a
+# label that is not a state label.
+state_slug() {
   printf '%s\n' "$1" | tr -d '\r' | awk '
+    tolower($0) ~ /^[ \t]*state:/ {
+      v = tolower($0); sub(/^[ \t]*state:[ \t]*/, "", v); gsub(/[ \t]+$/, "", v); gsub(/[ \t]+/, "-", v)
+      if (v != "") print v
+    }'
+}
+
+# state_label_form LABELS
+# LABELS is the repository's labels, one per line. Print "spaced" when the
+# project names its state labels with a space after the colon, else
+# "compact".
+state_label_form() {
+  if printf '%s\n' "$1" | tr -d '\r' | grep -qiE '^state: '; then echo spaced; else echo compact; fi
+}
+
+# state_label SLUG [FORM]
+# The label for a state slug in the given form (default LABEL_FORM, else
+# compact): "in-progress" -> "state:in-progress" or "state: in progress".
+state_label() {
+  case "${2:-${LABEL_FORM:-compact}}" in
+    spaced) printf 'state: %s\n' "$(printf '%s' "$1" | tr '-' ' ')" ;;
+    *) printf 'state:%s\n' "$1" ;;
+  esac
+}
+
+# state_labels_all [FORM]
+# The eight state labels in the form, one per line.
+state_labels_all() {
+  for sla in ready in-progress waiting-on-owner waiting-on-service parked dated after-launch blocked; do state_label "$sla" "$1"; done
+}
+
+# project_label_form
+# The repository's form, from its labels, one REST call; "compact" when
+# the call fails or gh is absent. Callers read it once into LABEL_FORM.
+project_label_form() {
+  if command -v gh >/dev/null 2>&1; then
+    state_label_form "$(gh api "repos/{owner}/{repo}/labels?per_page=100" --jq '.[].name' 2>/dev/null)"
+  else echo compact; fi
+}
+
+# state_label_from_body BODY [FORM]
+# Print the state label for the "### State" field in an issue body written
+# by the task template, for example "state:waiting-on-owner", in the
+# project's form. Print nothing when the field is missing or empty.
+state_label_from_body() {
+  slb_v=$(printf '%s\n' "$1" | tr -d '\r' | awk '
     found && $0 !~ /^[ \t]*$/ {
       v = tolower($0)
       gsub(/^[ \t]+|[ \t]+$/, "", v)
       if (v == "_no response_") exit
       gsub(/[ \t]+/, "-", v)
-      print "state:" v
+      print v
       exit
     }
     /^### State[ \t]*$/ { found = 1 }
-  '
+  ')
+  [ -z "$slb_v" ] || state_label "$slb_v" "$2"
 }
 
 # spec_check_reason PATHS [TEXT] [ROOTS]
@@ -267,23 +320,25 @@ has_crlf() {
 }
 
 # state_name_from_label LABEL
-# "state:waiting-on-owner" -> "Waiting on owner". Prints nothing for a label
-# that is not a state label.
+# "state:waiting-on-owner" or "state: waiting on owner" -> "Waiting on
+# owner". Prints nothing for a label that is not a state label.
 state_name_from_label() {
-  case "$1" in state:*) ;; *) return 0 ;; esac
-  printf '%s\n' "${1#state:}" | tr '-' ' ' | awk '{ $1 = toupper(substr($1, 1, 1)) substr($1, 2); print }'
+  snl_s=$(state_slug "$1")
+  [ -n "$snl_s" ] || return 0
+  printf '%s\n' "$snl_s" | tr '-' ' ' | awk '{ $1 = toupper(substr($1, 1, 1)) substr($1, 2); print }'
 }
 
-# label_from_state_name NAME
-# "Waiting on owner" -> "state:waiting-on-owner".
+# label_from_state_name NAME [FORM]
+# "Waiting on owner" -> "state:waiting-on-owner", in the project's form.
 label_from_state_name() {
-  printf 'state:%s\n' "$(printf '%s' "$1" | tr 'A-Z' 'a-z' | tr ' ' '-')"
+  state_label "$(printf '%s' "$1" | tr 'A-Z' 'a-z' | tr ' ' '-')" "$2"
 }
 
 # state_label_in LABELS
-# LABELS is a comma separated list. Print the first state label, or nothing.
+# LABELS is a comma separated list. Print the first state label, in either
+# form, or nothing.
 state_label_in() {
-  printf '%s\n' "$1" | tr ',' '\n' | sed 's/^[ \t]*//;s/[ \t]*$//' | awk '/^state:/ { print; exit }'
+  printf '%s\n' "$1" | tr ',' '\n' | sed 's/^[ \t]*//;s/[ \t]*$//' | awk 'tolower($0) ~ /^state:/ { print; exit }'
 }
 
 # status_for STATE_NAME CLOSED
@@ -304,7 +359,7 @@ issues_without_state() {
   printf '%s\n' "$1" | tr -d '\r' | awk '
     NF >= 1 {
       labels = (NF >= 2) ? $2 : ""
-      if ("," labels "," !~ /,state:/) print $1
+      if ("," tolower(labels) "," !~ /,state:/) print $1
     }'
 }
 

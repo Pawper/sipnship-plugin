@@ -74,7 +74,7 @@ jobs:
           On the runner machine, run sh scripts/ci/runner-doctor.sh. See scripts/ci/RUNNERS.md."
           tracking=$(gh issue list --label audit --state open --limit 1 --json number --jq '.[0].number')
           if [ -z "$tracking" ]; then
-            tracking=$(gh issue create --title "Audit" --label "audit,state:parked" \
+            tracking=$(gh issue create --title "Audit" --label "audit,$( [ -f scripts/ci/lib.sh ] && . scripts/ci/lib.sh && state_label parked "$(project_label_form)" || echo state:parked )" \
               --body "The audits comment here when something is wrong." | sed 's#.*/##')
           fi
           gh issue comment "$tracking" --body "$body"

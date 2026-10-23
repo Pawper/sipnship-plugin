@@ -53,7 +53,7 @@ jobs:
             pr=${line%% *}
             for n in $(issue_refs "$line"); do
               labels=$(gh issue view "$n" --json state,labels --jq 'select(.state == "OPEN") | [.labels[].name] | join(",")' 2>/dev/null || true)
-              case ",$labels," in *",state:ready,"*) printf '%s %s\n' "$pr" "$n" ;; esac
+              [ "$(state_slug "$(state_label_in "$labels")")" = ready ] && printf '%s %s\n' "$pr" "$n"
             done
           done > stale.txt
           stale=$(cat stale.txt)
@@ -104,7 +104,7 @@ jobs:
           fi
           tracking=$(gh issue list --label audit --state open --limit 1 --json number --jq '.[0].number')
           if [ -z "$tracking" ]; then
-            tracking=$(gh issue create --title "Audit" --label "audit,state:parked" \
+            tracking=$(gh issue create --title "Audit" --label "audit,$(state_label parked "$(project_label_form)")" \
               --body "The nightly audit comments here when something is wrong. It says nothing when all is clean." | sed 's#.*/##')
           fi
           gh issue comment "$tracking" --body "$body"

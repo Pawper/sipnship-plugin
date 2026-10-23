@@ -14,6 +14,8 @@ state=$4
 
 here=$(dirname "$0")
 . "$here/board-lib.sh"
+# The project's label form ("state:ready" or "state: ready"), read once.
+LABEL_FORM=$(project_label_form); export LABEL_FORM
 
 # The label is REST and always lands. The board is GraphQL; when GitHub
 # refuses it (the secondary limit, which gh reports as "unknown owner

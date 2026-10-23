@@ -51,5 +51,5 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           open=$(gh issue list --label ci-red --state open --json number -q length)
-          [ "$open" = "0" ] && gh issue create --title "The deployed site is broken" --label "ci-red,state:ready" \
+          [ "$open" = "0" ] && gh issue create --title "The deployed site is broken" --label "ci-red,$( [ -f scripts/ci/lib.sh ] && . scripts/ci/lib.sh && state_label ready "$(project_label_form)" || echo state:ready )" \
             --body "The smoke check found console errors on the production site: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" || true

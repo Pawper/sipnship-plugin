@@ -441,7 +441,7 @@ record_flaky() {
   flaky_offenders "$rf_log" 2 | while IFS="$tab" read -r count test prs; do
     [ -n "$test" ] || continue
     grep -qxF "$test" "$flaky_dir/flaky-filed.txt" 2>/dev/null && continue
-    gh api -X POST "repos/{owner}/{repo}/issues" -f title="Flaky test: $test" -f 'labels[]=bug' -f 'labels[]=state:ready' \
+    gh api -X POST "repos/{owner}/{repo}/issues" -f title="Flaky test: $test" -f 'labels[]=bug' -f "labels[]=$(state_label ready "$(project_label_form)")" \
       -f body="This test failed and then passed on retry $count times, on pull requests $prs. The merge queue recorded it. An unreliable test is a bug, not weather: fix it or quarantine it with its own issue, do not re-run it again." >/dev/null 2>&1 \
       && { printf '%s\n' "$test" >> "$flaky_dir/flaky-filed.txt"; echo "Filed an issue for the flaky test $test ($count flakes on $prs)."; }
   done
@@ -1034,9 +1034,10 @@ notify_conflict() {
   grep -qx "$1 $nc_sha" "$nc_seen" 2>/dev/null && return 0
   gh api -X POST "repos/{owner}/{repo}/issues/$1/comments" -f body="$(conflict_notice "$2" "$3" "${4:-}")" >/dev/null 2>&1 || return 0
   nc_cur=$(gh api "repos/{owner}/{repo}/issues/$1/labels" --jq '.[].name' 2>/dev/null || true)
-  state_labels_json "$nc_cur" "state:blocked" | gh api -X PUT "repos/{owner}/{repo}/issues/$1/labels" --input - >/dev/null 2>&1 || true
+  nc_label=$(state_label blocked "$(project_label_form)")
+  state_labels_json "$nc_cur" "$nc_label" | gh api -X PUT "repos/{owner}/{repo}/issues/$1/labels" --input - >/dev/null 2>&1 || true
   echo "$1 $nc_sha" >> "$nc_seen"
-  say "  #$1: commented with the conflicting files and labeled it state:blocked."
+  say "  #$1: commented with the conflicting files and labeled it $nc_label."
 }
 
 

@@ -6,7 +6,9 @@
 here_lib=$(dirname "$0")
 . "$here_lib/ci/lib.sh"
 
-ALL_STATE_LABELS="state:ready state:in-progress state:waiting-on-owner state:waiting-on-service state:parked state:dated state:after-launch state:blocked"
+# The eight state slugs; state_labels_all (scripts/ci/lib.sh) gives them as
+# labels in the project's form.
+ALL_STATE_SLUGS="ready in-progress waiting-on-owner waiting-on-service parked dated after-launch blocked"
 
 # gh_project ARGS...: the gh project command, with a retry when GitHub
 # refuses the call. Projects v2 has no REST API, so these calls spend

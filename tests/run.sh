@@ -244,11 +244,14 @@ eq "the budget is one line" "GraphQL 4,120 of 5,000 left, resets 09:19Z (in 23 m
 # issue-open.sh passes each label as one argument, spaces and all.
 io_dir=$(mktemp -d)
 mkdir -p "$io_dir/bin"
-printf '#!/bin/sh\nfor a in "$@"; do printf "[%%s]\\n" "$a"; done > "%s/args"\nprintf "7\\thttps://example/7\\n"\n' "$io_dir" > "$io_dir/bin/gh"
+# The fake gh lists the project's labels in the spaced form, and files.
+printf '#!/bin/sh\ncase "$*" in *labels?per_page*) printf "bug\\nstate: ready\\nstate: in progress\\n"; exit 0 ;; esac\nfor a in "$@"; do printf "[%%s]\\n" "$a"; done > "%s/args"\nprintf "7\\thttps://example/7\\n"\n' "$io_dir" > "$io_dir/bin/gh"
 chmod +x "$io_dir/bin/gh"
 printf 'body\n' > "$io_dir/body.md"
 io_out=$(PATH="$io_dir/bin:$PATH" sh "$root/templates/scripts/issue-open.sh" "A title" "$io_dir/body.md" "state: ready" bug 2>&1)
 eq "a label with a space is filed as one label" "Filed issue #7: https://example/7 | [labels[]=state: ready] [labels[]=bug]" "$io_out | $(grep '^\[labels' "$io_dir/args" | tr '\n' ' ' | sed 's/ $//')"
+io_out=$(PATH="$io_dir/bin:$PATH" sh "$root/templates/scripts/issue-open.sh" "A title" "$io_dir/body.md" state:in-progress 2>&1)
+eq "a state label typed compact is filed in the project's spaced form" "[labels[]=state: in progress]" "$(grep '^\[labels' "$io_dir/args" | tr '\n' ' ' | sed 's/ $//')"
 eq "a low budget says what to do" "GraphQL 312 of 5,000 left, resets 09:19Z (in 23 min); REST 3,469 of 5,000 left. Low: use the REST forms (scripts/issue-open.sh, pr-open.sh, pr-checks.sh, gh api) and wait for the reset; never retry before it." "$(budget_line "312	5000	1760001540	3469	5000	1760001540" 1760000200)"
 eq "an escaped backtick in a body does not cut the command before its labels" "" "$(state_label_reason 'gh api repos/o/r/issues -f title="x" -f body="run \`node a.mjs\` (once)" -f "labels[]=state:in-progress" --jq .number; W=C:/w; git worktree add -q -b b $W origin/main')"
 eq "nor an escaped semicolon outside quotes" "" "$(state_label_reason 'gh api repos/o/r/issues -f title=x -f body=a\;b -f labels[]=state:ready')"
@@ -775,6 +778,18 @@ eq "a spec class" "specs" "$(classify_paths 'specs/sign-in/spec.md' "$rules")"
 
 printf '\n# board mappings\n'
 eq "label to state name" "Waiting on owner" "$(state_name_from_label state:waiting-on-owner)"
+eq "a spaced label too" "Waiting on owner" "$(state_name_from_label 'state: waiting on owner')"
+eq "a slug from either form" "in-progress in-progress" "$(state_slug state:in-progress) $(state_slug 'State: In Progress')"
+eq "no slug from another label" "" "$(state_slug bug)"
+eq "the form is read from the repository's labels" "spaced compact" "$(state_label_form "$(printf 'bug\nstate: ready\nstate: in progress\n')") $(state_label_form "$(printf 'bug\nstate:ready\n')")"
+eq "a label in the spaced form" "state: waiting on owner" "$(state_label waiting-on-owner spaced)"
+eq "and in the compact form by default" "state:waiting-on-owner" "$(state_label waiting-on-owner)"
+eq "the body's state in the project's form" "state: after launch" "$(state_label_from_body '### State
+
+After launch' spaced)"
+eq "a state name in the project's form" "state: in progress" "$(label_from_state_name 'In progress' spaced)"
+eq "all eight in the form" "8 8" "$(state_labels_all spaced | grep -c '^state: ') $(state_labels_all | grep -c '^state:[a-z]')"
+eq "the labels JSON drops a spaced state label too" '{"labels":["bug","state: ready"]}' "$(state_labels_json "$(printf 'bug\nstate: in progress\n')" 'state: ready')"
 eq "ready label" "Ready" "$(state_name_from_label state:ready)"
 eq "not a state label" "" "$(state_name_from_label bug)"
 eq "state name to label" "state:waiting-on-a-service" "$(label_from_state_name 'Waiting on a service')"

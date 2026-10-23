@@ -13,9 +13,15 @@ title=$1; body_file=$2; shift 2 2>/dev/null || true
 case " $* " in *" state:"*) ;; *) echo "Every issue carries its State at filing: add state:ready (or state:in-progress, state:waiting-on-owner, state:waiting-on-service, state:parked, state:dated, state:after-launch)." >&2; exit 2 ;; esac
 # Each label becomes its own quoted argument, so a label with a space in it
 # ("state: ready", as one project names them) stays one label; built into
-# a string, it was split in two and gh refused the call.
+# a string, it was split in two and gh refused the call. A state label is
+# filed in the project's own form, whichever way it was typed.
+. "$(dirname "$0")/ci/lib.sh"
+LABEL_FORM=$(project_label_form)
 n=$#
-for l in "$@"; do set -- "$@" -f "labels[]=$l"; done
+for l in "$@"; do
+  slug=$(state_slug "$l"); [ -z "$slug" ] || l=$(state_label "$slug" "$LABEL_FORM")
+  set -- "$@" -f "labels[]=$l"
+done
 shift "$n"
 out=$(gh api -X POST "repos/{owner}/{repo}/issues" -f title="$title" -F body=@"$body_file" "$@" --jq '"\(.number)\t\(.html_url)"' 2>&1) || {
   case "$out" in

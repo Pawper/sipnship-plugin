@@ -148,7 +148,7 @@ sig=$(printf '%s' "$body" | sed 's/"updatedAt":"[^"]*"//; s/"longestWaitMinutes"
 if [ -f "$flaky_dir/published.sig" ] && [ "$(cat "$flaky_dir/published.sig")" = "$sig" ]; then exit 0; fi
 printf '%s' "$body" > "$flaky_dir/published.body"
 if [ "$first" = yes ]; then
-  num=$(gh api -X POST "repos/{owner}/{repo}/issues" -f title="Merge queue" -F body=@"$flaky_dir/published.body" -f "labels[]=queue" -f "labels[]=state:parked" --jq .number 2>"$flaky_dir/publish.err") || { echo "Could not create the Merge queue issue: $(head -n 1 "$flaky_dir/publish.err")" >&2; exit 0; }
+  num=$(gh api -X POST "repos/{owner}/{repo}/issues" -f title="Merge queue" -F body=@"$flaky_dir/published.body" -f "labels[]=queue" -f "labels[]=$(state_label parked "$(project_label_form)")" --jq .number 2>"$flaky_dir/publish.err") || { echo "Could not create the Merge queue issue: $(head -n 1 "$flaky_dir/publish.err")" >&2; exit 0; }
   echo "Created the Merge queue issue #$num; pin it from its page so it stays at the top."
 else
   num=${issue%%	*}; st=${issue#*	}
