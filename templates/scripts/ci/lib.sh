@@ -456,3 +456,16 @@ audit_comment() {
       }'
   fi
 }
+
+# drain_late LAST_EPOCH NOW_EPOCH INTERVAL_HOURS
+# Print one line when the scheduled queue drain last ran more than twice its
+# interval ago, nothing otherwise (or with no last run). GitHub fires a
+# schedule late or skips it, and a green pull request then waits unseen.
+drain_late() {
+  [ -n "$1" ] && [ -n "$2" ] && [ -n "$3" ] || return 0
+  case "$1$2$3" in *[!0-9]*) return 0 ;; esac
+  [ "$1" -gt 0 ] && [ "$3" -gt 0 ] || return 0
+  age=$(( $2 - $1 ))
+  [ "$age" -gt $(( $3 * 7200 )) ] || return 0
+  printf 'Queue drain: last ran %d h ago, scheduled every %d h; GitHub is firing it late. A green pull request waits until then or until a session runs sh scripts/ci/merge-queue.sh --drain.\n' $(( age / 3600 )) "$3"
+}

@@ -261,6 +261,12 @@ if has leftover && [ -f scripts/ci/workflow-breaks.sh ] && [ "$have_git" = yes ]
   [ -z "$wb" ] || add "Workflows: $wb. Open its last run; if the change was a template sync, say so on the plugin's issue."
 fi
 
+# The scheduled queue drain fired late or skipped by GitHub. One REST call.
+if has leftover && [ -f scripts/ci/drain-late.sh ] && [ -f .github/workflows/queue-drain.yml ] && command -v gh >/dev/null 2>&1; then
+  dl=$(run_bounded 6 sh scripts/ci/drain-late.sh 2>/dev/null | head -n 1)
+  [ -z "$dl" ] || add "$dl"
+fi
+
 # Screens due a comparison across platforms: a file-pair check never says
 # that one platform's screen looks nothing like the other's.
 if has screens && [ -f scripts/ci/parity.txt ] && [ -f "$here/../../templates/scripts/design/design-lib.sh" ]; then
