@@ -95,9 +95,16 @@ jobs:
             serial=$(serial_bursts "$(git log --first-parent --since='1 day ago' --format='%ct%x09%s' "origin/${{ github.event.repository.default_branch }}" 2>/dev/null)")
           fi
 
+          # A workflow that passed before its last change and fails since.
+          breaks=""
+          if [ -f scripts/ci/workflow-breaks.sh ]; then
+            breaks=$(sh scripts/ci/workflow-breaks.sh "${{ github.event.repository.default_branch }}" | sed 's/^/- /')
+          fi
+
           body=$(audit_comment "$missing" "$stale" "$red" "$branches")
           if [ -n "$serial" ]; then body=$(printf '%s\n\n- %s' "$body" "$serial" | sed '/./,$!d'); fi
           if [ -n "$deploy" ]; then body=$(printf '%s\n\n- %s' "$body" "$deploy" | sed '/./,$!d'); fi
+          if [ -n "$breaks" ]; then body=$(printf '%s\n\n%s' "$body" "$breaks" | sed '/./,$!d'); fi
           if [ -z "$body" ]; then
             echo "Clean. Nothing to say."
             exit 0

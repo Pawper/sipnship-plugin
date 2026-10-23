@@ -352,6 +352,36 @@ status_for() {
   esac
 }
 
+# workflow_breaks RUNS CHANGES
+# RUNS is one workflow run per line: "path<TAB>conclusion<TAB>created_epoch"
+# (any order). CHANGES is one line per workflow the project changed:
+# "path<TAB>changed_epoch<TAB>date<TAB>title", its last change on main.
+# Print one line for each workflow whose last run before its change passed
+# and whose every run since has failed: "audit.yml has failed every run (3)
+# since it was changed on 2026-10-15 (Sync templates to plugin 0.22.1)".
+# A template sync once broke a project's nightly audit and nothing said so
+# for two days. Nothing for a workflow with no run before the change, no
+# run after it, a pass since, or a run still going.
+workflow_breaks() {
+  { printf '%s\n' "$2" | tr -d '\r' | awk -F'\t' 'NF >= 3 { print "C\t" $0 }'
+    printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' 'NF >= 3 { print "R\t" $0 }'; } | awk -F'\t' '
+    $1 == "C" { at[$2] = $3 + 0; day[$2] = $4; title[$2] = $5; next }
+    $1 == "R" && ($2 in at) {
+      p = $2; conc = $3; t = $4 + 0
+      if (t > at[p]) {
+        after[p]++
+        if (conc == "success" || conc == "skipped" || conc == "neutral") okafter[p] = 1
+        else if (conc != "failure" && conc != "startup_failure" && conc != "timed_out") okafter[p] = 1
+      } else if (t > before_t[p]) { before_t[p] = t; before[p] = conc }
+    }
+    END {
+      for (p in at) if (after[p] > 0 && !okafter[p] && before[p] == "success") {
+        n = split(p, parts, "/"); name = parts[n]
+        printf "%s has failed every run (%d) since it was changed on %s%s\n", name, after[p], day[p], (title[p] != "" ? " (" title[p] ")" : "")
+      }
+    }' | sort
+}
+
 # issues_without_state LINES
 # Each line is "NUMBER label,label,...". Print the numbers whose labels
 # include no "state:" label, one per line.

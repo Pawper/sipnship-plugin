@@ -800,6 +800,15 @@ eq "status for in progress" "In Progress" "$(status_for 'In progress' false)"
 eq "status for ready" "Todo" "$(status_for Ready false)"
 eq "status for parked" "Todo" "$(status_for Parked false)"
 eq "status for a closed issue is Done whatever the state" "Done" "$(status_for 'In progress' true)"
+printf '\n# workflow_breaks\n'
+wb_changes=$(printf '.github/workflows/audit.yml\t1000\t2026-10-15\tSync templates to plugin 0.22.1\n.github/workflows/board-sync.yml\t1000\t2026-10-15\tSync templates to plugin 0.22.1\n.github/workflows/ci.yml\t500\t2026-10-10\tci\n')
+wb_runs=$(printf '.github/workflows/audit.yml\tfailure\t3000\n.github/workflows/audit.yml\tfailure\t2000\n.github/workflows/audit.yml\tsuccess\t900\n.github/workflows/board-sync.yml\tfailure\t2000\n.github/workflows/board-sync.yml\tsuccess\t1500\n.github/workflows/board-sync.yml\tsuccess\t900\n.github/workflows/ci.yml\tfailure\t600\n.github/workflows/ci.yml\tfailure\t400\n')
+eq "a workflow that passed before its change and failed every run since is named" "audit.yml has failed every run (2) since it was changed on 2026-10-15 (Sync templates to plugin 0.22.1)" "$(workflow_breaks "$wb_runs" "$wb_changes")"
+eq "one that failed before too is not" "" "$(workflow_breaks "$(printf '.github/workflows/ci.yml\tfailure\t600\n.github/workflows/ci.yml\tfailure\t400\n')" "$wb_changes")"
+eq "nor one with no run since" "" "$(workflow_breaks "$(printf '.github/workflows/audit.yml\tsuccess\t900\n')" "$wb_changes")"
+eq "nor one with a pass since" "" "$(workflow_breaks "$(printf '.github/workflows/audit.yml\tsuccess\t3000\n.github/workflows/audit.yml\tfailure\t2000\n.github/workflows/audit.yml\tsuccess\t900\n')" "$wb_changes")"
+eq "a cancelled run since is not a failure" "" "$(workflow_breaks "$(printf '.github/workflows/audit.yml\tcancelled\t2000\n.github/workflows/audit.yml\tsuccess\t900\n')" "$wb_changes")"
+eq "the brief and the audit both run workflow-breaks.sh" "1 1" "$(grep -c 'sh scripts/ci/workflow-breaks.sh' "$root/hooks/scripts/session-brief.sh") $(grep -c 'sh scripts/ci/workflow-breaks.sh' "$root/templates/.github/workflows/audit.yml")"
 
 printf '\n# audit helpers\n'
 eq "issues without a state label" "12

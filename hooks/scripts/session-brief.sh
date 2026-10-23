@@ -254,6 +254,13 @@ if has leftover && [ -f "$here/../../templates/OWNED.txt" ] && [ -f "$here/../..
   fi
 fi
 
+# A workflow that passed before its last change on main and has failed
+# every run since, which a template sync can cause. One REST call.
+if has leftover && [ -f scripts/ci/workflow-breaks.sh ] && [ "$have_git" = yes ] && command -v gh >/dev/null 2>&1; then
+  wb=$(run_bounded 6 sh scripts/ci/workflow-breaks.sh 2>/dev/null | head -n 4 | paste -sd';' - | sed 's/;/; /g')
+  [ -z "$wb" ] || add "Workflows: $wb. Open its last run; if the change was a template sync, say so on the plugin's issue."
+fi
+
 # Screens due a comparison across platforms: a file-pair check never says
 # that one platform's screen looks nothing like the other's.
 if has screens && [ -f scripts/ci/parity.txt ] && [ -f "$here/../../templates/scripts/design/design-lib.sh" ]; then

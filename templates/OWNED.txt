@@ -60,6 +60,7 @@ scripts/state.sh
 .github/workflows/board-sync.yml
 .github/workflows/state-label.yml
 .github/workflows/audit.yml
+scripts/ci/workflow-breaks.sh
 feature status
 status/build.sh
 status/check.sh
