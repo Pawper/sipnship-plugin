@@ -1920,5 +1920,24 @@ eq "session brief names the unreleased count" "1" "$(grep -q 'unreleased commit'
 eq "drive skill names the release goal" "1" "$(grep -q 'release X.Y.Z' "$root/skills/project-drive/SKILL.md" && echo 1 || echo 0)"
 eq "plan script adds the release goal" "1" "$(grep -q 'release_goal' "$root/scripts/drive/plan.sh" && echo 1 || echo 0)"
 
+printf '\n# hook counterparts\n'
+cp_file="$root/hooks/COUNTERPARTS.txt"
+for cp_h in "$root"/hooks/scripts/block-*.sh "$root"/hooks/scripts/require-*.sh; do
+  cp_n=$(basename "$cp_h" .sh)
+  eq "hook $cp_n has a counterpart row" "1" "$(grep -c "^$cp_n |" "$cp_file")"
+done
+while IFS='|' read -r cp_n cp_c cp_r; do
+  case "$cp_n" in '#'*|'') continue ;; esac
+  cp_n=$(printf '%s' "$cp_n" | sed 's/ *$//'); cp_c=$(printf '%s' "$cp_c" | sed 's/^ *//; s/ *$//')
+  case "$cp_c" in
+    session-only) ok=1 ;;
+    "none yet #"[0-9]*) ok=1 ;;
+    "none yet"*) ok=0 ;;
+    *) if [ -f "$root/templates/$cp_c" ]; then ok=1; else ok=0; fi ;;
+  esac
+  eq "counterpart row $cp_n is valid" "1" "$ok"
+  [ -f "$root/hooks/scripts/$cp_n.sh" ] || eq "counterpart row $cp_n names a hook that exists" "1" "0"
+done < "$cp_file"
+
 printf '\n%s passed, %s failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

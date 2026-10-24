@@ -1,0 +1,13 @@
+# Every rule hook and what holds the same rule on the pull request.
+# hook | counterpart (path under plugin/templates/, "session-only", or "none yet #N") | reason
+# A path must exist. "none yet" needs the number of the issue that tracks the gap.
+block-delete | none yet #105 | nothing on the pull request sees a deleted file as a rule break
+block-force-push | none yet #106 | a forced push is a repository setting, no check names it yet
+block-full-test-sweep | .github/workflows/ci.yml | the full suite runs only on main, per-file on a pull request
+block-generated-page | .github/workflows/ci.yml | CI fails when a generated page is stale
+block-loose-ends | .github/workflows/audit.yml | the nightly audit reports branches left after their pull request ended
+require-agent-model | session-only | a dispatch happens inside a session, never on a pull request
+require-batch-merge | scripts/ci/merge-queue.sh | the queue is the only merge path and refuses what is not ready
+require-clean-worktree | scripts/ci/merge-queue.sh | the queue refuses a pull request whose worktree is not clean
+require-gh-budget | session-only | the hourly API budget is a live reading, not a property of a change
+require-state-label | .github/workflows/state-label.yml | the workflow keeps every issue's State label in step with the board
