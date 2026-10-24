@@ -131,3 +131,32 @@ trim_report() {
     END { flush() }
     function flush() { if (cut > 0) printf "(and %d more)\n", cut; cut = 0 }'
 }
+
+# run_durations RUNS PATH EVENT
+# RUNS is tab-separated lines: status, start epoch, end epoch, workflow path,
+# event, head branch. Print the durations of completed runs of that one
+# workflow and event, so quick housekeeping workflows never set the pace.
+run_durations() {
+  printf '%s\n' "$1" | awk -F'\t' -v p="$2" -v e="$3" '$1 == "completed" && $4 == p && $5 == e && $3 > $2 { print $3 - $2 }'
+}
+
+# wake_after RUNS START NOW
+# How long to wait before looking at a pending pull request again. RUNS is
+# the durations in seconds of recent completed CI runs, one per line; START
+# is the epoch the pending run began; NOW is the current epoch. Prints the
+# median duration plus a minute, less the time already spent, never under
+# 60 and never over 1800. Prints nothing when there is no pending run.
+wake_after() {
+  [ -n "$2" ] || return 0
+  printf '%s\n' "$1" | tr -d '\r' | awk -v start="$2" -v now="$3" '
+    /^[0-9]+$/ { d[++n] = $1 + 0 }
+    END {
+      if (n == 0) exit
+      for (i = 2; i <= n; i++) { v = d[i]; j = i - 1; while (j > 0 && d[j] > v) { d[j + 1] = d[j]; j-- } d[j + 1] = v }
+      med = (n % 2) ? d[(n + 1) / 2] : (d[n / 2] + d[n / 2 + 1]) / 2
+      w = int(med + 60 - (now - start))
+      if (w < 60) w = 60
+      if (w > 1800) w = 1800
+      print w
+    }'
+}

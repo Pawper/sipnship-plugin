@@ -111,6 +111,12 @@ empty, or when everything left waits on a person. Say which in one line. A round
 dispatched its agent budget (`maxAgents`, default four) or run for its minute budget (`maxMinutes`, default
 ninety); past either it reports and ends. Never keep working to look busy.
 
+When the proposal carries a `wake:` line, a pull request's checks are still running and nothing will bring
+the round back when they finish. In an interactive session, schedule exactly one wake-up for that many
+seconds (your loop skill's self-paced wake, or your cron tool with `recurring: false`), never a poll; when it
+fires, run a new round. On a scheduled session the next tick already covers it, so do nothing. In the desktop
+app its own pull request watch reports a red check; the wake is for the green case.
+
 ## f. Report
 
 After a pursuit, one short block as a comment on the drive issue and in the session, nothing else written
