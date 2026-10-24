@@ -19,6 +19,7 @@ scripts/ci/line-endings.sh
 scripts/ci/spec-check.sh
 scripts/ci/setup-check.sh
 scripts/ci/shared-check.sh
+scripts/ci/delete-check.sh
 scripts/ci/numbering-check.sh
 scripts/ci/numbering-lib.sh
 scripts/ci/client-env-check.sh

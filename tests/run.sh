@@ -1603,7 +1603,7 @@ eq "CI passed waits on checks and app" "1" "$(printf '%s\n' "$ciy" | grep -c 'ne
 eq "one checkout in checks, one in app, one in full" "3" "$(printf '%s\n' "$ciy" | grep -c 'uses: actions/checkout@v4')"
 eq "a newer push cancels an older pull request run" "1" "$(printf '%s\n' "$ciy" | grep -c 'cancel-in-progress: true')"
 eq "main pushes are each their own group" "1" "$(printf '%s\n' "$ciy" | grep -c "pull_request.number || github.sha")"
-eq "every rule script still runs" "7" "$(for f in classify.sh line-endings.sh status/check.sh numbering-check.sh spec-check.sh setup-check.sh shared-check.sh; do printf '%s\n' "$ciy" | grep -q "$f" && echo x; done | grep -c x)"
+eq "every rule script still runs" "8" "$(for f in classify.sh line-endings.sh status/check.sh numbering-check.sh spec-check.sh setup-check.sh shared-check.sh delete-check.sh; do printf '%s\n' "$ciy" | grep -q "$f" && echo x; done | grep -c x)"
 eq "the env check still runs" "1" "$(printf '%s\n' "$ciy" | grep -c 'client-env-check.sh')"
 
 printf '\n# set -e never swallows a return code\n'
@@ -1956,6 +1956,28 @@ while IFS='|' read -r cp_n cp_c cp_r; do
 done < "$cp_file"
 
 
+printf '\n# the delete check\n'
+dc="$root/templates/scripts/ci/delete-check.sh"
+dr=$(mktemp -d)
+git -C "$dr" init -q
+git -C "$dr" config user.email t@example.com
+git -C "$dr" config user.name t
+printf 'one\ntwo\nthree\nfour\nfive\n' > "$dr/a.txt"
+printf 'keep\n' > "$dr/b.txt"
+git -C "$dr" add -A
+git -C "$dr" commit -q -m base
+base_sha=$(git -C "$dr" rev-parse HEAD)
+git -C "$dr" mv a.txt moved.txt
+git -C "$dr" commit -q -m move
+move_sha=$(git -C "$dr" rev-parse HEAD)
+git -C "$dr" rm -q b.txt
+git -C "$dr" commit -q -m remove
+del_sha=$(git -C "$dr" rev-parse HEAD)
+eq "a rename is not a delete" "0" "$(cd "$dr" && PR_BODY= sh "$dc" "$base_sha" "$move_sha" >/dev/null 2>&1; echo $?)"
+eq "a plain delete fails" "1" "$(cd "$dr" && PR_BODY= sh "$dc" "$move_sha" "$del_sha" >/dev/null 2>&1; echo $?)"
+eq "a delete with a Deletes line passes" "0" "$(cd "$dr" && PR_BODY="Closes #1
+Deletes: the file was a stray copy" sh "$dc" "$move_sha" "$del_sha" >/dev/null 2>&1; echo $?)"
+eq "an empty Deletes line does not pass" "1" "$(cd "$dr" && PR_BODY="Deletes:" sh "$dc" "$move_sha" "$del_sha" >/dev/null 2>&1; echo $?)"
 printf '\n# workspace install\n'
 ws=$(mktemp -d)
 mkdir -p "$ws/pn/packages/a" "$ws/pn/packages/b" "$ws/pn/packages/notpkg" "$ws/np/libs/x" "$ws/np/apps/y" "$ws/per/web"

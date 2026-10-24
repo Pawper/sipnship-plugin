@@ -116,6 +116,7 @@ scripts/ci/batch-lib.sh e1394a9e7aec03cd1aea03a63bd79bda837cbabe
 scripts/ci/batch-lib.sh e22ae94adeebc81e929d8176ff1a9dbb989f801c
 scripts/ci/classify.sh ffce692eabc9f10dae99261c194270f388824ca3
 scripts/ci/client-env-check.sh 0c054b2adbe91f3418b4e3027bfa5edc6ac6684e
+scripts/ci/delete-check.sh de832e14b50d2c16ca2639ba95b67d54fec6ad7c
 scripts/ci/deploy-gate.sh 3e1bd682d53c0cb5b34996c126099fd4673dbc45
 scripts/ci/deploy-gate.sh 7f973760df9852f6f29b617b3ca554e662cd378b
 scripts/ci/deploy-gate.sh 9cfba0eed147fc42d36e8babbd7af0bba0c016ea

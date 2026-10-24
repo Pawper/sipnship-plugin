@@ -1,7 +1,7 @@
 # Every rule hook and what holds the same rule on the pull request.
 # hook | counterpart (path under plugin/templates/, "session-only", or "none yet #N") | reason
 # A path must exist. "none yet" needs the number of the issue that tracks the gap.
-block-delete | none yet #105 | nothing on the pull request sees a deleted file as a rule break
+block-delete | scripts/ci/delete-check.sh | the check fails a pull request that deletes a tracked file unless its body has a Deletes: line
 block-force-push | none yet #106 | a forced push is a repository setting, no check names it yet
 block-full-test-sweep | .github/workflows/ci.yml | the full suite runs only on main, per-file on a pull request
 block-generated-page | .github/workflows/ci.yml | CI fails when a generated page is stale

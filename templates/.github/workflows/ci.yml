@@ -110,6 +110,17 @@ jobs:
         # Passes when the list of shared paths is empty.
         if: github.event_name == 'pull_request'
         run: sh scripts/ci/shared-check.sh "$BASE" "${{ github.sha }}"
+      - name: Fail when a file is deleted without a stated reason
+        # Never delete; move aside. A pull request that must delete says why
+        # in its body: "Deletes: <reason>".
+        if: github.event_name == 'pull_request'
+        env:
+          PAYLOAD_BODY: ${{ github.event.pull_request.body }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PR_BODY=$(gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}" --jq '.body // ""' 2>/dev/null) || PR_BODY=$PAYLOAD_BODY
+          export PR_BODY
+          sh scripts/ci/delete-check.sh "$BASE" "${{ github.sha }}"
       - name: Fail when a client file hands process.env to anything whole
         if: github.event_name == 'pull_request' && (contains(steps.classes.outputs.classes, 'app') || contains(steps.classes.outputs.classes, 'other'))
         run: sh scripts/ci/client-env-check.sh
