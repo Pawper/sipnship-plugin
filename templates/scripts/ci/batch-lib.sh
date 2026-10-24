@@ -558,3 +558,75 @@ release_hold() {
   case "$1" in disabled*) echo "(it is turned off; a turned-off release is held on purpose)"; return 0 ;; esac
   if [ "$2" = ask ] && [ "$3" = landing ]; then echo "(releaseOn is ask; merge-queue.sh --release starts it)"; fi
 }
+
+# workspace_kind DIR
+# "pnpm", "npm" or "yarn" when DIR is a workspace root (a pnpm-workspace.yaml,
+# or a package.json with a "workspaces" field, the tool named by its
+# lockfile), else nothing: a project of separate packages is not one.
+workspace_kind() {
+  if [ -f "$1/pnpm-workspace.yaml" ]; then echo pnpm
+  elif [ -f "$1/package.json" ] && grep -q '"workspaces"' "$1/package.json" 2>/dev/null; then
+    if [ -f "$1/yarn.lock" ] && [ ! -f "$1/package-lock.json" ]; then echo yarn; else echo npm; fi
+  fi
+}
+
+# workspace_lockfile KIND: the root lockfile's name.
+workspace_lockfile() {
+  case "$1" in pnpm) echo pnpm-lock.yaml ;; yarn) echo yarn.lock ;; *) echo package-lock.json ;; esac
+}
+
+# workspace_globs DIR: the member globs, one a line ("packages/*").
+workspace_globs() {
+  if [ -f "$1/pnpm-workspace.yaml" ]; then
+    tr -d '\r' < "$1/pnpm-workspace.yaml" | sed -n "s/^[[:space:]]*-[[:space:]]*['\"]\{0,1\}\([^'\"#]*[^'\"# ]\)['\"]\{0,1\}.*/\1/p" | grep -v '^!'
+  else
+    tr -d '\r' < "$1/package.json" 2>/dev/null | tr '\n' ' ' | sed -n 's/.*"workspaces"[[:space:]]*:[[:space:]]*\({[^}]*"packages"[[:space:]]*:[[:space:]]*\)\{0,1\}\[\([^]]*\)\].*/\2/p' | tr ',' '\n' | sed -n 's/^[[:space:]]*"\([^"]*\)".*/\1/p'
+  fi
+}
+
+# workspace_members DIR: the member folders (relative, sorted) that a glob
+# names and that hold a package.json. Only "folder/*" and plain folders.
+workspace_members() {
+  { workspace_globs "$1"; echo; } | while IFS= read -r wm_g; do
+    [ -n "$wm_g" ] || continue
+    wm_g=${wm_g#./}; wm_g=${wm_g%/}
+    case "$wm_g" in
+      */\*)
+        for wm_d in "$1/${wm_g%/\*}"/*/; do
+          [ -f "${wm_d}package.json" ] || continue
+          wm_d=${wm_d%/}; echo "${wm_d#"$1"/}"
+        done ;;
+      *\**) ;;
+      *) [ -f "$1/$wm_g/package.json" ] && echo "$wm_g" ;;
+    esac
+  done | sort -u
+}
+
+# workspace_hash DIR KIND: the root lockfile's hash plus each member's
+# package.json hash, one string; changes when either does.
+workspace_hash() {
+  wh_f="$1/$(workspace_lockfile "$2")"
+  wh_h=$( [ -f "$wh_f" ] && git hash-object "$wh_f" 2>/dev/null || echo none )
+  for wh_m in $(workspace_members "$1"); do
+    wh_h="$wh_h,$(git hash-object "$1/$wh_m/package.json" 2>/dev/null || echo none)"
+  done
+  echo "$wh_h"
+}
+
+# workspace_install_command DIR KIND: the install, run once from the root.
+# pnpm comes from the path, then corepack, then npx at the major the
+# lockfile's header names.
+workspace_install_command() {
+  case "$2" in
+    pnpm)
+      if command -v pnpm >/dev/null 2>&1; then echo "pnpm install --frozen-lockfile"
+      elif command -v corepack >/dev/null 2>&1; then echo "corepack pnpm install --frozen-lockfile"
+      else
+        wi_v=$(sed -n "s/^lockfileVersion:[[:space:]]*['\"]\{0,1\}\([0-9]*\).*/\1/p" "$1/pnpm-lock.yaml" 2>/dev/null | head -n 1)
+        case "$wi_v" in 9) wi_p=9 ;; 6) wi_p=8 ;; 5) wi_p=7 ;; *) wi_p=latest ;; esac
+        echo "npx --yes pnpm@$wi_p install --frozen-lockfile"
+      fi ;;
+    yarn) echo "yarn install --immutable" ;;
+    *) echo "npm ci --no-audit --no-fund" ;;
+  esac
+}

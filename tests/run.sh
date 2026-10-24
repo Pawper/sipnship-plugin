@@ -1939,5 +1939,36 @@ while IFS='|' read -r cp_n cp_c cp_r; do
   [ -f "$root/hooks/scripts/$cp_n.sh" ] || eq "counterpart row $cp_n names a hook that exists" "1" "0"
 done < "$cp_file"
 
+
+printf '\n# workspace install\n'
+ws=$(mktemp -d)
+mkdir -p "$ws/pn/packages/a" "$ws/pn/packages/b" "$ws/pn/packages/notpkg" "$ws/np/libs/x" "$ws/np/apps/y" "$ws/per/web"
+printf 'packages:\n  - "packages/*"\n' > "$ws/pn/pnpm-workspace.yaml"
+printf "lockfileVersion: '9.0'\n" > "$ws/pn/pnpm-lock.yaml"
+echo '{"name":"a"}' > "$ws/pn/packages/a/package.json"
+echo '{"name":"b"}' > "$ws/pn/packages/b/package.json"
+echo '{"name":"root","workspaces":["libs/*","apps/y"]}' > "$ws/np/package.json"
+echo '{}' > "$ws/np/package-lock.json"
+echo '{"name":"x"}' > "$ws/np/libs/x/package.json"
+echo '{"name":"y"}' > "$ws/np/apps/y/package.json"
+echo '{"name":"web"}' > "$ws/per/web/package.json"
+echo '{}' > "$ws/per/web/package-lock.json"
+eq "a pnpm-workspace.yaml makes a pnpm root" "pnpm" "$(workspace_kind "$ws/pn")"
+eq "a workspaces field with package-lock.json makes an npm root" "npm" "$(workspace_kind "$ws/np")"
+eq "separate packages are not a workspace" "" "$(workspace_kind "$ws/per")"
+eq "pnpm members come from the glob, only folders with a package.json" "packages/a
+packages/b" "$(workspace_members "$ws/pn")"
+eq "npm members come from the workspaces array" "apps/y
+libs/x" "$(workspace_members "$ws/np")"
+eq "the root lockfile is named by the tool" "pnpm-lock.yaml package-lock.json yarn.lock" "$(workspace_lockfile pnpm) $(workspace_lockfile npm) $(workspace_lockfile yarn)"
+h1=$(workspace_hash "$ws/pn" pnpm)
+eq "the hash names the lockfile and each member" "3" "$(echo "$h1" | tr ',' '\n' | wc -l | tr -d ' ')"
+echo '{"name":"b","dependencies":{"z":"1"}}' > "$ws/pn/packages/b/package.json"
+eq "a member's package.json changes the hash" "1" "$([ "$h1" != "$(workspace_hash "$ws/pn" pnpm)" ] && echo 1 || echo 0)"
+eq "yarn installs immutably" "yarn install --immutable" "$(workspace_install_command "$ws/np" yarn)"
+eq "npm installs with ci" "npm ci --no-audit --no-fund" "$(workspace_install_command "$ws/np" npm)"
+eq "pnpm installs frozen" "1" "$(workspace_install_command "$ws/pn" pnpm | grep -c 'pnpm install --frozen-lockfile\|pnpm@9 install --frozen-lockfile')"
+eq "the queue installs a workspace from its root" "1" "$(grep -c 'ensure_workspace "\$em_kind"' "$root/templates/scripts/ci/merge-queue.sh")"
+
 printf '\n%s passed, %s failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

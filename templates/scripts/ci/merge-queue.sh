@@ -1107,7 +1107,7 @@ fi
 # nothing is installed twice. Where it differs (main moved a dependency or
 # a workspace package, or a member changed one), the link is removed
 # (only the link: never the files behind it) and the project's install
-# runs there, QUEUE_INSTALL_COMMAND or "npm ci". A stale link once made a
+# runs there, QUEUE_INSTALL_COMMAND or "npm ci". A workspace root (see ensure_workspace) is one unit. A stale link once made a
 # green main type-check red "before any merge".
 mod_hash() { [ -f "$1" ] && git hash-object "$1" 2>/dev/null || echo none; }
 # pkg_hash DIR PACKAGE_DIR: the lockfile's hash plus the tree hash of every
@@ -1146,7 +1146,40 @@ install_here() { # DIR HASH
     echo "$1: the install failed" >> "$flaky_dir/modules.stale"
   fi
 }
+
+# A workspace is one unit: the root lockfile plus each member's package.json
+# is the hash, the install runs once from the root, and the root's and each
+# member's node_modules are linked when the hash is main's.
+ensure_workspace() { # KIND
+  ew_hash=$(workspace_hash "$wt" "$1")
+  ew_main=$(workspace_hash "$main_dir" "$1")
+  ew_dirs=". $(workspace_members "$wt" | tr '\n' ' ')"
+  ew_ok=1
+  for ew_d in $ew_dirs; do
+    ew_nm="$wt/$ew_d/node_modules"
+    if is_link "$ew_nm"; then
+      [ "$ew_hash" = "$ew_main" ] && continue
+      unlink_dir "$ew_nm" || { echo "  could not remove the link at $ew_nm; the type-check may read stale packages"; echo "$ew_nm: the link to the main checkout's packages could not be removed" >> "$flaky_dir/modules.stale"; }
+    fi
+  done
+  if [ -d "$wt/node_modules" ] && ! is_link "$wt/node_modules"; then
+    [ "$(cat "$wt/node_modules/.queue-lock-hash" 2>/dev/null)" = "$ew_hash" ] && return 0
+    ew_ok=0
+  fi
+  if [ "$ew_ok" = 1 ] && [ "$ew_hash" = "$ew_main" ] && [ -d "$main_dir/node_modules" ]; then
+    for ew_d in $ew_dirs; do
+      [ -d "$main_dir/$ew_d/node_modules" ] || continue
+      [ -e "$wt/$ew_d/node_modules" ] && continue
+      link_dir "$main_dir/$ew_d/node_modules" "$wt/$ew_d/node_modules" || echo "  could not link $wt/$ew_d/node_modules; the type-check may not find its packages"
+    done
+    return 0
+  fi
+  ew_cmd=${QUEUE_INSTALL_COMMAND:-$(workspace_install_command "$wt" "$1")}
+  QUEUE_INSTALL_COMMAND=$ew_cmd install_here "$wt" "$ew_hash"
+}
 ensure_modules() {
+  em_kind=$(workspace_kind "$wt")
+  if [ -n "$em_kind" ]; then rm -f "$flaky_dir/modules.stale" 2>/dev/null; ensure_workspace "$em_kind"; return 0; fi
   rm -f "$flaky_dir/modules.stale" 2>/dev/null
   git -C "$wt" ls-files -- package.json '*/package.json' 2>/dev/null | sed 's#/package\.json$##; s#^package\.json$#.#' | while IFS= read -r d; do
     em_nm="$wt/$d/node_modules"
@@ -1293,7 +1326,7 @@ for pr in $prs; do
   # a member that changes dependencies gets them installed before its check
   case "
 $changed" in *"
-package-lock.json"*|*"/package-lock.json"*|*"
+package-lock.json"*|*"/package-lock.json"*|*"pnpm-lock.yaml"*|*"yarn.lock"*|*"
 package.json"*|*"/package.json"*) ensure_modules ;; esac
   if [ -n "$typecheck" ] && ! typecheck_ok "$changed" "$wt"; then
     git -C "$wt" reset -q --hard "$good"
