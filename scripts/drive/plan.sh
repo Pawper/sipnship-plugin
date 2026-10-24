@@ -132,6 +132,10 @@ fi
 
 echo "proposal for $(date '+%A %Y-%m-%d'), the owner's local day (runners $runners, at most $max_agents agents, at most $max_minutes minutes; $note):"
 round=$(propose_round "$snapshot" "$runners" "$max_agents")
+# Unreleased plugin work: one release goal, from this repository's history.
+plugin_ver=$(json_field "$(cat plugin/.claude-plugin/plugin.json 2>/dev/null)" version)
+rel_line=$(release_goal "$plugin_ver" "$(plugin_unreleased_count)")
+[ -n "$rel_line" ] && round=$(add_goal "$round" "$rel_line")
 if [ -n "$extra" ]; then
   round=$(printf '%s\n%s\n' "$extra" "$round" | awk '/^stop: (nothing to propose|everything left waits|work is in flight)/ { print "stop: proposal ready for approval"; next } { print }')
 fi

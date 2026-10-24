@@ -88,6 +88,11 @@ The goal lines and what each means:
   by having one reader re-read that issue, then set it to ready with `scripts/state.sh`.
 - **`mark-waiting N`.** The digest says a question to the owner is open on an issue labeled ready or in
   progress. Confirm the same way, then set `state:waiting-on-owner`.
+- **`release X.Y.Z`.** Merged plugin changes sit unshipped. File a release issue first
+  (`sh scripts/issue-open.sh`, State ready). In a worktree run `sh plugin/scripts/release/bump.sh X.Y.Z`, run
+  the plugin suite (`sh tests/run.sh` from `plugin/`), commit, open the pull request with `Closes #N` for that
+  release issue, and queue it. Publishing the split to the public repository happens by the release procedure
+  after the merge (the publish workflow, once the publish token exists).
 - **`restart-queue`.** Stop the queue process if one is still running, look in the main checkout for a stray
   modified tracked file and move it aside, then run the queue again.
 

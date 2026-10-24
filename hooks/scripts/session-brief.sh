@@ -310,5 +310,12 @@ if has proposal && [ -f .claude/project-drive.json ] && [ -f "$here/../../script
   fi
 fi
 
+# Unreleased plugin work, only when there is some.
+if [ -f plugin/.claude-plugin/plugin.json ] && [ -f "$here/../../scripts/drive/drive-lib.sh" ]; then
+  . "$here/../../scripts/drive/drive-lib.sh"
+  unrel=$(plugin_unreleased_count)
+  case "$unrel" in ''|0|*[!0-9]*) ;; *) add "Plugin: $unrel unreleased commit(s) on main since the last version bump." ;; esac
+fi
+
 trim_section "$(printf '%s' "$out")" "$max_lines"
 exit 0

@@ -1879,5 +1879,46 @@ for w in desktop terminal scheduled; do
   eq "drive skill scheduling names the $w way" "1" "$(printf '%s\n' "$drive_sched" | grep -qi "$w" && echo 1 || echo 0)"
 done
 
+printf '\n# drive release goal\n'
+. "$root/scripts/drive/drive-lib.sh"
+eq "next patch bumps the last part" "0.23.8" "$(next_patch 0.23.7)"
+eq "next patch carries no overflow" "1.0.10" "$(next_patch 1.0.9)"
+eq "next patch refuses a non-version" "" "$(next_patch latest)"
+eq "release goal names version and count" "release 0.23.8 (3 plugin commits unreleased)" "$(release_goal 0.23.7 3)"
+eq "release goal says commit for one" "release 0.23.8 (1 plugin commit unreleased)" "$(release_goal 0.23.7 1)"
+eq "release goal silent at zero" "" "$(release_goal 0.23.7 0)"
+eq "release goal silent with no count" "" "$(release_goal 0.23.7 '')"
+eq "add goal goes before the stop line" "merge 5
+release 0.1.1 (2 plugin commits unreleased)
+stop: proposal ready for approval" "$(add_goal "$(printf 'merge 5\nstop: proposal ready for approval')" "release 0.1.1 (2 plugin commits unreleased)")"
+eq "add goal turns an idle stop into a ready one" "release 0.1.1 (2 plugin commits unreleased)
+stop: proposal ready for approval" "$(add_goal "stop: nothing to propose" "release 0.1.1 (2 plugin commits unreleased)")"
+rel_dir=$(mktemp -d)
+(
+  cd "$rel_dir" || exit 1
+  git init -q . && git config user.email t@t && git config user.name t
+  mkdir -p plugin/.claude-plugin
+  printf '{\n  "version": "0.1.0"\n}\n' > plugin/.claude-plugin/plugin.json
+  git add -A && git commit -q -m release
+  git branch -M main
+  printf '%s\n' "$(plugin_unreleased_count)" > "$rel_dir/c0"
+  echo a > plugin/a.txt; git add -A && git commit -q -m a
+  echo other > other.txt; git add -A && git commit -q -m other
+  echo b > plugin/b.txt; git add -A && git commit -q -m b
+  printf '%s\n' "$(plugin_unreleased_count)" > "$rel_dir/c2"
+  printf '{\n  "version": "0.1.1"\n}\n' > plugin/.claude-plugin/plugin.json
+  git add -A && git commit -q -m bump
+  printf '%s\n' "$(plugin_unreleased_count)" > "$rel_dir/c3"
+  mv plugin/.claude-plugin/plugin.json plugin/.claude-plugin/p.bak
+  printf '%s\n' "$(plugin_unreleased_count)" > "$rel_dir/cn"
+)
+eq "no commits since the release counts zero" "0" "$(cat "$rel_dir/c0")"
+eq "counts only commits touching plugin since the version change" "2" "$(cat "$rel_dir/c2")"
+eq "a version bump resets the count" "0" "$(cat "$rel_dir/c3")"
+eq "no plugin version file prints nothing" "" "$(cat "$rel_dir/cn")"
+eq "session brief names the unreleased count" "1" "$(grep -q 'unreleased commit' "$root/hooks/scripts/session-brief.sh" && echo 1 || echo 0)"
+eq "drive skill names the release goal" "1" "$(grep -q 'release X.Y.Z' "$root/skills/project-drive/SKILL.md" && echo 1 || echo 0)"
+eq "plan script adds the release goal" "1" "$(grep -q 'release_goal' "$root/scripts/drive/plan.sh" && echo 1 || echo 0)"
+
 printf '\n%s passed, %s failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

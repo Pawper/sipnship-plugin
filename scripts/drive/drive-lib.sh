@@ -160,3 +160,49 @@ wake_after() {
       print w
     }'
 }
+
+# plugin_unreleased_count [REF]
+# How many commits touching plugin/ landed on REF (default main, else HEAD)
+# since the commit that last changed the version field of
+# plugin/.claude-plugin/plugin.json. That commit is the last release. This
+# reads only this repository's history, so it works when no release tag
+# exists locally (tags live on the separate public repository). Prints
+# nothing when there is no plugin/ folder or no version history.
+plugin_unreleased_count() {
+  pu_file=plugin/.claude-plugin/plugin.json
+  [ -f "$pu_file" ] || return 0
+  pu_ref=${1:-main}
+  git rev-parse --verify -q "$pu_ref" >/dev/null 2>&1 || pu_ref=HEAD
+  pu_rel=$(git log -1 --format=%H -G'"version"' "$pu_ref" -- "$pu_file" 2>/dev/null)
+  [ -n "$pu_rel" ] || return 0
+  git rev-list --count "$pu_rel..$pu_ref" -- plugin/ 2>/dev/null
+}
+
+# next_patch VERSION
+# 0.23.7 -> 0.23.8. Prints nothing for anything not X.Y.Z.
+next_patch() {
+  printf '%s\n' "$1" | tr -d '\r' | awk -F. 'NF == 3 && $1 ~ /^[0-9]+$/ && $2 ~ /^[0-9]+$/ && $3 ~ /^[0-9]+$/ { printf "%s.%s.%d\n", $1, $2, $3 + 1 }'
+}
+
+# release_goal VERSION COUNT
+# The proposal line for a release: "release 0.23.8 (3 plugin commits
+# unreleased)". Prints nothing when COUNT is empty or zero or VERSION is
+# not X.Y.Z.
+release_goal() {
+  case "$2" in ''|0|*[!0-9]*) return 0 ;; esac
+  rg_next=$(next_patch "$1")
+  [ -n "$rg_next" ] || return 0
+  if [ "$2" = 1 ]; then rg_w=commit; else rg_w=commits; fi
+  printf 'release %s (%s plugin %s unreleased)\n' "$rg_next" "$2" "$rg_w"
+}
+
+# add_goal ROUND LINE
+# Put one more goal into a propose_round result, before its defer and stop
+# lines, and make the stop line say a proposal is ready.
+add_goal() {
+  printf '%s\n' "$1" | awk -v goal="$2" '
+    !done && /^(defer|stop:)/ { print goal; done = 1 }
+    /^stop: (nothing to propose|everything left waits|work is in flight)/ { print "stop: proposal ready for approval"; next }
+    { print }
+    END { if (!done) print goal }'
+}
