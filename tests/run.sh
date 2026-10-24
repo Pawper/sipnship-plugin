@@ -1108,6 +1108,22 @@ eq "a secondary limit is a refusal" "yes" "$(board_refusal 'You have exceeded a 
 eq "a missing field is not" "no" "$(board_refusal 'Project 3 has no State field')"
 eq "empty output is not" "no" "$(board_refusal '')"
 
+printf '\n# pull request bodies, stray closing keywords\n'
+. "$root/templates/scripts/pr-lib.sh"
+eq "a deliberate Closes line passes" "" "$(pr_stray_closers 'Closes #115
+Spec: specs/x
+
+Files #105 and see #106.')"
+eq "Closes with a colon on a line start is refused" "Closes: #7" "$(pr_stray_closers 'Closes: #7')"
+eq "fixed with a colon mid-sentence is refused" "filed rather than fixed: #105" "$(pr_stray_closers 'Closes #1
+filed rather than fixed: #105')"
+eq "fix family is refused" "Fixes #3" "$(pr_stray_closers 'Fixes #3')"
+eq "resolve family, any case, is refused" "This RESOLVES #4 too" "$(pr_stray_closers 'This RESOLVES #4 too')"
+eq "close family is refused" "we closed #5" "$(pr_stray_closers 'we closed #5')"
+eq "owner/repo form is refused" "resolved Pawper/other#9" "$(pr_stray_closers 'resolved Pawper/other#9')"
+eq "a second keyword on the deliberate line is refused" "Closes #1, fixes #2" "$(pr_stray_closers 'Closes #1, fixes #2')"
+eq "a keyword inside a word is not one" "" "$(pr_stray_closers 'the prefix #4 and disclosed #5')"
+
 printf '\n# decisions, one file each\n'
 . "$root/templates/scripts/decisions-lib.sh"
 eq "table rows become number, date and text" "123	2026-10-13	Voice long lines in chunks.

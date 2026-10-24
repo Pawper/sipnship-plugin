@@ -24,6 +24,7 @@ scripts/ci/numbering-lib.sh
 scripts/ci/client-env-check.sh
 scripts/next-number.sh
 scripts/pr-open.sh
+scripts/pr-lib.sh
 scripts/issue-open.sh
 scripts/gh-budget.sh
 scripts/protect-main.sh

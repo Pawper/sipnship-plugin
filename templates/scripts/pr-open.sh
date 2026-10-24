@@ -8,10 +8,19 @@
 # Usage: sh scripts/pr-open.sh "TITLE" BODY_FILE [BASE] [HEAD]
 #   BASE defaults to main; HEAD to the current branch.
 set -e
+here=$(cd "$(dirname "$0")" && pwd)
+. "$here/pr-lib.sh"
 title=$1; body_file=$2; base=${3:-main}; head=${4:-$(git rev-parse --abbrev-ref HEAD)}
 [ -n "$title" ] && [ -n "$body_file" ] || { echo 'Usage: sh scripts/pr-open.sh "TITLE" BODY_FILE [BASE] [HEAD]' >&2; exit 2; }
 [ -f "$body_file" ] || { echo "No such body file: $body_file (write it under .scratch/)" >&2; exit 2; }
 [ "$head" != HEAD ] || { echo "Detached HEAD; name the head branch as the fourth argument." >&2; exit 2; }
+stray=$(pr_stray_closers "$(cat "$body_file")")
+if [ -n "$stray" ]; then
+  echo "The body would close an issue by accident. GitHub closes #N after close, fix or resolve in any form, anywhere in the text:" >&2
+  printf '  %s\n' "$stray" >&2
+  echo 'Reword each as "files #N" or "see #N"; only a line starting "Closes #N" should close an issue. Nothing was opened.' >&2
+  exit 2
+fi
 git ls-remote --exit-code --heads origin "$head" >/dev/null 2>&1 || { echo "The branch $head is not on origin yet; push it first." >&2; exit 2; }
 out=$(gh api -X POST "repos/{owner}/{repo}/pulls" -f base="$base" -f head="$head" -f title="$title" -F body=@"$body_file" --jq '"\(.number)\t\(.html_url)"' 2>&1) || {
   case "$out" in

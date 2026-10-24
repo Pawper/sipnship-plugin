@@ -281,7 +281,9 @@ scripts/next-number.sh 2f8e51f5a480a0981bab508f0206f787b3872f85
 scripts/next-number.sh 3ccca8b1bd669a4afac98448647057dbc1acb92b
 scripts/next-number.sh 5e9fdef5b7f1842f267f536ccabb661fb04e4380
 scripts/pr-checks.sh 6cbf720a5ae97ea72317b15d945dcd105cd6d32a
+scripts/pr-lib.sh ce954175d5752c901d13da4634d087735c1967cc
 scripts/pr-open.sh 372ca20ab21a6abfaba666d5f7f0a3d462490b46
+scripts/pr-open.sh 8f647415b4a7c73c371acfa7986b1ae15a026654
 scripts/protect-main.sh df091fbb0c5b4d9ff6346cd62e759acd8caf7dda
 scripts/state.sh 492c15f4c4b648ddb9e00939cedebda9977a55ba
 scripts/state.sh 83aa2bb9ddac54bdfaaee27d198595f1fa72d08b
