@@ -365,7 +365,7 @@ eq "a job gated on a variable is not counted" "" "$(hosted_jobs x.yml "$(printf 
 eq "a self-hosted job is not hosted" "" "$(hosted_jobs x.yml "$(printf 'jobs:\n  w:\n    runs-on: [self-hosted, windows]\n')")"
 eq "the estimate adds the schedules" "hosted Actions: queue-drain, audit run hosted in this private repository, about 1,470 scheduled minutes a month plus audit once per issues; the free allowance is 2,000 and is shared by every repository on the account" "$(hosted_estimate "$(printf '.github/workflows/queue-drain.yml\t*/30 * * * *\t\n.github/workflows/audit.yml\t17 3 * * *\tissues')")"
 eq "no hosted job, no line" "" "$(hosted_estimate '')"
-eq "the watch task runs through sh -c with a log" "1" "$(grep -c "Argument \"-c" "$root/templates/scripts/ci/runner-watch-install.ps1")"
+eq "the watch task runs headless through sh -c with a log" "1" "$(grep -c 'conhost.exe" -Argument "--headless .* -c ' "$root/templates/scripts/ci/runner-watch-install.ps1")"
 eq "the hosted watch is off unless asked" "1" "$(grep -c "if: vars.RUNNER_WATCH_HOSTED == 'yes'" "$root/templates/.github/workflows/runner-watch.yml")"
 eq "green run" "green" "$(run_verdict "$(printf 'build\tcompleted\tsuccess\t1000\t\ntest\tcompleted\tskipped\t1000\t\n')" 2000)"
 eq "pending run" "pending" "$(run_verdict "$(printf 'build\tin_progress\t\t1000\t\n')" 2000)"
