@@ -2049,5 +2049,45 @@ eq "npm installs with ci" "npm ci --no-audit --no-fund" "$(workspace_install_com
 eq "pnpm installs frozen" "1" "$(workspace_install_command "$ws/pn" pnpm | grep -c 'pnpm install --frozen-lockfile\|pnpm@9 install --frozen-lockfile')"
 eq "the queue installs a workspace from its root" "1" "$(grep -c 'ensure_workspace "\$em_kind"' "$root/templates/scripts/ci/merge-queue.sh")"
 
+
+printf '\n# a draft tokens file seeded from the mocks\n'
+sl="$root/templates/scripts/design/seed-lib.mjs"
+sq() { node --input-type=module -e "import * as s from 'file:///$(printf '%s' "$sl" | sed 's|^/\([a-zA-Z]\)/|\1:/|')'; $1"; }
+eq "a style string gives its declarations" '[["font-family","'"'"'Display Serif'"'"', serif"],["font-size","32px"],["padding","16px 24px"]]' "$(sq 'console.log(JSON.stringify(s.parseStyle("font-family: '"'"'Display Serif'"'"', serif; font-size: 32px; padding: 16px 24px")))')"
+eq "a generator's quoted key counts too" '[["font-size","13px"]]' "$(sq 'console.log(JSON.stringify(s.parseStyle("{\x27font-size\x27: \x2713px\x27}")))')"
+eq "colours come out as six-digit hex" "#AABBCC #FF8000 #123456" "$(sq 'console.log(s.colorsIn("#abc rgb(255, 128, 0) #12345680").join(" "))')"
+eq "a colour is light, dark or an accent" "light dark accent dark" "$(sq 'console.log(["#FAF7F0","#1B2638","#E4572E","#23305E"].map(s.classifyColor).join(" "))')"
+eq "px values leave out em, zero and percent" "12 8" "$(sq 'console.log(s.pxValues("12px 8px 0 1em 50%").join(" "))')"
+eq "a family skips the generic names and escapes" "Display Serif|serif Inter|system-ui" "$(sq 'const a=s.familyOf("\\\x27Display Serif\\\x27, serif"),b=s.familyOf("system-ui, Inter");console.log(a.name+"|"+a.fallback+" "+b.name+"|"+b.fallback)')"
+eq "a scale is the most seen values, smallest first, named in order" "xs=4:3 sm=8:5 md=16:9" "$(sq 'console.log(s.buildScale({4:3,8:5,16:9,32:1},3).map(e=>e.key+"="+e.value+":"+e.seen).join(" "))')"
+eq "Name and NameDark pair up; a lone screen does not" '{"Home.dc.html":"light","HomeDark.dc.html":"dark"}' "$(sq 'console.log(JSON.stringify(s.pairSides(["Home.dc.html","HomeDark.dc.html","Settings.dc.html","OnlyDark.dc.html"])))')"
+
+sp=$(mktemp -d)
+(
+  cd "$sp" && mkdir -p scripts/design design && cp "$root/templates/scripts/design/seed-tokens.mjs" "$root/templates/scripts/design/seed-lib.mjs" scripts/design/
+  node scripts/design/seed-tokens.mjs >/dev/null 2>&1; echo "empty $?"
+  cp -r "$root/tests/fixtures/seed-tokens/design/mocks" design/mocks
+  node scripts/design/seed-tokens.mjs --print > print.json; echo "print $? $([ -f design/tokens.json ] && echo wrote || echo none)"
+  node scripts/design/seed-tokens.mjs >/dev/null; echo "first $? $([ -f design/tokens.json ] && echo tokens) $([ -f design/tokens.draft.json ] && echo draft)"
+  cmp -s print.json design/tokens.json && echo "same" || echo "differs"
+  printf '{"kept": true}\n' > design/tokens.json
+  node scripts/design/seed-tokens.mjs >/dev/null; echo "second $? $(cat design/tokens.json | tr -d '\n ') $([ -f design/tokens.draft.json ] && echo draft)"
+  node scripts/design/seed-tokens.mjs >/dev/null 2>&1; echo "third $?"
+) > "$sp.out" 2>&1
+eq "no mocks, exit 2" "empty 2" "$(sed -n 1p "$sp.out")"
+eq "--print writes nothing" "print 0 none" "$(sed -n 2p "$sp.out")"
+eq "with no tokens file, it writes design/tokens.json" "first 0 tokens " "$(sed -n 3p "$sp.out")"
+eq "and --print shows the same draft" "same" "$(sed -n 4p "$sp.out")"
+eq "an existing tokens file is kept; the draft goes beside it" 'second 0 {"kept":true} draft' "$(sed -n 5p "$sp.out")"
+eq "and neither is overwritten on a second run" "third 1" "$(sed -n 6p "$sp.out")"
+sj() { node -e 'const j=require(process.argv[1]);console.log(eval(process.argv[2]))' "$sp/print.json" "$1"; }
+eq "the draft keeps the tokens file's shape" "ground accents gradients type radii spacing outputs" "$(sj '["ground","accents","gradients","type","radii","spacing","outputs"].filter(k=>k in j).join(" ")')"
+eq "the draft says what a person must do" "yes" "$(sj 'j._draft.some(l=>/never the finished look/.test(l))&&j._draft.some(l=>/1 Name \/ NameDark/.test(l))?"yes":"no"')"
+eq "the ground, light and dark from the pair, with seen counts" "page #FAF7F0 2, panel #FFFFFF 1, line #E3DED2 1, ink #1B2638 2, muted #5A6478 1, pageDark #14181F 1, panelDark #1F2530 1, inkDark #EDEFF3 2" "$(sj 'j.ground.map(g=>g.key+" "+g.hex+" "+g.seen).join(", ")')"
+eq "the accents count the generator's palette" "accent #E4572E 3, accent2 #2E9E5B 1" "$(sj 'j.accents.map(a=>a.key+" "+a.stops[0]+" "+a.seen).join(", ")')"
+eq "the families with the weights seen beside them" "body Inter 400 3, display Display Serif 800 2" "$(sj 'j.type.families.map(f=>f.key+" "+f.name+" "+f.weights.join("/")+" "+f.seen).join(", ")')"
+eq "the type scale by size, largest first" "title display 32/800 1.1 0 false 2, heading body 16/600 1.5 0 false 5, subheading body 12/600 1.3 0.08 true 3" "$(sj 'j.type.roles.map(r=>[r.key,r.family,r.size+"/"+r.weight,r.lineHeight,r.letterSpacing,r.uppercase,r.seen].join(" ")).join(", ")')"
+eq "radii and spacing as scales, counts under _seen" '{"small":8,"round":999} {"xs":8,"sm":12,"md":16,"lg":24} {"radii":{"small":3,"round":2},"spacing":{"xs":1,"sm":2,"md":3,"lg":4}}' "$(sj 'JSON.stringify(j.radii)+" "+JSON.stringify(j.spacing)+" "+JSON.stringify(j._seen)')"
+eq "the bootstrap's mocks step runs the seeder" "1" "$(grep -c 'node scripts/design/seed-tokens.mjs' "$root/skills/project-bootstrap/SKILL.md" | awk '{print ($1>=1)?1:0}')"
 printf '\n%s passed, %s failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
