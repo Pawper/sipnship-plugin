@@ -135,6 +135,18 @@ jobs:
           SPEC_TEXT=$(gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}" --jq '.title + "\n" + (.body // "")' 2>/dev/null) || SPEC_TEXT="${{ github.event.pull_request.title }}"
           export SPEC_TEXT
           sh scripts/ci/design-check.sh "$BASE" "${{ github.sha }}"
+      - name: Fail when a screen changes and its mock does not
+        # Only in a project with scripts/ci/mocks.txt: a mapped UI file that
+        # changes has its mock (or its generator) change too, or the body
+        # says "Mock: unchanged, <reason>"; a new UI file beside mocked
+        # screens is mapped or declared unmocked.
+        if: github.event_name == 'pull_request' && hashFiles('scripts/ci/mocks.txt') != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          SPEC_TEXT=$(gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}" --jq '.title + "\n" + (.body // "")' 2>/dev/null) || SPEC_TEXT="${{ github.event.pull_request.title }}"
+          export SPEC_TEXT
+          sh scripts/ci/mock-check.sh "$BASE" "${{ github.sha }}"
       # A project with data or docs checks of its own adds them here as
       # steps, with "if: contains(steps.classes.outputs.classes, 'data')"
       # (or 'docs'). Never repeat a step above.

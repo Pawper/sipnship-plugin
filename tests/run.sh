@@ -1084,7 +1084,7 @@ eq "a drain never waits on one pull request" "2" "$(grep -c '\[ -z "\$QUEUE_IN_D
 eq "--serial waits once for the run its refresh started" "1" "$(grep -c 'serial_refreshed=1' "$root/templates/scripts/ci/merge-queue.sh")"
 eq "an unknown mergeable state is read again" "1" "$(grep -c 'while \[ "\$o_mw" = UNKNOWN \]' "$root/templates/scripts/ci/merge-queue.sh")"
 eq "CI may read pull requests" "1" "$(grep -c 'pull-requests: read' "$root/templates/.github/workflows/ci.yml")"
-eq "the spec check and the design check read the live body" "2" "$(grep -c 'SPEC_TEXT=$(gh api' "$root/templates/.github/workflows/ci.yml")"
+eq "the spec, design and mock checks read the live body" "3" "$(grep -c 'SPEC_TEXT=$(gh api' "$root/templates/.github/workflows/ci.yml")"
 eq "a body with neither carries nothing" "" "$(carried_refs 'Just a copy fix.')"
 eq "the batch body carries its members' lines" "Carried from the members:
 
@@ -1747,6 +1747,47 @@ fi
 eq "the CI template runs the design check where tokens exist" "1" "$(grep -c "hashFiles('design/tokens.json') != ''" "$root/templates/.github/workflows/ci.yml")"
 eq "batches carry a Design: line" "1" "$(grep -c 'QUEUE_CARRY_KEYS:-Parity Twin Design' "$root/templates/scripts/ci/batch-lib.sh")"
 eq "the brief has a screens section" "1" "$(grep -c 'leftover screens handoff' "$root/hooks/scripts/session-brief-lib.sh")"
+printf '\n# a screen and its mock change together\n'
+. "$root/templates/scripts/ci/mock-lib.sh"
+mtxt=$(cat "$root/tests/fixtures/mocks/scripts/ci/mocks.txt")
+eq "mapping lines, the keyword lines left out" "home	src/app/page.tsx	design/mocks/Home.dc.html design/mocks/HomeDark.dc.html
+settings	src/app/settings/*.tsx	design/mocks/Settings*.dc.html" "$(mock_lines "$mtxt")"
+eq "stale-after from the header, 20 without one" "2 20" "$(mock_stale_after "$mtxt") $(mock_stale_after 'home a b')"
+eq "the dark file alone counts as the mock changing" "" "$(mock_missing "$(printf 'src/app/page.tsx\ndesign/mocks/HomeDark.dc.html')" "$mtxt")"
+eq "a glob maps a folder of screens" "settings" "$(mock_missing 'src/app/settings/notify.tsx' "$mtxt")"
+eq "a shared generator counts for every screen" "" "$(mock_missing "$(printf 'src/app/page.tsx\nsrc/app/settings/page.tsx\ndesign/mocks/gen_screens.py')" "$mtxt")"
+eq "the escape gives its reason" "copy only" "$(mock_escape "$(printf 'Fix.\nMock: unchanged, copy only\n')")"
+eq "a bare Mock: line is no escape" "" "$(mock_escape 'Mock: unchanged')"
+eq "an unmapped file beside a mapped one is named" "src/app/about.tsx" "$(mock_unmapped "$(printf 'src/app/about.tsx\nsrc/app/notes.md\nsrc/lib/x.tsx')" "$mtxt")"
+eq "stale screens, worst first" "b: 30 commits
+a: 21 commits" "$(stale_mocks "$(printf 'a\t21\nb\t30\nc\t20')" 20)"
+mk=$(mktemp -d)
+(
+  cd "$mk" && git init -q -b main && git config user.email t@t && git config user.name t && git config core.autocrlf false
+  cp -r "$root/tests/fixtures/mocks/." . && cp "$root/templates/scripts/ci/mock-check.sh" "$root/templates/scripts/ci/mock-lib.sh" scripts/ci/
+  git add -A && git commit -qm base && git tag start
+  # case_run NAME EDITS...: a branch off start with the edits, then the check's exit
+  case_run() { git checkout -q -b "$1" start; shift; for f in "$@"; do printf 'x\n' >> "$f"; done; git add -A && git commit -qm c; sh scripts/ci/mock-check.sh start HEAD >/dev/null 2>&1; echo $?; }
+  case_run with-mock src/app/page.tsx design/mocks/Home.dc.html
+  case_run without-mock src/app/page.tsx
+  git checkout -q without-mock && SPEC_TEXT="$(printf 'T\nMock: unchanged, a label fix')" sh scripts/ci/mock-check.sh start HEAD >/dev/null 2>&1; echo $?
+  case_run unmapped src/app/about.tsx
+  case_run unmocked src/app/settings/debug.tsx
+  git checkout -q main
+  for i in 1 2 3; do printf '%s\n' "$i" >> src/app/page.tsx; git commit -qam "ui $i"; done
+  printf 'y\n' >> src/app/settings/page.tsx; git commit -qam "settings ui"
+  sh scripts/ci/mock-check.sh --stale
+) > "$mk.out" 2>&1
+eq "a mapped UI change with its mock passes" "0" "$(sed -n 1p "$mk.out")"
+eq "without its mock fails" "1" "$(sed -n 2p "$mk.out")"
+eq "with Mock: unchanged it passes" "0" "$(sed -n 3p "$mk.out")"
+eq "an unmapped file in a mapped folder fails" "1" "$(sed -n 4p "$mk.out")"
+eq "a declared unmocked file passes" "0" "$(sed -n 5p "$mk.out")"
+eq "the stale count names only the screen past stale-after" "home: 3 commits" "$(sed -n '6,$p' "$mk.out")"
+eq "the CI template runs the mock check where mocks.txt exists" "1" "$(grep -c "hashFiles('scripts/ci/mocks.txt') != ''" "$root/templates/.github/workflows/ci.yml")"
+eq "the template mocks.txt has no live lines" "" "$(mock_lines "$(cat "$root/templates/scripts/ci/mocks.txt")")"
+eq "the brief has a stale-mock line" "1" "$(grep -c 'mock-check.sh" --stale' "$root/hooks/scripts/session-brief.sh")"
+
 printf '\n# runner watch\n'
 runs=$(printf '11\tCI\tfeature\tqueued\t1000\n12\tCI\tmain\tqueued\t1500\n13\tCI\tother\tin_progress\t100\n14\tCI\tx\tqueued\t1900\n')
 eq "runs queued past ten minutes, oldest first" "11	CI	feature	16

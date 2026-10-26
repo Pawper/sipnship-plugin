@@ -8,5 +8,6 @@ Spec: specs/<feature>
 Parity: #<open issue>            the other platform follows in that issue
 Parity: none, <reason>           this screen has no other side, and why
 Design: <reason>                 a literal colour, size or font that must stay
+Mock: unchanged, <reason>        a screen changed and its mock still holds, and why
 Deletes: <reason>                a file the change must delete, and why
 -->

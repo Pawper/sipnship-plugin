@@ -275,6 +275,13 @@ if has screens && [ -f scripts/ci/parity.txt ] && [ -f "$here/../../templates/sc
   [ -z "$due" ] || add "Screens not compared across platforms in 14 days: $due. After comparing: sh scripts/design/screens.sh compare NAME"
 fi
 
+# Screens whose mock has fallen behind their UI by more than the
+# stale-after commits in scripts/ci/mocks.txt (20 by default). Local git only.
+if has screens && [ -f scripts/ci/mocks.txt ] && [ "$have_git" = yes ] && [ -f "$here/../../templates/scripts/ci/mock-check.sh" ]; then
+  sm=$(run_bounded 6 sh "$here/../../templates/scripts/ci/mock-check.sh" --stale 2>/dev/null | head -n 6 | paste -sd';' - | sed 's/;/; /g')
+  [ -z "$sm" ] || add "Mocks behind their screens: $sm. Update the mock in design/mocks/, or say in the next pull request why it still holds."
+fi
+
 # Last handoff
 if has handoff && [ -n "$memory_dir" ] && [ -d "$memory_dir" ]; then
   listing=$(for f in "$memory_dir"/handoff-*; do

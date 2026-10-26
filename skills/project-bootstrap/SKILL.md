@@ -29,6 +29,7 @@ default for each. In Claude Code use the question tool so the person can pick ra
 | Spec tool: by hand, GitHub's spec-kit, something else, none yet? (sibling) | Step 7 and the spec check assume a folder per feature; the tool that fills it is the person's choice | Whether to run a generator inside `specs/<feature>/` or copy the skeleton |
 | Where do CI jobs run: hosted, or the studio's self-hosted runners? (sibling) | Every job in ci.yml carries the `RUNS_ON` placeholder; a personal account has no runner groups, so there is no hosted fallback and the runner watch is what speaks when the runners are offline | `RUNS_ON` in `.github/workflows/ci.yml`: `ubuntu-latest`, or `[self-hosted, windows]` as both studio projects use; the gh-only workflows stay hosted |
 | Where does it deploy, and does a self-hosted runner exist? (sibling) | Build CPU is most of a Vercel bill, and a project with many agents pushes many branches and merges main often; with the host's defaults every push is a build | The deploy path, set with `sh scripts/deploy-setup.sh [runner\|vercel\|guard] [APP_ROOT] [INTERVAL]`: `runner` builds on our runner and deploys prebuilt on a schedule (best), `vercel` deploys on a schedule and lets Vercel build, `guard` keeps Git deploys but from main only, skipping changes that do not ship and throttled. Not on Vercel: say so once and apply the same idea, main only on a schedule or with a skip rule, if the host supports it |
+| Where do existing mocks live, and what generates them? | Mocks left where they were made drift from the screens built from them, and nothing can check a picture it cannot find | They move into `design/mocks/` at step 1, generator beside them; with mocks there, step 7b makes one spec per area of the mocks and the mock check (section 4b) is an output |
 | What is the owner's time zone? | Every dated line in the repository (decisions, the manual's migrations table, stubs, the notice, memory notes) is the owner's local day; gh output, runner logs and `date -u` are UTC, and an agent that dates from them writes tomorrow's date all evening | The `TIMEZONE` placeholder in the Stack section and in `.claude/session-brief.json`; the brief prints today in it |
 | Where will the work folder live, and where is it backed up? | Step 6 is outside the repo and nothing can create it for you | The path named in CLAUDE.md |
 | Is there a manual already, and where? (sibling) | The setup check asks for a line in the manual whenever a setup file changes; it must point at the one the project keeps | The `manual PATH` line in `scripts/ci/setup-paths.txt`; the manual row in the homes table |
@@ -71,6 +72,7 @@ Write these into the project's CLAUDE.md (and AGENTS.md as a copy for other tool
 | Coordination state (what merged when, what was uploaded) | git history, CI, the storage bucket | written down by hand |
 | The manual | One setup document: configuration, keys by name, migrations run | anything that changes per feature |
 | Design | A spec folder per feature, with a constitution written once and a spec file per feature, written before building (by hand, or with GitHub's spec-kit if the project wants a generator) | design notes in issues only |
+| Mocks | `design/mocks/`, with whatever generates them beside them; `scripts/ci/mocks.txt` maps each screen to its mock | mocks wherever they were made, a picture nobody built against |
 | Credit for borrowed code or content | One short notice file, like any license notice | per-item narrative |
 | Worktrees | One folder, named in CLAUDE.md, each removed when its pull request merges | scattered as siblings of the repository, kept after the merge |
 
@@ -163,6 +165,8 @@ Three rules go with it, and CI holds them (`scripts/ci/design-check.sh`, in the 
 
 Where `scripts/ci/parity.txt` lists screen pairs, the check also fails a pull request whose pair names different type roles on its two sides, and `design/screens.txt` records when a person last compared each pair by eye; the session brief names the pairs never compared or older than 14 days (`sh scripts/design/screens.sh compare NAME` records one).
 
+Where `design/mocks/` holds the project's mocks, `scripts/ci/mocks.txt` maps each screen to them, one line per screen: `NAME UI_PATH MOCK_PATH [MOCK_PATH...]`, globs allowed, listing every file of the mock (the light file, the dark file, the script that generates them). `scripts/ci/mock-check.sh`, in the `checks` job wherever `mocks.txt` exists, fails a pull request that changes a mapped UI file without changing any of its mock files, unless the body says `Mock: unchanged, <reason>`; and a new UI file beside mocked screens that no line names, until a line maps it or `unmocked PATH` declares it. `generator PATH` names a helper every generator shares. The session brief names screens whose mock is more commits behind their UI than `# stale-after: N` in `mocks.txt` (20 by default).
+
 ## 5. The project board, exactly
 
 Create one GitHub project for the repository and set it up so nothing has to be updated by hand:
@@ -185,6 +189,7 @@ Create, in order:
 5. The setup document, the notice file, the one-screen status page and its build and check scripts.
 6. The work folder outside the repo, with a register for research and an off-site backup scheduled.
 7. The constitution, then the first spec.
+7b. Mocks to specs, when `design/mocks/` exists, between the constitution and the first spec: one `specs/<feature>/` per area of the mocks, each listing its mock screens and, as acceptance criteria, the rules no picture shows (what is saved, who may see it, what happens when it fails). Then `scripts/ci/mocks.txt` mapping each screen to its mock files, and the mock check from section 4b.
 8. The owner console: `console/services.json` listing every outside system, the settings each depends on with a plain label, the links, the launch to-do with its flags, and the FAQ; served locally with `node "$CLAUDE_PLUGIN_ROOT/console/cli.js" console`, and mounted online behind the owner sign-in when wanted. Its check fails when a name in the example env file has no card.
 8b. Deploys: `sh scripts/deploy-setup.sh` with the path the survey chose, the app's folder and the interval. It writes `vercel.json` in the app's folder and `.claude/deploy.json`, and for the scheduled paths the Deploy workflow's schedule and the `DEPLOY_PATH` variable; name the secrets it lists to the owner, and the console's two Vercel checks (the Standard build machine, a spend cap), which have no API.
 9. The session brief's config, `.claude/session-brief.json`: the merge queue's log glob, the agent's memory folder, and the line limit.
@@ -255,6 +260,7 @@ are ready to copy from `${CLAUDE_PLUGIN_ROOT}/templates/`:
 - Step 5: `SETUP.md`, `NOTICE.md`, `status/` and the `STATUS.md` it builds
 - Step 6: nothing in the plugin; it lives outside the repo, so create it by hand and name its path in CLAUDE.md
 - Step 7: `specs/constitution.md` and `specs/001-FEATURE/spec.md`, checked by `scripts/ci/spec-check.sh`
+- Step 7b: `scripts/ci/mocks.txt` (a commented example), `scripts/ci/mock-check.sh` and `scripts/ci/mock-lib.sh`
 - Step 8: `console/services.json` and `.env.example`; the page itself comes from the plugin's `console/` and needs no copy
 - Step 3 also: `.gitignore`, with `.scratch/` and the generated files
 - Step 4 also: `scripts/worktrees.sh` and `scripts/worktrees-lib.sh`, which the merge queue calls to check a pull request's folder when it is queued and to remove a merged branch's worktree and branch; `scripts/ci/shared-check.sh` and `shared-paths.txt`

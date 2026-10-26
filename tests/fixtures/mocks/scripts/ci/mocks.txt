@@ -1,0 +1,5 @@
+# stale-after: 2
+home src/app/page.tsx design/mocks/Home.dc.html design/mocks/HomeDark.dc.html
+settings src/app/settings/*.tsx design/mocks/Settings*.dc.html
+unmocked src/app/settings/debug.tsx
+generator design/mocks/gen_screens.py
