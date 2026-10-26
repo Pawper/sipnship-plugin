@@ -38,7 +38,10 @@ New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 $log = Join-Path $logDir (($repo -replace '/', '-') + ".log")
 $unixLog = ToUnix $log
 $cmd = "/usr/bin/sh '$unixRoot/scripts/ci/runner-watch.sh' >> '$unixLog' 2>&1; tail -c 200000 '$unixLog' > '$unixLog.new' 2>/dev/null && mv '$unixLog.new' '$unixLog'"
-$action = New-ScheduledTaskAction -Execute $sh -Argument "-c `"$cmd`"" -WorkingDirectory $root
+# sh.exe is a console program, so every run opened a window on top of
+# whatever the user was doing. conhost --headless gives it a console with
+# no window.
+$action = New-ScheduledTaskAction -Execute "$env:SystemRoot\System32\conhost.exe" -Argument "--headless `"$sh`" -c `"$cmd`"" -WorkingDirectory $root
 $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes $EveryMinutes)
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Minutes 5) -MultipleInstances IgnoreNew -DontStopIfGoingOnBatteries -AllowStartIfOnBatteries
 Unregister-ScheduledTask -TaskName $task -Confirm:$false -ErrorAction SilentlyContinue
