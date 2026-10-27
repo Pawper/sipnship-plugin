@@ -94,6 +94,7 @@ scripts/decisions-lib.sh
 feature design
 scripts/design/design-lib.sh
 scripts/design/generate.mjs
+scripts/design/copy-extract.mjs
 scripts/design/screens.sh
 scripts/ci/design-check.sh
 # The design source and its config are the project's: added once, never replaced.
@@ -103,6 +104,7 @@ default design/screens.txt
 default design/README.md
 default scripts/ci/design-ui.txt
 default scripts/ci/design-allow.txt
+default scripts/ci/copy-allow.txt
 feature supabase
 scripts/supabase-create.sh
 scripts/env-lib.sh

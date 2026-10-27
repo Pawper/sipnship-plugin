@@ -19,6 +19,10 @@ writes the files named under `outputs` in `tokens.json`: a TypeScript module, a 
 
 The generator is the plugin's file and the sync keeps it current. A project's own sections (a wordmark, an ambient light, anything its tokens carry beyond the standard keys) go in `scripts/design/generate.local.mjs`, which exports `extra({ tokens, icons, helpers })` and returns `{ ts, css, kotlin, swift }` strings the generator appends to each file.
 
+## Copy from the mocks
+
+Where `mocks/` holds the project's mocks, `node scripts/design/copy-extract.mjs` writes `copy/<screen>.json`: every visible string of each screen (a light and dark pair is one file), keyed by the element's `data-copy` attribute or a slug of the text. `generate.mjs` then writes the strings module each `outputs.copyTs`, `copyKotlin` or `copySwift` names, so a screen says `copy.home.welcomeBack`, never the words. Both are generated: change the mock, run both scripts, commit all of it together. The design check fails when they are stale and when a UI file gains words as a literal (`scripts/ci/copy-allow.txt` lists the calls that show words and the literals that are not words).
+
 ## Rules a screen follows
 
 - **A screen uses a token or a role, never a literal.** No raw hex colour, no px, dp or sp number for type or spacing, no font name outside the generated module. CI fails a pull request that adds one to a UI file (`scripts/ci/design-check.sh`); the generated files and `design/` itself are allowed. A literal that must stay says why in the pull request body: `Design: <reason>`.

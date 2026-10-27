@@ -67,6 +67,76 @@ design_literals() {
     }'
 }
 
+# copy_section COPY_ALLOW_TXT NAME
+# The lines of one section of scripts/ci/copy-allow.txt ("user-facing
+# calls:" or "allowed literals:"), comments and blank lines left out.
+copy_section() {
+  printf '%s\n' "$1" | tr -d '\r' | awk -v want="$2:" '
+    /^[[:space:]]*#/ || /^[[:space:]]*$/ { next }
+    /^[a-z][a-z -]*:[[:space:]]*$/ { s = $0; sub(/[[:space:]]*$/, "", s); on = (s == want); next }
+    on { sub(/^[[:space:]]+/, ""); sub(/[[:space:]]+$/, ""); print }'
+}
+
+# copy_literals DIFF CALLS [ALLOW_RE]
+# DIFF is a unified diff with zero context over UI files. Print each added
+# line that puts words on a screen as a literal, "path:line: [words] text":
+# a JSX or template text child on one line (<p>Save</p>, in .tsx, .jsx,
+# .vue, .svelte or .html files), a title, label, placeholder, alt or
+# aria-label attribute or named argument with a quoted value, or a quoted
+# literal passed straight to a function CALLS names (one per line: Text,
+# toast). A literal counts only when it holds a letter and does not match
+# ALLOW_RE (regexes joined by |, matched against the literal itself:
+# identifiers, URLs, format strings). Comment lines never count. The rule
+# reads one line at a time and only these shapes, so it misses words built
+# up across lines or passed through a variable: it prefers missing a
+# literal to blaming a line that holds none.
+copy_literals() {
+  cl_calls=$(printf '%s\n' "$2" | tr -d '\r' | sed '/^[[:space:]]*$/d' | sed 's/[][\.*^$]/\\&/g' | paste -sd'|' -)
+  cl_allow=$(printf '%s' "${3:-}" | sed 's/\\/\\\\/g')
+  printf '%s\n' "$1" | tr -d '\r' | awk -v calls="$cl_calls" -v allow="$cl_allow" '
+    function words(s) { return s ~ /[A-Za-z]/ && (allow == "" || s !~ ("^(" allow ")$")) }
+    function add(s) { if (words(s)) hit = hit ", " s }
+    function boundary(str, at) { return at <= 1 || substr(str, at - 1, 1) !~ /[A-Za-z0-9_$.-]/ }
+    # quoted(S): the literal at the start of S, quotes and all, or ""
+    function quoted(s,   q, k) {
+      q = substr(s, 1, 1); if (q != "\"" && q != "\047" && q != "`") return ""
+      k = index(substr(s, 2), q); if (!k) return ""
+      return substr(s, 1, k + 1)
+    }
+    function inner(lit,   v) { v = substr(lit, 2, length(lit) - 2); if (substr(lit, 1, 1) == "`" && index(v, "${")) return ""; return v }
+    /^\+\+\+ / { f = $0; sub(/^\+\+\+ b\//, "", f); sub(/^\+\+\+ /, "", f); jsx = (f ~ /\.(tsx|jsx|vue|svelte|html?)$/); next }
+    /^@@/ { n = $0; sub(/^@@ -[0-9,]+ \+/, "", n); sub(/[ ,].*/, "", n); line = n + 0; next }
+    /^\+/ {
+      t = substr($0, 2); cur = line; line++
+      if (t ~ /^[[:space:]]*(\/\/|\/\*|\*|#|<!--)/) next
+      hit = ""
+      if (jsx) {
+        s = t; off = 0
+        while (match(s, />[^<>{}]*</)) {
+          c = substr(s, RSTART + 1, RLENGTH - 2); pre = (RSTART > 1) ? substr(s, RSTART - 1, 1) : ""
+          gsub(/^[[:space:]]+|[[:space:]]+$/, "", c)
+          if (pre != "=" && pre != "-" && c !~ /[=&|();]/) add(c)
+          s = substr(s, RSTART + RLENGTH - 1)
+        }
+      }
+      s = t
+      while (match(s, /(title|label|placeholder|alt|aria-label)[[:space:]]*[=:][[:space:]]*\{?[[:space:]]*["\047`]/)) {
+        st = RSTART; ln = RLENGTH
+        if (boundary(s, st)) { lit = quoted(substr(s, st + ln - 1)); if (lit != "") add(inner(lit)) }
+        s = substr(s, st + ln)
+      }
+      if (calls != "") {
+        s = t
+        while (match(s, "(" calls ")[[:space:]]*\\([[:space:]]*[\"\047`]")) {
+          st = RSTART; ln = RLENGTH
+          if (boundary(s, st)) { lit = quoted(substr(s, st + ln - 1)); if (lit != "") add(inner(lit)) }
+          s = substr(s, st + ln)
+        }
+      }
+      if (hit != "") printf "%s:%d: [%s] %s\n", f, cur, substr(hit, 3), t
+    }'
+}
+
 # design_escape TEXT
 # Print the reason when a pull request body carries "Design: <reason>",
 # nothing otherwise. A literal that must stay says why.

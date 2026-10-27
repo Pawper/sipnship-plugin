@@ -2,3 +2,9 @@
 # One shell glob per line. A pattern without a slash matches a file name
 # anywhere; a pattern with a slash matches a path relative to the project.
 STATUS.md
+# The words of the mocks and the modules generated from them: change the mock
+# and run scripts/design/copy-extract.mjs, then scripts/design/generate.mjs.
+design/copy/*.json
+copy.generated.ts
+Copy.generated.kt
+Copy.generated.swift

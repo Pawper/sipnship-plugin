@@ -1,0 +1,25 @@
+# The copy rule of the design check, read only where design/copy/ exists: a
+# pull request that adds words to a screen as a literal in a UI file (the
+# files of design-ui.txt) fails, unless its body says why ("Design: <reason>").
+# A screen says copy.<screen>.<id>, generated from the mocks.
+#
+# user-facing calls: functions whose first quoted argument is shown to a
+# person, one name per line.
+# allowed literals: regexes matched against the whole literal; a literal
+# matching one is never words on a screen (an identifier, a URL, a format).
+
+user-facing calls:
+Text
+Button
+Label
+alert
+confirm
+toast
+
+allowed literals:
+[a-z0-9_.:/-]*
+https?://.*
+mailto:.*
+[a-z]+:[a-zA-Z0-9_.-]+
+%[0-9.]*[@dfsxi]
+\{[A-Za-z_][A-Za-z0-9_]*\}

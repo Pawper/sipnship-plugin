@@ -10,6 +10,9 @@
 # check reads (default: src/**/*.tsx, *.css, android **/*.kt, ios **/*.swift);
 # scripts/ci/design-allow.txt holds one regex per line of lines to allow.
 # A literal that must stay says why in the body: "Design: <reason>".
+# Where design/copy/ exists, the copy files must be current against the
+# mocks and a UI file may not gain words as a literal; scripts/ci/
+# copy-allow.txt names the user-facing calls and the literals allowed.
 # Each step says when it starts, so a long run is visibly a slow step and
 # not a hang, and the whole check gives up after DESIGN_CHECK_SECONDS
 # (default 90), naming the step it was in.
@@ -27,6 +30,18 @@ trap 'echo "design-check.sh gave up after ${budget}s during: $step (DESIGN_CHECK
 done_check() { kill "$watchdog" 2>/dev/null; wait "$watchdog" 2>/dev/null; }
 
 fail=0
+# 0. copy files current against the mocks, only where design/copy/ exists
+if [ -d design/copy ]; then
+  step "copy files current against the mocks (node scripts/design/copy-extract.mjs --check)"
+  if [ ! -f scripts/design/copy-extract.mjs ]; then
+    echo "No scripts/design/copy-extract.mjs here, so design/copy/ was not checked against the mocks." >&2
+  elif command -v node >/dev/null 2>&1; then
+    node scripts/design/copy-extract.mjs --check || fail=1
+  else
+    echo "node is not on the PATH, so design/copy/ was not checked against the mocks." >&2
+  fi
+fi
+
 # 1. generated files current
 step "generated files current (node scripts/design/generate.mjs --check)"
 if [ ! -f scripts/design/generate.mjs ]; then
@@ -62,7 +77,7 @@ android/**/*.kt
 ios/**/*.swift'
 allow=$(sed '/^[[:space:]]*#/d; /^[[:space:]]*$/d' scripts/ci/design-allow.txt 2>/dev/null | paste -sd'|' -)
 # the generated files, the token source and the fonts are never literals
-gen=$(node -e 'const o=require(process.cwd()+"/design/tokens.json").outputs||{};console.log([o.ts,o.css,o.kotlin&&o.kotlin.path,typeof o.swift=="string"?o.swift:o.swift&&o.swift.path].filter(Boolean).join("\n"))' 2>/dev/null)
+gen=$(node -e 'const o=require(process.cwd()+"/design/tokens.json").outputs||{};console.log([o.ts,o.css,o.kotlin&&o.kotlin.path,typeof o.swift=="string"?o.swift:o.swift&&o.swift.path,o.copyTs,o.copyKotlin&&o.copyKotlin.path,typeof o.copySwift=="string"?o.copySwift:o.copySwift&&o.copySwift.path].filter(Boolean).join("\n"))' 2>/dev/null)
 excl=$(printf '%s\n' "$gen" | sed '/^$/d; s/^/:(exclude)/')
 # The globs go to git whole: with shell globbing on, src/**/*.tsx expanded
 # two levels deep and no deeper file was ever checked (531 lines seen of
@@ -83,6 +98,26 @@ if [ -n "$hits" ]; then
     printf '%s\n' "$hits" | sed 's/^/  /' >&2
     echo "Move the value into design/tokens.json and regenerate, use the role's class or object, or say why it must stay with a line \"Design: <reason>\" in the pull request body." >&2
     fail=1
+  fi
+fi
+
+# 2b. words added to UI files as literals, only where design/copy/ exists
+if [ -d design/copy ]; then
+  step "words added to UI files as literals (scripts/ci/copy-allow.txt)"
+  callow=$(cat scripts/ci/copy-allow.txt 2>/dev/null)
+  cl_re=$(copy_section "$callow" "allowed literals" | paste -sd'|' -)
+  chits=$(copy_literals "$ui_diff" "$(copy_section "$callow" "user-facing calls")" "$cl_re")
+  if [ -n "$chits" ]; then
+    why=$(design_escape "${SPEC_TEXT:-${PR_TEXT:-}}")
+    if [ -n "$why" ]; then
+      echo "Words added to UI files as literals, allowed by the pull request: Design: $why"
+      printf '%s\n' "$chits" | sed 's/^/  /'
+    else
+      echo "A screen says its words through the copy module (copy.<screen>.<id>), generated from the mocks, never as a literal. These lines add one:" >&2
+      printf '%s\n' "$chits" | sed 's/^/  /' >&2
+      echo "Put the words in the mock, run node scripts/design/copy-extract.mjs and node scripts/design/generate.mjs, and use the generated id; add a literal that is not words to the allowed literals in scripts/ci/copy-allow.txt; or say why it must stay with a line \"Design: <reason>\" in the pull request body." >&2
+      fail=1
+    fi
   fi
 fi
 
