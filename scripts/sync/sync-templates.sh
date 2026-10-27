@@ -34,9 +34,14 @@
 #     RUN_SHELL could be filled and every script it runs is here or written
 #     in the same sync.
 #   - Config with defaults: added when missing; never replaced.
-#   - The project's own files (ci.yml, .gitattributes, .gitignore):
-#     never touched; it reports the jobs and lines the template has that
-#     the project's copy lacks, for a person to merge by hand.
+#   - Template scripts OWNED.txt does not list: "new", added with --apply
+#     where the project has their folder and not the file.
+#   - The project's own files (ci.yml, .gitattributes, .gitignore): it
+#     reports the jobs and lines the template has that the project's copy
+#     lacks, for a person to merge by hand. A named step a job of ci.yml
+#     (or of an edited plugin workflow) lacks is carried in by step name
+#     with --apply, after the step before it in the template; the rest of
+#     the file is kept.
 #
 # --apply needs a clean working tree. It makes a branch named
 # template-sync-<date> from the current commit, writes the files there and
@@ -131,6 +136,47 @@ $p
   esac
   if [ "$(same_text "$(cat "$p")" "$want")" = yes ]; then current=$((current + 1)); else changed="$changed $p"; fi
 done
+# Template files OWNED.txt does not list are new: never compared, so a
+# script added in a later version never arrived. One goes to a project that
+# has its folder (scripts/ci/ for a check script) and not the file.
+newfiles=""
+if [ -z "$only" ]; then
+  nf_all=$(cd "$tpl" && find . -type f | sed 's#^\./##' | sort)
+  nf_listed=$(printf '%s\n%s\n' "$(owned_paths "$owned")" "$(default_paths "$owned")")
+  for p in $(new_template_files "$nf_all" "$nf_listed"); do
+    [ -f "$p" ] && continue
+    [ -d "$(dirname "$p")" ] || continue
+    case "
+$project_owned
+" in *"
+$p
+"*) continue ;; esac
+    newfiles="$newfiles $p"
+  done
+fi
+# A filled workflow (ci.yml, or a plugin workflow edited here) is not kept
+# whole: a named template step its copy lacks is carried in, by step name.
+# A project synced to 0.24.0 kept its edited ci.yml and never got the mock
+# check's step.
+carry=""
+for p in .github/workflows/ci.yml $edited; do
+  case "$p" in .github/workflows/*.yml) ;; *) continue ;; esac
+  [ -f "$p" ] && [ -f "$tpl/$p" ] || continue
+  [ -n "$only" ] && [ "$p" = .github/workflows/ci.yml ] && continue
+  [ "$force" = yes ] && [ "$p" != .github/workflows/ci.yml ] && continue
+  case "
+$project_owned
+" in *"
+$p
+"*) continue ;; esac
+  c_tpl=$(filled_text "$(cat "$tpl/$p")" "$runs_on" "$run_shell")
+  c_steps=$(missing_steps "$c_tpl" "$(cat "$p")")
+  [ -n "$c_steps" ] || continue
+  carry="$carry $p"
+  printf '%s\n' "$c_steps" | while IFS="	" read -r c_j c_n; do
+    echo "  step:     $p job $c_j lacks the template's step \"$c_n\"; carried in with --apply, the rest of the file kept"
+  done
+done
 # A project on the guard path (vercel.json guards Git deploys from main)
 # needs no Deploy workflow: under the guard it has nothing to do, but its
 # scheduled plan job still starts, on a hosted machine, and in a private
@@ -200,7 +246,7 @@ $d
   done
   dep_todo=$dep_next
 done
-willwrite=" $changed $missing $defaults "
+willwrite=" $changed $missing $defaults $newfiles "
 # refusal_of PATH: why a workflow cannot be written here, or nothing. The
 # dry run and --apply both ask, so what one says the other does.
 refusal_of() {
@@ -242,6 +288,7 @@ for p in $changed; do
   esac
 done
 for p in $missing; do echo "  missing:  $p"; done
+for p in $newfiles; do echo "  new:      $p (a template file OWNED.txt does not list; added with --apply)"; done
 for p in $refused; do echo "  refused:  $p $(refusal_of "$p")"; done
 if [ -n "$unadopted" ] && [ -z "$only" ]; then
   for f in $(printf '%s\n' $unadopted | awk '!seen[$0]++'); do
@@ -315,7 +362,7 @@ if [ -f "$tpl/scripts/ci/deploy-lib.sh" ]; then
   fi
 fi
 
-work=$(printf '%s%s%s' "$changed" "$missing" "$defaults" | tr -d ' ')
+work=$(printf '%s%s%s%s%s' "$changed" "$missing" "$defaults" "$newfiles" "$carry" | tr -d ' ')
 if [ -z "$work" ]; then echo "Everything the plugin owns is current."; exit 0; fi
 # A project that still passes --deploy (gone in 0.16.0) wanted a deploy
 # after every landing: intervalMinutes 0 is that, unless another pull
@@ -377,8 +424,15 @@ esac
 # script it runs is here or written now; otherwise it is refused and said.
 written=""
 if [ -n "$remove" ]; then git rm -q -- "$remove"; echo "  removed:  $remove"; fi
-for p in $changed $missing $defaults; do
+for p in $carry; do
+  c_text=$(carry_steps "$(filled_text "$(cat "$tpl/$p")" "$runs_on" "$run_shell")" "$(cat "$p")")
+  printf '%s\n' "$c_text" > "$p"
+  echo "  carried:  the template's new steps into $p; the rest of it kept"
+  written="$written $p"
+done
+for p in $changed $missing $defaults $newfiles; do
   if [ "$force" = no ]; then
+    case " $carry " in *" $p "*) continue ;; esac
     case " $edited " in *" $p "*) echo "  kept:     $p (edited here; pass --force to replace it)"; continue ;; esac
   fi
   case "$p" in

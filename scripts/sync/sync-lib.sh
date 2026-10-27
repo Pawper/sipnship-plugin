@@ -346,3 +346,97 @@ loaded_scripts() {
       if (!(s in seen)) { seen[s] = 1; print s }
     }'
 }
+
+# new_template_files ALL LISTED
+# Template files under scripts/ that OWNED.txt does not list, one per line.
+# ALL is every path in templates/, LISTED the owned and default paths. A
+# file added to the templates in a later version and never listed was never
+# compared, so it never arrived: a project synced to 0.24.0 was told every
+# file was current while three new check scripts were missing.
+new_template_files() {
+  NT_ALL="$1" NT_LISTED="$2" awk 'BEGIN {
+    n = split(ENVIRON["NT_LISTED"], l, "\n"); for (i = 1; i <= n; i++) { sub(/\r$/, "", l[i]); if (l[i] != "") have[l[i]] = 1 }
+    n = split(ENVIRON["NT_ALL"], a, "\n")
+    for (i = 1; i <= n; i++) { p = a[i]; sub(/\r$/, "", p); if (p ~ /^scripts\// && !(p in have)) print p }
+  }'
+}
+
+# The step parser both step helpers share: for each line of a workflow, the
+# job it is in and, inside that job's steps, which step it belongs to and
+# that step's name.
+_steps_awk='
+function indent(s) { match(s, /^ */); return RLENGTH }
+function parse(text, pre,    n, ln, i, line, job, insteps, injobs, k, nm) {
+  n = split(text, ln, "\n"); job = ""; insteps = 0; injobs = 0; k = 0
+  for (i = 1; i <= n; i++) {
+    line = ln[i]; sub(/\r$/, "", line)
+    L[pre, i] = line; J[pre, i] = ""; S[pre, i] = 0
+    if (line ~ /^jobs:[ \t]*$/) { injobs = 1; job = ""; continue }
+    if (line ~ /^[^ \t#]/) { injobs = 0; job = ""; insteps = 0; continue }
+    if (injobs && line ~ /^  [A-Za-z0-9_-]+:[ \t]*$/) { job = line; sub(/^  /, "", job); sub(/:.*/, "", job); insteps = 0; continue }
+    if (job == "") continue
+    if (line ~ /^    steps:[ \t]*$/) { insteps = 1; continue }
+    if (insteps && line !~ /^[ \t]*$/ && indent(line) <= 4) insteps = 0
+    if (!insteps) continue
+    J[pre, i] = job
+    if (line ~ /^      - /) { k++; SN[pre, k] = ""; SJ[pre, k] = job }
+    S[pre, i] = k
+    nm = line
+    if (k && (nm ~ /^      - name:/ || nm ~ /^        name:/)) {
+      sub(/^ *-? *name:[ \t]*/, "", nm); sub(/[ \t]+$/, "", nm); gsub(/^["\047]|["\047]$/, "", nm)
+      SN[pre, k] = nm
+    }
+  }
+  N[pre] = n; K[pre] = k
+}
+function load(    k, j, pj, prev) {
+  parse(ENVIRON["ST_T"], "t"); parse(ENVIRON["ST_P"], "p")
+  for (k = 1; k <= K["p"]; k++) { pjob[SJ["p", k]] = 1; if (SN["p", k] != "") phave[SJ["p", k], SN["p", k]] = 1 }
+  prev = ""; pj = ""
+  for (k = 1; k <= K["t"]; k++) {
+    j = SJ["t", k]; if (j != pj) { prev = ""; pj = j }
+    if (SN["t", k] != "" && (j in pjob) && !((j, SN["t", k]) in phave)) { miss[k] = 1; mprev[k] = prev }
+    if (SN["t", k] != "") prev = SN["t", k]
+  }
+}'
+
+# missing_steps TEMPLATE_YAML PROJECT_YAML
+# Named steps of a template job that the project's same job lacks, as
+# "job<TAB>step name", one per line. Jobs the project lacks are not here;
+# missing_jobs names those.
+missing_steps() {
+  ST_T="$1" ST_P="$2" awk "$_steps_awk"'
+  BEGIN { load(); for (k = 1; k <= K["t"]; k++) if (k in miss) printf "%s\t%s\n", SJ["t", k], SN["t", k] }'
+}
+
+# carry_steps TEMPLATE_YAML PROJECT_YAML
+# The project's workflow with each step missing_steps names carried in from
+# the template, whole, after the step that comes before it in the template
+# (by name), or at the end of the job's steps when that one is not here.
+# Everything else in the project's copy stays as it is: a project that had
+# edited its ci.yml kept it whole and never got the mock check's step.
+carry_steps() {
+  ST_T="$1" ST_P="$2" awk "$_steps_awk"'
+  function emit(j, after,    k, i) {
+    for (k = 1; k <= K["t"]; k++) if ((k in miss) && !(k in done) && SJ["t", k] == j && (after == "\001" || mprev[k] == after)) {
+      done[k] = 1
+      for (i = 1; i <= N["t"]; i++) if (S["t", i] == k) print L["t", i]
+      if (after != "\001") emit(j, SN["t", k])
+    }
+  }
+  function close_step() { if (cur) { emit(SJ["p", cur], SN["p", cur]); cur = 0 } }
+  BEGIN {
+    load(); cur = 0; cj = ""; nb = 0
+    for (i = 1; i <= N["p"]; i++) {
+      line = L["p", i]
+      if (J["p", i] != "" && line ~ /^[ \t]*$/) { blank[++nb] = line; continue }
+      if (S["p", i] != cur) close_step()
+      if (cj != "" && J["p", i] != cj) { emit(cj, "\001") }
+      for (b = 1; b <= nb; b++) print blank[b]; nb = 0
+      cj = J["p", i]; cur = S["p", i]
+      print line
+    }
+    close_step(); if (cj != "") emit(cj, "\001")
+    for (b = 1; b <= nb; b++) print blank[b]
+  }'
+}

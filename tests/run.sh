@@ -1505,6 +1505,40 @@ git -C "$ss_d" add -A; git -C "$ss_d" commit -q -m start
 ss_dry=$(cd "$ss_d" && sh "$root/scripts/sync/sync-templates.sh" 2>&1)
 eq "a workflow's missing plugin scripts are brought and counted" "2" "$(printf '%s\n' "$ss_dry" | grep -c 'brings:   scripts/ci/runner-doctor.sh\|brings:   scripts/ci/doctor-lib.sh')"
 eq "the dry run prints the same refusals as --apply" "$(printf '%s\n' "$ss_dry" | grep '^  refused:' | sort)" "$(cd "$ss_d" && sh "$root/scripts/sync/sync-templates.sh" --apply --no-commit 2>&1 | grep '^  refused:' | sort)"
+
+# A template file OWNED.txt does not list is new, and arrives with --apply:
+# a project synced to 0.24.0 never got the mock check's scripts.
+fixtures_sync="$root/tests/fixtures/sync"
+eq "a template script OWNED.txt does not list is new" "scripts/ci/mock-check.sh" "$(new_template_files "$(printf 'scripts/ci/lib.sh\nscripts/ci/mock-check.sh\nCLAUDE.md\n')" "scripts/ci/lib.sh")"
+ss_d=$(ss_new)
+while IFS= read -r nf_p; do mkdir -p "$ss_d/$(dirname "$nf_p")"; cp "$root/templates/$nf_p" "$ss_d/$nf_p"; done < "$fixtures_sync/new-files-project.txt"
+git -C "$ss_d" add -A; git -C "$ss_d" commit -q -m start
+ss_dry=$(cd "$ss_d" && sh "$root/scripts/sync/sync-templates.sh" 2>&1)
+eq "the dry run lists the new check scripts" "3" "$(printf '%s\n' "$ss_dry" | grep -c 'new:      scripts/ci/mock-check.sh\|new:      scripts/ci/mock-lib.sh\|new:      scripts/ci/mocks.txt')"
+eq "a new file goes only where its folder is" "0" "$(printf '%s\n' "$ss_dry" | grep -c 'new:      scripts/design/')"
+(cd "$ss_d" && sh "$root/scripts/sync/sync-templates.sh" --apply --no-commit >/dev/null 2>&1)
+eq "and --apply adds them" "yes yes" "$([ -f "$ss_d/scripts/ci/mock-check.sh" ] && echo yes || echo no) $(git -C "$ss_d" diff --cached --name-only | grep -qx scripts/ci/mock-lib.sh && echo yes || echo no)"
+
+# A filled workflow the project edited is not kept whole: a template step
+# its copy lacks is carried in by name, and its own steps stay.
+cs_tpl=$(filled_text "$(cat "$root/templates/.github/workflows/ci.yml")" '[self-hosted, windows]' bash)
+cs_p=$(cat "$fixtures_sync/ci-lacks-steps.yml")
+eq "the steps a job lacks are named" "yes" "$(missing_steps "$cs_tpl" "$cs_p" | grep -qxF "$(printf 'checks\tFail when a screen changes and its mock does not')" && echo yes || echo no)"
+eq "a job the project lacks is not a step it lacks" "0" "$(missing_steps "$cs_tpl" "$cs_p" | grep -c '^app	')"
+eq "a step the project has is not missing" "0" "$(missing_steps "$cs_tpl" "$cs_p" | grep -c 'Classify the change')"
+cs_out=$(carry_steps "$cs_tpl" "$cs_p")
+eq "after carrying, the job lacks nothing" "" "$(missing_steps "$cs_tpl" "$cs_out" | grep '^checks	')"
+eq "its own step and its runner are kept" "1 2" "$(printf '%s\n' "$cs_out" | grep -c 'name: Our own lint') $(printf '%s\n' "$cs_out" | grep -c 'runs-on: \[self-hosted, windows\]')"
+eq "a carried step lands after the one before it in the template" "Classify the change|Fail when a text file has CRLF endings" "$(printf '%s\n' "$cs_out" | sed -n 's/^      [ -]*name: //p' | sed -n '1,2p' | tr '\n' '|' | sed 's/|$//')"
+eq "the next job is untouched" "Report once for every job" "$(printf '%s\n' "$cs_out" | awk '/^  ci-passed:/{f=1} f && /name:/{sub(/.*name: /,""); print; exit}')"
+eq "carrying into a complete copy changes nothing" "same" "$([ "$(carry_steps "$cs_tpl" "$cs_tpl")" = "$cs_tpl" ] && echo same || echo differs)"
+ss_d=$(ss_new)
+cp "$fixtures_sync/ci-lacks-steps.yml" "$ss_d/.github/workflows/ci.yml"
+git -C "$ss_d" add -A; git -C "$ss_d" commit -q -m start
+ss_dry=$(cd "$ss_d" && sh "$root/scripts/sync/sync-templates.sh" 2>&1)
+eq "the dry run names the step ci.yml lacks" "1" "$(printf '%s\n' "$ss_dry" | grep -c 'step:     .github/workflows/ci.yml job checks lacks the template.s step "Fail when a screen changes and its mock does not"')"
+(cd "$ss_d" && sh "$root/scripts/sync/sync-templates.sh" --apply --no-commit >/dev/null 2>&1)
+eq "and --apply carries it into ci.yml, keeping its own step" "1 1" "$(grep -c 'Fail when a screen changes and its mock does not' "$ss_d/.github/workflows/ci.yml") $(grep -c 'Our own lint' "$ss_d/.github/workflows/ci.yml")"
 # A filled workflow must read back as a released version, whatever the
 # project's runner and shell: the fill leaves comments alone, the
 # templates hold no literal line a fill could produce, and a workflow an

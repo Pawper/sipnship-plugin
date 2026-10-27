@@ -1,0 +1,29 @@
+# A project's own ci.yml, edited since bootstrap: it has a step of its own
+# and lacks the template's later steps, the mock check among them.
+name: CI
+
+on:
+  pull_request:
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  checks:
+    runs-on: [self-hosted, windows]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: classes
+        name: Classify the change
+        run: sh scripts/ci/classify.sh HEAD~1 HEAD
+
+      - name: Our own lint
+        run: echo ours
+  ci-passed:
+    runs-on: [self-hosted, windows]
+    steps:
+      - name: Report once for every job
+        run: echo ok
