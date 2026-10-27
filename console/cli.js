@@ -6,6 +6,7 @@
 // console --check  do not serve; fail when the config has gaps (used by CI and tests)
 // console --no-delivery  leave out the Delivery section (no GitHub reads)
 // queue-demo [--out FILE]  write the self-playing merge queue page, for a site
+// permissions  a person, in a terminal, chooses the commands the agent may run
 
 const path = require('path');
 const fs = require('fs');
@@ -17,6 +18,7 @@ function usage() {
   sipnship console [--port N] [--root <project>]
   sipnship console --check [--root <project>]
   sipnship queue-demo [--out <file>]
+  sipnship permissions [--root <project>]
 
 Serves the owner console for the project at <project> (default: the current
 folder) on localhost, on the port this project claimed on this machine the
@@ -66,6 +68,7 @@ async function main() {
     if (args.out) { fs.writeFileSync(args.out, page); process.stdout.write(`Wrote ${args.out}\n`); } else process.stdout.write(page);
     return;
   }
+  if (args.command === 'permissions') { process.exitCode = await require('./permissions').run(args.root); return; }
   if (args.command !== 'console') { usage(); process.exit(args.command === 'help' ? 0 : 2); }
   if (args.check) {
     const problems = check(args.root);

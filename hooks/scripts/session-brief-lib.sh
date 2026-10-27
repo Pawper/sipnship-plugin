@@ -255,3 +255,11 @@ brief_sections() {
     *) echo "main prs queue inprogress leftover screens handoff owner proposal" ;;
   esac
 }
+
+# permissions_line SETTINGS_FILE: one line for the owner when the project
+# has no .claude/settings.json, so the agent is not first refused at a
+# deploy. The agent may not write it; the person runs the wizard.
+permissions_line() {
+  [ -f "$1" ] && return 0
+  printf '%s\n' "Waits on the owner: the agent is not allowed to grant itself permissions, so .claude/settings.json is yours to add. Run node console/cli.js permissions in a terminal."
+}

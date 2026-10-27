@@ -26,6 +26,7 @@ Every value comes from the environment. List the name, what it is for, and where
 2. Copy `.env.example` to `.env` and fill in the names above.
 3. Run the migrations with `MIGRATE_COMMAND`.
 4. Start the app with `START_COMMAND`.
+5. Add the agent's permissions yourself: run `node console/cli.js permissions` from the plugin in a terminal (the agent is not allowed to grant itself permissions). It writes `.claude/settings.json`, opens the pull request, and asks you to restart the session.
 
 ## Migrations run
 

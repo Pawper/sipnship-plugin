@@ -2,6 +2,14 @@
 # Pure helpers for the merge queue's batch mode. Nothing here calls git or
 # gh, so every function is tested with strings in tests/run.sh.
 
+# deploy_refused_message REF: what the queue says when its start of the
+# Deploy workflow is refused. A builder saw an agent deploy once and then
+# stop with nothing changed on their side, so it names the cause and the
+# handle, with the command.
+deploy_refused_message() {
+  printf '%s\n' "The agent is not allowed to start a deploy here, so nothing was deployed. Add the permission file with node console/cli.js permissions, or run this one command yourself: gh workflow run deploy.yml --ref ${1:-main}"
+}
+
 # batch_order ARGS...
 # Print the PR numbers in the order given, one per line, with repeats
 # dropped and anything that is not a number ignored.

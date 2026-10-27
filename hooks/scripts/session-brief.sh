@@ -116,6 +116,12 @@ if has inprogress || has owner; then
   fi
 fi
 
+# The allow rules are the person's to add; say so before the first deploy.
+if has owner; then
+  perm=$(permissions_line .claude/settings.json)
+  [ -n "$perm" ] && add "$perm"
+fi
+
 # Where things really stand: the saved digest, compared by last-updated
 # time with the facts just read. Local, no network. The lines come from
 # summaries readers wrote from bodies and comments.

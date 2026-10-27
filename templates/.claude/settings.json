@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh workflow run deploy.yml:*)",
+      "Bash(gh api -X POST repos/{owner}/{repo}/actions/workflows/deploy.yml/dispatches:*)",
+      "Bash(sh scripts/ci/merge-queue.sh:*)",
+      "Bash(sh scripts/pr-open.sh:*)",
+      "Bash(sh scripts/pr-checks.sh:*)",
+      "Bash(sh scripts/issue-open.sh:*)",
+      "Bash(sh scripts/state.sh:*)",
+      "Bash(sh scripts/worktrees.sh:*)",
+      "Bash(sh scripts/decisions.sh:*)",
+      "Bash(sh scripts/next-number.sh:*)",
+      "Bash(sh scripts/ci/design-check.sh:*)",
+      "Bash(sh status/build.sh:*)",
+      "Bash(sh status/check.sh:*)",
+      "Bash(node scripts/design/generate.mjs:*)"
+    ]
+  }
+}

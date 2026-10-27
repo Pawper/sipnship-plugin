@@ -1,0 +1,12 @@
+{
+  "model": "kept",
+  "permissions": {
+    "allow": [
+      "Bash(npm test:*)",
+      "Bash(sh scripts/pr-open.sh:*)"
+    ],
+    "deny": [
+      "Bash(curl:*)"
+    ]
+  }
+}
