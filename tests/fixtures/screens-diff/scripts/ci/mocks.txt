@@ -1,0 +1,5 @@
+# threshold: 0.05
+# fixtures: tests/fixtures/screens.json
+home src/home.html mocks/home.html @/home.html
+save src/save.html mocks/save.html @/save.html
+about src/about.html mocks/about.html

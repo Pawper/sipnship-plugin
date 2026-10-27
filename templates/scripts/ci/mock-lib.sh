@@ -6,12 +6,34 @@
 # and the script that generates them). "unmocked PATH" declares a UI file
 # with no mock on purpose; "generator PATH" is a file every generator
 # shares, whose change counts as every mock changing. A glob's * reaches
-# across folders, as in a case pattern.
+# across folders, as in a case pattern. A last word "@/route" is the built
+# screen's route for the side-by-side (scripts/design/screens-diff.mjs),
+# never a mock path.
 
 # mock_lines TEXT: "NAME<TAB>UI<TAB>MOCK MOCK..." per mapping line.
 mock_lines() {
   printf '%s\n' "$1" | tr -d '\r' | awk '!/^[[:space:]]*(#|$)/ && NF >= 3 && $1 != "unmocked" && $1 != "generator" {
-    m = $3; for (i = 4; i <= NF; i++) m = m " " $i; printf "%s\t%s\t%s\n", $1, $2, m }'
+    e = NF; if ($e ~ /^@/) e--; if (e < 3) next
+    m = $3; for (i = 4; i <= e; i++) m = m " " $i; printf "%s\t%s\t%s\n", $1, $2, m }'
+}
+
+# mock_routes TEXT: "NAME<TAB>ROUTE<TAB>FIRST_MOCK" for each line that ends
+# in "@/route", the route without its @.
+mock_routes() {
+  printf '%s\n' "$1" | tr -d '\r' | awk '!/^[[:space:]]*(#|$)/ && NF >= 4 && $NF ~ /^@/ && $1 != "unmocked" && $1 != "generator" { printf "%s\t%s\t%s\n", $1, substr($NF, 2), $3 }'
+}
+
+# mock_header KEY DEFAULT TEXT: the value of a "# KEY: VALUE" line.
+mock_header() {
+  mh=$(printf '%s\n' "$3" | tr -d '\r' | awk -v k="$1" '$1 == "#" && $2 == k ":" && NF >= 3 { print $3; exit } $1 == "#" k ":" && NF >= 2 { print $2; exit }')
+  echo "${mh:-$2}"
+}
+
+# mock_touched CHANGED TEXT: the NAME of every line whose UI file changed.
+mock_touched() {
+  mock_lines "$2" | while IFS='	' read -r mt_n mt_ui mt_mocks; do
+    if any_matches "$1" "$mt_ui"; then printf '%s\n' "$mt_n"; fi
+  done
 }
 
 # mock_keyword WORD TEXT: the PATH of every "WORD PATH" line.

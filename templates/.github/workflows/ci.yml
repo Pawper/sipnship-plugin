@@ -175,21 +175,76 @@ jobs:
         if: contains(needs.checks.outputs.classes, 'app') || contains(needs.checks.outputs.classes, 'other')
         run: echo "replace with BUILD_COMMAND"
 
+  screens:
+    # Each touched screen beside its mock: only on a pull request that
+    # changes a UI file mapped in scripts/ci/mocks.txt on a line with an
+    # @/route, and only once scripts/design/serve.sh is filled in. One
+    # browser render per screen, light and dark; the images go up as an
+    # artifact, the table to the job summary and to one comment on the pull
+    # request, edited in place. A share of differing pixels above the
+    # threshold is flagged and never fails the job; it fails only when a
+    # screen cannot be rendered. It records nothing: a person runs
+    # "sh scripts/design/screens.sh compare --mock NAME" after looking.
+    needs: checks
+    if: github.event_name == 'pull_request' && (contains(needs.checks.outputs.classes, 'app') || contains(needs.checks.outputs.classes, 'other'))
+    runs-on: RUNS_ON
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: run
+        name: Render each touched screen beside its mock
+        run: |
+          out="$RUNNER_TEMP/screens"
+          echo "out=$out" >> "$GITHUB_OUTPUT"
+          if [ ! -f scripts/ci/mocks.txt ] || [ ! -f scripts/design/serve.sh ] || ! grep -q '@/' scripts/ci/mocks.txt; then
+            echo "No screen has a route and a server yet; nothing to render."; exit 0
+          fi
+          code=0
+          sh scripts/design/screens-run.sh HEAD^1 "${{ github.sha }}" "$out" || code=$?
+          [ ! -f "$out/table.md" ] || echo "rendered=yes" >> "$GITHUB_OUTPUT"
+          exit "$code"
+      - id: upload
+        name: Upload the side-by-side images
+        if: always() && steps.run.outputs.rendered == 'yes'
+        uses: actions/upload-artifact@v4
+        with:
+          name: screens-side-by-side
+          path: ${{ steps.run.outputs.out }}/*.png
+          retention-days: 14
+      - name: Write the table to the summary and the pull request
+        if: always() && steps.run.outputs.rendered == 'yes'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OUT: ${{ steps.run.outputs.out }}
+          ART: ${{ steps.upload.outputs.artifact-url }}
+        run: |
+          # One comment, found by its first line and edited in place.
+          marker='<!-- screens: side by side -->'
+          { echo "$marker"; echo "### Each screen beside its mock"; echo; cat "$OUT/table.md"; echo
+            echo "Mock on the left, build on the right, light above dark: ${ART:-see the run's artifacts}."
+            echo "After looking, record it: sh scripts/design/screens.sh compare --mock NAME"; } > "$OUT/comment.md"
+          cat "$OUT/comment.md" >> "$GITHUB_STEP_SUMMARY"
+          api="repos/${{ github.repository }}/issues"
+          id=$(gh api "$api/${{ github.event.pull_request.number }}/comments" --paginate --jq ".[] | select(.body | startswith(\"$marker\")) | .id" | head -n 1)
+          if [ -n "$id" ]; then gh api -X PATCH "$api/comments/$id" -F "body=@$OUT/comment.md" >/dev/null
+          else gh api "$api/${{ github.event.pull_request.number }}/comments" -F "body=@$OUT/comment.md" >/dev/null; fi
+
   ci-passed:
-    # The one check branch protection requires. It reports once for both
-    # jobs. "app" skipped on purpose counts as fine; failed or cancelled
-    # does not. Never put "checks" or "app" in branch protection: "app" is
-    # skipped when a change does not need it, and a required check that
-    # never reports blocks the merge.
+    # The one check branch protection requires. It reports once for every
+    # job. "app" or "screens" skipped on purpose counts as fine; failed or
+    # cancelled does not. Never put "checks" or "app" in branch protection:
+    # "app" is skipped when a change does not need it, and a required check
+    # that never reports blocks the merge.
     name: CI passed
-    needs: [checks, app]
+    needs: [checks, app, screens]
     if: always() && github.event_name == 'pull_request'
     runs-on: RUNS_ON
     steps:
-      - name: Report once for both jobs
+      - name: Report once for every job
         run: |
           failed=0
-          for pair in "checks:${{ needs.checks.result }}" "app:${{ needs.app.result }}"; do
+          for pair in "checks:${{ needs.checks.result }}" "app:${{ needs.app.result }}" "screens:${{ needs.screens.result }}"; do
             job=${pair%%:*}
             result=${pair#*:}
             echo "$job: $result"

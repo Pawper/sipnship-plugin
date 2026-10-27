@@ -1,5 +1,8 @@
-# When each screen pair (scripts/ci/parity.txt) was last compared across
-# platforms by eye: NAME DATE BY, the owner's local day. A pair not listed
-# here was never compared; the session brief names those and any older
-# than 14 days. Record a comparison with:
+# When each screen was last compared by eye, the owner's local day.
+# NAME DATE BY: a screen pair (scripts/ci/parity.txt) compared across
+# platforms. NAME DATE BY mock: a screen (scripts/ci/mocks.txt) whose build
+# was compared with its mock, after looking at the side-by-side. A screen
+# not listed was never compared; the session brief names those and any
+# older than 14 days. CI writes nothing here. Record a comparison with:
 #   sh scripts/design/screens.sh compare NAME [NAME...]
+#   sh scripts/design/screens.sh compare --mock NAME [NAME...]

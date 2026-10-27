@@ -1591,16 +1591,17 @@ eq "the template itself is not" "" "$(split_checks "$(cat "$root/templates/.gith
 eq "sync points a split ci.yml, and one without pull-requests: read, at the migration page" "2" "$(grep -c 'plugin/CI-MIGRATION.md' "$root/scripts/sync/sync-templates.sh")"
 eq "the migration page ships with the plugin" "yes" "$([ -f "$root/CI-MIGRATION.md" ] && echo yes || echo no)"
 
-printf '\n# the CI template is three jobs on a pull request\n'
+printf '\n# the CI template is three jobs on a pull request, and the screens job where mocks have routes\n'
 ciy=$(cat "$root/templates/.github/workflows/ci.yml")
 eq "its jobs" "checks
 app
+screens
 ci-passed
 full
 report-red
 report-green" "$(workflow_jobs "$ciy")"
-eq "CI passed waits on checks and app" "1" "$(printf '%s\n' "$ciy" | grep -c 'needs: \[checks, app\]')"
-eq "one checkout in checks, one in app, one in full" "3" "$(printf '%s\n' "$ciy" | grep -c 'uses: actions/checkout@v4')"
+eq "CI passed waits on checks, app and screens" "1" "$(printf '%s\n' "$ciy" | grep -c 'needs: \[checks, app, screens\]')"
+eq "one checkout in checks, app, screens and full" "4" "$(printf '%s\n' "$ciy" | grep -c 'uses: actions/checkout@v4')"
 eq "a newer push cancels an older pull request run" "1" "$(printf '%s\n' "$ciy" | grep -c 'cancel-in-progress: true')"
 eq "main pushes are each their own group" "1" "$(printf '%s\n' "$ciy" | grep -c "pull_request.number || github.sha")"
 eq "every rule script still runs" "8" "$(for f in classify.sh line-endings.sh status/check.sh numbering-check.sh spec-check.sh setup-check.sh shared-check.sh delete-check.sh; do printf '%s\n' "$ciy" | grep -q "$f" && echo x; done | grep -c x)"
@@ -1843,6 +1844,70 @@ if command -v node >/dev/null 2>&1; then
 else
   printf 'skip  node is not installed, so the copy extractor did not run\n'
 fi
+
+printf '\n# a screen beside its mock\n'
+. "$root/templates/scripts/ci/mock-lib.sh"
+. "$root/templates/scripts/design/design-lib.sh"
+sd_fx="$root/tests/fixtures/screens-diff"
+sdtxt=$(cat "$sd_fx/scripts/ci/mocks.txt")
+eq "a route is never a mock path" "home	src/home.html	mocks/home.html" "$(mock_lines "$sdtxt" | head -n 1)"
+eq "routes, with the first mock of each routed line" "home	/home.html	mocks/home.html
+save	/save.html	mocks/save.html" "$(mock_routes "$sdtxt")"
+eq "threshold and fixtures from the header, defaults without" "0.05 tests/fixtures/screens.json 0.05 none" "$(mock_header threshold 0.05 "$sdtxt") $(mock_header fixtures '' "$sdtxt") $(mock_header threshold 0.05 'home a b') $(mock_header fixtures none 'home a b')"
+eq "the touched screens" "save" "$(mock_touched "$(printf 'src/save.html\nREADME.md')" "$sdtxt")"
+eq "the template mocks.txt has no routes" "" "$(mock_routes "$(cat "$root/templates/scripts/ci/mocks.txt")")"
+eq "a mock line and a platform line are read apart" "home: never" "$(stale_screens "$(printf 'home\ta\tb')" 'home 2026-10-14 T' 2026-10-15 14 mock)"
+eq "a platform comparison ignores the mock line" "home: never" "$(stale_screens "$(printf 'home\ta\tb')" 'home 2026-10-14 T mock' 2026-10-15 14)"
+sdr=$(mktemp -d)
+(
+  cd "$sdr" && git init -q -b main && git config user.email t@t && git config user.name Test-Person && git config core.autocrlf false
+  cp -r "$sd_fx/." . && mkdir -p scripts/design src && cp "$root/templates/scripts/ci/mock-lib.sh" scripts/ci/ && cp "$root/templates/scripts/design/"*.sh "$root/templates/scripts/design/screens-diff.mjs" scripts/design/
+  for n in home save about; do printf 'x\n' > "src/$n.html"; done
+  git add -A && git commit -qm base && git tag start
+  sh scripts/design/screens.sh stale | paste -sd'|' -
+  sh scripts/design/screens.sh compare --mock home
+  sh scripts/design/screens.sh compare --mock nosuch >/dev/null 2>&1; echo "exit $?"
+  grep -v '^#' design/screens.txt | sed "s/$(date +%Y-%m-%d)/TODAY/"
+  sh scripts/design/screens.sh stale | paste -sd'|' -
+) > "$sdr.out" 2>&1
+eq "never compared, both routed screens are due" "home (mock): never|save (mock): never" "$(sed -n 1p "$sdr.out")"
+eq "a mock comparison is recorded" "home: compared with its mock $(date +%Y-%m-%d) by Test-Person" "$(sed -n 2p "$sdr.out")"
+eq "an unknown screen is refused" "exit 2" "$(sed -n 3p "$sdr.out")"
+eq "the line carries its kind" "home TODAY Test-Person mock" "$(sed -n 4p "$sdr.out")"
+eq "the stale count drops the compared screen" "save (mock): never" "$(sed -n 5p "$sdr.out")"
+sd_browser=$(node "$root/templates/scripts/design/screens-diff.mjs" --browser 2>/dev/null)
+if [ -z "$sd_browser" ]; then
+  printf 'skipped: no browser found (the side-by-side renders)\n'
+else
+  sd_url=$(cd "$sd_fx" && pwd -W 2>/dev/null || pwd)
+  sd_out="$sdr/out"
+  sd_home=$(node "$root/templates/scripts/design/screens-diff.mjs" home "$sd_fx/mocks/home.html" "file:///${sd_url#/}/built/home.html" "$sd_out" 2>&1)
+  sd_save=$(node "$root/templates/scripts/design/screens-diff.mjs" save "$sd_fx/mocks/save.html" "file:///${sd_url#/}/built/save.html" "$sd_out" 2>&1)
+  eq "an identical build differs by nothing" "home diff=0.0000 threshold=0.05 flagged=no" "$(printf '%s' "$sd_home" | cut -d' ' -f1-4)"
+  eq "a moved button differs by its two places, and is flagged" "save diff=0.1500 threshold=0.05 flagged=yes" "$(printf '%s' "$sd_save" | cut -d' ' -f1-4)"
+  eq "the line ends in the side-by-side's path" "1" "$(printf '%s' "$sd_save" | grep -c ' .*/save\.png$')"
+  eq "mock beside build, light above dark, 8 pixels apart" "488x648" "$(node -e "const b=require('fs').readFileSync(process.argv[1]);console.log(b.readUInt32BE(16)+'x'+b.readUInt32BE(20))" "$sd_out/save.png")"
+  (
+    cd "$sdr" && git checkout -q -b touch start && printf 'y\n' >> src/save.html && printf 'y\n' >> src/about.html && git commit -qam t
+    BUILT_BASE="file:///${sd_url#/}/built" sh scripts/design/screens-run.sh start HEAD "$sdr/run" >/dev/null 2>&1; echo "exit $?"
+    cat "$sdr/run/table.md"
+  ) > "$sdr.run" 2>&1
+  eq "the job renders only the touched routed screen, flags and passes" "exit 0
+| Screen | Differing pixels | Flagged |
+|---|---|---|
+| save | 15.0% | above 0.05, look at it |" "$(cat "$sdr.run")"
+fi
+(
+  cd "$sdr" && git checkout -q -b stubbed start && printf 'y\n' >> src/save.html && git commit -qam t
+  sh scripts/design/screens-run.sh start HEAD "$sdr/stub"; echo "exit $?"
+) > "$sdr.stub" 2>&1
+eq "the stub serve.sh skips the job" "scripts/design/serve.sh is still the stub; fill it in to see each screen beside its mock.
+exit 0" "$(cat "$sdr.stub")"
+ciy_s="$root/templates/.github/workflows/ci.yml"
+eq "the CI template has a screens job after checks" "1" "$(awk '/^  screens:$/{j=1} j && /needs: checks/{n++; j=0} END{print n+0}' "$ciy_s")"
+eq "it uploads the images, writes the summary, and edits one comment" "1 1 1 1" "$(grep -c 'actions/upload-artifact@v4' "$ciy_s") $(grep -c 'GITHUB_STEP_SUMMARY' "$ciy_s") $(grep -c "marker='<!-- screens: side by side -->'" "$ciy_s") $(grep -c 'gh api -X PATCH' "$ciy_s")"
+eq "CI passed waits on the screens job" "1" "$(grep -c 'needs: \[checks, app, screens\]' "$ciy_s")"
+eq "the brief names screens not compared with their mock" "1" "$(grep -c 'compare --mock NAME' "$root/hooks/scripts/session-brief.sh")"
 
 printf '\n# runner watch\n'
 runs=$(printf '11\tCI\tfeature\tqueued\t1000\n12\tCI\tmain\tqueued\t1500\n13\tCI\tother\tin_progress\t100\n14\tCI\tx\tqueued\t1900\n')

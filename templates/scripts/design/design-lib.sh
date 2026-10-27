@@ -227,11 +227,12 @@ day_number() {
 # PAIRS is parity_pairs output; RECORDS the lines of design/screens.txt
 # ("NAME DATE BY"); TODAY the owner's day. Print each pair never compared,
 # or compared more than DAYS (default 14) ago, as "NAME: never" or
-# "NAME: N days", worst first.
+# "NAME: N days", worst first. KIND "mock" reads the mock-vs-build lines
+# ("NAME DATE BY mock") instead of the cross-platform ones.
 stale_screens() {
   ss_today=$(day_number "$3")
   printf '%s\n' "$1" | awk -F'\t' 'NF >= 1 && $1 != "" { print $1 }' | while IFS= read -r ss_n; do
-    ss_date=$(printf '%s\n' "$2" | tr -d '\r' | awk -v n="$ss_n" '!/^[[:space:]]*#/ && $1 == n { d = $2 } END { print d }')
+    ss_date=$(printf '%s\n' "$2" | tr -d '\r' | awk -v n="$ss_n" -v k="${5:-}" '!/^[[:space:]]*#/ && $1 == n && ((k == "mock") == ($4 == "mock")) { d = $2 } END { print d }')
     if [ -z "$ss_date" ]; then printf '99999\t%s: never\n' "$ss_n"
     else
       ss_age=$(( ss_today - $(day_number "$ss_date") ))
