@@ -386,6 +386,7 @@ function parse(text, pre,    n, ln, i, line, job, insteps, injobs, k, nm) {
       sub(/^ *-? *name:[ \t]*/, "", nm); sub(/[ \t]+$/, "", nm); gsub(/^["\047]|["\047]$/, "", nm)
       SN[pre, k] = nm
     }
+    if (k && line ~ /^ *(- )?run:[ \t]*echo[ \t]+["\047]?[Rr]eplace with/) SP[pre, k] = 1
   }
   N[pre] = n; K[pre] = k
 }
@@ -395,18 +396,21 @@ function load(    k, j, pj, prev) {
   prev = ""; pj = ""
   for (k = 1; k <= K["t"]; k++) {
     j = SJ["t", k]; if (j != pj) { prev = ""; pj = j }
-    if (SN["t", k] != "" && (j in pjob) && !((j, SN["t", k]) in phave)) { miss[k] = 1; mprev[k] = prev }
+    if (SN["t", k] != "" && (j in pjob) && !((j, SN["t", k]) in phave)) { miss[k] = 1; mprev[k] = prev; if (SP["t", k]) ph[k] = 1 }
     if (SN["t", k] != "") prev = SN["t", k]
   }
 }'
 
 # missing_steps TEMPLATE_YAML PROJECT_YAML
 # Named steps of a template job that the project's same job lacks, as
-# "job<TAB>step name", one per line. Jobs the project lacks are not here;
+# "job<TAB>step name", one per line, with a third field "placeholder" when
+# the template's step only holds a placeholder (an echo of "replace with
+# ...", which a project replaces at bootstrap with its own steps) and so is
+# not carried. Jobs the project lacks are not here;
 # missing_jobs names those.
 missing_steps() {
   ST_T="$1" ST_P="$2" awk "$_steps_awk"'
-  BEGIN { load(); for (k = 1; k <= K["t"]; k++) if (k in miss) printf "%s\t%s\n", SJ["t", k], SN["t", k] }'
+  BEGIN { load(); for (k = 1; k <= K["t"]; k++) if (k in miss) printf "%s\t%s%s\n", SJ["t", k], SN["t", k], (k in ph) ? "\tplaceholder" : "" }'
 }
 
 # carry_steps TEMPLATE_YAML PROJECT_YAML
@@ -418,7 +422,7 @@ missing_steps() {
 carry_steps() {
   ST_T="$1" ST_P="$2" awk "$_steps_awk"'
   function emit(j, after,    k, i) {
-    for (k = 1; k <= K["t"]; k++) if ((k in miss) && !(k in done) && SJ["t", k] == j && (after == "\001" || mprev[k] == after)) {
+    for (k = 1; k <= K["t"]; k++) if ((k in miss) && !(k in ph) && !(k in done) && SJ["t", k] == j && (after == "\001" || mprev[k] == after)) {
       done[k] = 1
       for (i = 1; i <= N["t"]; i++) if (S["t", i] == k) print L["t", i]
       if (after != "\001") emit(j, SN["t", k])

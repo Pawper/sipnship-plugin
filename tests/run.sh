@@ -1554,6 +1554,20 @@ ss_dry=$(cd "$ss_d" && sh "$root/scripts/sync/sync-templates.sh" 2>&1)
 eq "the dry run names the step ci.yml lacks" "1" "$(printf '%s\n' "$ss_dry" | grep -c 'step:     .github/workflows/ci.yml job checks lacks the template.s step "Fail when a screen changes and its mock does not"')"
 (cd "$ss_d" && sh "$root/scripts/sync/sync-templates.sh" --apply --no-commit >/dev/null 2>&1)
 eq "and --apply carries it into ci.yml, keeping its own step" "1 1" "$(grep -c 'Fail when a screen changes and its mock does not' "$ss_d/.github/workflows/ci.yml") $(grep -c 'Our own lint' "$ss_d/.github/workflows/ci.yml")"
+
+# A template step whose body is only a placeholder is not carried into a
+# copy that replaced it with its own steps; the report says so.
+pl_p=$(cat "$fixtures_sync/ci-replaced-placeholder.yml")
+eq "a placeholder step is named, marked as one" "full	Run everything	placeholder" "$(missing_steps "$cs_tpl" "$pl_p" | grep 'Run everything')"
+eq "a placeholder step is not carried" "0" "$(carry_steps "$cs_tpl" "$pl_p" | grep -c 'Run everything')"
+eq "the copy's own steps stay when a placeholder is skipped" "same" "$([ "$(carry_steps "$cs_tpl" "$pl_p")" = "$pl_p" ] && echo same || echo differs)"
+ss_d=$(ss_new)
+cp "$fixtures_sync/ci-replaced-placeholder.yml" "$ss_d/.github/workflows/ci.yml"
+git -C "$ss_d" add -A; git -C "$ss_d" commit -q -m start
+ss_dry=$(cd "$ss_d" && sh "$root/scripts/sync/sync-templates.sh" 2>&1)
+eq "the dry run says the placeholder is not carried" "1" "$(printf '%s\n' "$ss_dry" | grep -c 'step:     .github/workflows/ci.yml job full lacks the template.s step "Run everything"; placeholder, not carried')"
+(cd "$ss_d" && sh "$root/scripts/sync/sync-templates.sh" --apply --no-commit >/dev/null 2>&1)
+eq "and --apply leaves it out of ci.yml" "0" "$(grep -c 'Run everything\|replace with' "$ss_d/.github/workflows/ci.yml")"
 # A filled workflow must read back as a released version, whatever the
 # project's runner and shell: the fill leaves comments alone, the
 # templates hold no literal line a fill could produce, and a workflow an

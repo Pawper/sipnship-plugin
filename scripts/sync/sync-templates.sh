@@ -172,8 +172,12 @@ $p
   c_tpl=$(filled_text "$(cat "$tpl/$p")" "$runs_on" "$run_shell")
   c_steps=$(missing_steps "$c_tpl" "$(cat "$p")")
   [ -n "$c_steps" ] || continue
-  carry="$carry $p"
-  printf '%s\n' "$c_steps" | while IFS="	" read -r c_j c_n; do
+  printf '%s\n' "$c_steps" | grep -qv '	placeholder$' && carry="$carry $p"
+  printf '%s\n' "$c_steps" | while IFS="	" read -r c_j c_n c_ph; do
+    if [ -n "$c_ph" ]; then
+      echo "  step:     $p job $c_j lacks the template's step \"$c_n\"; placeholder, not carried"
+      continue
+    fi
     echo "  step:     $p job $c_j lacks the template's step \"$c_n\"; carried in with --apply, the rest of the file kept"
   done
 done

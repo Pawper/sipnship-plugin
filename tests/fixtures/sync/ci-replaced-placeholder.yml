@@ -1,0 +1,20 @@
+# A project's own ci.yml whose full job replaced the template's placeholder
+# step with its own named steps at bootstrap.
+name: CI
+
+on:
+  pull_request:
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  full:
+    runs-on: [self-hosted, windows]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install
+        run: npm ci
+      - name: Full suite
+        run: npm test
