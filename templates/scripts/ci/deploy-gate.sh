@@ -41,12 +41,15 @@ fi
 # and not held (a queue:hold label or a "Queue: hold" line, the drain's own
 # held_reason). A held one never lands in a drain, so waiting for it once
 # kept a merged fix from deploying at all; it is counted apart and said.
+# An empty labels column is written "-": a tab is IFS whitespace, so two in a
+# row would collapse and put the body in the labels column.
 green=0; held_green=0
 if [ "$mode" = full ]; then
   tab=$(printf '\t')
-  gh api "repos/{owner}/{repo}/pulls?state=open&base=$base&per_page=100" --jq '.[] | select(.draft == false) | "\(.head.sha)\t\([.labels[].name] | join(","))\t\((.body // "") | gsub("[\r\n]+"; " | "))"' 2>/dev/null > "${TMPDIR:-/tmp}/deploy-gate.$$" || true
+  gh api "repos/{owner}/{repo}/pulls?state=open&base=$base&per_page=100" --jq '.[] | select(.draft == false) | "\(.head.sha)\t\(([.labels[].name] | join(",") | if . == "" then "-" else . end))\t\((.body // "") | gsub("[\r\n]+"; " | "))"' 2>/dev/null > "${TMPDIR:-/tmp}/deploy-gate.$$" || true
   while IFS="$tab" read -r sha g_labels g_body; do
     [ -n "$sha" ] || continue
+    [ "$g_labels" = - ] && g_labels=""
     st=$(gh api "repos/{owner}/{repo}/commits/$sha/check-runs?per_page=100" --jq '[.check_runs[] | .conclusion] | if length == 0 then "none" elif all(. == "success" or . == "skipped" or . == "neutral") then "green" else "other" end' 2>/dev/null | tr -d '\r')
     [ "$st" = green ] || continue
     g_why=$(held_reason "$(printf '%s' "$g_labels" | tr ',' '\n')" "$(printf '%s' "$g_body" | sed 's/ | /\

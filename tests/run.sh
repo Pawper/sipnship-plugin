@@ -1076,6 +1076,18 @@ eq "no held line when nothing is held" "" "$(held_note 0)"
 eq "a held green pull request is said, singular" "deploy: 1 green PR on hold, not waited for" "$(held_note 1)"
 eq "and plural" "deploy: 2 green PRs on hold, not waited for" "$(held_note 2)"
 eq "the gate skips held pull requests the way the drain does" "1" "$(grep -c 'held_reason' "$root/templates/scripts/ci/deploy-gate.sh" | awk '{print ($1 >= 1) ? 1 : 0}')"
+gh_stub_d=$(mktemp -d); mkdir -p "$gh_stub_d/.claude"
+printf '{ "intervalMinutes": 0 }\n' > "$gh_stub_d/.claude/deploy.json"
+cat > "$gh_stub_d/gh" <<'GHEOF'
+#!/bin/sh
+case "$2" in
+  *pulls*) printf 'abc123	-	%s\n' 'Fix. | Queue: hold | waiting on an owner step' ;;
+  *check-runs*) echo green ;;
+esac
+GHEOF
+gate_out=$(cd "$gh_stub_d" && PATH="$gh_stub_d:$PATH" sh "$root/templates/scripts/ci/deploy-gate.sh" 2>&1 | head -1)
+eq "a held pull request with no labels is not waited for" "deploy: due" "$(printf '%s' "$gate_out" | cut -c1-11)"
+eq "the gate writes an empty labels column as a dash" "1" "$(grep -c 'if . == "" then "-"' "$root/templates/scripts/ci/deploy-gate.sh")"
 eq "the state line with no deploy yet" "deploy: due; none recorded (interval 60)" "$(deploy_state 0 '' 5000 60)"
 eq "a run that is re-running is pending, whatever its old checks say" "1" "$(grep -c 'its run is \$run_status (a new attempt)' "$root/templates/scripts/ci/merge-queue.sh")"
 eq "--serial by hand waits for checks already running" "1" "$(grep -c 'its checks are still running; waiting for them' "$root/templates/scripts/ci/merge-queue.sh")"

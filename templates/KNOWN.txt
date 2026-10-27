@@ -97,6 +97,7 @@ scripts/ci/batch-lib.sh 1c31018583ac40a1a6c652fbb7eecc34566856be
 scripts/ci/batch-lib.sh 2f10fed2e9c9d3c8ba0e0c37573789319f2f3397
 scripts/ci/batch-lib.sh 3d24bfa8851f0052463e04b91732f5f7aca82886
 scripts/ci/batch-lib.sh 4c5c83c8c836678f3357265fa489e79890d98e7d
+scripts/ci/batch-lib.sh 5767a299040405cd872547a232d8d199de4e6847
 scripts/ci/batch-lib.sh 5d7a74c61e999ab7978ac3b77bcf937b9779f570
 scripts/ci/batch-lib.sh 71724edad8113ebda87bc6adcc2e231d255f4d9f
 scripts/ci/batch-lib.sh 72867bc12d54a99cc434bd94a088797e8a4875c4
@@ -117,6 +118,7 @@ scripts/ci/batch-lib.sh e22ae94adeebc81e929d8176ff1a9dbb989f801c
 scripts/ci/classify.sh ffce692eabc9f10dae99261c194270f388824ca3
 scripts/ci/client-env-check.sh 0c054b2adbe91f3418b4e3027bfa5edc6ac6684e
 scripts/ci/delete-check.sh de832e14b50d2c16ca2639ba95b67d54fec6ad7c
+scripts/ci/deploy-gate.sh 2f4f9d68d4057094a6f8ed81d69ef169a8b3a1e8
 scripts/ci/deploy-gate.sh 3e1bd682d53c0cb5b34996c126099fd4673dbc45
 scripts/ci/deploy-gate.sh 7f973760df9852f6f29b617b3ca554e662cd378b
 scripts/ci/deploy-gate.sh 9cfba0eed147fc42d36e8babbd7af0bba0c016ea
@@ -163,6 +165,7 @@ scripts/ci/merge-queue.sh 034292be66f64219bd7816c8d6a217379b39f5ca
 scripts/ci/merge-queue.sh 04721b915f2035037e871005bdc77d3f80151d34
 scripts/ci/merge-queue.sh 0bce09d72db9e34ea1af24b234bea8b3f0fb07c0
 scripts/ci/merge-queue.sh 1298ed09e066dcba241afca32cd1a152f94da611
+scripts/ci/merge-queue.sh 19de4abcf9192b7e68c45ed9e6a6b627050aff11
 scripts/ci/merge-queue.sh 1a97828bf5aa7944d0c912bc19421a23e9d01a28
 scripts/ci/merge-queue.sh 1d9a90e24cd2412fa94b5b4d9d5c7e7950b762fe
 scripts/ci/merge-queue.sh 1fe1d2e72e984c793b0f8525e6e342676d846814
