@@ -8,16 +8,27 @@
 // project whose app sits in web/ with its own dependencies therefore works
 // from the repository root, and the runner is found next to the test.
 //
+// The file runs with the runner its package uses. A file that requires
+// node:test, or a .js file in a package with no vitest dependency, runs with
+// node --test; a file whose package depends on vitest runs with vitest. A
+// node:test file once went to vitest, which found no suite in it, and the
+// queue dropped a green pull request for it.
+//
 // Usage: node scripts/ci/run-test-file.mjs path/to/one.test.ts
+//        node scripts/ci/run-test-file.mjs --which path/to/one.test.ts
 // Exit 0 when the file passes, 1 when it fails, 2 when it cannot run (and
-// say why on stderr: a runner that cannot start is not a red test).
+// say why on stderr: a runner that cannot start is not a red test), 3 when
+// its runner cannot be told, so it was not run here. --which prints the
+// runner (node, vitest or unknown) and runs nothing.
 
-import { existsSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-const file = process.argv[2];
+const which = process.argv[2] === '--which';
+const file = process.argv[which ? 3 : 2];
 if (!file) {
   process.stderr.write('Give one test file to run.\n');
   process.exit(2);
@@ -41,9 +52,40 @@ export function packageRoot(fromFile, cwd = process.cwd()) {
   }
 }
 
+// runnerFor(FILE, ROOT): 'node', 'vitest' or 'unknown'.
+export function runnerFor(fromFile, root) {
+  let text = '';
+  try { text = readFileSync(fromFile, 'utf8'); } catch { /* unreadable */ }
+  if (/(require\(\s*|from\s+|import\s+)['"]node:test['"]/.test(text)) return 'node';
+  let pkg = null;
+  try { pkg = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8')); } catch { /* none */ }
+  const deps = { ...(pkg?.dependencies || {}), ...(pkg?.devDependencies || {}) };
+  if ('vitest' in deps) return 'vitest';
+  if (pkg && /\.[cm]?js$/.test(fromFile) && !/['"](vitest|@jest\/globals|mocha)['"]/.test(text)) return 'node';
+  return 'unknown';
+}
+
 const root = packageRoot(absolute);
+const runner = runnerFor(absolute, root);
+if (which) {
+  process.stdout.write(`${runner}\n`);
+  process.exit(0);
+}
+if (runner === 'unknown') {
+  process.stderr.write(`Not run here: the test runner for ${file} could not be told.\n`);
+  process.exit(3);
+}
 process.chdir(root);
 const relative = path.relative(root, absolute).split(path.sep).join('/');
+
+if (runner === 'node') {
+  const r = spawnSync(process.execPath, ['--test', relative], { stdio: ['ignore', 'ignore', 'inherit'] });
+  if (r.error) {
+    process.stderr.write(`node --test could not start for ${relative} (${r.error.message}).\n`);
+    process.exit(2);
+  }
+  process.exit(r.status === 0 ? 0 : 1);
+}
 
 let startVitest;
 try {

@@ -1334,10 +1334,15 @@ package.json"*|*"/package.json"*) ensure_modules ;; esac
     dropped="$dropped $pr"
     continue
   fi
-  red=""
+  red=""; not_run=""
   for f in $(tests_for_diff "$changed"); do
     [ -f "$wt/$f" ] || continue
     rc=0; (cd "$wt" && $test_one "$f") >/dev/null 2>"$flaky_dir/test.err" || rc=$?
+    if [ "$rc" -eq 3 ]; then
+      # Its runner could not be told: not run here, never red.
+      not_run="$not_run $f"
+      continue
+    fi
     if [ "$rc" -eq 2 ]; then
       # The runner could not start. That is not a red test, and dropping
       # every pull request for it would empty the batch for nothing.
@@ -1358,6 +1363,7 @@ package.json"*|*"/package.json"*) ensure_modules ;; esac
     dropped="$dropped $pr"
     continue
   fi
+  [ -z "$not_run" ] || batch_line "$pr" "kept" "not run here:$not_run (its test runner could not be told; the batch's full run covers it)"
   # Cancel the PR's own CI run; the batch's one run covers it.
   # Queued runs too: a queued member run still takes a runner the moment
   # one frees, ahead of the batch. A run that ignores the cancel (jobs

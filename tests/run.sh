@@ -319,6 +319,15 @@ eq "worktrees counted with their folders, the agent runtime's apart" "Worktrees:
 eq "only the main checkout, nothing said" "" "$(worktree_summary 'worktree /repo
 branch refs/heads/main')"
 
+printf '\n# the queue runs a test file with its own runner\n'
+rt="$root/templates/scripts/ci/run-test-file.mjs"; rtf="$fx/test-runner"
+eq "a node:test file is picked up by node --test" "node" "$(node "$rt" --which "$rtf/node-test/a.test.js" | tr -d '\r')"
+eq "a node:test file runs and passes" "0" "$(node "$rt" "$rtf/node-test/a.test.js" >/dev/null 2>&1; echo $?)"
+eq "a vitest file is still run by vitest" "vitest" "$(node "$rt" --which "$rtf/vitest/a.test.ts" | tr -d '\r')"
+eq "an unknown runner is told as unknown" "unknown" "$(node "$rt" --which "$rtf/unknown/a.test.ts" | tr -d '\r')"
+eq "an unknown runner is not run, never red" "3" "$(node "$rt" "$rtf/unknown/a.test.ts" >/dev/null 2>&1; echo $?)"
+eq "the queue reports a file not run here" "1" "$(grep -c 'not run here:' "$root/templates/scripts/ci/merge-queue.sh")"
+
 printf '\n# reading a run\n'
 . "$root/templates/scripts/ci/run-lib.sh"
 # --- Spec 001: the queue publishes its state.
