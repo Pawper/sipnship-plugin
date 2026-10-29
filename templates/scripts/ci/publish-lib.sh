@@ -157,3 +157,57 @@ publish_body() {
 published_json() {
   printf '%s\n' "$1" | tr -d '\r' | awk '/^```json$/ { on = 1; next } /^```$/ { if (on) exit } on { print }'
 }
+
+# --- The service road (QUEUE_PUBLISH_STATE=service): the same state, sent to
+# the repository's SipNShip dashboard instead of the issue. Latest only,
+# names never contents, nothing read back but the status.
+
+# service_waits_json ROWS SINCE: the queue's waits log (epoch, time, job,
+# busy, total, minutes) since SINCE as the wait lines the service reads.
+service_waits_json() {
+  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v since="$2" '
+    function esc(s) { gsub(/\\/, "\\\\", s); gsub(/"/, "\\\"", s); return s }
+    NF >= 6 && $1 + 0 >= since {
+      if (n >= 200) next
+      why = ($5 + 0 == 0) ? "" : ($4 + 0 >= $5 + 0) ? (($5 + 0 == 1) ? "the one runner was busy" : "all " $5 " runners were busy") : ($4 " of " $5 " runners were busy")
+      line = sprintf("{\"job\":\"%s\",\"waitedSeconds\":%d", esc($3), ($6 + 0) * 60)
+      if (why != "") line = line sprintf(",\"why\":\"%s\"", why)
+      out = out (n ? "," : "") line "}"; n++
+    }
+    END { printf "[%s]", out }'
+}
+
+# service_body STATE_JSON WAITS_JSON: spec 001's state, version 1 and
+# unchanged, with the wait lines added.
+service_body() {
+  printf '%s' "$1" | sed 's/}[[:space:]]*$//' | tr -d '\n'
+  printf ',"waits":%s}' "${2:-[]}"
+}
+
+# service_outcome HTTP_STATUS: ok, not_connected, too_large, rate_limited or
+# unreachable (no answer, a timeout, a 5xx, anything else).
+service_outcome() {
+  case "$1" in
+    2[0-9][0-9]) printf ok ;;
+    401) printf not_connected ;;
+    413) printf too_large ;;
+    429) printf rate_limited ;;
+    *) printf unreachable ;;
+  esac
+}
+
+# service_issue_too FAILING_SINCE NOW: yes when sends have failed for an
+# hour, so the issue is written as well until a send succeeds.
+service_issue_too() {
+  case "$1" in ''|0|*[!0-9]*) printf no; return ;; esac
+  if [ $(( $2 - $1 )) -ge 3600 ]; then printf yes; else printf no; fi
+}
+
+# service_say OUTCOME: the one plain line a failed send says.
+service_say() {
+  case "$1" in
+    not_connected) printf '%s' "This machine is no longer connected to SipNShip, so the merge queue keeps its issue current after an hour. Reconnect it from the dashboard." ;;
+    too_large) printf '%s' "The queue's state was too long to send to SipNShip; the next change tries again." ;;
+    unreachable) printf '%s' "Could not reach SipNShip with the queue's state; the queue carries on, and writes its issue too if this lasts an hour." ;;
+  esac
+}

@@ -1,0 +1,22 @@
+Session brief. Reply from this first. For where each issue and pull request really stands, from bodies and comments, run /project-status: readers summarize only what changed and you keep one line per item. Never run one network call per branch, worktree or issue yourself.
+Plugin: /home/builder/.claude/plugins/cache/sipnship/0.30.0. In the Bash tool $CLAUDE_PLUGIN_ROOT is empty; use this path for the plugin's scripts.
+Today: Thursday 2026-10-29, 09:12 PDT. Dates in this repository are the owner's local day; gh and runner timestamps are UTC, convert before writing one.
+Budget: 4,812 of 5,000 GraphQL points left this hour; resets at 10:00.
+Main:
+607e473 Add the checkout page (#224) [serial: drain]
+c09e007 Fix the price rounding (#223) [serial: drain]
+The working tree is clean.
+Open pull requests:
+#225 Add a coupon field: green and waiting to merge
+#226 Rename the cart: still running CI
+Issues: 3 in progress, 2 wait on the owner.
+Waits on the owner: the agent is not allowed to grant itself permissions, so .claude/settings.json is yours to add. Run node console/cli.js permissions in a terminal.
+Runners: waited for a runner 3 times this week, up to 4 minutes, when all 3 were busy.
+Workflows: Deploy passed before its last change on main and failed every run since. Open its last run; if the change was a template sync, say so on the plugin's issue.
+Deploy: production is at 607e473, deployed 40 minutes ago.
+Leftover work: 2 of 9 local branches have commits not on main.
+225-coupon
+226-cart
+Last handoff (handoff-2026-10-28.md):
+SECRET-HANDOFF-TEXT the payments key rotation is half done
+Second line of the handoff that must never leave the machine

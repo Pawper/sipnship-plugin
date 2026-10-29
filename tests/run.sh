@@ -356,6 +356,66 @@ eq "the JSON block is read back out of the body" "yes" "$(published_json "$po_bo
 eq "the queue publishes as it drains and at its end" "2" "$(grep -c 'publish_now draining\|publish_now idle' "$root/templates/scripts/ci/merge-queue.sh")"
 eq "the drain workflow may write issues" "1" "$(grep -c '^  issues: write' "$root/templates/.github/workflows/queue-drain.yml")"
 eq "the queue label exists" "1" "$(grep -c 'mk "queue"' "$root/templates/scripts/labels.sh")"
+
+printf '\n# the queue on the service road (spec 006)\n'
+sv_waits="$(printf '1000\t-\tci / unit\t3\t3\t4\n1100\t-\tci / app\t1\t3\t2\n10\t-\told job\t1\t1\t9')"
+eq "the wait lines are the jobs since the cutoff, in seconds, with why" '[{"job":"ci / unit","waitedSeconds":240,"why":"all 3 runners were busy"},{"job":"ci / app","waitedSeconds":120,"why":"1 of 3 runners were busy"}]' "$(service_waits_json "$sv_waits" 500)"
+eq "no waits is an empty list" '[]' "$(service_waits_json "" 0)"
+eq "the body is spec 001's state with the wait lines added" '{"version":1,"mode":"idle","waits":[]}' "$(service_body '{"version":1,"mode":"idle"}' '[]')"
+eq "the body of a real state still parses, version 1" "yes" "$(service_body "$po_json" "$(service_waits_json "$sv_waits" 0)" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const j=JSON.parse(s);console.log(j.version===1&&j.waits.length===3?"yes":"no")})')"
+eq "204 is a send that worked" "ok" "$(service_outcome 204)"
+eq "401 is not connected" "not_connected" "$(service_outcome 401)"
+eq "413 is too large" "too_large" "$(service_outcome 413)"
+eq "429 is dropped quietly" "rate_limited" "$(service_outcome 429)"
+eq "a 5xx is unreachable" "unreachable" "$(service_outcome 503)"
+eq "no answer at all is unreachable" "unreachable" "$(service_outcome 000)"
+eq "failing under an hour leaves the issue alone" "no" "$(service_issue_too 1000 4599)"
+eq "failing for an hour writes the issue as well" "yes" "$(service_issue_too 1000 4600)"
+eq "no failure writes no issue" "no" "$(service_issue_too "" 99999)"
+
+# The whole script, with gh and curl stubbed: no network.
+sv=$(mktemp -d); mkdir -p "$sv/bin" "$sv/q"
+cat > "$sv/bin/gh" <<'GH'
+#!/bin/sh
+printf '%s\n' "$*" >> "$SV_LOG"
+case "$*" in *"issues?labels=queue"*) printf '5\topen\n' ;; esac
+exit 0
+GH
+cat > "$sv/bin/curl" <<'CURL'
+#!/bin/sh
+cat > /dev/null
+printf 'curl %s\n' "$*" >> "$SV_LOG"
+printf '%s' "$SV_STATUS"
+CURL
+chmod +x "$sv/bin/gh" "$sv/bin/curl"
+sv_run() {
+  # Each run is a new state, as a drain's changes are.
+  [ -f "$sv/q/published.sig" ] && mv "$sv/q/published.sig" "$sv/q/published.sig.prev"
+  ( cd "$sv" && PATH="$sv/bin:$PATH" SV_LOG="$sv/log" SV_STATUS="$1" QUEUE_PUBLISH_STATE=service SIPNSHIP_REPO_TOKEN=sns_repo_test SIPNSHIP_REPO_ID=7 SIPNSHIP_URL=http://127.0.0.1:9 QUEUE_DIR="$sv/q" SIPNSHIP_HOME="$sv/home" \
+    sh "$root/templates/scripts/ci/publish-state.sh" --mode idle 2>/dev/null )
+}
+: > "$sv/q/service.moved"
+: > "$sv/log"; sv_out=$(sv_run 204)
+eq "under service a send that works posts /queue" "1" "$(grep -c '^curl .*/v1/repos/7/queue' "$sv/log")"
+eq "and does not write the issue" "0" "$(grep -c 'issues/5' "$sv/log")"
+eq "and says nothing" "" "$sv_out"
+: > "$sv/log"; printf '%s\n' "$(( $(date +%s) - 120 ))" > "$sv/q/service.failing-since"; sv_out=$(sv_run 503)
+eq "a failed send says one line" "1" "$(printf '%s\n' "$sv_out" | grep -c 'Could not reach SipNShip')"
+eq "a failed send under an hour does not write the issue" "0" "$(grep -c 'issues/5' "$sv/log")"
+: > "$sv/log"; sv_out=$(sv_run 503)
+eq "the failure is said once" "" "$sv_out"
+: > "$sv/log"; printf '%s\n' "$(( $(date +%s) - 3700 ))" > "$sv/q/service.failing-since"; sv_out=$(sv_run 503)
+eq "after an hour of failed sends the queue writes its issue as well" "1" "$(grep -c 'PATCH repos/{owner}/{repo}/issues/5 -F body' "$sv/log")"
+: > "$sv/log"; rm_sig="$sv/q/published.sig"; mv "$rm_sig" "$rm_sig.old" 2>/dev/null; sv_out=$(sv_run 204)
+eq "a send that works again stops the issue writes" "0" "$(grep -c 'issues/5' "$sv/log")"
+eq "and clears the failing clock" "" "$(cat "$sv/q/service.failing-since")"
+mv "$sv/q/published.sig" "$sv/q/published.sig.2" 2>/dev/null
+: > "$sv/log"; sv_out=$( cd "$sv" && PATH="$sv/bin:$PATH" SV_LOG="$sv/log" SV_STATUS=204 QUEUE_PUBLISH_STATE=service SIPNSHIP_REPO_TOKEN= SIPNSHIP_REPO_ID= QUEUE_DIR="$sv/q" SIPNSHIP_HOME="$sv/home" sh "$root/templates/scripts/ci/publish-state.sh" --mode idle 2>/dev/null )
+eq "with no token the queue writes the issue as before" "1" "$(grep -c 'PATCH repos/{owner}/{repo}/issues/5 -F body' "$sv/log")"
+eq "and says so once" "1" "$(printf '%s\n' "$sv_out" | grep -c 'not connected to SipNShip')"
+eq "and sends nothing" "0" "$(grep -c '^curl' "$sv/log")"
+eq "the queue's copy and the template are the same" "same" "$(cmp -s "$root/templates/scripts/ci/publish-state.sh" "$root/../scripts/ci/publish-state.sh" 2>/dev/null && echo same || { [ -f "$root/../scripts/ci/publish-state.sh" ] || echo same; })"
+mv "$sv" "$sv.done" 2>/dev/null || true
 eq "the runner count defaults to three" "3" "$(runner_count '')"
 eq "and reads the project's number" "4" "$(runner_count '{ "runners": 4 }')"
 eq "all online, in one line" "3 of 3 online" "$(runner_status "$(printf 'a\tonline\tfalse\nb\tonline\ttrue\nc\tonline\tfalse')" 3)"

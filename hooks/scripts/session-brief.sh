@@ -368,5 +368,19 @@ if [ -f plugin/.claude-plugin/plugin.json ] && [ -f "$here/../../scripts/drive/d
   case "$unrel" in ''|0|*[!0-9]*) ;; *) add "Plugin: $unrel unreleased commit(s) on main since the last version bump." ;; esac
 fi
 
-trim_section "$(printf '%s' "$out")" "$max_lines"
+brief=$(trim_section "$(printf '%s' "$out")" "$max_lines")
+printf '%s\n' "$brief"
+
+# The brief reaches the SipNShip dashboard, only when this machine holds a
+# token for this repository (npx sipnship connect --repo). One request,
+# three seconds at most, after the block above is printed. A failed send
+# says one plain line once per session; nothing is read back.
+sn_home="${SIPNSHIP_HOME:-$HOME/.sipnship}"
+if [ -f "$sn_home/tokens.json" ] && command -v node >/dev/null 2>&1; then
+  sn_repo=$(git remote get-url origin 2>/dev/null | tr -d '\r' | sed -n 's#.*github\.com[:/]\([^/]*\)/\([^/]*\)$#\1/\2#p' | sed 's/\.git$//')
+  if [ -n "$sn_repo" ]; then
+    sn_said=$(printf '%s' "$brief" | run_bounded 5 node "$here/../../console/brief-send.js" --session "$(json_field "$input" session_id)" --repo "$sn_repo" --machine-file "$ml_file" 2>/dev/null | head -n 1)
+    [ -n "$sn_said" ] && printf '%s\n' "$sn_said"
+  fi
+fi
 exit 0

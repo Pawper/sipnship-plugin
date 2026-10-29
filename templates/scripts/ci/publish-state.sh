@@ -10,7 +10,8 @@
 #            so a running drain is not read twice; without it the open pull
 #            requests are read here
 #   --print  print the body; write nothing
-# On only when the repository variable QUEUE_PUBLISH_STATE is "issue"
+# On only when the repository variable QUEUE_PUBLISH_STATE is "issue" or
+# "service" (the state goes to the SipNShip dashboard instead, spec 006)
 # (or the environment sets it); otherwise it exits quietly. Writes only
 # when the body changed, and never more often than once a minute. A write
 # that fails is said once and never stops a merge.
@@ -34,7 +35,7 @@ switch=${QUEUE_PUBLISH_STATE:-}
 if [ -z "$switch" ]; then
   switch=$(gh api "repos/{owner}/{repo}/actions/variables/QUEUE_PUBLISH_STATE" --jq .value 2>/dev/null || echo off)
 fi
-if [ "$switch" != issue ] && [ "$print_only" = no ]; then exit 0; fi
+case "$switch" in issue|service) ;; *) [ "$print_only" = yes ] || exit 0 ;; esac
 base=${QUEUE_BASE:-main}
 now_epoch=$(date +%s)
 # Once a minute at most, unless the mode ended (idle) or --print.
@@ -134,18 +135,87 @@ say=$(publish_say "$open_tsv" "$batch_tsv" "$building" "$clashes_tsv" "$attentio
 now_iso=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 json=$(publish_json "$open_tsv" "$batch_tsv" "$building" "$clashes_tsv" "$landed_tsv" "$runners_tsv" "$attention_tsv" "$(printf '%s\t%s' "$main_sha" "$main_state")" "$deploy_line" "$mode" "$paused_until" "$checking" "$say" "$now_iso")
 
-# 5. The issue: found by title and label, created when missing.
+# 5. Only a change worth a write: the time stamp and the two numbers that
+# tick with time (how long a queued run has waited, a batch's minutes left)
+# are left out of the signature, or an idle queue would rewrite every minute.
+if [ "$print_only" = no ]; then
+  sig=$(printf '%s' "$(publish_body "$say" "$open_tsv" "$batch_tsv" "$landed_tsv" "$json" no)" | sed 's/"updatedAt":"[^"]*"//; s/"longestWaitMinutes":[0-9a-z]*//; s/"minutesLeft":[0-9a-z]*//' | git hash-object --stdin 2>/dev/null)
+  if [ -f "$flaky_dir/published.sig" ] && [ "$(cat "$flaky_dir/published.sig")" = "$sig" ]; then exit 0; fi
+fi
+
+# 6. Under service: the state goes to the repository's SipNShip dashboard,
+# with the queue's wait lines. The token is SIPNSHIP_REPO_TOKEN in CI, or
+# this machine's (npx sipnship connect --repo). With no token, or after an
+# hour of failed sends, the issue is written as well. One request, three
+# seconds at most; only the status is read, and never stops a merge.
+write_issue=yes; moved_note=""
+if [ "$switch" = service ] && [ "$print_only" = no ]; then
+  sn_token=${SIPNSHIP_REPO_TOKEN:-}; sn_id=${SIPNSHIP_REPO_ID:-}
+  if [ -z "$sn_token" ] && command -v node >/dev/null 2>&1; then
+    sn_repo=$(git remote get-url origin 2>/dev/null | tr -d '\r' | sed -n 's#.*github\.com[:/]\([^/]*\)/\([^/]*\)$#\1/\2#p' | sed 's/\.git$//')
+    sn_pair=$(node -e '
+      const fs = require("fs"), path = require("path"), os = require("os");
+      const home = process.env.SIPNSHIP_HOME || path.join(os.homedir(), ".sipnship");
+      try {
+        const repos = JSON.parse(fs.readFileSync(path.join(home, "tokens.json"), "utf8")).repos || {};
+        for (const [id, e] of Object.entries(repos)) if (e && String(e.fullName).toLowerCase() === process.argv[1].toLowerCase()) { process.stdout.write(id + "\t" + e.token); break; }
+      } catch {}' "$sn_repo" 2>/dev/null)
+    if [ -n "$sn_pair" ]; then sn_id=${sn_pair%%	*}; sn_token=${sn_pair#*	}; fi
+  fi
+  if [ -n "$sn_token" ] && [ -z "$sn_id" ]; then
+    sn_id=$(cat "$flaky_dir/repo.id" 2>/dev/null)
+    [ -n "$sn_id" ] || { sn_id=$(gh api "repos/{owner}/{repo}" --jq .id 2>/dev/null | tr -d '\r'); [ -n "$sn_id" ] && printf '%s\n' "$sn_id" > "$flaky_dir/repo.id"; }
+  fi
+  if [ -z "$sn_token" ] || [ -z "$sn_id" ] || ! command -v curl >/dev/null 2>&1; then
+    if [ ! -f "$flaky_dir/service.no-token.said" ]; then
+      echo "QUEUE_PUBLISH_STATE is service, but this machine is not connected to SipNShip, so the queue writes its issue as before. Run npx sipnship connect --repo, or set SIPNSHIP_REPO_TOKEN in CI."
+      : > "$flaky_dir/service.no-token.said"
+    fi
+  else
+    service_body "$json" "$(service_waits_json "$(cat "$flaky_dir/waits.tsv" 2>/dev/null)" $((now_epoch - 7 * 86400)))" > "$flaky_dir/service.body"
+    if [ "$(wc -c < "$flaky_dir/service.body" | tr -d ' ')" -gt 65536 ]; then sn_status=413
+    else
+      sn_status=$(printf 'Authorization: Bearer %s\n' "$sn_token" | curl -s -o /dev/null -w '%{http_code}' --max-time 3 -X POST -H @- -H 'content-type: application/json' --data-binary @"$flaky_dir/service.body" "${SIPNSHIP_URL:-https://sipnship.dev}/v1/repos/$sn_id/queue" 2>/dev/null || true)
+    fi
+    sn_outcome=$(service_outcome "$sn_status")
+    case "$sn_outcome" in
+      ok)
+        write_issue=no
+        printf '' > "$flaky_dir/service.failing-since"
+        printf '' > "$flaky_dir/service.said"
+        # The issue says once where the picture now lives.
+        if [ ! -f "$flaky_dir/service.moved" ]; then
+          write_issue=yes; : > "$flaky_dir/service.moved"
+          moved_note="The merge queue's picture now lives on the SipNShip dashboard, ${SIPNSHIP_URL:-https://sipnship.dev}/, and this issue is no longer kept current."
+        fi ;;
+      rate_limited) write_issue=no ;;
+      *)
+        since=$(cat "$flaky_dir/service.failing-since" 2>/dev/null | tr -d '\r')
+        [ -n "$since" ] || { since=$now_epoch; printf '%s\n' "$since" > "$flaky_dir/service.failing-since"; }
+        if [ "$(cat "$flaky_dir/service.said" 2>/dev/null)" != "$sn_outcome" ]; then
+          service_say "$sn_outcome"; echo
+          printf '%s' "$sn_outcome" > "$flaky_dir/service.said"
+        fi
+        write_issue=$(service_issue_too "$since" "$now_epoch") ;;
+    esac
+  fi
+fi
+if [ "$write_issue" = no ]; then
+  # A failed send keeps no signature, so the next run sends the latest state again.
+  case "${sn_outcome:-}" in ok|rate_limited) printf '%s\n' "$sig" > "$flaky_dir/published.sig" ;; esac
+  printf '%s\n' "$now_epoch" > "$flaky_dir/published.at"
+  exit 0
+fi
+
+# 7. The issue: found by title and label, created when missing.
 issue=$(gh api "repos/{owner}/{repo}/issues?labels=queue&state=all&per_page=20" --jq '[.[] | select(.title == "Merge queue")] | .[0] | "\(.number)\t\(.state)"' 2>/dev/null | tr -d '\r')
 first=no
 if [ -z "$issue" ] || [ "$issue" = "null	null" ]; then first=yes; fi
 body=$(publish_body "$say" "$open_tsv" "$batch_tsv" "$landed_tsv" "$json" "$first")
 if [ "$print_only" = yes ]; then printf '%s\n' "$body"; exit 0; fi
-# Only when the body changed, apart from the time stamp.
-# Only a change worth a write: the time stamp and the two numbers that tick
-# with time (how long a queued run has waited, a batch's minutes left) are
-# left out of the signature, or an idle queue would rewrite every minute.
-sig=$(printf '%s' "$body" | sed 's/"updatedAt":"[^"]*"//; s/"longestWaitMinutes":[0-9a-z]*//; s/"minutesLeft":[0-9a-z]*//' | git hash-object --stdin 2>/dev/null)
-if [ -f "$flaky_dir/published.sig" ] && [ "$(cat "$flaky_dir/published.sig")" = "$sig" ]; then exit 0; fi
+[ -n "$moved_note" ] && body="$moved_note
+
+$body"
 printf '%s' "$body" > "$flaky_dir/published.body"
 if [ "$first" = yes ]; then
   num=$(gh api -X POST "repos/{owner}/{repo}/issues" -f title="Merge queue" -F body=@"$flaky_dir/published.body" -f "labels[]=queue" -f "labels[]=$(state_label parked "$(project_label_form)")" --jq .number 2>"$flaky_dir/publish.err") || { echo "Could not create the Merge queue issue: $(head -n 1 "$flaky_dir/publish.err")" >&2; exit 0; }

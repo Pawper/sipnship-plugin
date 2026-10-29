@@ -96,7 +96,7 @@
     {
       "id": "source", "name": "Source control and CI", "vendor": "GitHub, Actions on the studio's runners",
       "does": "Holds the code, runs the checks on the self-hosted runners, and merges the queue.",
-      "settings": [{ "name": "GITHUB_REPOSITORY", "label": "the repository name" }],
+      "settings": [{ "name": "GITHUB_REPOSITORY", "label": "the repository name" }, { "name": "SIPNSHIP_REPO_TOKEN", "label": "the SipNShip token a queue drain in CI sends with" }],
       "links": [
         { "label": "Repository", "url": "https://github.com/OWNER/REPO" },
         { "label": "Actions", "url": "https://github.com/OWNER/REPO/actions" },

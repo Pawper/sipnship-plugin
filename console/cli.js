@@ -7,6 +7,8 @@
 // console --no-delivery  leave out the Delivery section (no GitHub reads)
 // queue-demo [--out FILE]  write the self-playing merge queue page, for a site
 // permissions  a person, in a terminal, chooses the commands the agent may run
+// connect --repo [OWNER/NAME] [--token T]  send the brief to the dashboard
+// disconnect [--repo OWNER/NAME]  stop sending it
 
 const path = require('path');
 const fs = require('fs');
@@ -19,6 +21,13 @@ function usage() {
   sipnship console --check [--root <project>]
   sipnship queue-demo [--out <file>]
   sipnship permissions [--root <project>]
+  sipnship connect --repo [OWNER/NAME] [--token <token>]
+  sipnship disconnect [--repo OWNER/NAME]
+
+connect sends this repository's session brief to the SipNShip dashboard:
+it shows a code to approve there, then keeps the repository's token in
+~/.sipnship/tokens.json (or $SIPNSHIP_HOME), outside every repository.
+--token installs one the dashboard's Rotate made. disconnect stops it.
 
 Serves the owner console for the project at <project> (default: the current
 folder) on localhost, on the port this project claimed on this machine the
@@ -66,6 +75,15 @@ async function main() {
   if (args.command === 'queue-demo') {
     const page = require('./queue-view').demoPage();
     if (args.out) { fs.writeFileSync(args.out, page); process.stdout.write(`Wrote ${args.out}\n`); } else process.stdout.write(page);
+    return;
+  }
+  if (args.command === 'connect' || args.command === 'disconnect') {
+    const rest = process.argv.slice(3);
+    const value = (name) => { const i = rest.indexOf(name); return i >= 0 && rest[i + 1] && !rest[i + 1].startsWith('--') ? rest[i + 1] : undefined; };
+    const c = require('./connect');
+    process.exitCode = args.command === 'connect'
+      ? await c.connect({ repo: value('--repo'), token: rest.includes('--token') ? (value('--token') ?? '') : undefined })
+      : await c.disconnect({ repo: value('--repo') });
     return;
   }
   if (args.command === 'permissions') { process.exitCode = await require('./permissions').run(args.root); return; }
