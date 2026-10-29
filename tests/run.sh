@@ -2305,5 +2305,19 @@ eq "the families with the weights seen beside them" "body Inter 400 3, display D
 eq "the type scale by size, largest first" "title display 32/800 1.1 0 false 2, heading body 16/600 1.5 0 false 5, subheading body 12/600 1.3 0.08 true 3" "$(sj 'j.type.roles.map(r=>[r.key,r.family,r.size+"/"+r.weight,r.lineHeight,r.letterSpacing,r.uppercase,r.seen].join(" ")).join(", ")')"
 eq "radii and spacing as scales, counts under _seen" '{"small":8,"round":999} {"xs":8,"sm":12,"md":16,"lg":24} {"radii":{"small":3,"round":2},"spacing":{"xs":1,"sm":2,"md":3,"lg":4}}' "$(sj 'JSON.stringify(j.radii)+" "+JSON.stringify(j.spacing)+" "+JSON.stringify(j._seen)')"
 eq "the bootstrap's mocks step runs the seeder" "1" "$(grep -c 'node scripts/design/seed-tokens.mjs' "$root/skills/project-bootstrap/SKILL.md" | awk '{print ($1>=1)?1:0}')"
+printf '\n# deploy targets\n'
+dt_tpl=$(cat "$root/templates/.github/workflows/deploy.yml")
+dt_ci=$(printf 'jobs:\n  a:\n    runs-on: [self-hosted, windows]\n    steps:\n      - name: a\n        shell: %s\n' "'C:\PROGRA~1\Git\bin\bash.exe --noprofile --norc -eo pipefail {0}'")
+dt_win=$(. "$root/scripts/sync/sync-lib.sh"; filled_text "$dt_tpl" "$(ci_runs_on "$dt_ci")" "$(ci_shell "$dt_ci")")
+dt_job() { printf '%s\n' "$2" | awk -v j="  $1:" '$0 == j {f=1; next} /^  [a-z-]*:$/ {f=0} f'; }
+eq "the target defaults to vercel" "vercel" "$(. "$root/templates/scripts/ci/deploy-lib.sh"; t=$(json_string '{"path": "runner"}' target); echo "${t:-vercel}")"
+eq "the Vercel jobs still run on the vercel and runner paths" "1 1" "$(printf '%s\n' "$dt_tpl" | grep -c "needs.plan.outputs.path == 'vercel' ||") $(printf '%s\n' "$dt_tpl" | grep -c "needs.plan.outputs.path == 'runner'")"
+eq "the Cloudflare job runs only on the cloudflare path" "1" "$(printf '%s\n' "$dt_tpl" | grep -c "needs.plan.outputs.path == 'cloudflare'")"
+eq "the workers in deploy order" "packages/service packages/web" "$(. "$root/templates/scripts/ci/deploy-lib.sh"; json_words '{"target": "cloudflare", "workers": ["packages/service", "packages/web"]}' workers)"
+eq "each Worker deploys with wrangler in its folder, assets first when it has the script" "1 1" "$(dt_job deploy-cloudflare "$dt_tpl" | grep -c '(cd "$w" && npx wrangler deploy)') $(dt_job deploy-cloudflare "$dt_tpl" | grep -c '(cd "$w" && npm run assets)')"
+eq "the Cloudflare job has both secrets" "2" "$(dt_job deploy-cloudflare "$dt_tpl" | grep -cE 'CLOUDFLARE_(API_TOKEN|ACCOUNT_ID): \$\{\{ secrets')"
+eq "rendered for Windows, the plan and the Cloudflare job name Git's bash in every step" "1/1 3/3" "$(for j in plan deploy-cloudflare; do t=$(dt_job $j "$dt_win"); printf '%s/%s ' "$(printf '%s\n' "$t" | grep -c 'shell:.*Git\\bin\\bash.exe')" "$(printf '%s\n' "$t" | grep -c 'shell:')"; done | sed 's/ $//')"
+eq "and never a bare bash there" "0" "$(printf '%s\n%s\n' "$(dt_job plan "$dt_win")" "$(dt_job deploy-cloudflare "$dt_win")" | grep -cE 'shell:[[:space:]]*(bash|RUN_SHELL)')"
+eq "the sync takes a rendered copy as current, CRLF or not" "yes yes" "$(. "$root/scripts/sync/sync-lib.sh"; same_text "$dt_win" "$(filled_text "$dt_tpl" "$(ci_runs_on "$dt_ci")" "$(ci_shell "$dt_ci")")" | tr -d '\n'; printf ' '; same_text "$(printf '%s\n' "$dt_win" | sed 's/$/\r/')" "$dt_win")"
 printf '\n%s passed, %s failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
