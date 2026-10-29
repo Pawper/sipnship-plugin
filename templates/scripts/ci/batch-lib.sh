@@ -52,14 +52,19 @@ batch_branch_name() {
   fi
 }
 
-# carried_refs BODY
+# carried_refs BODY [NUMBER]
 # The lines of a pull request body the batch must carry: each issue it
 # closes ("Closes #12", "Fixes #12", "Resolves #12", any case) and each spec
-# it names ("Spec: specs/004-dashboard"), one per line, in the order found.
-# A batch body without them failed spec-check on every src-only batch and
-# left every member's issue open after the merge.
+# it names ("Spec: specs/004-dashboard"), one per line, in the order found;
+# then every line a check reads from the body (Deletes:, Mock:, Parity:,
+# Twin:, Design:), whole, under a "From #NUMBER:" line when NUMBER is given.
+# The lines stay whole so every check reads the batch as any body; the
+# header says whose they are. A batch body without them failed spec-check
+# on every src-only batch, left every member's issue open after the merge,
+# and failed the delete check for a member that retires a file with its
+# reason stated.
 carried_refs() {
-  printf '%s\n' "$1" | tr -d '\r' | awk -v ks="${QUEUE_CARRY_KEYS:-Parity Twin Design}" '
+  printf '%s\n' "$1" | tr -d '\r' | awk -v ks="${QUEUE_CARRY_KEYS:-Deletes Mock Parity Twin Design}" -v num="${2:-}" '
     BEGIN { nk = split(ks, keys, " ") }
     {
       line = $0
@@ -78,9 +83,13 @@ carried_refs() {
       for (i = 1; i <= nk; i++) {
         if (match($0, "^[ \t]*" keys[i] ":")) {
           out = $0; sub(/^[ \t]+/, "", out); sub(/[ \t]+$/, "", out)
-          if (!(out in seen)) { seen[out] = 1; print out }
+          if (!(out in seen)) { seen[out] = 1; esc[++ne] = out }
         }
       }
+    }
+    END {
+      if (ne && num != "") print "From #" num ":"
+      for (i = 1; i <= ne; i++) print esc[i]
     }'
 }
 

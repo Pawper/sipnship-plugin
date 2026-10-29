@@ -1841,7 +1841,7 @@ else
   printf 'skip  node is not installed, so the design generator did not run\n'
 fi
 eq "the CI template runs the design check where tokens exist" "1" "$(grep -c "hashFiles('design/tokens.json') != ''" "$root/templates/.github/workflows/ci.yml")"
-eq "batches carry a Design: line" "1" "$(grep -c 'QUEUE_CARRY_KEYS:-Parity Twin Design' "$root/templates/scripts/ci/batch-lib.sh")"
+eq "batches carry a Design: line" "1" "$(grep -c 'QUEUE_CARRY_KEYS:-Deletes Mock Parity Twin Design' "$root/templates/scripts/ci/batch-lib.sh")"
 eq "the brief has a screens section" "1" "$(grep -c 'leftover screens handoff' "$root/hooks/scripts/session-brief-lib.sh")"
 printf '\n# a screen and its mock change together\n'
 . "$root/templates/scripts/ci/mock-lib.sh"
@@ -2235,6 +2235,19 @@ eq "a plain delete fails" "1" "$(cd "$dr" && PR_BODY= sh "$dc" "$move_sha" "$del
 eq "a delete with a Deletes line passes" "0" "$(cd "$dr" && PR_BODY="Closes #1
 Deletes: the file was a stray copy" sh "$dc" "$move_sha" "$del_sha" >/dev/null 2>&1; echo $?)"
 eq "an empty Deletes line does not pass" "1" "$(cd "$dr" && PR_BODY="Deletes:" sh "$dc" "$move_sha" "$del_sha" >/dev/null 2>&1; echo $?)"
+dc_body=$(batch_pr_body "$(printf '7\tTidy\n9\tRetire a file\n')" "$(carried_refs 'Closes #3' 7)
+$(carried_refs 'Closes #4
+Spec: specs/001-x
+Deletes: the file was a stray copy
+Mock: unchanged, copy only' 9)")
+eq "a batch carries a member's check lines under its number" "From #9:
+Deletes: the file was a stray copy
+Mock: unchanged, copy only" "$(printf '%s\n' "$dc_body" | tail -n 3)"
+eq "a batch of a member that retires a file with its reason stated passes" "0" "$(cd "$dr" && PR_BODY="$dc_body" sh "$dc" "$move_sha" "$del_sha" >/dev/null 2>&1; echo $?)"
+eq "a batch whose members state no reason still fails" "1" "$(cd "$dr" && PR_BODY="$(batch_pr_body "$(printf '7\tTidy\n')" "$(carried_refs 'Closes #3' 7)")" sh "$dc" "$move_sha" "$del_sha" >/dev/null 2>&1; echo $?)"
+eq "a carried Mock line reads as the member's" "copy only" "$(mock_escape "$dc_body")"
+eq "a single pull request's body is read as before" "0" "$(cd "$dr" && PR_BODY="Deletes: the file was a stray copy" sh "$dc" "$move_sha" "$del_sha" >/dev/null 2>&1; echo $?)"
+eq "without a number no header is added" "Deletes: x" "$(carried_refs 'Deletes: x')"
 printf '\n# workspace install\n'
 ws=$(mktemp -d)
 mkdir -p "$ws/pn/packages/a" "$ws/pn/packages/b" "$ws/pn/packages/notpkg" "$ws/np/libs/x" "$ws/np/apps/y" "$ws/per/web"

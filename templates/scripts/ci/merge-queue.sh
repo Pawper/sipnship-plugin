@@ -1378,7 +1378,7 @@ package.json"*|*"/package.json"*) ensure_modules ;; esac
   good=$(git -C "$wt" rev-parse HEAD)
   carried="$carried$pr	$title
 "
-  refs="$refs$(carried_refs "$(gh api "repos/{owner}/{repo}/pulls/$pr" --jq '.body // ""' 2>/dev/null)")
+  refs="$refs$(carried_refs "$(gh api "repos/{owner}/{repo}/pulls/$pr" --jq '.body // ""' 2>/dev/null)" "$pr")
 "
   batch_line "$pr" "merged into the batch"
   b_merged=$((b_merged + 1))
