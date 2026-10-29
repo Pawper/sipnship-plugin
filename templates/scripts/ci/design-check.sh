@@ -101,6 +101,26 @@ if [ -n "$hits" ]; then
   fi
 fi
 
+# 2a. token names the generated design file does not define
+css_gen=$(node -e 'const o=require(process.cwd()+"/design/tokens.json").outputs||{};console.log(o.css||"")' 2>/dev/null)
+if [ -n "$css_gen" ] && [ -f "$css_gen" ]; then
+  step "token names added to UI files that $css_gen does not define"
+  # Names a UI file sets itself (a style attribute, a local custom
+  # property) are defined too.
+  set -f
+  # shellcheck disable=SC2086
+  ui_files=$(git ls-files -- $ui_globs ':(exclude)**/node_modules/**' 2>/dev/null)
+  set +f
+  defined=$( { cat "$css_gen"; for uf in $ui_files; do cat "$uf" 2>/dev/null; done; } )
+  gaps=$(css_var_gaps "$ui_diff" "$(css_var_names "$defined")")
+  if [ -n "$gaps" ]; then
+    echo "These lines read a token name that $css_gen does not define, so the value resolves to nothing:" >&2
+    printf '%s\n' "$gaps" | sed 's/^/  /' >&2
+    echo "Use the name as the generated file spells it (it keeps the name design/tokens.json gives the token), or add the token to design/tokens.json and regenerate." >&2
+    fail=1
+  fi
+fi
+
 # 2b. words added to UI files as literals, only where design/copy/ exists
 if [ -d design/copy ]; then
   step "words added to UI files as literals (scripts/ci/copy-allow.txt)"

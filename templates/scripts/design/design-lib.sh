@@ -67,6 +67,34 @@ design_literals() {
     }'
 }
 
+# css_var_names TEXT
+# The custom property names TEXT defines ("--name:"), one per line, sorted.
+css_var_names() {
+  printf '%s\n' "$1" | grep -o -- '--[A-Za-z0-9_-][A-Za-z0-9_-]*[[:space:]]*:' | sed 's/[[:space:]]*:$//' | sort -u
+}
+
+# css_var_gaps DIFF DEFINED_NAMES
+# DIFF is a unified diff with zero context over UI files. Print each
+# var(--name) an added line reads that DEFINED_NAMES (one per line: the
+# generated design file's names and any the UI files set themselves) does
+# not hold, as "path:line: --name", once per name and line. A name the
+# generated file spells differently resolves to nothing and the rule
+# quietly loses its colour or border.
+css_var_gaps() {
+  printf '%s\n' "$1" | tr -d '\r' | awk -v defs="$(printf '%s\n' "$2" | paste -sd' ' -)" '
+    BEGIN { n = split(defs, d, " "); for (i = 1; i <= n; i++) known[d[i]] = 1 }
+    /^\+\+\+ / { f = $0; sub(/^\+\+\+ b\//, "", f); sub(/^\+\+\+ /, "", f); next }
+    /^@@/ { n = $0; sub(/^@@ -[0-9,]+ \+/, "", n); sub(/[ ,].*/, "", n); line = n + 0; next }
+    /^\+/ {
+      s = substr($0, 2); cur = line; line++; delete seen
+      while (match(s, /var\([[:space:]]*--[A-Za-z0-9_-]+/)) {
+        m = substr(s, RSTART, RLENGTH); sub(/^var\([[:space:]]*/, "", m)
+        if (!(m in known) && !(m in seen)) { printf "%s:%d: %s\n", f, cur, m; seen[m] = 1 }
+        s = substr(s, RSTART + RLENGTH)
+      }
+    }'
+}
+
 # copy_section COPY_ALLOW_TXT NAME
 # The lines of one section of scripts/ci/copy-allow.txt ("user-facing
 # calls:" or "allowed literals:"), comments and blank lines left out.

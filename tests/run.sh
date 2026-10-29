@@ -1831,6 +1831,11 @@ eq "a long line names the literal found, not the template beside it" 'android/G.
 eq "a line with several literals names each" 'src/a.css:1: [#ABC, 12px, 8px] .x { margin: 12px 8px; color: #ABC }' "$(design_literals "$(printf -- '--- a/src/a.css\n+++ b/src/a.css\n@@ -0,0 +1 @@\n+.x { margin: 12px 8px; color: #ABC }')" '')"
 eq "a project's allow pattern adds to the built-in ones" "android/T.kt:5: [0xFF1B2638] val c = Color(0xFF1B2638)" "$(design_literals "$ddiff" '' 'padding|font-family|color: #|\.dp')"
 eq "a token by name is never a literal" "" "$(design_literals "$(printf -- '--- a/s.css\n+++ b/s.css\n@@ -0,0 +1,2 @@\n+.x { padding: var(--space-gutter); color: var(--ink); }\n+.y { font: var(--type-body-size) var(--font-sans); }')" 'Figtree')"
+eq "the names a generated file defines" "--nightLine
+--page" "$(css_var_names "$(printf ':root {\n  --page: #fff;\n  --nightLine:#222;\n}\n.x { color: var(--page); }')")"
+eq "a hyphenated name the generated file spells otherwise is named, once per line" "src/a.css:2: --night-line
+src/a.css:3: --gone" "$(css_var_gaps "$(printf -- '--- a/src/a.css\n+++ b/src/a.css\n@@ -1,0 +2,2 @@\n+.x { border: 1px solid var(--night-line); color: var(--nightLine); outline-color: var(--night-line); }\n+.y { color: var( --gone, var(--page)); }')" "$(printf -- '--nightLine\n--page\n')")"
+eq "every name defined, nothing said" "" "$(css_var_gaps "$(printf -- '--- a/src/a.css\n+++ b/src/a.css\n@@ -0,0 +1 @@\n+.x { width: calc(var(--share) * 1%%); }')" "--share")"
 eq "the escape line gives its reason" "a canvas pixel buffer" "$(design_escape "$(printf 'Fix the chime.\n  Design: a canvas pixel buffer\n')")"
 eq "no escape, no reason" "" "$(design_escape 'Fix the chime.')"
 eq "roles a web file references, in any spelling" "title
