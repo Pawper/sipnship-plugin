@@ -1,11 +1,18 @@
-# Deploy main to Vercel on a schedule, building on the project's own runner
-# when it can, so Vercel hosts the output and builds nothing. Build CPU was
-# nearly all of one owner's Vercel bill, because every push to every branch
-# was a build. Here nothing but this workflow deploys: vercel.json turns Git
-# deploys off, and this deploys at most once per interval and only when
-# main has moved in something the app ships since the last deployed commit.
+# Deploy main on a schedule, from the project's own runner when it can, to
+# one of two targets named by "target" in .claude/deploy.json:
+#   vercel      (the default) Vercel hosts the output. Build CPU was nearly
+#               all of one owner's Vercel bill, because every push to every
+#               branch was a build. Here nothing but this workflow deploys:
+#               vercel.json turns Git deploys off.
+#   cloudflare  Cloudflare Workers, one "npx wrangler deploy" per folder
+#               listed under "workers", in that order (a Worker whose
+#               binding names another is listed after it). A folder whose
+#               package.json has an "assets" script runs it first. Nothing
+#               builds on Cloudflare.
+# Either way this deploys at most once per interval and only when main has
+# moved in something the app ships since the last deployed commit.
 #
-# Paths, chosen by scripts/deploy-setup.sh into the DEPLOY_PATH variable:
+# Vercel paths, chosen by scripts/deploy-setup.sh into the DEPLOY_PATH variable:
 #   runner  build on a self-hosted Linux or macOS runner, deploy the output
 #           prebuilt; when no runner is online or the build fails, that run
 #           deploys with a build on Vercel instead. Never a Windows runner:
@@ -28,7 +35,10 @@
 # The interval comes from .claude/deploy.json; the schedule only wakes the
 # plan. Every step runs in bash on Linux or macOS; nothing needs jq.
 #
-# Needs repository secrets VERCEL_TOKEN, VERCEL_ORG_ID, VERCEL_PROJECT_ID.
+# The Vercel target needs repository secrets VERCEL_TOKEN, VERCEL_ORG_ID
+# and VERCEL_PROJECT_ID; the Cloudflare target CLOUDFLARE_API_TOKEN and
+# CLOUDFLARE_ACCOUNT_ID, and installs with pnpm when pnpm-lock.yaml is at
+# the root, npm ci when package-lock.json is, before the first Worker.
 # ADMIN_TOKEN (administration: read), the same one the runner watch uses,
 # lets the plan see whether a runner is online; without it the plan assumes
 # one is, and a failed build still falls back. The last deployed commit is
@@ -70,6 +80,7 @@ jobs:
           ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
           DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
           HAS_TOKEN: ${{ secrets.VERCEL_TOKEN != '' }}
+          HAS_CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
           FORCED: ${{ github.event_name == 'workflow_dispatch' }}
         run: |
           . scripts/ci/deploy-lib.sh
@@ -78,6 +89,7 @@ jobs:
           extra=$(json_words "$cfg" neverShips)
           interval=$(json_number "$cfg" intervalMinutes); interval=${interval:-60}
           path=${DEPLOY_PATH:-$(json_string "$cfg" path)}; path=${path:-vercel}
+          target=$(json_string "$cfg" target); target=${target:-vercel}
           sha=$(git rev-parse HEAD)
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           no() { echo "deploy=no" >> "$GITHUB_OUTPUT"; exit "${1:-0}"; }
@@ -85,11 +97,21 @@ jobs:
             echo "intervalMinutes is 0: the queue deploys after each landing, so the scheduled run has nothing to do."
             no
           fi
-          if [ "$path" = guard ]; then
+          if [ "$target" = cloudflare ]; then
+            path=cloudflare
+            if [ -z "$(json_words "$cfg" workers)" ]; then
+              echo "The target is cloudflare but .claude/deploy.json lists no workers; list the Worker folders in deploy order under \"workers\"."
+              no 1
+            fi
+            if [ "$HAS_CF_TOKEN" != true ]; then
+              echo "CLOUDFLARE_API_TOKEN is not set; nothing can deploy. Set CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID as repository secrets."
+              no 1
+            fi
+          elif [ "$path" = guard ]; then
             echo "This project deploys by the guard path (Git deploys from main, guarded in vercel.json); this workflow has nothing to do."
             no
           fi
-          if [ "$HAS_TOKEN" != true ]; then
+          if [ "$path" != cloudflare ] && [ "$HAS_TOKEN" != true ]; then
             echo "VERCEL_TOKEN is not set; nothing can deploy. Set VERCEL_TOKEN, VERCEL_ORG_ID and VERCEL_PROJECT_ID as repository secrets."
             no 1
           fi
@@ -115,6 +137,54 @@ jobs:
           echo "Deploying $sha by the $path path."
           echo "deploy=yes" >> "$GITHUB_OUTPUT"
           echo "path=$path" >> "$GITHUB_OUTPUT"
+
+  deploy-cloudflare:
+    needs: plan
+    if: needs.plan.outputs.deploy == 'yes' && needs.plan.outputs.path == 'cloudflare'
+    runs-on: RUNS_ON
+    timeout-minutes: 30
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+      - name: Install once
+        # pnpm comes through corepack (no machine-wide install), at the
+        # version package.json's packageManager names; npx is the fallback.
+        shell: RUN_SHELL
+        run: |
+          if [ -f pnpm-lock.yaml ]; then
+            pv=$(sed -n 's/.*"packageManager"[[:space:]]*:[[:space:]]*"pnpm@\([^"+]*\).*/\1/p' package.json 2>/dev/null | head -1); pv=${pv:-9}
+            if corepack enable 2>/dev/null && corepack prepare "pnpm@$pv" --activate; then
+              pnpm install --frozen-lockfile
+            else
+              npx --yes "pnpm@$pv" install --frozen-lockfile
+            fi
+          elif [ -f package-lock.json ]; then
+            npm ci
+          fi
+      - name: Deploy each Worker in order
+        # The order is the workers list in .claude/deploy.json; a folder
+        # with an "assets" script builds them before its deploy.
+        shell: RUN_SHELL
+        run: |
+          . scripts/ci/deploy-lib.sh
+          for w in $(json_words "$(cat .claude/deploy.json)" workers); do
+            echo "Deploying the Worker in $w."
+            if grep -q '"assets"[[:space:]]*:' "$w/package.json" 2>/dev/null; then (cd "$w" && npm run assets); fi
+            (cd "$w" && npx wrangler deploy)
+          done
+      - name: Record the deployed commit
+        shell: RUN_SHELL
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ needs.plan.outputs.sha }}
+        run: |
+          if ! gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/deploy/production" -f sha="$SHA" -F force=true > /dev/null 2>&1; then
+            gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref=refs/deploy/production -f sha="$SHA" > /dev/null
+          fi
 
   build-on-runner:
     needs: plan
