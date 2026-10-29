@@ -39,7 +39,7 @@ The machine, not the count, is the real limit. An idle runner holds about 90 MB 
 - more runners than half the cores across the projects on this machine;
 - a runner offline, fewer registered than `runners.json` wants, or a run queued over ten minutes.
 
-`sh scripts/ci/runner-watch.sh --print` shows what it sees without writing or commenting. The session brief repeats the conditions that hold. The trade of nothing hosted: when the machine itself is off, nothing reports it; the brief and the queue say "no runner online", which is the same fact from the other side. A project that wants the hosted copy as well sets the repository variable `RUNNER_WATCH_HOSTED` to `yes`.
+`sh scripts/ci/runner-watch.sh --print` shows what it sees without writing or commenting. The session brief repeats the conditions that hold. The trade of nothing hosted: when the machine itself is off, nothing reports it within the hour. There is no hosted Runner watch any more: it ran hosted so it could speak when every runner was off, and in a private repository whose hosted minutes are used up it failed at every schedule and emailed the owner. "All runners off" is now said the next morning, by the nightly audit once a runner is back (a run queued over ten minutes, a runner offline, hosted runs not starting), and at every session start, where the brief names a run queued over ten minutes and the queue says "no runner online".
 
 ## Run two
 
@@ -72,4 +72,4 @@ A build daemon (Gradle's, Nx's, the .NET build server) is one process for every 
 
 ## When it goes wrong anyway
 
-`Runner watch` on a hosted runner runs only when `RUNNER_WATCH_HOSTED` is `yes` (see "The watch runs here"); then it works when ours are down. It comments on the issue labeled `audit` when a runner is offline, when fewer than two are online, or when any run has sat queued for more than ten minutes, and says nothing otherwise. The merge queue also says "GitHub Actions is down, not your code" when the hosted side is the problem, so the two are never confused.
+The nightly `audit` workflow, on the project's own runners, comments on the issue labeled `audit` when any run has sat queued for more than ten minutes, when a runner is offline or fewer than two are online (with a fine-grained token with Administration: read as the secret `RUNNER_WATCH_TOKEN`), and when GitHub would not start a hosted run because the account's hosted minutes are used up, and says nothing otherwise. A job that must stay hosted (the smoke check, which needs a clean browser) is guarded: with the repository variable `HOSTED_MINUTES` set to `gone`, as the audit's line says, it ends as skipped, not failed, and sends no email. The merge queue also says "GitHub Actions is down, not your code" when the hosted side is the problem, so the two are never confused.

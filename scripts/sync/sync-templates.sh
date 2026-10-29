@@ -207,6 +207,20 @@ if [ "$(deploy_path_of "$(cat .claude/deploy.json 2>/dev/null)")" = guard ]; the
     [ -z "$remove" ] || echo "  deploy:   $deploy_wf goes: .claude/deploy.json says the guard path, where Deploy has nothing to do and its scheduled plan still starts, on a hosted machine. Removed with --apply"
   fi
 fi
+# Runner watch is retired. It ran hosted so it could speak when every
+# runner was off, and in a private repository whose hosted minutes are used
+# up it failed at every schedule and emailed the owner. The nightly audit
+# and the session brief say what it said. A plugin copy goes with --apply;
+# an edited one is kept unless --force, like any edited file.
+rw_wf=.github/workflows/runner-watch.yml
+if [ -f "$rw_wf" ] && [ ! -f "$tpl/$rw_wf" ]; then
+  if [ "$force" = yes ] || [ "$(known_match "$known" "$rw_wf" "$(cat "$rw_wf")" "$runs_on" "$run_shell")" = yes ]; then
+    remove="${remove:+$remove }$rw_wf"
+    echo "  watch:    $rw_wf goes: the nightly audit and the session brief now say when a runner is offline or a run sits queued, from this project's own runners. Removed with --apply"
+  else
+    echo "  watch:    $rw_wf is edited here and no longer in the templates; on a hosted runner it fails at every schedule once hosted minutes are used up. Remove it, or pass --force"
+  fi
+fi
 defaults=""
 # A feature's config defaults go to a project that uses the feature; one
 # that does not use it does not need its config.
@@ -394,14 +408,13 @@ case "$runs_on" in
       case "$qro" in
         ''|ubuntu*|windows-latest|macos*)
           if [ "$apply" = yes ] && [ -n "$q_label" ] && gh variable set QUEUE_RUNS_ON --body "$q_label" >/dev/null 2>&1; then
-            echo "  queue:    the scheduled drain now runs on this project's runners (QUEUE_RUNS_ON=$q_label); it ran hosted before, a billed minute every run in a private repository."
+            echo "  queue:    the scheduled drain now runs on this project's runners (QUEUE_RUNS_ON=$q_label)$([ -n "$qro" ] && echo '; it ran hosted before, a billed minute every run in a private repository')."
           else
-            echo "  queue:    the scheduled drain runs hosted (${qro:-ubuntu-latest}) though this project has its own runners; run with --apply to set QUEUE_RUNS_ON=${q_label:-<label>}, or: gh variable set QUEUE_RUNS_ON --body ${q_label:-<label>}"
+            echo "  queue:    the scheduled drain runs on ${qro:-any self-hosted Windows runner, since QUEUE_RUNS_ON is unset} though this project's runners are ${q_label:-labeled otherwise}; run with --apply to set QUEUE_RUNS_ON=${q_label:-<label>}, or: gh variable set QUEUE_RUNS_ON --body ${q_label:-<label>}"
           fi ;;
       esac
       if [ -f .github/workflows/runner-watch.yml ] && [ -f "$tpl/scripts/ci/runner-watch-install.ps1" ]; then
-        rwh=$(gh api "repos/{owner}/{repo}/actions/variables/RUNNER_WATCH_HOSTED" --jq .value 2>/dev/null) || rwh=""
-        [ "$rwh" = yes ] || echo "  watch:    the runner watch runs on the runners' machine now, not hosted. Once, on that machine: powershell -ExecutionPolicy Bypass -File scripts\\ci\\runner-watch-install.ps1 (cron elsewhere). To keep the hosted copy as well, which alone can say the whole machine is off: gh variable set RUNNER_WATCH_HOSTED --body yes"
+        echo "  watch:    the runner watch runs on the runners' machine now, not hosted. Once, on that machine: powershell -ExecutionPolicy Bypass -File scripts\\ci\\runner-watch-install.ps1 (cron elsewhere)."
       fi
     fi ;;
 esac
@@ -427,7 +440,7 @@ esac
 # (read above), and written only when nothing is left unfilled and every
 # script it runs is here or written now; otherwise it is refused and said.
 written=""
-if [ -n "$remove" ]; then git rm -q -- "$remove"; echo "  removed:  $remove"; fi
+if [ -n "$remove" ]; then for r in $remove; do git rm -q -- "$r"; echo "  removed:  $r"; done; fi
 for p in $carry; do
   c_text=$(carry_steps "$(filled_text "$(cat "$tpl/$p")" "$runs_on" "$run_shell")" "$(cat "$p")")
   printf '%s\n' "$c_text" > "$p"

@@ -378,7 +378,24 @@ eq "a self-hosted job is not hosted" "" "$(hosted_jobs x.yml "$(printf 'jobs:\n 
 eq "the estimate adds the schedules" "hosted Actions: queue-drain, audit run hosted in this private repository, about 1,470 scheduled minutes a month plus audit once per issues; the free allowance is 2,000 and is shared by every repository on the account" "$(hosted_estimate "$(printf '.github/workflows/queue-drain.yml\t*/30 * * * *\t\n.github/workflows/audit.yml\t17 3 * * *\tissues')")"
 eq "no hosted job, no line" "" "$(hosted_estimate '')"
 eq "the watch task runs headless through sh -c with a log" "1" "$(grep -c 'conhost.exe" -Argument "--headless .* -c ' "$root/templates/scripts/ci/runner-watch-install.ps1")"
-eq "the hosted watch is off unless asked" "1" "$(grep -c "if: vars.RUNNER_WATCH_HOSTED == 'yes'" "$root/templates/.github/workflows/runner-watch.yml")"
+eq "there is no hosted runner watch in the templates" "no" "$([ -f "$root/templates/.github/workflows/runner-watch.yml" ] && echo yes || echo no)"
+eq "the quota annotation says one plain line" "1" "$(quota_gone 'The job was not started because recent account payments have failed or your spending limit needs to be increased. Please check the Billing settings.' | wc -l | tr -d ' ')"
+eq "and it names the variable that skips hosted jobs" "1" "$(quota_gone 'your spending limit needs to be increased' | grep -c 'gh variable set HOSTED_MINUTES --body gone')"
+eq "any other annotation says nothing" "" "$(quota_gone 'Process completed with exit code 1.')"
+eq "no annotation says nothing" "" "$(quota_gone '')"
+eq "the quota guard does not hide a hosted job from the estimate" "$(printf 'x.yml		deployment_status')" "$(hosted_jobs x.yml "$(printf 'on:
+  deployment_status:
+jobs:
+  w:
+    if: vars.HOSTED_MINUTES != '"'"'gone'"'"' && github.event_name == '"'"'x'"'"'
+    runs-on: ubuntu-latest
+')")"
+eq "the smoke check skips when hosted minutes are gone" "1" "$(grep -c "if: vars.HOSTED_MINUTES != 'gone' && " "$root/templates/.github/workflows/smoke.yml")"
+eq "the audit reads the quota annotation" "1" "$(grep -c 'quota=\$(quota_gone' "$root/templates/.github/workflows/audit.yml")"
+eq "the audit says when a run sits queued" "1" "$(grep -c 'stuck=\$(stuck_runs' "$root/templates/.github/workflows/audit.yml")"
+eq "a queued run is one brief line" "Queued: CI on main has waited 14 minutes for a runner, and 1 more; start the runners (scripts/ci/RUNNERS.md)." "$(stuck_line "$(stuck_runs "$(printf '1\tCI\tmain\tqueued\t1060\n2\tAudit\tmain\tqueued\t1200\n')" 1900 10)")"
+eq "nothing queued, no line" "" "$(stuck_line '')"
+eq "the brief names a run queued over ten minutes" "1" "$(grep -c 'stuck_line "$(stuck_runs' "$root/hooks/scripts/session-brief.sh")"
 eq "green run" "green" "$(run_verdict "$(printf 'build\tcompleted\tsuccess\t1000\t\ntest\tcompleted\tskipped\t1000\t\n')" 2000)"
 eq "pending run" "pending" "$(run_verdict "$(printf 'build\tin_progress\t\t1000\t\n')" 2000)"
 eq "failed run names the job" "failed: test, lint" "$(run_verdict "$(printf 'build\tcompleted\tsuccess\t1\t\ntest\tcompleted\tfailure\t1\t\nlint\tcompleted\tfailure\t1\t\n')" 2000)"
@@ -1024,7 +1041,10 @@ eq "the release workflows in deploy.json" "play-internal.yml
 app-distribution.yml" "$(release_workflows '{"path": "guard", "releases": ["play-internal.yml", "app-distribution.yml"]}')"
 eq "none listed, none started" "" "$(release_workflows '{"path": "guard"}')"
 eq "the queue starts the listed releases when no Deploy run will" "1" "$(grep -c 'Started the release workflow' "$root/templates/scripts/ci/merge-queue.sh")"
-eq "the drain runs hosted by default" "1" "$(grep -c "runs-on: \${{ vars.QUEUE_RUNS_ON || 'ubuntu-latest' }}" "$root/templates/.github/workflows/queue-drain.yml")"
+eq "the drain never runs hosted by default" "0" "$(grep -v '^#' "$root/templates/.github/workflows/queue-drain.yml" | grep -c 'ubuntu-latest')"
+eq "its runs-on falls back to self-hosted" "1" "$(grep -c "runs-on: \${{ vars.QUEUE_RUNS_ON || 'self-hosted' }}" "$root/templates/.github/workflows/queue-drain.yml")"
+eq "and with QUEUE_RUNS_ON unset the Windows job runs on a self-hosted Windows runner" "2" "$(grep -c "vars.QUEUE_RUNS_ON == '' || contains(vars.QUEUE_RUNS_ON, 'windows')\|runs-on: \${{ vars.QUEUE_RUNS_ON || 'windows' }}" "$root/templates/.github/workflows/queue-drain.yml")"
+eq "the other drain job runs only for a label not naming Windows" "1" "$(grep -c "if: \${{ vars.QUEUE_RUNS_ON != '' && !contains(vars.QUEUE_RUNS_ON, 'windows') }}" "$root/templates/.github/workflows/queue-drain.yml")"
 eq "and skips itself after a recent drain, or while paused" "2" "$(grep -c 'skipping this one' "$root/templates/.github/workflows/queue-drain.yml")"
 eq "the batch checkout links packages only when the lockfiles match" "1" "$(grep -c 'if \[ "\$em_lock" = "\$em_main" \] && \[ -d "\$main_dir/\$d/node_modules" \]' "$root/templates/scripts/ci/merge-queue.sh")"
 eq "a stale link is removed, never the packages behind it" "1" "$(grep -c 'cmd //c rmdir' "$root/templates/scripts/ci/merge-queue.sh")"
@@ -1453,8 +1473,7 @@ eq "no bare bash where Deploy follows ci.yml" "0" "$(awk '/^  plan:$/{j=1} /^  b
 eq "a Windows QUEUE_RUNS_ON gets Git's bash" "1" "$(grep -c 'PROGRA~1\\Git\\bin\\bash.exe' "$root/templates/.github/workflows/queue-drain.yml")"
 eq "both drain jobs share one list of steps" "1 1" "$(grep -c 'steps: &drain-steps' "$root/templates/.github/workflows/queue-drain.yml") $(grep -c 'steps: \*drain-steps' "$root/templates/.github/workflows/queue-drain.yml")"
 eq "the placeholder check reads whole words" "0" "$(printf 'runs-on: ${{ vars.QUEUE_RUNS_ON }}\n' | grep -cw 'RUNS_ON\|RUN_SHELL')"
-eq "only runner-watch stays hosted" "1" "$(grep -c 'runs-on: ubuntu-latest' "$root/templates/.github/workflows/runner-watch.yml")"
-eq "runner-watch runs every six hours" "1" "$(grep -c '41 \*/6 \* \* \*' "$root/templates/.github/workflows/runner-watch.yml")"
+eq "only the guarded smoke check stays hosted" "smoke.yml" "$(cd "$root/templates/.github/workflows" && grep -l 'runs-on: ubuntu-latest' *.yml | paste -sd' ' -)"
 eq "state-label runs once per issue per burst" "1" "$(grep -c 'group: state-label-\${{ github.event.issue.number }}' "$root/templates/.github/workflows/state-label.yml")"
 eq "a scheduled deploy with interval 0 does nothing" "1" "$(grep -c 'intervalMinutes is 0' "$root/templates/.github/workflows/deploy.yml")"
 # --- The sync judges a file by its content against every released version.
@@ -1524,11 +1543,15 @@ eq "a script's loads are its dependencies, a command it only prints is not" "scr
 eq "a script's own-folder dependencies are found" "scripts/ci/doctor-lib.sh" "$(here_scripts '. "$here/doctor-lib.sh"' scripts/ci)"
 ss_d=$(ss_new)
 printf 'jobs:\n  checks:\n    runs-on: [self-hosted, windows]\n    defaults:\n      run:\n        shell: bash\n' > "$ss_d/.github/workflows/ci.yml"
-cp "$root/templates/.github/workflows/runner-watch.yml" "$ss_d/.github/workflows/runner-watch.yml"
+# The retired hosted Runner watch: a plugin copy goes with --apply, since
+# in a private repository whose hosted minutes are used up it failed at
+# every schedule.
+git -C "$root" show 2b7b360:plugin/templates/.github/workflows/runner-watch.yml > "$ss_d/.github/workflows/runner-watch.yml"
 git -C "$ss_d" add -A; git -C "$ss_d" commit -q -m start
 ss_dry=$(cd "$ss_d" && sh "$root/scripts/sync/sync-templates.sh" 2>&1)
-eq "a workflow's missing plugin scripts are brought and counted" "2" "$(printf '%s\n' "$ss_dry" | grep -c 'brings:   scripts/ci/runner-doctor.sh\|brings:   scripts/ci/doctor-lib.sh')"
+eq "the retired runner watch is named to go" "1" "$(printf '%s\n' "$ss_dry" | grep -c 'watch:    .github/workflows/runner-watch.yml goes')"
 eq "the dry run prints the same refusals as --apply" "$(printf '%s\n' "$ss_dry" | grep '^  refused:' | sort)" "$(cd "$ss_d" && sh "$root/scripts/sync/sync-templates.sh" --apply --no-commit 2>&1 | grep '^  refused:' | sort)"
+eq "and --apply removes the retired runner watch, staged" "no D" "$([ -f "$ss_d/.github/workflows/runner-watch.yml" ] && echo yes || echo no) $(git -C "$ss_d" diff --cached --name-status -- .github/workflows/runner-watch.yml | cut -c1)"
 
 # A template file OWNED.txt does not list is new, and arrives with --apply:
 # a project synced to 0.24.0 never got the mock check's scripts.

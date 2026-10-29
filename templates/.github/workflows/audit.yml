@@ -36,6 +36,7 @@ jobs:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          ADMIN_TOKEN: ${{ secrets.RUNNER_WATCH_TOKEN }}
         shell: RUN_SHELL
         run: |
           . scripts/ci/lib.sh
@@ -107,7 +108,40 @@ jobs:
             late=$(sh scripts/ci/drain-late.sh | sed 's/^/- /')
           fi
 
+          # Runners, once a night, from a runner: this replaced the hourly
+          # hosted Runner watch, which in a private repository whose hosted
+          # minutes are used up failed at every schedule. A run queued over
+          # ten minutes, a runner offline (needs RUNNER_WATCH_TOKEN, with
+          # Administration: read), and hosted runs GitHub would not start.
+          runner=""
+          if [ -f scripts/ci/run-lib.sh ]; then
+            . scripts/ci/run-lib.sh
+            runs=$(gh api "repos/$GH_REPO/actions/runs?per_page=50" \
+              --jq '.workflow_runs[] | [.id, .name, .head_branch, .status, (.created_at | fromdate)] | @tsv' 2>/dev/null || true)
+            stuck=$(stuck_runs "$runs" "$(date +%s)" 10)
+            if [ -n "$stuck" ]; then
+              runner=$(printf 'Runs queued for more than ten minutes, which usually means no runner is picking them up:\n%s' \
+                "$(printf '%s\n' "$stuck" | awk -F'\t' '{ printf "- %s on %s, queued %s minutes (run %s)\n", $2, $3, $4, $1 }')")
+            fi
+            if [ -n "$ADMIN_TOKEN" ]; then
+              problems=$(runner_problems "$(GH_TOKEN="$ADMIN_TOKEN" gh api "repos/$GH_REPO/actions/runners" \
+                --jq '.runners[] | [.name, .status, (.busy | tostring)] | @tsv' 2>/dev/null || true)")
+              [ -n "$problems" ] && runner=$(printf '%s\n\n%s' "$runner" "$problems" | sed '/./,$!d')
+            fi
+            failed=$(gh api "repos/$GH_REPO/actions/runs?status=failure&per_page=5" --jq '.workflow_runs[].check_suite_id' 2>/dev/null || true)
+            notes=""
+            for cs in $failed; do
+              for cr in $(gh api "repos/$GH_REPO/check-suites/$cs/check-runs" --jq '.check_runs[0].id' 2>/dev/null); do
+                notes="$notes$(gh api "repos/$GH_REPO/check-runs/$cr/annotations" --jq '.[].message' 2>/dev/null || true)
+          "
+              done
+            done
+            quota=$(quota_gone "$notes")
+            [ -n "$quota" ] && runner=$(printf '%s\n\n- %s' "$runner" "$quota" | sed '/./,$!d')
+          fi
+
           body=$(audit_comment "$missing" "$stale" "$red" "$branches")
+          if [ -n "$runner" ]; then body=$(printf '%s\n\n%s' "$body" "$runner" | sed '/./,$!d'); fi
           if [ -n "$serial" ]; then body=$(printf '%s\n\n- %s' "$body" "$serial" | sed '/./,$!d'); fi
           if [ -n "$deploy" ]; then body=$(printf '%s\n\n- %s' "$body" "$deploy" | sed '/./,$!d'); fi
           if [ -n "$breaks" ]; then body=$(printf '%s\n\n%s' "$body" "$breaks" | sed '/./,$!d'); fi

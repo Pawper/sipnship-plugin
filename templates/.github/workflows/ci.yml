@@ -257,7 +257,7 @@ jobs:
     # The gate on main after every merge. The whole suite, nothing skipped.
     # On a personal account there are no runner groups and so no hosted
     # fallback: a job on self-hosted runners waits while they are offline,
-    # and the hourly runner-watch workflow says so. An organization can put
+    # and the nightly audit and the session brief say so. An organization can put
     # the runners in a group with a hosted fallback instead.
     # On a self-hosted Windows runner, RUN_SHELL at the top of this file is
     # Git's bash by path; a PowerShell step says

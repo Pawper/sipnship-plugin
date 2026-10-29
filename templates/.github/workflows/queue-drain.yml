@@ -6,16 +6,18 @@
 # repository, most of its free allowance, for runs that mostly found
 # nothing to merge.
 #
-# Where it runs: a GitHub-hosted runner by default. The drain needs only
-# git, gh and Node (to type-check a batch), which hosted runners have, and
-# the batch checkout installs its own packages. On a project's own
-# runners it queued behind the pull request checks it was waiting for and
-# then held a runner while it waited, so a two-runner project ran CI on
-# one. To run it on a self-hosted runner instead, set the repository
-# variable QUEUE_RUNS_ON to its label. A label naming Windows runs the
-# "drain-windows" job, whose shell is Git's bash by path: on a Windows
-# runner a bare "bash" is the WSL stub, and a shell cannot come from a
-# variable. Both jobs share one list of steps (the YAML anchor below).
+# Where it runs: the project's own runners, never hosted by default. In a
+# private repository whose hosted minutes are used up (or whose spending
+# limit is zero) a hosted job is not even started, and every scheduled run
+# failed and emailed the owner. With QUEUE_RUNS_ON unset the drain runs
+# on a self-hosted Windows runner (the "drain-windows" job); set the
+# repository variable QUEUE_RUNS_ON to a runner's label to choose another
+# (the template sync sets it from ci.yml). A label naming Windows, or no
+# label, runs "drain-windows", whose shell is Git's bash by path: on a
+# Windows runner a bare "bash" is the WSL stub, and a shell cannot come
+# from a variable. Any other label runs "drain". Both jobs share one list
+# of steps (the YAML anchor below). A drain holds a runner while it waits
+# for checks, which is why a project keeps three (scripts/ci/RUNNERS.md).
 #
 # Each run drains for at most QUEUE_DRAIN_MINUTES (variable, default 25)
 # and skips itself when a drain finished in the last QUEUE_DRAIN_GAP
@@ -47,8 +49,8 @@ concurrency:
 
 jobs:
   drain:
-    if: ${{ !contains(vars.QUEUE_RUNS_ON, 'windows') }}
-    runs-on: ${{ vars.QUEUE_RUNS_ON || 'ubuntu-latest' }}
+    if: ${{ vars.QUEUE_RUNS_ON != '' && !contains(vars.QUEUE_RUNS_ON, 'windows') }}
+    runs-on: ${{ vars.QUEUE_RUNS_ON || 'self-hosted' }}
     timeout-minutes: 40
     defaults:
       run:
@@ -104,8 +106,8 @@ jobs:
           sh scripts/ci/merge-queue.sh --drain
 
   drain-windows:
-    if: ${{ contains(vars.QUEUE_RUNS_ON, 'windows') }}
-    runs-on: ${{ vars.QUEUE_RUNS_ON }}
+    if: ${{ vars.QUEUE_RUNS_ON == '' || contains(vars.QUEUE_RUNS_ON, 'windows') }}
+    runs-on: ${{ vars.QUEUE_RUNS_ON || 'windows' }}
     timeout-minutes: 40
     defaults:
       run:

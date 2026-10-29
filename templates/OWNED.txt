@@ -78,7 +78,6 @@ default .claude/runners.json
 scripts/ci/doctor-lib.sh
 scripts/ci/runner-doctor.sh
 .github/workflows/runner-check.yml
-.github/workflows/runner-watch.yml
 feature deploy
 scripts/ci/deploy-lib.sh
 scripts/ci/deploy-health.sh

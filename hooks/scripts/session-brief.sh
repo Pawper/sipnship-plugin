@@ -199,8 +199,19 @@ if [ -d .github/workflows ] && [ -f scripts/ci/run-lib.sh ] && command -v gh >/d
 "
     done
     hm_line=$(hosted_estimate "$hm_rows")
-    [ -n "$hm_line" ] && add "$(printf '%s' "$hm_line" | sed 's/^hosted Actions: /Hosted Actions: /'). Move them onto this project's runners (scripts/ci/RUNNERS.md), or set RUNNER_WATCH_HOSTED and QUEUE_RUNS_ON on purpose."
+    [ -n "$hm_line" ] && add "$(printf '%s' "$hm_line" | sed 's/^hosted Actions: /Hosted Actions: /'). Move them onto this project's runners (scripts/ci/RUNNERS.md), or set QUEUE_RUNS_ON on purpose."
   fi
+fi
+
+# A run queued over ten minutes: usually no runner is picking it up. This
+# is the half of the old hosted Runner watch that a session can say; the
+# nightly audit says the rest. One bounded REST call.
+if [ -d .github/workflows ] && [ -f scripts/ci/run-lib.sh ] && command -v gh >/dev/null 2>&1; then
+  command -v stuck_runs >/dev/null 2>&1 || . scripts/ci/run-lib.sh
+  sq_runs=$(run_bounded 5 gh api 'repos/{owner}/{repo}/actions/runs?status=queued&per_page=20' \
+    --jq '.workflow_runs[] | [.id, .name, .head_branch, .status, (.created_at | fromdate)] | @tsv' 2>/dev/null || true)
+  sq=$(stuck_line "$(stuck_runs "$sq_runs" "$(date +%s)" 10)")
+  [ -n "$sq" ] && add "$sq"
 fi
 
 # Deploys, only when the project's deploy path is not keeping up. One

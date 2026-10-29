@@ -253,8 +253,29 @@ hosted_jobs() {
     /^on:/ { inon = 1; next }
     /^[A-Za-z]/ { inon = 0 }
     /^[ \t]*runs-on:[ \t]*(ubuntu|windows|macos)-/ { hosted = 1 }
-    /^[ \t]*if:[ \t]*.*vars\./ { gated = 1 }
+    # The HOSTED_MINUTES guard is not a choice to run hosted: still counted.
+    /^[ \t]*if:[ \t]*.*vars\./ { g = $0; gsub(/vars\.HOSTED_MINUTES/, "", g); if (g ~ /vars\./) gated = 1 }
     inon && /^[ \t]*-[ \t]*cron:/ { c = $0; sub(/^[ \t]*-[ \t]*cron:[ \t]*/, "", c); gsub(/["\047]/, "", c); cron = c }
     inon && /^  (issues|pull_request|push|issue_comment|deployment_status|workflow_run):/ { e = $1; sub(/:$/, "", e); events = events (events == "" ? "" : ",") e }
     END { if (hosted && !gated) printf "%s\t%s\t%s\n", f, cron, events }'
+}
+
+# quota_gone ANNOTATIONS
+# ANNOTATIONS is the text of a run's annotations, one per line. In a private
+# repository whose hosted minutes are used up, or whose spending limit is
+# zero, GitHub does not start a hosted job and leaves one annotation saying
+# so. Print one plain line when it does; nothing otherwise. A hosted job
+# gated on "vars.HOSTED_MINUTES != 'gone'" then ends as skipped, not failed.
+quota_gone() {
+  printf '%s\n' "$1" | tr -d '\r' | grep -qiE 'spending limit needs to be increased|recent account payments have failed' || return 0
+  printf "%s\n" "Hosted runs are not starting: this account's hosted minutes are used up or its spending limit is zero, so every hosted job fails before it begins. Its hosted jobs end as skipped instead once the repository variable says so: gh variable set HOSTED_MINUTES --body gone (delete it when minutes are back)."
+}
+
+# stuck_line STUCK
+# STUCK is stuck_runs output. One plain line for the session brief, or
+# nothing: the oldest run, and how many more wait with it.
+stuck_line() {
+  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' '
+    NF >= 4 { n++; if (n == 1) { w = $2; b = $3; m = $4 } }
+    END { if (n) printf "Queued: %s on %s has waited %s minutes for a runner%s; start the runners (scripts/ci/RUNNERS.md).\n", w, b, m, (n > 1 ? sprintf(", and %d more", n - 1) : "") }'
 }

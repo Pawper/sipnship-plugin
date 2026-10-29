@@ -25,7 +25,12 @@ permissions:
 
 jobs:
   smoke:
-    if: github.event_name == 'workflow_dispatch' || (github.event.deployment_status.state == 'success' && github.event.deployment.environment == 'Production')
+    # Hosted, since it needs a clean browser, and so guarded: in a private
+    # repository whose hosted minutes are used up, GitHub does not start a
+    # hosted job and the run fails. The nightly audit reads that annotation
+    # and names the variable; with HOSTED_MINUTES set to gone this job ends
+    # as skipped, not failed, and sends no email.
+    if: vars.HOSTED_MINUTES != 'gone' && (github.event_name == 'workflow_dispatch' || (github.event.deployment_status.state == 'success' && github.event.deployment.environment == 'Production'))
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
