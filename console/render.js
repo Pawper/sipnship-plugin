@@ -271,6 +271,7 @@ ${renderTodo(view.todo)}
 <div class="services">
 <div class="grid">
 ${cards}
+${view.runners ? renderCard(view.runners) : ''}
 </div>
 <div class="map">
 ${renderMap(view)}

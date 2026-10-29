@@ -2332,5 +2332,29 @@ eq "the Cloudflare job has both secrets" "2" "$(dt_job deploy-cloudflare "$dt_tp
 eq "rendered for Windows, the plan and the Cloudflare job name Git's bash in every step" "1/1 3/3" "$(for j in plan deploy-cloudflare; do t=$(dt_job $j "$dt_win"); printf '%s/%s ' "$(printf '%s\n' "$t" | grep -c 'shell:.*Git\\bin\\bash.exe')" "$(printf '%s\n' "$t" | grep -c 'shell:')"; done | sed 's/ $//')"
 eq "and never a bare bash there" "0" "$(printf '%s\n%s\n' "$(dt_job plan "$dt_win")" "$(dt_job deploy-cloudflare "$dt_win")" | grep -cE 'shell:[[:space:]]*(bash|RUN_SHELL)')"
 eq "the sync takes a rendered copy as current, CRLF or not" "yes yes" "$(. "$root/scripts/sync/sync-lib.sh"; same_text "$dt_win" "$(filled_text "$dt_tpl" "$(ci_runs_on "$dt_ci")" "$(ci_shell "$dt_ci")")" | tr -d '\n'; printf ' '; same_text "$(printf '%s\n' "$dt_win" | sed 's/$/\r/')" "$dt_win")"
+printf '\n# waits for a runner and the machine line\n'
+. "$root/templates/scripts/ci/batch-lib.sh"
+. "$root/templates/scripts/ci/run-lib.sh"
+wl_dir=$(mktemp -d); wl_now=1800000000
+waits_append "$wl_dir/q/waits.tsv" $((wl_now - 31 * 86400)) "run 1: old" 3 3 9
+waits_append "$wl_dir/q/waits.tsv" $((wl_now - 3600)) "run 2: test" 3 3 4
+eq "a wait is written, and one past thirty days is trimmed" "1 run 2: test 3 3 4" "$(wc -l < "$wl_dir/q/waits.tsv" | tr -d ' ') $(cut -f3-6 "$wl_dir/q/waits.tsv" | tr '\t' ' ')"
+waits_append "$wl_dir/q/waits.tsv" $((wl_now - 60)) "run 3: lint	x" 3 3 2
+eq "newest last, a tab in the job name kept out of the columns" "2 run 3: lint x" "$(wc -l < "$wl_dir/q/waits.tsv" | tr -d ' ') $(tail -n 1 "$wl_dir/q/waits.tsv" | cut -f3)"
+waits_append "$wl_dir/q/waits.tsv" $((wl_now - 30)) "run 4: app" 3 3 1
+eq "the brief line, from the log" "Jobs waited for a runner 3 times this week, 4 minutes at most, when all 3 were busy." "$(waits_line "$(cat "$wl_dir/q/waits.tsv")" "$wl_now")"
+eq "no wait this week, no line" "" "$(waits_line "$(printf '%s\t-\tj\t3\t3\t5' $((wl_now - 8 * 86400)))" "$wl_now")"
+eq "no log, no line" "" "$(waits_line "" "$wl_now")"
+eq "some runners idle is said so" "Jobs waited for a runner once this week, 1 minute at most, with up to 2 of 3 busy." "$(waits_line "$(printf '%s\t-\tj\t2\t3\t1' $((wl_now - 60)))" "$wl_now")"
+eq "the machine line" "16 cores, 9 runner(s) on this machine across repositories, 2 busy now; the rule allows 8 (one per two cores)" "$(machine_line 16 9 2)"
+eq "one over the rule" "1" "$(machine_over 16 9)"
+eq "at the rule is not over" "0" "$(machine_over 16 8)"
+eq "odd cores round down" "1" "$(machine_over 5 3)"
+eq "the brief prints the machine line only past the rule" "L|" "$(machine_brief_line "$(printf '1\t16\t9\t2\tL')")|$(machine_brief_line "$(printf '1\t16\t8\t2\tL')")"
+eq "the queue logs its waits" "1" "$(grep -c 'waits_append .scratch/queue/waits.tsv' "$root/templates/scripts/ci/merge-queue.sh")"
+eq "the watch prints the machine line" "1" "$(grep -c 'echo "machine line: $mline"' "$root/templates/scripts/ci/runner-watch.sh")"
+eq "the brief reads the waits log and the machine file" "1 1" "$(grep -c 'waits_line "$(tail -n 500' "$root/hooks/scripts/session-brief.sh") $(grep -c 'machine_brief_line "$(head -n 1' "$root/hooks/scripts/session-brief.sh")"
+mv "$wl_dir" "$wl_dir.done" 2>/dev/null || true
+
 printf '\n%s passed, %s failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

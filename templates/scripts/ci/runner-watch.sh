@@ -47,18 +47,23 @@ sample_machine() {
       $disk = [math]::Round((Get-PSDrive $root).Free / 1GB)
       $here = (Get-Service "actions.runner.*" -ErrorAction SilentlyContinue | Measure-Object).Count
       $cores = (Get-CimInstance Win32_ComputerSystem).NumberOfLogicalProcessors
-      "$([int]$cpu)`t$mem`t$disk`t$here`t$cores"' 2>/dev/null | tr -d '\r'
+      $busy = (Get-Process Runner.Worker -ErrorAction SilentlyContinue | Measure-Object).Count
+      "$([int]$cpu)`t$mem`t$disk`t$here`t$cores`t$busy"' 2>/dev/null | tr -d '\r'
   else
     cpu=$(awk '{ printf "%d", $1 * 100 / '"$(nproc 2>/dev/null || echo 1)"' }' /proc/loadavg 2>/dev/null || echo 0)
     mem=$(free 2>/dev/null | awk '/^Mem:/ { printf "%d", $3 * 100 / $2 }' || echo 0)
     disk=$(df -BG "${HOME:-/}" 2>/dev/null | awk 'NR == 2 { gsub(/G/, "", $4); print $4 }' || echo 0)
     here=$(pgrep -fc Runner.Listener 2>/dev/null || echo 0)
     cores=$(nproc 2>/dev/null || echo 1)
-    printf '%s\t%s\t%s\t%s\t%s\n' "${cpu:-0}" "${mem:-0}" "${disk:-0}" "${here:-0}" "${cores:-1}"
+    busy=$(pgrep -fc Runner.Worker 2>/dev/null || echo 0)
+    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "${cpu:-0}" "${mem:-0}" "${disk:-0}" "${here:-0}" "${cores:-1}" "${busy:-0}"
   fi
 }
 m=$(sample_machine)
-cpu=$(printf '%s' "$m" | cut -f1); mem=$(printf '%s' "$m" | cut -f2); disk=$(printf '%s' "$m" | cut -f3); here=$(printf '%s' "$m" | cut -f4); cores=$(printf '%s' "$m" | cut -f5)
+cpu=$(printf '%s' "$m" | cut -f1); mem=$(printf '%s' "$m" | cut -f2); disk=$(printf '%s' "$m" | cut -f3); here=$(printf '%s' "$m" | cut -f4); cores=$(printf '%s' "$m" | cut -f5); busy=$(printf '%s' "$m" | cut -f6)
+# The machine line: cores, runners here across repositories, busy now (a
+# job's worker process), and what one runner per two cores allows.
+mline=$(machine_line "${cores:-0}" "${here:-0}" "${busy:-0}")
 sample=$(printf '%s\t%s\t%s\t%s\t%s\t%s\t%s' "${cpu:-0}" "${mem:-0}" "${disk:-0}" "$jobs" "$wait_min" "${here:-0}" "${cores:-0}")
 
 # 4. What holds now.
@@ -72,6 +77,7 @@ now_lines=$(printf '%s\n%s\n%s\n%s\n' "$verdicts" "$offline" "$short" "$stucklin
 if [ "$print_only" = yes ]; then
   echo "runners: $status"
   echo "machine: processor ${cpu}%, memory ${mem}%, ${disk} GB free, $jobs job(s) running, jobs waited ${wait_min} min on average, $here runner(s) on this machine, $cores cores"
+  echo "machine line: $mline"
   if [ -n "$now_lines" ]; then printf '%s\n' "$now_lines" | sed 's/^[^|]*|/  /'; else echo "nothing to say"; fi
   exit 0
 fi
@@ -83,6 +89,8 @@ prev=$(cat "$dir/$key.state" 2>/dev/null || true)
 changes=$(watch_changes "$prev" "$now_lines")
 printf '%s\n' "$now_lines" > "$dir/$key.state"
 printf '%s\t%s\n' "$now" "$status" > "$dir/$key.latest"
+# The machine line, for the session brief and the console; one per machine.
+printf '%s\t%s\t%s\t%s\t%s\n' "$now" "${cores:-0}" "${here:-0}" "${busy:-0}" "$mline" > "$dir/machine.tsv" 2>/dev/null || true
 
 # 6. Say what changed, once.
 if [ -n "$changes" ]; then

@@ -15,6 +15,7 @@ const config = require('./config');
 const render = require('./render');
 const delivery = require('./delivery');
 const queueView = require('./queue-view');
+const runners = require('./runners');
 
 function createConsole(options) {
   const opts = options || {};
@@ -33,6 +34,8 @@ function createConsole(options) {
     // Which folder this is, under the name: several projects' consoles on
     // one machine once showed one project's page at another's address.
     if (mount === 'local') v.where = root;
+    // The Runners card reads two local files on this machine only.
+    if (mount === 'local') v.runners = runners.readRunnersCard(root, opts.home, Math.floor(Date.now() / 1000));
     // Delivery reads GitHub with the gh sign-in on this machine, so it is
     // on for the local mount and off online unless the project asks.
     if (opts.delivery !== false && (mount === 'local' || opts.delivery === true)) {

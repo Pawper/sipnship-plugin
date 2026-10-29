@@ -647,3 +647,16 @@ workspace_install_command() {
     *) echo "npm ci --no-audit --no-fund" ;;
   esac
 }
+
+# waits_append FILE NOW JOB BUSY TOTAL MINUTES
+# Keep one row per wait the queue saw for a runner, in FILE (the project's
+# .scratch/queue/waits.tsv): epoch, local time, which job, runners busy,
+# runners in all, minutes waited; newest last. Rows older than thirty days
+# are dropped on each write, so the log stays small. Local only.
+waits_append() {
+  mkdir -p "$(dirname "$1")" 2>/dev/null || return 0
+  wa_when=$(date -d "@$2" '+%Y-%m-%d %H:%M' 2>/dev/null || date -r "$2" '+%Y-%m-%d %H:%M' 2>/dev/null || echo -)
+  wa_job=$(printf '%s' "$3" | tr '\t\r\n' '   ')
+  { cat "$1" 2>/dev/null; printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$2" "$wa_when" "${wa_job:-a job}" "${4:-0}" "${5:-0}" "${6:-0}"; } \
+    | awk -F'\t' -v cut=$(( $2 - 30 * 86400 )) 'NF >= 6 && $1 + 0 >= cut' > "$1.new" 2>/dev/null && mv "$1.new" "$1"
+}

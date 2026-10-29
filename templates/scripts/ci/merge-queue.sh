@@ -447,10 +447,19 @@ record_flaky() {
   done
 }
 
+# wait_seen_end: a wait for a runner the queue saw has ended (or the queue
+# stopped watching it); add it to .scratch/queue/waits.tsv. Local only.
+wait_seen_end() {
+  [ -n "${w_seen:-}" ] || return 0
+  ws_now=$(date +%s)
+  waits_append .scratch/queue/waits.tsv "$w_seen" "$w_job" "${w_busy:-0}" "${w_total:-0}" $(( (ws_now - w_seen + 59) / 60 )) || true
+  w_seen=""
+}
+
 # wait_for_run PR BRANCH: wait for the branch's latest run, saying plainly
 # what is happening. Returns 0 green, 1 red, 3 gave up.
 wait_for_run() {
-  w_start=$(date +%s); outage_on=no
+  w_start=$(date +%s); outage_on=no; w_seen=""
   while :; do
     rate_guard
     run=$(latest_run "$2"); run_id=${run%%	*}
@@ -460,6 +469,7 @@ wait_for_run() {
     # caught here: a pending run (2) once exited the queue with no word.
     code=0; msg=$(diagnose "$run_id") || code=$?
     [ -n "$msg" ] && echo "$msg"
+    case $code in 0|1) wait_seen_end ;; esac
     case $code in
       0) record_flaky "$1" "$run_id" passed
          if [ "$outage_on" = yes ] && [ -n "$QUEUE_OUTAGE_OFF" ]; then sh -c "$QUEUE_OUTAGE_OFF" && echo "Outage switch off again."; fi
@@ -470,15 +480,24 @@ wait_for_run() {
     esac
     if [ $(( $(date +%s) - w_start )) -gt $((wait_minutes * 60)) ]; then
       echo "Waited $wait_minutes minutes for run $run_id; giving up for now. Run the queue again later."
+      wait_seen_end
       return 3
     fi
     # Waiting on machines or on tests? Every two minutes, say how many jobs
     # are queued and how busy the runners are.
     w_tick=$(( ${w_tick:-0} + 1 ))
     if [ $(( w_tick % 4 )) -eq 0 ]; then
-      jq_counts=$(gh api "repos/{owner}/{repo}/actions/runs/$run_id/jobs?per_page=100" --jq '[.jobs[] | select(.status == "queued")] | length' 2>/dev/null || echo 0)
+      jq_info=$(gh api "repos/{owner}/{repo}/actions/runs/$run_id/jobs?per_page=100" --jq '[.jobs[] | select(.status == "queued") | .name] | "\(length)\t\(join(", "))"' 2>/dev/null | tr -d '\r' || true)
+      jq_counts=${jq_info%%	*}; [ -n "$jq_counts" ] || jq_counts=0
       rinfo=$(GH_TOKEN="${ADMIN_TOKEN:-${GH_TOKEN:-}}" gh api 'repos/{owner}/{repo}/actions/runners' --jq '"\([.runners[] | select(.status == "online")] | length)\t\([.runners[] | select(.busy)] | length)"' 2>/dev/null || true)
       [ -n "$rinfo" ] && queue_eta "$jq_counts" "${rinfo#*	}" "${rinfo%%	*}" "${QUEUE_JOB_MINUTES:-4}"
+      # Keep each wait in the local log: when it began, which job, how busy.
+      if [ "$jq_counts" -gt 0 ] 2>/dev/null; then
+        [ -n "${w_seen:-}" ] || { w_seen=$(date +%s); w_job="run $run_id: ${jq_info#*	}"; }
+        w_busy=${rinfo#*	}; w_total=${rinfo%%	*}
+      else
+        wait_seen_end
+      fi
     fi
     # A run still queued after five minutes with no runner online will not
     # start: say so and stop rather than wait out the hour.
@@ -486,6 +505,7 @@ wait_for_run() {
       *"	queued	"*|*"	queued")
         if [ $(( $(date +%s) - w_start )) -gt 300 ] && [ "$(online_runners)" = 0 ]; then
           echo "Run $run_id has been queued for five minutes and no self-hosted runner is online. Start a runner (scripts/ci/RUNNERS.md), then run the queue again."
+          wait_seen_end
           return 3
         fi ;;
     esac

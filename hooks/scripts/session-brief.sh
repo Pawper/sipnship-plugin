@@ -181,6 +181,23 @@ if grep -qs 'self-hosted' .github/workflows/*.yml 2>/dev/null && command -v gh >
     add "Runner watch: $(sed 's/^[^|]*|//' "$rw_state" | head -n 2 | paste -sd';' - | sed 's/;/; /g')."
   fi
 fi
+# Waits for a runner this week, from the queue's own log, and the machine
+# line when its runners exceed one per two cores. Local files only, no
+# network call; each says nothing when there is nothing to say.
+wl_file=.scratch/queue/waits.tsv
+if [ ! -f "$wl_file" ]; then
+  wl_common=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)
+  [ -n "$wl_common" ] && wl_file="$(dirname "$wl_common")/.scratch/queue/waits.tsv"
+fi
+if [ -f "$wl_file" ]; then
+  wl=$(waits_line "$(tail -n 500 "$wl_file" 2>/dev/null)" "$(date +%s)")
+  [ -n "$wl" ] && add "Runners: $wl"
+fi
+ml_file="${SIPNSHIP_HOME:-$HOME/.sipnship}/runner-watch/machine.tsv"
+if [ -f "$ml_file" ]; then
+  ml=$(machine_brief_line "$(head -n 1 "$ml_file" 2>/dev/null)")
+  [ -n "$ml" ] && add "Runner machine: $ml."
+fi
 # Hosted minutes, in a private repository: a job on a hosted runner bills
 # at least a minute, the allowance is per account, and one project once
 # spent it all on housekeeping runs. Say what would run hosted and about

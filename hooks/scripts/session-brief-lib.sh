@@ -263,3 +263,34 @@ permissions_line() {
   [ -f "$1" ] && return 0
   printf '%s\n' "Waits on the owner: the agent is not allowed to grant itself permissions, so .claude/settings.json is yours to add. Run node console/cli.js permissions in a terminal."
 }
+
+# waits_line ROWS NOW
+# ROWS is the queue's waits log (epoch, time, job, busy, total, minutes).
+# One sentence on the last seven days' waits for a runner; nothing when
+# there were none.
+waits_line() {
+  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v since=$(( $2 - 7 * 86400 )) '
+    NF >= 6 && $1 + 0 >= since {
+      n++; m = $6 + 0; if (m > max) max = m
+      if ($5 + 0 > tot) tot = $5 + 0
+      if ($4 + 0 > busy) busy = $4 + 0
+      if ($4 + 0 < $5 + 0) some = 1
+    }
+    END {
+      if (n == 0) exit
+      times = (n == 1) ? "once" : n " times"
+      mins = (max == 1) ? "1 minute" : max " minutes"
+      if (tot == 0) how = ""
+      else if (!some) how = (tot == 1) ? ", when the one runner was busy" : ", when all " tot " were busy"
+      else how = ", with up to " busy " of " tot " busy"
+      printf "Jobs waited for a runner %s this week, %s at most%s.\n", times, mins, how
+    }'
+}
+
+# machine_brief_line ROW
+# ROW is the runner watch's machine file: epoch, cores, runners here, busy,
+# the machine line. Print the line only when the runners exceed one per
+# two cores.
+machine_brief_line() {
+  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' 'NF >= 5 && $2 + 0 > 0 && $3 + 0 > int($2 / 2) { print $5; exit }'
+}

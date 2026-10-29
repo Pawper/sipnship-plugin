@@ -279,3 +279,18 @@ stuck_line() {
     NF >= 4 { n++; if (n == 1) { w = $2; b = $3; m = $4 } }
     END { if (n) printf "Queued: %s on %s has waited %s minutes for a runner%s; start the runners (scripts/ci/RUNNERS.md).\n", w, b, m, (n > 1 ? sprintf(", and %d more", n - 1) : "") }'
 }
+
+# machine_line CORES HERE BUSY
+# The machine in one line: its cores, the runners registered on it across
+# every repository, how many are running a job now, and how many the rule
+# allows (one runner per two cores).
+machine_line() {
+  ml_c=${1:-0}; ml_h=${2:-0}; ml_b=${3:-0}
+  printf '%s cores, %s runner(s) on this machine across repositories, %s busy now; the rule allows %s (one per two cores)\n' "$ml_c" "$ml_h" "$ml_b" $(( ml_c / 2 ))
+}
+
+# machine_over CORES HERE: how many runners past the rule; 0 within it.
+machine_over() {
+  mo_a=$(( ${1:-0} / 2 )); mo_h=${2:-0}
+  if [ "${1:-0}" -gt 0 ] && [ "$mo_h" -gt "$mo_a" ]; then echo $(( mo_h - mo_a )); else echo 0; fi
+}
