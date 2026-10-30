@@ -699,7 +699,16 @@ serial_one() {
       return 0
     fi
     sync_worktree "$hb"
-    batch_line "$pr" "updated" "main moved in its classes (PR: ${pr_classes:-none}; main: ${main_classes:-none}) and main is ${ms:-not known to be green}, so CI runs again"
+    # Main brought template changes in: derive the known-hashes list in the
+    # branch's own worktree, commit it there and push, so the run sees it.
+    kr_note=""; kr_path=$(worktree_of "$hb")
+    if [ -n "$kr_path" ]; then
+      kr_line=$(known_refresh "$kr_path" "$head")
+      if [ -n "$kr_line" ]; then
+        if git -C "$kr_path" push -q origin "HEAD:$hb" >/dev/null 2>&1; then kr_note="; $kr_line"; else kr_note="; $kr_line, but the push was refused, so push it from its worktree"; fi
+      fi
+    fi
+    batch_line "$pr" "updated" "main moved in its classes (PR: ${pr_classes:-none}; main: ${main_classes:-none}) and main is ${ms:-not known to be green}, so CI runs again$kr_note"
     # Run by hand, --serial waits for that run and merges, rather than
     # leaving its caller to loop; once only, so a main that keeps moving
     # is said, not chased. A drain moves on and comes back next round.
@@ -1351,6 +1360,10 @@ for pr in $prs; do
       continue
     fi
   fi
+  # A merge that joins template changes makes a version nobody hashed:
+  # derive the known-hashes list again and commit it before the run.
+  kr_line=$(known_refresh "$wt" "$good")
+  [ -z "$kr_line" ] || batch_line "$pr" "merged" "$kr_line"
   changed=$(git -C "$wt" diff --name-only "origin/$base...$head")
   # a member that changes dependencies gets them installed before its check
   case "

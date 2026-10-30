@@ -1567,6 +1567,34 @@ eq "a project's own file matches none" "no" "$(known_match "$km_known" a/x.yml '
 km_missing=$(for p in $(owned_paths "$(cat "$root/templates/OWNED.txt")"); do grep -qxF "$p $(norm_hash "$(cat "$root/templates/$p")")" "$root/templates/KNOWN.txt" || echo "$p"; done)
 eq "every current template is in KNOWN.txt (run scripts/sync/known-hashes.sh before a release)" "" "$km_missing"
 
+# The queue derives the known-hashes list after a merge that changes a template
+kr=$(mktemp -d)
+git -C "$kr" init -q -b main
+git -C "$kr" config user.email q@example.com; git -C "$kr" config user.name queue; git -C "$kr" config core.autocrlf false
+mkdir -p "$kr/plugin/scripts/sync" "$kr/plugin/templates/a"
+cp "$root/scripts/sync/known-hashes.sh" "$root/scripts/sync/sync-lib.sh" "$kr/plugin/scripts/sync/"
+printf 'a/x.sh\n' > "$kr/plugin/templates/OWNED.txt"
+printf 'one\n' > "$kr/plugin/templates/a/x.sh"
+(cd "$kr" && sh plugin/scripts/sync/known-hashes.sh) > "$kr/plugin/templates/KNOWN.txt"
+printf 'notes\n' > "$kr/README.md"
+git -C "$kr" add -A; git -C "$kr" commit -q -m start
+git -C "$kr" checkout -q -b one; printf 'one\nfrom one\n' > "$kr/plugin/templates/a/x.sh"; git -C "$kr" commit -q -am one
+git -C "$kr" checkout -q main; git -C "$kr" checkout -q -b two; printf 'from two\none\n' > "$kr/plugin/templates/a/x.sh"; git -C "$kr" commit -q -am two
+git -C "$kr" checkout -q main; git -C "$kr" checkout -q -b other; printf 'more notes\n' > "$kr/README.md"; git -C "$kr" commit -q -am other
+git -C "$kr" checkout -q -b batch main
+git -C "$kr" merge -q --no-ff --no-edit one; kr_good=$(git -C "$kr" rev-parse HEAD)
+git -C "$kr" merge -q --no-ff --no-edit two
+kr_out=$(known_refresh "$kr" "$kr_good")
+eq "a merge that joins template changes gets a refresh commit" "Refresh the known template hashes" "$(git -C "$kr" log -1 --format=%s)"
+eq "the queue says it refreshed" "refreshed the known template hashes (1 template(s) changed in the merge)" "$kr_out"
+eq "the refresh is byte-identical to the script's output" "same" "$( (cd "$kr" && sh plugin/scripts/sync/known-hashes.sh) | cmp -s - "$kr/plugin/templates/KNOWN.txt" && echo same)"
+eq "the joined version is known" "1" "$(grep -c "^a/x.sh $(norm_hash "$(cat "$kr/plugin/templates/a/x.sh")")\$" "$kr/plugin/templates/KNOWN.txt")"
+kr_before=$(git -C "$kr" rev-parse HEAD)
+git -C "$kr" merge -q --no-ff --no-edit other
+kr_merge=$(git -C "$kr" rev-parse HEAD)
+eq "a merge that changes no template gets no commit" "$kr_merge " "$(git -C "$kr" rev-parse HEAD) $(known_refresh "$kr" "$kr_before")"
+eq "a project without the plugin's sources is left alone" "" "$(known_refresh "$gp" HEAD 2>/dev/null)"
+
 # Release bump: one script sets the version everywhere
 rb_pv=$(sed -n 's/^  "version": *"\([^"]*\)".*/\1/p' "$root/.claude-plugin/plugin.json")
 rb_kv=$(sed -n 's/^  "version": *"\([^"]*\)".*/\1/p' "$root/package.json")

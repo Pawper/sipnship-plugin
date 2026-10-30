@@ -685,3 +685,27 @@ waits_append() {
   { cat "$1" 2>/dev/null; printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$2" "$wa_when" "${wa_job:-a job}" "${4:-0}" "${5:-0}" "${6:-0}"; } \
     | awk -F'\t' -v cut=$(( $2 - 30 * 86400 )) 'NF >= 6 && $1 + 0 >= cut' > "$1.new" 2>/dev/null && mv "$1.new" "$1"
 }
+
+# known_refresh DIR FROM: after a merge in the checkout at DIR (FROM is the
+# commit before the merge), when the merge changed a plugin-owned template
+# (anything under plugin/templates/, which holds every path OWNED.txt
+# lists), write the known-hashes list with the plugin's own script and
+# commit it on the branch when it differs from the committed one. Two pull
+# requests that change one template, merged together, make a version
+# neither hashed; the list is derived, never refreshed by hand. Prints one
+# line when it committed, nothing otherwise. A checkout without the
+# plugin's sources is left alone.
+known_refresh() {
+  kr_dir=$1
+  [ -f "$kr_dir/plugin/scripts/sync/known-hashes.sh" ] && [ -f "$kr_dir/plugin/templates/OWNED.txt" ] || return 0
+  kr_n=$(git -C "$kr_dir" diff --name-only "$2" HEAD -- plugin/templates/ 2>/dev/null | grep -vx 'plugin/templates/KNOWN.txt' | grep -c .) || true
+  [ "${kr_n:-0}" -gt 0 ] || return 0
+  if ! (cd "$kr_dir" && sh plugin/scripts/sync/known-hashes.sh) > "$kr_dir/plugin/templates/KNOWN.txt" 2>/dev/null; then
+    git -C "$kr_dir" checkout -q -- plugin/templates/KNOWN.txt 2>/dev/null || true
+    return 0
+  fi
+  git -C "$kr_dir" diff --quiet -- plugin/templates/KNOWN.txt && return 0
+  git -C "$kr_dir" add plugin/templates/KNOWN.txt >/dev/null 2>&1 || return 0
+  git -C "$kr_dir" commit -q -m "Refresh the known template hashes" >/dev/null 2>&1 || return 0
+  echo "refreshed the known template hashes ($kr_n template(s) changed in the merge)"
+}
