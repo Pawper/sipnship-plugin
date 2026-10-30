@@ -1189,7 +1189,7 @@ eq "--serial waits once for the run its refresh started" "1" "$(grep -c 'serial_
 eq "an unknown mergeable state is read again" "1" "$(grep -c 'while \[ "\$o_mw" = UNKNOWN \]' "$root/templates/scripts/ci/merge-queue.sh")"
 eq "CI may read pull requests" "1" "$(grep -c '^  pull-requests: read' "$root/templates/.github/workflows/ci.yml")"
 ci_job() { awk -v j="  $1:" '$0 == j {f=1; next} /^  [a-z-]*:$/ {f=0} f' "$root/templates/.github/workflows/ci.yml"; }
-ci_stops() { ci_job "$1" | grep -c -e 'actions: write' -e "if: failure() && github.event_name == 'pull_request'" -e 'gh run cancel \${{ github.run_id }}'; }
+ci_stops() { ci_job "$1" | grep -c -e '^      actions: write$' -e "if: failure() && github.event_name == 'pull_request'" -e 'gh run cancel \${{ github.run_id }}'; }
 eq "a failed pull-request job stops the rest of its run" "3 3 3" "$(ci_stops checks) $(ci_stops app) $(ci_stops screens)"
 eq "the full run on main is never stopped" "0" "$(ci_stops full)"
 eq "the spec, design and mock checks read the live body" "3" "$(grep -c 'SPEC_TEXT=$(gh api' "$root/templates/.github/workflows/ci.yml")"
