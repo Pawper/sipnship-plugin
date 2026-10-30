@@ -153,7 +153,9 @@ fi
 deploy_line=""; [ -f .claude/deploy.json ] && [ -f "$here/deploy-gate.sh" ] && deploy_line=$(sh "$here/deploy-gate.sh" --last "$base" 2>/dev/null | head -n 1)
 
 # 4. Compose.
-say=$(publish_say "$open_tsv" "$batch_tsv" "$building" "$clashes_tsv" "$attention_tsv" "$runners_tsv" "$deploy_line" "$mode" "$paused_until")
+# The stop line a drain left (merge-queue.sh), said while the queue is idle.
+stopped_line=""; [ "$mode" = idle ] && stopped_line=$(head -n 1 "$flaky_dir/stopped" 2>/dev/null | tr -d '\r')
+say=$(publish_say "$open_tsv" "$batch_tsv" "$building" "$clashes_tsv" "$attention_tsv" "$runners_tsv" "$deploy_line" "$mode" "$paused_until" "$stopped_line")
 now_iso=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 json=$(publish_json "$open_tsv" "$batch_tsv" "$building" "$clashes_tsv" "$landed_tsv" "$runners_tsv" "$attention_tsv" "$(printf '%s\t%s' "$main_sha" "$main_state")" "$deploy_line" "$mode" "$paused_until" "$checking" "$say" "$now_iso")
 
@@ -197,7 +199,8 @@ if [ "$switch" = service ] && [ "$print_only" = no ]; then
     service_body "$json" "$(service_waits_json "$(cat "$flaky_dir/waits.tsv" 2>/dev/null)" $((now_epoch - 7 * 86400)))" > "$flaky_dir/service.body"
     if [ "$(wc -c < "$flaky_dir/service.body" | tr -d ' ')" -gt 65536 ]; then sn_status=413
     else
-      sn_status=$(printf 'Authorization: Bearer %s\n' "$sn_token" | curl -s -o /dev/null -w '%{http_code}' --max-time 3 -X POST -H @- -H 'content-type: application/json' --data-binary @"$flaky_dir/service.body" "${SIPNSHIP_URL:-https://sipnship.dev}/v1/repos/$sn_id/queue" 2>/dev/null || true)
+      sn_post() { printf 'Authorization: Bearer %s\n' "$sn_token" | curl -s -o /dev/null -w '%{http_code}' --max-time 10 -X POST -H @- -H 'content-type: application/json' --data-binary @"$flaky_dir/service.body" "${SIPNSHIP_URL:-https://sipnship.dev}/v1/repos/$sn_id/queue"; }
+      sn_status=$(service_send sn_post)
     fi
     sn_outcome=$(service_outcome "$sn_status")
     case "$sn_outcome" in
@@ -215,7 +218,7 @@ if [ "$switch" = service ] && [ "$print_only" = no ]; then
         since=$(cat "$flaky_dir/service.failing-since" 2>/dev/null | tr -d '\r')
         [ -n "$since" ] || { since=$now_epoch; printf '%s\n' "$since" > "$flaky_dir/service.failing-since"; }
         if [ "$(cat "$flaky_dir/service.said" 2>/dev/null)" != "$sn_outcome" ]; then
-          service_say "$sn_outcome"; echo
+          service_say "$sn_outcome" "$sn_status"; echo
           printf '%s' "$sn_outcome" > "$flaky_dir/service.said"
         fi
         write_issue=$(service_issue_too "$since" "$now_epoch") ;;

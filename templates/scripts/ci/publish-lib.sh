@@ -84,7 +84,7 @@ files_said() {
 # Three sentences, one per line: what the queue is doing now; what is
 # waiting and why; what needs a person. Plain words, never a field name.
 publish_say() {
-  ps_open=$1; ps_batch=$2; ps_building=$3; ps_clashes=$4; ps_att=$5; ps_runners=$6; ps_deploy=$7; ps_mode=$8; ps_until=$9
+  ps_open=$1; ps_batch=$2; ps_building=$3; ps_clashes=$4; ps_att=$5; ps_runners=$6; ps_deploy=$7; ps_mode=$8; ps_until=$9; ps_stopped=${10:-}
   # 1. Doing now.
   ps_busy=""; ps_online=""
   if [ -n "$ps_runners" ]; then
@@ -120,6 +120,10 @@ publish_say() {
     s1="Merging one pull request on its own."
   elif [ "$ps_mode" = draining ]; then
     s1="The queue is running, looking for green pull requests to merge."
+  elif [ -n "$ps_stopped" ]; then
+    # A drain that stopped with green pull requests it could not batch
+    # says so, so nobody reads an idle queue as a quiet one.
+    s1=$ps_stopped
   else
     s1="The queue is idle; it runs every two hours, and after an agent's work."
   fi
@@ -273,11 +277,26 @@ service_issue_too() {
   if [ $(( $2 - $1 )) -ge 3600 ]; then printf yes; else printf no; fi
 }
 
-# service_say OUTCOME: the one plain line a failed send says.
+# service_send SEND_COMMAND...: the HTTP status SEND_COMMAND prints, with
+# one retry after QUEUE_SEND_RETRY_PAUSE seconds (default 2) when there was
+# no answer at all (000 or nothing). The service's first answer after it
+# idles is slow, and twice in a day a send was called unreachable while
+# the same body, sent again, answered 204 in under a second.
+service_send() {
+  ss_status=$("$@" 2>/dev/null || true)
+  case "$ss_status" in ''|000)
+    sleep "${QUEUE_SEND_RETRY_PAUSE:-2}"
+    ss_status=$("$@" 2>/dev/null || true) ;;
+  esac
+  printf '%s' "${ss_status:-000}"
+}
+
+# service_say OUTCOME [STATUS]: the one plain line a failed send says,
+# naming the status it got.
 service_say() {
   case "$1" in
     not_connected) printf '%s' "This machine is no longer connected to SipNShip, so the merge queue keeps its issue current after an hour. Reconnect it from the dashboard." ;;
     too_large) printf '%s' "The queue's state was too long to send to SipNShip; the next change tries again." ;;
-    unreachable) printf '%s' "Could not reach SipNShip with the queue's state; the queue carries on, and writes its issue too if this lasts an hour." ;;
+    unreachable) printf '%s' "Could not reach SipNShip with the queue's state${2:+ (status $2)}; the queue carries on, and writes its issue too if this lasts an hour." ;;
   esac
 }

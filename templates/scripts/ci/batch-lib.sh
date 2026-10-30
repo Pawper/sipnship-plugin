@@ -1,6 +1,37 @@
 #!/bin/sh
 # Pure helpers for the merge queue's batch mode. Nothing here calls git or
-# gh, so every function is tested with strings in tests/run.sh.
+# gh, so every function is tested with strings in tests/run.sh; the one
+# exception, batch_folder_repair, is tested on a scratch repository.
+
+# drain_window_until NOW_EPOCH MINUTES: the end of a local drain's
+# stand-down window, in UTC. The window is short and renewed each round, so
+# a drain that dies holds the scheduled backstop off for one window at most.
+drain_window_until() {
+  dw_end=$(( $1 + ${2:-25} * 60 ))
+  date -u -d "@$dw_end" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$dw_end" +%Y-%m-%dT%H:%M:%SZ
+}
+
+# stale_folder_name FOLDER STAMP: where a batch folder git no longer knows
+# is moved aside (never deleted), STAMP being YYYY-MM-DD-HHMM.
+stale_folder_name() { printf '%s.stale-%s\n' "$1" "$2"; }
+
+# batch_folder_repair FOLDER STAMP: when FOLDER exists but is not a git
+# checkout any more, move it aside as stale_folder_name says, print one
+# line, and let git forget the worktree it was, so the next
+# "git worktree add" makes it afresh. A folder left so once stopped every
+# round of a night's drain with "already exists".
+batch_folder_repair() {
+  [ -e "$1" ] || return 0
+  git -C "$1" rev-parse --git-dir >/dev/null 2>&1 && return 0
+  bf_to=$(stale_folder_name "$1" "$2")
+  mv "$1" "$bf_to" || return 1
+  git worktree prune 2>/dev/null || true
+  printf 'The batch folder %s was no longer a git checkout; moved it aside to %s and made it afresh.\n' "$1" "$bf_to"
+}
+
+# drain_stop_line TIME REASON: the last word of a drain that ended with
+# green pull requests it could not batch, as the Queue tab shows it.
+drain_stop_line() { printf 'The queue stopped at %s: %s.\n' "$1" "$2"; }
 
 # deploy_refused_message REF: what the queue says when its start of the
 # Deploy workflow is refused. A builder saw an agent deploy once and then
@@ -161,6 +192,27 @@ drain_waiting() {
 drain_retry() {
   printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v base="$2" -v tried=" $3 " '
     NF >= 5 && $2 == "false" && $5 == base && (($4 == "red" && index(tried, " " $1 " ") == 0) || $4 == "cancelled") { print $1 }' | sort -n
+}
+
+# rerun_choice RUNS HEAD CANCEL_HEADS: which CI run the drain may re-run.
+# RUNS is one run per line, newest first, "id<TAB>head sha<TAB>status<TAB>
+# conclusion", every run of the pull request's branch. CI cancels within a
+# pull request's concurrency group, so re-running an old run cancels the
+# fresh one: two pull requests once went red with every job cancelled.
+# Prints "wait" while any run is queued or in progress; "twice" when the
+# newest run on HEAD was cancelled and that head already had its re-run
+# (a head in CANCEL_HEADS); "rerun ID" for the newest completed run on
+# HEAD; nothing when HEAD has no run.
+rerun_choice() {
+  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v head="$2" -v done=" $3 " '
+    NF >= 3 && $3 != "completed" { busy = 1 }
+    NF >= 3 && $2 == head && pick == "" { pick = $1; conc = $4 }
+    END {
+      if (busy) { print "wait"; exit }
+      if (pick == "") exit
+      if (conc == "cancelled" && index(done, " " head " ") > 0) { print "twice"; exit }
+      print "rerun " pick
+    }'
 }
 
 # drain_attention LIST BASE RETRIED

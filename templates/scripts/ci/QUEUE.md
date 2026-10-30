@@ -137,7 +137,8 @@ The rebuild runs in the batch checkout with the queue's own environment: whateve
 
 - **Hold one pull request.** A label `queue:hold` (or `hold`), or a line `Queue: hold` in its body, keeps a green pull request out of every drain and batch. `--serial N` refuses it too, unless a person gives a reason with `--because`. Remove the label or the line to release it.
 - **Pause the scheduled drain.** `sh scripts/ci/merge-queue.sh --pause 2h` (or `45m`) sets the repository variable `QUEUE_PAUSED_UNTIL`, and the scheduled drain skips itself until then; `--resume` ends the pause. A drain you run yourself still runs.
-- **A session's own drain** sets `QUEUE_LOCAL_DRAIN_UNTIL` while it works and clears it at the end, so the scheduled drain skips rather than racing it.
+- **A session's own drain** sets `QUEUE_LOCAL_DRAIN_UNTIL` to now plus `QUEUE_DRAIN_MINUTES` (default 25) when it starts, renews it each round, and clears it when it ends, however it ends. The scheduled drain skips while that time is ahead and the published state (the "Merge queue" issue) does not say idle; so a drain that died holds the backstop off for one window at most. A batch folder git no longer knows is moved aside as `<folder>.stale-<date>` and made afresh, and a drain that ends with green pull requests it could not batch says why in its last line, which the published state carries ("The queue stopped at 3:29 AM: the batch folder could not be made").
+- **A re-run** is of the newest CI run on the pull request's current head only, only when none of its runs is queued or running, and a cancelled head once; a second cancel on that head is named "cancelled twice; look at it". Re-running an older run would cancel the fresh one through CI's concurrency group.
 
 Setting a repository variable needs a token that can administer the repository; the owner's own `gh` sign-in can.
 

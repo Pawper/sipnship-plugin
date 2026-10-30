@@ -388,6 +388,13 @@ eq "413 is too large" "too_large" "$(service_outcome 413)"
 eq "429 is dropped quietly" "rate_limited" "$(service_outcome 429)"
 eq "a 5xx is unreachable" "unreachable" "$(service_outcome 503)"
 eq "no answer at all is unreachable" "unreachable" "$(service_outcome 000)"
+# A send that gets no answer once, then 204, is ok (fixtures/queue-stop/send-answers.txt).
+ss_tmp=$(mktemp -d); printf 0 > "$ss_tmp/count"
+ss_stub() { ss_n=$(( $(cat "$ss_tmp/count") + 1 )); printf '%s' "$ss_n" > "$ss_tmp/count"; sed -n "${ss_n}p" "$root/tests/fixtures/queue-stop/send-answers.txt"; }
+ss_got=$(QUEUE_SEND_RETRY_PAUSE=0 service_send ss_stub)
+eq "a send that fails once then answers 204 is ok" "ok" "$(service_outcome "$ss_got")"
+eq "an unreachable line names the status" "1" "$(service_say unreachable 000 | grep -c '(status 000)')"
+eq "the send waits ten seconds for the first answer" "1" "$(grep -c 'max-time 10' "$root/templates/scripts/ci/publish-state.sh")"
 eq "failing under an hour leaves the issue alone" "no" "$(service_issue_too 1000 4599)"
 eq "failing for an hour writes the issue as well" "yes" "$(service_issue_too 1000 4600)"
 eq "no failure writes no issue" "no" "$(service_issue_too "" 99999)"
@@ -1163,7 +1170,36 @@ eq "pause for 45 minutes" "2700" "$(pause_until 0 45m)"
 eq "bare minutes" "5400" "$(pause_until 0 90)"
 eq "a length it cannot read pauses nothing" "" "$(pause_until 0 soon)"
 eq "the drain, a batch and --serial all honour a hold" "3" "$(grep -c 'held_reason\|pr_held "\$pr"' "$root/templates/scripts/ci/merge-queue.sh" | awk '{print ($1 >= 3) ? 3 : $1}')"
-eq "the scheduled drain skips while paused or a session drains" "1" "$(grep -c 'vars.QUEUE_PAUSED_UNTIL }}" "\${{ vars.QUEUE_LOCAL_DRAIN_UNTIL' "$root/templates/.github/workflows/queue-drain.yml")"
+eq "the scheduled drain skips while paused or a session drains" "2" "$(grep -c 'p="\${{ vars.QUEUE_PAUSED_UNTIL }}"\|l="\${{ vars.QUEUE_LOCAL_DRAIN_UNTIL }}"' "$root/templates/.github/workflows/queue-drain.yml")"
+# A session's drain window is short, renewed and cleared (fixtures/queue-stop).
+qs_dir="$root/tests/fixtures/queue-stop"
+IFS="$(printf '\t')" read -r qs_now qs_min qs_until < "$qs_dir/window.tsv"
+eq "the window is now plus QUEUE_DRAIN_MINUTES" "$qs_until" "$(drain_window_until "$qs_now" "$qs_min")"
+eq "the window defaults to 25 minutes" "$qs_until" "$(drain_window_until "$qs_now")"
+qs_mq="$root/templates/scripts/ci/merge-queue.sh"
+eq "the window is set at the start and renewed each round" "2" "$(grep -c '^ *renew_window$\|local_drain_mark=yes; renew_window' "$qs_mq")"
+eq "the exit trap clears the window" "1" "$(grep -c 'local_drain_mark:-}" ]; then set_repo_var QUEUE_LOCAL_DRAIN_UNTIL ""' "$qs_mq")"
+eq "the backstop drains when the queue says idle inside a window" "1" "$(grep -c '"mode":"idle"' "$root/templates/.github/workflows/queue-drain.yml")"
+# A stale batch folder is moved aside, never deleted, and the batch builds.
+qs_tmp=$(mktemp -d); git init -q "$qs_tmp/maya-garden"
+git -C "$qs_tmp/maya-garden" -c user.name=t -c user.email=t@t commit -q --allow-empty -m "Seed the rooftop beds"
+mkdir "$qs_tmp/maya-garden-wt-batch"; cp "$qs_dir/stale-folder.txt" "$qs_tmp/maya-garden-wt-batch/"
+qs_said=$(cd "$qs_tmp/maya-garden" && batch_folder_repair "$qs_tmp/maya-garden-wt-batch" 2026-10-30-0329)
+eq "the repair says so in one line" "1" "$(printf '%s\n' "$qs_said" | grep -c 'moved it aside to .*maya-garden-wt-batch.stale-2026-10-30-0329')"
+eq "the stale folder is kept, with its files" "Water the beds on a schedule" "$(cat "$qs_tmp/maya-garden-wt-batch.stale-2026-10-30-0329/stale-folder.txt")"
+git -C "$qs_tmp/maya-garden" worktree add -q -b batch-2026-10-30-1 "$qs_tmp/maya-garden-wt-batch" 2>/dev/null
+eq "the batch folder is made afresh" "yes" "$(git -C "$qs_tmp/maya-garden-wt-batch" rev-parse --git-dir >/dev/null 2>&1 && echo yes)"
+eq "a good batch folder is left alone" "" "$(cd "$qs_tmp/maya-garden" && batch_folder_repair "$qs_tmp/maya-garden-wt-batch" 2026-10-30-0400)"
+eq "a failed batch folder leaves its reason for the drain" "1" "$(grep -c "the batch folder could not be made\" > \"\$flaky_dir/batch.why\"" "$qs_mq")"
+# A re-run never cancels a fresher run through CI's concurrency group.
+eq "an older failed run and a newer queued one: no re-run" "wait" "$(rerun_choice "$(cat "$qs_dir/runs-newer-queued.tsv")" bbb222 "")"
+eq "a head whose only run was cancelled gets one re-run" "rerun 801" "$(rerun_choice "$(cat "$qs_dir/runs-cancelled-once.tsv")" ccc333 "")"
+eq "a second cancel on the same head gets none" "twice" "$(rerun_choice "$(cat "$qs_dir/runs-cancelled-once.tsv")" ccc333 " ccc333")"
+eq "the drain re-runs through rerun_choice" "1" "$(grep -c 'choice=\$(rerun_choice' "$qs_mq")"
+# The stop line names the reason, and the Queue tab says it while idle.
+qs_why=$(cat "$qs_dir/batch-why.txt")
+eq "the stop line names the reason" "The queue stopped at 3:29 AM: the batch folder could not be made." "$(drain_stop_line '3:29 AM' "$qs_why")"
+eq "the status line carries it while idle" "The queue stopped at 3:29 AM: the batch folder could not be made." "$(. "$root/templates/scripts/ci/publish-lib.sh"; publish_say "" "" "" "" "" "" "" idle "" "$(drain_stop_line '3:29 AM' "$qs_why")" | sed -n 1p)"
 eq "a release on workflow_run of CI is per merge" "yes" "$(. "$root/scripts/sync/sync-lib.sh"; per_merge_release "$(printf 'on:\n  workflow_run:\n    workflows: [CI]\n    types: [completed]\n    branches: [main]\n')")"
 eq "quoted CI too" "yes" "$(. "$root/scripts/sync/sync-lib.sh"; per_merge_release "$(printf 'on:\n  workflow_run:\n    workflows: [\"CI\"]\n')")"
 eq "a release that follows Deploy is not" "" "$(. "$root/scripts/sync/sync-lib.sh"; per_merge_release "$(printf 'on:\n  workflow_run:\n    workflows: [Deploy]\n  workflow_dispatch:\n')")"
@@ -1176,7 +1212,7 @@ eq "the drain never runs hosted by default" "0" "$(grep -v '^#' "$root/templates
 eq "its runs-on falls back to self-hosted" "1" "$(grep -c "runs-on: \${{ vars.QUEUE_RUNS_ON || 'self-hosted' }}" "$root/templates/.github/workflows/queue-drain.yml")"
 eq "and with QUEUE_RUNS_ON unset the Windows job runs on a self-hosted Windows runner" "2" "$(grep -c "vars.QUEUE_RUNS_ON == '' || contains(vars.QUEUE_RUNS_ON, 'windows')\|runs-on: \${{ vars.QUEUE_RUNS_ON || 'windows' }}" "$root/templates/.github/workflows/queue-drain.yml")"
 eq "the other drain job runs only for a label not naming Windows" "1" "$(grep -c "if: \${{ vars.QUEUE_RUNS_ON != '' && !contains(vars.QUEUE_RUNS_ON, 'windows') }}" "$root/templates/.github/workflows/queue-drain.yml")"
-eq "and skips itself after a recent drain, or while paused" "2" "$(grep -c 'skipping this one' "$root/templates/.github/workflows/queue-drain.yml")"
+eq "and skips itself after a recent drain, or while paused" "3" "$(grep -c 'skipping this one' "$root/templates/.github/workflows/queue-drain.yml")"
 eq "the batch checkout links packages only when the lockfiles match" "1" "$(grep -c 'if \[ "\$em_lock" = "\$em_main" \] && \[ -d "\$main_dir/\$d/node_modules" \]' "$root/templates/scripts/ci/merge-queue.sh")"
 eq "a stale link is removed, never the packages behind it" "1" "$(grep -c 'cmd //c rmdir' "$root/templates/scripts/ci/merge-queue.sh")"
 eq "file: dependencies by path" "packages/core

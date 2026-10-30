@@ -1076,15 +1076,22 @@ if [ "$mode" = drain ]; then
   rounds=${rounds:-6}
   drain_minutes=${QUEUE_DRAIN_MINUTES:-90}
   # A drain started in a session says so, so the scheduled drain skips
-  # instead of racing it; the mark is cleared when this drain ends.
-  if [ -z "${GITHUB_ACTIONS:-}" ]; then
-    set_repo_var QUEUE_LOCAL_DRAIN_UNTIL "$(iso_utc $(( $(date +%s) + drain_minutes * 60 )))" || true
-    local_drain_mark=yes
-  fi
-  d_start=$(date +%s); round=0; tried=""; retried=""; attention=""; last_look=""
+  # instead of racing it. The window is QUEUE_DRAIN_MINUTES (default 25),
+  # renewed each round and cleared by the exit trap however the drain
+  # ends: a drain that died once held the backstop off for ten hours.
+  window_minutes=${QUEUE_DRAIN_MINUTES:-25}
+  renew_window() {
+    [ -n "${local_drain_mark:-}" ] || return 0
+    set_repo_var QUEUE_LOCAL_DRAIN_UNTIL "$(drain_window_until "$(date +%s)" "$window_minutes")" >/dev/null 2>&1 || true
+  }
+  if [ -z "${GITHUB_ACTIONS:-}" ]; then local_drain_mark=yes; renew_window; fi
+  : > "$flaky_dir/stopped" 2>/dev/null || true
+  stop_why=""
+  d_start=$(date +%s); round=0; tried=""; retried=""; attention=""; last_look=""; cancel_heads=""
   d_begin=$(git ls-remote origin "refs/heads/$base" 2>/dev/null | cut -f1)
   while [ "$round" -lt "$rounds" ]; do
     round=$((round + 1))
+    renew_window
     queue_step="drain round $round: reading the open pull requests"
     rate_guard
     # Requests to the queue, at every tick: this round's start, which each
@@ -1172,17 +1179,30 @@ if [ "$mode" = drain ]; then
     # or a conflict, is collected and named when the drain ends.
     for r in $(drain_retry "$open" "$base" "$retried"); do
       rb=$(pr_field "$r" 1)
-      rid=$(latest_run "$rb"); rid=${rid%%	*}
-      if [ -n "$rid" ] && gh run rerun "$rid" --failed >/dev/null 2>&1; then
-        say "round $round: #$r failed or had a job cancelled; re-running its failed jobs (a cancelled job, every round; a failure, once)."
-      fi
+      # Only the newest run on the current head, only when no run of the
+      # pull request is queued or running, and a cancelled head once:
+      # re-running an older run cancels the fresh one through CI's
+      # concurrency group.
+      rh=$(pr_field "$r" 2)
+      runs=$(gh api "repos/{owner}/{repo}/actions/workflows/${QUEUE_CI_WORKFLOW:-ci.yml}/runs?branch=$rb&per_page=20" --jq '.workflow_runs[] | [.id, .head_sha, .status, (.conclusion // "")] | @tsv' 2>/dev/null)
+      choice=$(rerun_choice "$runs" "$rh" "$cancel_heads")
+      case "$choice" in
+        rerun\ *)
+          rid=${choice#rerun }
+          if gh api -X POST "repos/{owner}/{repo}/actions/runs/$rid/rerun-failed-jobs" >/dev/null 2>&1; then
+            say "round $round: #$r failed or had a job cancelled; re-running the failed jobs of its newest run (a cancelled head, once; a failure, once)."
+          fi
+          cancel_heads="$cancel_heads $rh" ;;
+        twice) attention=$(printf '%s\n%s\tcancelled twice; look at it\n' "$attention" "$r" | sed '/^$/d' | sort -u -n) ;;
+        wait) say "round $round: #$r has a CI run queued or running; not re-running an older one." ;;
+      esac
       retried="$retried $r"
     done
     attention=$(printf '%s
 %s
 ' "$attention" "$(drain_attention "$open" "$base" "$retried")" | sed '/^$/d' | sort -u -n)
     printf '%s\n' "$open" > "$flaky_dir/open.tsv" 2>/dev/null || true
-    printf '%s\n' "$attention" | sed '/^$/d' | awk -v b="$base" '{ printf "%s\tfailed CI twice\tits checks stay red\t\n", $1 }' > "$flaky_dir/attention.tsv" 2>/dev/null || true
+    printf '%s\n' "$attention" | sed '/^$/d' | awk -F'\t' '{ w = ($2 != "" ? $2 : "failed CI twice"); printf "%s\t%s\t%s\t\n", $1, w, (w ~ /cancelled/ ? "every job was cancelled again" : "its checks stay red") }' > "$flaky_dir/attention.tsv" 2>/dev/null || true
     publish_now draining "$flaky_dir/open.tsv"
     queue_step="drain round $round: choosing what to merge"
     pick=$(drain_candidates "$open" "$base" "$tried")
@@ -1241,6 +1261,7 @@ if [ "$mode" = drain ]; then
     say "round $round: $n green pull request(s): $(printf '%s' "$pick" | tr '\n' ' ')"
     QUEUE_IN_DRAIN=1; export QUEUE_IN_DRAIN
     : > "$flaky_dir/untried" 2>/dev/null || true
+    : > "$flaky_dir/batch.why" 2>/dev/null || true
     if [ "$n" -ge 2 ]; then sh "$0" --batch --base "$base" $pick 2>&1 | tee -a "$log_file" || true; else sh "$0" --serial --base "$base" $pick 2>&1 | tee -a "$log_file" || true; fi
     # A pull request the round could not even try (main would not fetch)
     # is not tried: it stays in for the next round.
@@ -1249,11 +1270,21 @@ if [ "$mode" = drain ]; then
       case " $untried " in *" $t "*) ;; *) tried="$tried $t" ;; esac
     done
     if [ -n "$(printf '%s' "$untried" | tr -d ' ')" ]; then say "round $round: main could not be fetched; trying$(printf ' #%s' $untried) again next round."; fi
+    # A batch that could not even be built leaves its reason; the green
+    # pull requests it held are still green, so the drain says why it
+    # stopped rather than look quiet.
+    b_why=$(head -n 1 "$flaky_dir/batch.why" 2>/dev/null | tr -d '\r')
+    [ -z "$b_why" ] || stop_why=$b_why
     if [ $(( $(date +%s) - d_start )) -ge $((drain_minutes * 60)) ]; then
       say "Drained for $drain_minutes minutes; stopping. Run --drain again to go on."
       break
     fi
   done
+  if [ -n "$stop_why" ]; then
+    stop_line=$(drain_stop_line "$(date '+%-I:%M %p' 2>/dev/null || date '+%H:%M')" "$stop_why")
+    say "$stop_line"
+    printf '%s\n' "$stop_line" > "$flaky_dir/stopped" 2>/dev/null || true
+  fi
   say "drain rounds done"
   deploy_if_due "$d_begin"
   # Re-read each one before calling it a failure: a pull request red
@@ -1355,10 +1386,14 @@ done
 main_dir=$(git worktree list --porcelain 2>/dev/null | sed -n '1s/^worktree //p' | tr -d '\r')
 [ -n "$main_dir" ] && [ -d "$main_dir" ] || main_dir=$(pwd)
 wt=${QUEUE_WORKTREE:-"$(cd "$main_dir/.." && pwd)/$(basename "$main_dir")-wt-batch"}
-if [ -e "$wt/.git" ]; then
+# A folder git no longer knows is moved aside, never deleted, and made afresh.
+batch_folder_repair "$wt" "$(date +%Y-%m-%d-%H%M)" | while IFS= read -r bf_l; do say "$bf_l"; done
+if git -C "$wt" rev-parse --git-dir >/dev/null 2>&1; then
   git -C "$wt" checkout -q -B "$branch" "origin/$base"
-else
-  git worktree add -q -B "$branch" "$wt" "origin/$base"
+elif ! git worktree add -q -B "$branch" "$wt" "origin/$base"; then
+  printf '%s\n' "the batch folder could not be made" > "$flaky_dir/batch.why" 2>/dev/null || true
+  echo "Nothing merged: the batch folder $wt could not be made."
+  exit 1
 fi
 # ensure_modules: every package in the batch checkout has the packages its
 # own lockfile names. Where the lockfile is the main checkout's, its

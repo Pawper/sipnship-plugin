@@ -64,13 +64,28 @@ jobs:
         run: |
           now=$(date -u +%s)
           # Paused from a session (merge-queue.sh --pause 2h), or a session's
-          # own drain is working: skip, and let that one do it.
-          for v in "${{ vars.QUEUE_PAUSED_UNTIL }}" "${{ vars.QUEUE_LOCAL_DRAIN_UNTIL }}"; do
-            if [ -n "$v" ] && [ "$(date -u -d "$v" +%s 2>/dev/null || echo 0)" -gt "$now" ] && [ "${{ github.event_name }}" = schedule ]; then
-              echo "Paused, or a session's drain is running, until $v; skipping this one."
+          # own drain is working: skip, and let that one do it. A session's
+          # drain counts only while its window (renewed each round) is ahead
+          # AND the published state, when there is one, does not say idle:
+          # a drain that died costs one window at most.
+          until_epoch() { [ -n "$1" ] && date -u -d "$1" +%s 2>/dev/null || echo 0; }
+          if [ "${{ github.event_name }}" = schedule ]; then
+            p="${{ vars.QUEUE_PAUSED_UNTIL }}"
+            if [ "$(until_epoch "$p")" -gt "$now" ]; then
+              echo "Paused until $p; skipping this one."
               echo "skip=yes" >> "$GITHUB_OUTPUT"; exit 0
             fi
-          done
+            l="${{ vars.QUEUE_LOCAL_DRAIN_UNTIL }}"
+            if [ "$(until_epoch "$l")" -gt "$now" ]; then
+              qmode=$(gh api "repos/${{ github.repository }}/issues?state=open&per_page=100" --jq '[.[] | select(.title == "Merge queue")][0].body // ""' 2>/dev/null | grep -o '"mode":"[a-z]*"' | head -n 1 || true)
+              if [ "$qmode" = '"mode":"idle"' ]; then
+                echo "A session's drain set its window until $l, but the queue says it is idle; draining."
+              else
+                echo "A session's drain is running until $l; skipping this one."
+                echo "skip=yes" >> "$GITHUB_OUTPUT"; exit 0
+              fi
+            fi
+          fi
           last=$(gh api "repos/${{ github.repository }}/actions/workflows/queue-drain.yml/runs?status=completed&per_page=1" --jq '.workflow_runs[0].updated_at // ""' 2>/dev/null || true)
           if [ -n "$last" ] && [ "${{ github.event_name }}" = schedule ]; then
             age=$(( $(date -u +%s) - $(date -u -d "$last" +%s) ))
