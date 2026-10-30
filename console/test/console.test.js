@@ -12,6 +12,10 @@ const render = require('../render');
 const { createConsole, serve, portFor, writeClaim, readClaims } = require('../index');
 const os = require('os');
 
+// A home of its own for this run: nothing here reads or writes the real
+// ~/.sipnship, and a second copy of the suite never shares one.
+process.env.SIPNSHIP_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'console-sipnship-'));
+
 const root = path.join(__dirname, '..', '..', 'templates');
 const cfg = config.loadConfig(root);
 const exampleText = fs.readFileSync(path.join(root, '.env.example'), 'utf8');
@@ -174,14 +178,40 @@ test('a project keeps the port it claimed; a newcomer takes the next unclaimed o
   assert.equal(portFor(d, home), 7650);
 });
 
+// Two neighbouring ports free right now, picked at random at run time, so a
+// second copy of the suite or another console on the machine never holds
+// the port a test expects. Not the system's own pick (port 0): Windows
+// hands those out in sequence, so two copies started together got
+// neighbouring ports and each took the other's second one.
+const net = require('net');
+function listenOn(port) {
+  return new Promise((resolve) => {
+    const s = net.createServer();
+    s.once('error', () => resolve(null));
+    s.listen(port, '127.0.0.1', () => resolve(s));
+  });
+}
+async function freePair() {
+  for (let i = 0; i < 50; i += 1) {
+    const p = 20000 + Math.floor(Math.random() * 20000);
+    const a = await listenOn(p);
+    if (!a) continue;
+    const b = await listenOn(p + 1);
+    await new Promise((r) => a.close(r));
+    if (b) { await new Promise((r) => b.close(r)); return p; }
+  }
+  throw new Error('no two neighbouring free ports');
+}
+
 test('a port another project claims is passed over even when free', async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'console-home-'));
-  writeClaim('/x/app-one', 7695, home);
-  const mine = await serve({ root, port: 7695, delivery: false, home });
+  const p = await freePair();
+  writeClaim('/x/app-one', p, home);
+  const mine = await serve({ root, port: p, delivery: false, home });
   try {
-    assert.equal(mine.url, 'http://127.0.0.1:7696/');
+    assert.equal(mine.url, `http://127.0.0.1:${p + 1}/`);
     assert.equal(mine.skipped[0].claimed, true);
-    assert.equal(readClaims(home)[Object.keys(readClaims(home)).find((k) => k !== (process.platform === 'win32' ? '/x/app-one'.toLowerCase() : '/x/app-one') && readClaims(home)[k] === 7696)], 7696);
+    assert.equal(readClaims(home)[Object.keys(readClaims(home)).find((k) => k !== (process.platform === 'win32' ? '/x/app-one'.toLowerCase() : '/x/app-one') && readClaims(home)[k] === p + 1)], p + 1);
   } finally { mine.server.close(); }
 });
 
@@ -190,14 +220,15 @@ test("a taken port: this project's console is reused, another's is named and pas
   fs.mkdirSync(path.join(other, 'console'));
   fs.copyFileSync(path.join(root, 'console', 'services.json'), path.join(other, 'console', 'services.json'));
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'console-home-'));
-  const held = await serve({ root: other, port: 7690, delivery: false, home });
-  const again = await serve({ root: other, port: 7690, delivery: false, home });
+  const p = await freePair();
+  const held = await serve({ root: other, port: p, delivery: false, home });
+  const again = await serve({ root: other, port: p, delivery: false, home });
   assert.equal(again.reused, true);
   assert.equal(again.url, held.url);
-  const mine = await serve({ root, port: 7690, delivery: false, home });
+  const mine = await serve({ root, port: p, delivery: false, home });
   try {
-    assert.equal(mine.url, 'http://127.0.0.1:7691/');
-    assert.equal(mine.skipped[0].port, 7690);
+    assert.equal(mine.url, `http://127.0.0.1:${p + 1}/`);
+    assert.equal(mine.skipped[0].port, p);
     assert.equal(mine.skipped[0].claimed, true);
     const page = await (await fetch(mine.url)).text();
     assert.match(page, /class="where"/);
