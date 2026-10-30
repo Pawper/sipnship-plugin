@@ -55,6 +55,12 @@ jobs:
     # Every cheap rule, one checkout. Each step names the rule it enforces;
     # the step that failed is the rule that was broken.
     runs-on: RUNS_ON
+    permissions:
+      # The workflow's own, plus actions: write so a failure can stop the run.
+      contents: read
+      issues: write
+      pull-requests: read
+      actions: write
     outputs:
       classes: ${{ steps.classes.outputs.classes }}
     env:
@@ -150,6 +156,14 @@ jobs:
       # A project with data or docs checks of its own adds them here as
       # steps, with "if: contains(steps.classes.outputs.classes, 'data')"
       # (or 'docs'). Never repeat a step above.
+      - name: Stop the rest of this run when this job fails
+        # A pull request's run is red once one job fails; the jobs still
+        # running would only hold runners. "CI passed" still reports red.
+        # Never on main: the full run always finishes.
+        if: failure() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run cancel ${{ github.run_id }} --repo ${{ github.repository }}
 
   app:
     # One install, then everything that needs it. The production build runs
@@ -160,6 +174,12 @@ jobs:
     needs: checks
     if: github.event_name == 'pull_request' && (contains(needs.checks.outputs.classes, 'app') || contains(needs.checks.outputs.classes, 'tests') || contains(needs.checks.outputs.classes, 'other'))
     runs-on: RUNS_ON
+    permissions:
+      # The workflow's own, plus actions: write so a failure can stop the run.
+      contents: read
+      issues: write
+      pull-requests: read
+      actions: write
     steps:
       - uses: actions/checkout@v4
       - name: Install once
@@ -174,6 +194,14 @@ jobs:
       - name: The production build
         if: contains(needs.checks.outputs.classes, 'app') || contains(needs.checks.outputs.classes, 'other')
         run: echo "replace with BUILD_COMMAND"
+      - name: Stop the rest of this run when this job fails
+        # A pull request's run is red once one job fails; the jobs still
+        # running would only hold runners. "CI passed" still reports red.
+        # Never on main: the full run always finishes.
+        if: failure() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run cancel ${{ github.run_id }} --repo ${{ github.repository }}
 
   screens:
     # Each touched screen beside its mock: only on a pull request that
@@ -188,6 +216,12 @@ jobs:
     needs: checks
     if: github.event_name == 'pull_request' && (contains(needs.checks.outputs.classes, 'app') || contains(needs.checks.outputs.classes, 'other'))
     runs-on: RUNS_ON
+    permissions:
+      # The workflow's own, plus actions: write so a failure can stop the run.
+      contents: read
+      issues: write
+      pull-requests: read
+      actions: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -229,6 +263,14 @@ jobs:
           id=$(gh api "$api/${{ github.event.pull_request.number }}/comments" --paginate --jq ".[] | select(.body | startswith(\"$marker\")) | .id" | head -n 1)
           if [ -n "$id" ]; then gh api -X PATCH "$api/comments/$id" -F "body=@$OUT/comment.md" >/dev/null
           else gh api "$api/${{ github.event.pull_request.number }}/comments" -F "body=@$OUT/comment.md" >/dev/null; fi
+      - name: Stop the rest of this run when this job fails
+        # A pull request's run is red once one job fails; the jobs still
+        # running would only hold runners. "CI passed" still reports red.
+        # Never on main: the full run always finishes.
+        if: failure() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run cancel ${{ github.run_id }} --repo ${{ github.repository }}
 
   ci-passed:
     # The one check branch protection requires. It reports once for every
