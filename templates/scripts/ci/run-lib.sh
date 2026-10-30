@@ -12,10 +12,11 @@
 #   outage: ...     a job annotation says no hosted runner picked it up, or a
 #                   job has sat queued for QUEUE_MINUTES (default 5) while
 #                   IDLE_RUNNERS (default 0) of ours were idle
-#   canceled: ...   a job was canceled
 #   failed: a, b    the jobs that failed, by name
+#   pending         a job is queued or running, whatever it was before
+#   canceled: ...   a finished job was canceled with no failed step (the
+#                   caller reads a failed step as "failure" first)
 #   green           every job succeeded or was skipped
-#   pending         still running
 run_verdict() {
   printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v now="$2" -v idle="${3:-0}" -v qmin="${4:-5}" '
     NF >= 3 {
@@ -23,6 +24,10 @@ run_verdict() {
       if (ann ~ /recent account payments have failed|spending limit needs to be increased/) { billing = (billing == "") ? name : billing ", " name; next }
       if (ann ~ /not acquired by runner|no runner|runner.*offline/) { outage = name ": " $5; next }
       if (status == "queued" && started > 0 && (now - started) > qmin * 60 && idle > 0) { outage = name ": queued for " int((now - started) / 60) " minutes while " idle " of our runners were idle"; next }
+      # A job queued or running is pending whatever an earlier state said:
+      # GitHub requeues a job after a runner handoff, and re-running then
+      # throws away the work in flight.
+      if (status != "completed") { pending = 1; next }
       if (conc == "cancelled" || conc == "canceled") { canceled = (canceled == "") ? name : canceled ", " name; next }
       if (conc == "failure" || conc == "timed_out" || conc == "action_required") { failed = (failed == "") ? name : failed ", " name; next }
       if (status != "completed") pending = 1
@@ -30,9 +35,9 @@ run_verdict() {
     END {
       if (billing != "") print "billing: " billing
       else if (outage != "") print "outage: " outage
-      else if (canceled != "") print "canceled: " canceled
       else if (failed != "") print "failed: " failed
       else if (pending) print "pending"
+      else if (canceled != "") print "canceled: " canceled
       else print "green"
     }'
 }

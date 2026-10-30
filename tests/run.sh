@@ -464,6 +464,9 @@ eq "green run" "green" "$(run_verdict "$(printf 'build\tcompleted\tsuccess\t1000
 eq "pending run" "pending" "$(run_verdict "$(printf 'build\tin_progress\t\t1000\t\n')" 2000)"
 eq "failed run names the job" "failed: test, lint" "$(run_verdict "$(printf 'build\tcompleted\tsuccess\t1\t\ntest\tcompleted\tfailure\t1\t\nlint\tcompleted\tfailure\t1\t\n')" 2000)"
 eq "canceled run" "canceled: test" "$(run_verdict "$(printf 'test\tcompleted\tcancelled\t1\t\n')" 2000)"
+eq "a requeued job is pending, never re-run" "pending" "$(run_verdict "$(cat "$root/tests/fixtures/run-jobs-requeued.tsv")" 1793425000)"
+eq "a running job outranks a cancelled sibling" "pending" "$(run_verdict "$(printf 'a\tcompleted\tcancelled\t1\t\nb\tin_progress\t\t1\t\n')" 2000)"
+eq "a failed job outranks a cancelled sibling" "failed: b" "$(run_verdict "$(printf 'a\tcompleted\tcancelled\t1\t\nb\tcompleted\tfailure\t1\t\n')" 2000)"
 eq "outage by annotation" "outage: build: The job was not acquired by Runner of type hosted" "$(run_verdict "$(printf 'build\tqueued\t\t1000\tThe job was not acquired by Runner of type hosted\n')" 1100)"
 eq "a billing refusal is its own verdict, before the outage" "billing: deploy" "$(run_verdict "$(printf 'deploy\tcompleted\tfailure\t1000\tThe job was not started because recent account payments have failed or your spending limit needs to be increased. Please check the Billing & plans section in your settings\nplan\tqueued\t\t1000\tThe job was not acquired by Runner of type hosted\n')" 1100)"
 eq "billing_refused reads the annotation" "yes" "$(billing_refused 'The job was not started because recent account payments have failed or your spending limit needs to be increased.')"
@@ -1073,6 +1076,11 @@ eq "the required check failed" "failed" "$(required_check "$(printf 'CI passed\t
 eq "a project's own required check" "passed" "$(required_check "$(printf 'all green\tcompleted\tsuccess')" 'all green')"
 eq "the summary failing on a cancelled job is not red" "cancelled" "$(rest_rollup_named "$(printf 'app\tcancelled\nclassify\tsuccess\nCI passed\tfailure')")"
 eq "a real failure beside a cancel is red" "red" "$(rest_rollup_named "$(printf 'app\tcancelled\ntests\tfailure\nCI passed\tfailure')")"
+eq "a job whose step failed and then cancelled its run is a failure" "failure" "$(job_outcome cancelled 'success success failure success')"
+eq "a job cancelled with no failed step stays cancelled" "cancelled" "$(job_outcome cancelled 'success skipped')"
+eq "failed-then-cancelled beside cancelled siblings is red, one retry" "red" "$(rest_rollup_named "$(printf 'checks\tsuccess\nplugin\t%s\napp\tcancelled\nCI passed\tfailure' "$(job_outcome cancelled 'success failure success')")")"
+eq "only cancellations keep the every-round re-run" "cancelled" "$(rest_rollup_named "$(printf 'checks\tsuccess\nplugin\t%s\napp\tcancelled\nCI passed\tfailure' "$(job_outcome cancelled 'success')")")"
+eq "the queue reads a cancelled job's steps" "2" "$(grep -c 'job_real_outcome "\$' "$root/templates/scripts/ci/merge-queue.sh")"
 eq "the summary failing alone is red" "red" "$(rest_rollup_named "$(printf 'app\tsuccess\nCI passed\tfailure')")"
 eq "a project's own summary name" "cancelled" "$(rest_rollup_named "$(printf 'web\tcancelled\nall green\tfailure')" 'all green')"
 eq "an issue a member closes is carried" "Closes #64" "$(carried_refs 'An emote per title.
@@ -1205,7 +1213,11 @@ eq "and for a pending required check" "1" "$(grep -c 'is still running; waiting 
 eq "a drain never waits on one pull request" "2" "$(grep -c '\[ -z "\$QUEUE_IN_DRAIN" \] && \[ -z "\${serial_waited:-}" \]' "$root/templates/scripts/ci/merge-queue.sh")"
 eq "--serial waits once for the run its refresh started" "1" "$(grep -c 'serial_refreshed=1' "$root/templates/scripts/ci/merge-queue.sh")"
 eq "an unknown mergeable state is read again" "1" "$(grep -c 'while \[ "\$o_mw" = UNKNOWN \]' "$root/templates/scripts/ci/merge-queue.sh")"
-eq "CI may read pull requests" "1" "$(grep -c 'pull-requests: read' "$root/templates/.github/workflows/ci.yml")"
+eq "CI may read pull requests" "1" "$(grep -c '^  pull-requests: read' "$root/templates/.github/workflows/ci.yml")"
+ci_job() { awk -v j="  $1:" '$0 == j {f=1; next} /^  [a-z-]*:$/ {f=0} f' "$root/templates/.github/workflows/ci.yml"; }
+ci_stops() { ci_job "$1" | grep -c -e '^      actions: write$' -e "if: failure() && github.event_name == 'pull_request'" -e 'gh run cancel \${{ github.run_id }}'; }
+eq "a failed pull-request job stops the rest of its run" "3 3 3" "$(ci_stops checks) $(ci_stops app) $(ci_stops screens)"
+eq "the full run on main is never stopped" "0" "$(ci_stops full)"
 eq "the spec, design and mock checks read the live body" "3" "$(grep -c 'SPEC_TEXT=$(gh api' "$root/templates/.github/workflows/ci.yml")"
 eq "a body with neither carries nothing" "" "$(carried_refs 'Just a copy fix.')"
 eq "the batch body carries its members' lines" "Carried from the members:

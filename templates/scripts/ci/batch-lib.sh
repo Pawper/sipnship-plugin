@@ -211,6 +211,18 @@ required_check() {
     END { print found ? state : "missing" }'
 }
 
+# job_outcome CONCLUSION STEP_CONCLUSIONS
+# A pull-request job whose own step failed cancels the rest of its run, and
+# GitHub then shows that job as cancelled too. Read it as the failure it
+# is: a cancelled job with a failed step is "failure", so the run gets the
+# one retry a failure gets, never the every-round re-run of a cancellation.
+job_outcome() {
+  case "$1" in
+    cancelled|canceled) case " $2 " in *" failure "*) echo failure; return ;; esac ;;
+  esac
+  echo "$1"
+}
+
 # rest_rollup_named LINES [SUMMARY]
 # LINES is "name<TAB>outcome" per check run. The summary check (SUMMARY,
 # default "CI passed") fails whenever a job it waits on was cancelled, so a
