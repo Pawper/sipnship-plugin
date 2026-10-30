@@ -122,6 +122,7 @@ scripts/ci/batch-lib.sh d9ab50fcdd5c44d58d3233fdea856b30ef2e9cbb
 scripts/ci/batch-lib.sh da8fb07a6d74659ece3ae8e7300911169113b0f8
 scripts/ci/batch-lib.sh dd108a36f64d49b43913f116a623acf64b63dc54
 scripts/ci/batch-lib.sh e1394a9e7aec03cd1aea03a63bd79bda837cbabe
+scripts/ci/batch-lib.sh e1b768745ba03c5d95830eaddc45a9ba89722384
 scripts/ci/batch-lib.sh e22ae94adeebc81e929d8176ff1a9dbb989f801c
 scripts/ci/classify.sh ffce692eabc9f10dae99261c194270f388824ca3
 scripts/ci/client-env-check.sh 0c054b2adbe91f3418b4e3027bfa5edc6ac6684e
@@ -130,6 +131,7 @@ scripts/ci/deploy-gate.sh 2f4f9d68d4057094a6f8ed81d69ef169a8b3a1e8
 scripts/ci/deploy-gate.sh 3e1bd682d53c0cb5b34996c126099fd4673dbc45
 scripts/ci/deploy-gate.sh 7f973760df9852f6f29b617b3ca554e662cd378b
 scripts/ci/deploy-gate.sh 9cfba0eed147fc42d36e8babbd7af0bba0c016ea
+scripts/ci/deploy-gate.sh d8ce1c7ba166bc21a7a1fb35d4ae8e6ae5097c84
 scripts/ci/deploy-health.sh 2da3e2f14f6305abf97b13fc3e52c0902a93388b
 scripts/ci/deploy-health.sh 3ae0a191ac1f3c21108344f8133b4234cb3edbf1
 scripts/ci/deploy-health.sh 80e78147d885a33307203782df32a7dad7f829d9
@@ -211,6 +213,7 @@ scripts/ci/merge-queue.sh aa4c4a71da24ca57dd1539fa33afe223f8d9a85a
 scripts/ci/merge-queue.sh ab0f502422fcdad0f3a30dd0fd98b071b3bdd815
 scripts/ci/merge-queue.sh b88828286224a777318a0dea6f07a6c290e68c91
 scripts/ci/merge-queue.sh ba36e239add4308a57e31d422d797794bac7e723
+scripts/ci/merge-queue.sh bc5239e3dd6dea273225f8164e56b64375d654d0
 scripts/ci/merge-queue.sh bcc63e4d2f7532449d5151be608d7856887ed1d0
 scripts/ci/merge-queue.sh c1e4ed3c3abd85e447290e80c6181d94aba97031
 scripts/ci/merge-queue.sh c1f7882f9d0f2205addbb3f7471dc8d5cb321742
