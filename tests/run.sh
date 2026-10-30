@@ -1606,25 +1606,38 @@ mkdir -p "$kr/plugin/scripts/sync" "$kr/plugin/templates/a"
 cp "$root/scripts/sync/known-hashes.sh" "$root/scripts/sync/sync-lib.sh" "$kr/plugin/scripts/sync/"
 printf 'a/x.sh\n' > "$kr/plugin/templates/OWNED.txt"
 printf 'one\n' > "$kr/plugin/templates/a/x.sh"
-(cd "$kr" && sh plugin/scripts/sync/known-hashes.sh) > "$kr/plugin/templates/KNOWN.txt"
+(cd "$kr" && sh plugin/scripts/sync/known-hashes.sh --all) > "$kr/plugin/templates/KNOWN.txt"
 printf 'notes\n' > "$kr/README.md"
 git -C "$kr" add -A; git -C "$kr" commit -q -m start
 git -C "$kr" checkout -q -b one; printf 'one\nfrom one\n' > "$kr/plugin/templates/a/x.sh"; git -C "$kr" commit -q -am one
 git -C "$kr" checkout -q main; git -C "$kr" checkout -q -b two; printf 'from two\none\n' > "$kr/plugin/templates/a/x.sh"; git -C "$kr" commit -q -am two
 git -C "$kr" checkout -q main; git -C "$kr" checkout -q -b other; printf 'more notes\n' > "$kr/README.md"; git -C "$kr" commit -q -am other
 git -C "$kr" checkout -q -b batch main
-git -C "$kr" merge -q --no-ff --no-edit one; kr_good=$(git -C "$kr" rev-parse HEAD)
+kr_start=$(git -C "$kr" rev-parse HEAD)
+git -C "$kr" merge -q --no-ff --no-edit one; known_refresh "$kr" "$kr_start" >/dev/null; kr_good=$(git -C "$kr" rev-parse HEAD)
 git -C "$kr" merge -q --no-ff --no-edit two
 kr_out=$(known_refresh "$kr" "$kr_good")
 eq "a merge that joins template changes gets a refresh commit" "Refresh the known template hashes" "$(git -C "$kr" log -1 --format=%s)"
 eq "the queue says it refreshed" "refreshed the known template hashes (1 template(s) changed in the merge)" "$kr_out"
-eq "the refresh is byte-identical to the script's output" "same" "$( (cd "$kr" && sh plugin/scripts/sync/known-hashes.sh) | cmp -s - "$kr/plugin/templates/KNOWN.txt" && echo same)"
+eq "the refresh is byte-identical to the full rebuild" "same" "$( (cd "$kr" && sh plugin/scripts/sync/known-hashes.sh --all) | cmp -s - "$kr/plugin/templates/KNOWN.txt" && echo same)"
+eq "the script without a range or --all refuses" "2" "$( (cd "$kr" && sh plugin/scripts/sync/known-hashes.sh >/dev/null 2>&1); echo $?)"
 eq "the joined version is known" "1" "$(grep -c "^a/x.sh $(norm_hash "$(cat "$kr/plugin/templates/a/x.sh")")\$" "$kr/plugin/templates/KNOWN.txt")"
 kr_before=$(git -C "$kr" rev-parse HEAD)
 git -C "$kr" merge -q --no-ff --no-edit other
 kr_merge=$(git -C "$kr" rev-parse HEAD)
 eq "a merge that changes no template gets no commit" "$kr_merge " "$(git -C "$kr" rev-parse HEAD) $(known_refresh "$kr" "$kr_before")"
 eq "a project without the plugin's sources is left alone" "" "$(known_refresh "$gp" HEAD 2>/dev/null)"
+# Two template changes in one range (the rooftop-garden app's watering
+# reminder edited twice on one branch, merged at once): both versions are
+# known, and the list matches the full rebuild byte for byte.
+git -C "$kr" checkout -q -b water batch
+printf 'water the tomatoes at six\n' > "$kr/plugin/templates/a/x.sh"; git -C "$kr" commit -q -am "water at six"
+printf 'water the tomatoes at seven\n' > "$kr/plugin/templates/a/x.sh"; git -C "$kr" commit -q -am "water at seven"
+git -C "$kr" checkout -q batch; kr_before=$(git -C "$kr" rev-parse HEAD)
+git -C "$kr" merge -q --no-ff --no-edit water
+known_refresh "$kr" "$kr_before" >/dev/null
+eq "both versions in the range are known" "2" "$(grep -c -e "^a/x.sh $(norm_hash 'water the tomatoes at six')\$" -e "^a/x.sh $(norm_hash 'water the tomatoes at seven')\$" "$kr/plugin/templates/KNOWN.txt")"
+eq "two changes in the range match the full rebuild" "same" "$( (cd "$kr" && sh plugin/scripts/sync/known-hashes.sh --all) | cmp -s - "$kr/plugin/templates/KNOWN.txt" && echo same)"
 
 # Release bump: one script sets the version everywhere
 rb_pv=$(sed -n 's/^  "version": *"\([^"]*\)".*/\1/p' "$root/.claude-plugin/plugin.json")

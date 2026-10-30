@@ -42,7 +42,7 @@ swap "$plugin/README.md" '/img\.shields\.io\/badge\/version-/{s/alt="Version [^"
 
 if [ "$known" = yes ]; then
   echo "Regenerating templates/KNOWN.txt from history; this takes about three minutes."
-  (cd "$repo" && sh plugin/scripts/sync/known-hashes.sh > plugin/templates/KNOWN.txt.new && cat plugin/templates/KNOWN.txt.new > plugin/templates/KNOWN.txt && rm -f plugin/templates/KNOWN.txt.new)
+  (cd "$repo" && sh plugin/scripts/sync/known-hashes.sh --all > plugin/templates/KNOWN.txt.new && cat plugin/templates/KNOWN.txt.new > plugin/templates/KNOWN.txt && rm -f plugin/templates/KNOWN.txt.new)
 fi
 
 echo "Version is $version. Two commands are left:"

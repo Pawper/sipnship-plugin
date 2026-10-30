@@ -701,8 +701,8 @@ waits_append() {
 # known_refresh DIR FROM: after a merge in the checkout at DIR (FROM is the
 # commit before the merge), when the merge changed a plugin-owned template
 # (anything under plugin/templates/, which holds every path OWNED.txt
-# lists), write the known-hashes list with the plugin's own script and
-# commit it on the branch when it differs from the committed one. Two pull
+# lists), add the versions FROM..HEAD made to the known-hashes list with
+# the plugin's own script (seconds, never all of history) and commit it on the branch when it differs from the committed one. Two pull
 # requests that change one template, merged together, make a version
 # neither hashed; the list is derived, never refreshed by hand. Prints one
 # line when it committed, nothing otherwise. A checkout without the
@@ -712,10 +712,10 @@ known_refresh() {
   [ -f "$kr_dir/plugin/scripts/sync/known-hashes.sh" ] && [ -f "$kr_dir/plugin/templates/OWNED.txt" ] || return 0
   kr_n=$(git -C "$kr_dir" diff --name-only "$2" HEAD -- plugin/templates/ 2>/dev/null | grep -vx 'plugin/templates/KNOWN.txt' | grep -c .) || true
   [ "${kr_n:-0}" -gt 0 ] || return 0
-  if ! (cd "$kr_dir" && sh plugin/scripts/sync/known-hashes.sh) > "$kr_dir/plugin/templates/KNOWN.txt" 2>/dev/null; then
-    git -C "$kr_dir" checkout -q -- plugin/templates/KNOWN.txt 2>/dev/null || true
-    return 0
-  fi
+  # The script reads the committed list, so it writes outside the checkout first.
+  kr_new=$(mktemp) || return 0
+  (cd "$kr_dir" && sh plugin/scripts/sync/known-hashes.sh "$2..HEAD") > "$kr_new" 2>/dev/null || return 0
+  mv "$kr_new" "$kr_dir/plugin/templates/KNOWN.txt" || return 0
   git -C "$kr_dir" diff --quiet -- plugin/templates/KNOWN.txt && return 0
   git -C "$kr_dir" add plugin/templates/KNOWN.txt >/dev/null 2>&1 || return 0
   git -C "$kr_dir" commit -q -m "Refresh the known template hashes" >/dev/null 2>&1 || return 0
