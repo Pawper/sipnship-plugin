@@ -92,7 +92,8 @@ const os = require('os');
 const FIRST_PORT = 7777;
 
 function claimsFile(home) {
-  return path.join(home || os.homedir(), '.sipnship', 'console-ports.json');
+  if (home) return path.join(home, '.sipnship', 'console-ports.json');
+  return path.join(process.env.SIPNSHIP_HOME || path.join(os.homedir(), '.sipnship'), 'console-ports.json');
 }
 
 function folderKey(p) {

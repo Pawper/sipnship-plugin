@@ -511,6 +511,31 @@ deploy_gate() {
   fi
 }
 
+# deploy_waits_for NUMBER LABELS SKIP
+# "yes" when a green pull request may hold the deploy: the queue can still
+# merge it now. A pull request this drain tried and left open (dropped for a
+# conflict or left out; SKIP is their numbers, space-separated) or one
+# labelled blocked never holds a deploy: once, a pull request the same
+# drain had just dropped held every deploy for most of an hour. LABELS is
+# comma-separated.
+deploy_waits_for() {
+  case " $3 " in *" $1 "*) echo no; return 0 ;; esac
+  case ",$(printf '%s' "$2" | tr 'A-Z' 'a-z')," in *blocked*) echo no; return 0 ;; esac
+  echo yes
+}
+
+# deploy_hold_bound HELD_DRAINS LAST_EPOCH NOW MAX_HOLD_MIN
+# Why a deploy held for green pull requests goes anyway, or nothing: after
+# two drains in a row held it, or when the last deploy is older than
+# MAX_HOLD_MIN (QUEUE_DEPLOY_MAX_HOLD, default 30). With steady work there is
+# always one more green pull request, so a hold without a bound never ends.
+deploy_hold_bound() {
+  if [ "${1:-0}" -ge 2 ]; then echo "held across $1 drains"; return 0; fi
+  if [ -n "$2" ] && [ $(( $3 - $2 )) -ge $(( ${4:-30} * 60 )) ]; then
+    echo "last deploy $(( ($3 - $2) / 60 )) minutes ago, over the ${4:-30}-minute bound"
+  fi
+}
+
 # held_note N
 # The line for N green pull requests on hold, which the gate does not wait
 # for because a drain never lands them; nothing when N is 0.
