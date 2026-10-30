@@ -345,7 +345,7 @@ bm_dir="$root/tests/fixtures/batch-moments"
 bm_json() { publish_json "" "$1" "" "${2:-}" "" "" "" "$(printf 'abc1234\tgreen')" "" batch "" "" "$(printf 'a\nb\nc')" 2026-10-29T19:45:00Z; }
 bm_q() { node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const j=JSON.parse(s);console.log(eval(process.argv[1]))})' "$1"; }
 bm_cut=$(batch_from_state "$(cat "$bm_dir/cut.state")" "" "" "" "")
-eq "cut: the members in order, the anchor first, no pull request yet" "null 249,250,253 249 cut Water the beds on a schedule planned" "$(bm_json "$bm_cut" | bm_q '[j.batch.number, j.batch.members, j.batch.anchor, j.batch.stage, j.batch.pulls[0].title, j.batch.pulls[2].state].join(" ")')"
+eq "cut: the members in order, the anchor first, no pull request yet" "null 249,250,253 249 cut Water the beds on a schedule planned" "$(bm_json "$bm_cut" | bm_q '[String(j.batch.number), j.batch.members, j.batch.anchor, j.batch.stage, j.batch.pulls[0].title, j.batch.pulls[2].state].join(" ")')"
 eq "cut: the builder reads that a batch is being built" "Building a batch of 3 pull requests on the queue's own machine (#249, #250 and #253)." "$(publish_say "" "$bm_cut" "" "" "" "" "" batch "" | sed -n 1p)"
 eq "a member merged into the batch says so" "merged planned building" "$(bm_json "$(batch_from_state "$(cat "$bm_dir/merged.state")" "" "" "" "")" | bm_q '[j.batch.pulls[0].state, j.batch.pulls[1].state, j.batch.stage].join(" ")')"
 bm_drop=$(batch_from_state "$(cat "$bm_dir/dropped.state")" "" "" "" "")
@@ -353,12 +353,12 @@ eq "a dropped member leaves the members and is named with why" "249,253 250 Show
 bm_test=$(batch_from_state "$(cat "$bm_dir/testing.state")" 5 8 12 runner-2)
 eq "testing: the pull request, the run, progress and the runner" "260 9001 5 8 12 runner-2 testing" "$(bm_json "$bm_test" | bm_q '[j.batch.number, j.batch.run, j.batch.done, j.batch.total, j.batch.minutesLeft, j.batch.runner, j.batch.stage].join(" ")')"
 eq "testing: the builder reads how far through, on which runner" "Testing a batch of 3 pull requests together (#249, #250 and #253); 62% through the checks, about 12 minutes left, on runner-2." "$(publish_say "" "$bm_test" "" "" "" "" "" batch "" | sed -n 1p)"
-eq "testing: the body lists the members with their titles" "  - #250 Show frost warnings (merged)" "$(publish_body "a" "" "$bm_test" "" "{}" no | grep '#250')"
+eq "testing: the body lists the members with their titles" "  - #250 Show frost warnings (merged)" "$(publish_body "a" "" "$bm_test" "" "{}" no | grep '^  - #250')"
 bm_land=$(batch_from_state "$(cat "$bm_dir/landed.state")" "" "" "" "")
 eq "landed: the batch says it landed" "A batch of 3 pull requests (#249, #250 and #253) landed on main." "$(publish_say "" "$bm_land" "" "" "" "" "" batch "" | sed -n 1p)"
 bm_cl=$(awk -F'\t' 'NF >= 2 { printf "%s\t%s\t%s\t%s\t%s\tyes\n", $1, $2, $3, $4, $5 }' "$bm_dir/clashes")
 eq "a clash record names the files, the other change and why, never a flag" "dates.ts|2|Water the beds on a schedule|249|conflicts with #249, which goes in this batch|true" "$(bm_json "$bm_land" "$bm_cl" | bm_q '[j.clashes[0].file.split("/").pop(), j.clashes[0].fileCount, j.clashes[0].withTitle, j.clashes[0].with, j.clashes[0].why, j.clashes[0].told].join("|")')"
-eq "the queue publishes at each moment of a batch" "4" "$(grep -c 'batch_moment cut\|batch_moment building\|batch_moment testing\|batch_moment landed' "$root/templates/scripts/ci/merge-queue.sh")"
+eq "the queue publishes at each moment of a batch" "5" "$(grep -c 'batch_moment cut\|batch_moment building\|batch_moment testing\|batch_moment landed' "$root/templates/scripts/ci/merge-queue.sh")"
 eq "what needs a person is said with its error line" "Needs you: #14 failed CI twice: FAIL  the chime rings." "$(publish_say "" "" "" "" "$(printf '14\tfailed CI twice\tits checks stay red\tFAIL  the chime rings')" "" "" idle "" | sed -n 3p)"
 eq "no runner online is said" "No runner is online, so nothing can be tested; start one." "$(publish_say "" "" "" "" "" "$(printf '0\t0\t2\t15')" "" idle "" | sed -n 3p)"
 eq "paused says until when" "The scheduled queue is paused until 2026-10-22T20:00:00Z; a drain run by hand still runs." "$(publish_say "" "" "" "" "" "" "" paused 2026-10-22T20:00:00Z | sed -n 1p)"
