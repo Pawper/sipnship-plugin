@@ -140,7 +140,8 @@ publish_say() {
     s2="$s2 $(printf '%s\n' "$ps_clashes" | sed '/^$/d' | while IFS= read -r pc_l; do
       pc_a=$(printf '%s' "$pc_l" | cut -f1); pc_w=$(printf '%s' "$pc_l" | cut -f2); pc_t=$(printf '%s' "$pc_l" | cut -f3); pc_f=$(printf '%s' "$pc_l" | cut -f4); pc_told=$(printf '%s' "$pc_l" | cut -f6)
       if [ "$pc_w" = main ]; then pc_other=main; elif [ -n "$pc_t" ]; then pc_other="\"$pc_t\" (#$pc_w)"; else pc_other="#$pc_w"; fi
-      printf '#%s was left out: it changes %s, which %s changes too%s.\n' "$pc_a" "$(files_said "$pc_f")" "$pc_other" "$( [ "$pc_told" = yes ] && printf ', and its owner has been told')"
+      if [ "$pc_told" = yes ]; then pc_toldw=', and its owner has been told'; else pc_toldw=''; fi
+      printf '#%s was left out: it changes %s, which %s changes too%s.\n' "$pc_a" "$(files_said "$pc_f")" "$pc_other" "$pc_toldw"
     done | paste -sd' ' -)"
   fi
   # 3. Needs a person.
