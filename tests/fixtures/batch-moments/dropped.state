@@ -1,0 +1,8 @@
+branch	batch/2026-10-29-1
+member	249	Water the beds on a schedule	planned
+member	250	Show frost warnings	planned
+member	253	Name each bed	planned
+stage	cut
+member	249	Water the beds on a schedule	merged
+stage	building
+dropped	250	Show frost warnings	dropped: conflicts with the batch so far
