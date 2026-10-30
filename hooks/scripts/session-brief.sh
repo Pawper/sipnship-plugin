@@ -166,14 +166,13 @@ fi
 # call, made only in such a project.
 if grep -qs 'self-hosted' .github/workflows/*.yml 2>/dev/null && command -v gh >/dev/null 2>&1; then
   rr=$(run_bounded 5 gh api 'repos/{owner}/{repo}/actions/runners' --jq '.runners[] | [.name, .status, (.busy | tostring)] | @tsv' 2>/dev/null | tr -d '\r' || true)
-  rr_total=$(printf '%s\n' "$rr" | grep -c . || true); rr_online=$(printf '%s\n' "$rr" | awk -F'\t' '$2 == "online"' | grep -c . || true)
-  if [ -f scripts/ci/run-lib.sh ]; then . scripts/ci/run-lib.sh; fi
-  rr_want=$(runner_count "$(cat .claude/runners.json 2>/dev/null)" 2>/dev/null || echo 3)
-  if [ "${rr_total:-0}" -gt 0 ] && [ "$rr_online" = 0 ]; then
-    add "Runners: none of the $rr_total self-hosted runners is online, so CI and the merge queue will wait. Start one (scripts/ci/RUNNERS.md)."
-  elif [ "${rr_total:-0}" -gt 0 ] && { [ "$rr_online" -lt "$rr_total" ] || [ "$rr_total" -lt "$rr_want" ]; } && command -v runner_status >/dev/null 2>&1; then
-    add "Runners: $(runner_status "$rr" "$rr_want")."
-  fi
+  # Judged from the registered runners ($rr, read once for this run) and
+  # this machine's cores; the repository holds no count.
+  rr_cores=$(nproc 2>/dev/null || echo "${NUMBER_OF_PROCESSORS:-0}")
+  rr_line=$(brief_runner_line "$rr" "${rr_cores:-0}")
+  [ -n "$rr_line" ] && add "Runners: $rr_line"
+  rr_key=$(brief_runner_key_line "$(cat .claude/runners.json 2>/dev/null)")
+  [ -n "$rr_key" ] && add "Runners: $rr_key"
   # What the runner watch on this machine last found, if it is running.
   rw_key=$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null | tr '/' '-')
   rw_state="${SIPNSHIP_HOME:-$HOME/.sipnship}/runner-watch/$rw_key.state"
