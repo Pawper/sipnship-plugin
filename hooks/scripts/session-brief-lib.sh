@@ -294,3 +294,33 @@ waits_line() {
 machine_brief_line() {
   printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' 'NF >= 5 && $2 + 0 > 0 && $3 + 0 > int($2 / 2) { print $5; exit }'
 }
+
+# brief_runner_line RUNNERS CORES
+# RUNNERS is the repository's registered self-hosted runners, one per line,
+# "name<TAB>status<TAB>busy", from one REST call the brief makes per run.
+# Nothing when every registered runner is online, at least two are, and
+# they sit within one per two cores; otherwise one plain line.
+brief_runner_line() {
+  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v cores="${2:-0}" '
+    NF >= 2 { total++; if ($2 == "online") on++; else off = off (off == "" ? "" : ", ") $1 " " $2 }
+    END {
+      if (total == 0) exit
+      allow = int(cores / 2); over = (cores + 0 > 0 && total > allow)
+      if (on == 0) { printf "none of the %d self-hosted runners is online, so CI and the merge queue will wait. Start one (scripts/ci/RUNNERS.md).\n", total; exit }
+      if (on == total && on >= 2 && !over) exit
+      printf "%d of %d online", on, total
+      if (off != "") printf "; %s", off
+      if (on < 2) printf "; one runner makes every job wait for the last"
+      if (over) printf "; %d cores allow %d (one per two cores)", cores, allow
+      printf ".\n"
+    }'
+}
+
+# brief_runner_key_line RUNNERS_JSON
+# One line when .claude/runners.json still holds the old "runners" count,
+# which nothing reads any more; nothing otherwise.
+brief_runner_key_line() {
+  printf '%s\n' "$1" | tr -d '\r' | grep -q '"runners"[[:space:]]*:' &&
+    echo 'the "runners" key in .claude/runners.json is no longer read; the registered runners and the cores are. Remove it when you next sync.'
+  return 0
+}

@@ -138,32 +138,40 @@ runner_problems() {
     END { if (total > 0 && on < 2) printf "Only %d of %d self-hosted runner(s) online; one runner makes every job wait for the last.\n", on, total }'
 }
 
-# runner_count RUNNERS_JSON
-# The runners a project wants, from .claude/runners.json ("runners": N);
-# 3 when the file is missing or says nothing: two for CI side by side and
-# one a drain may hold while it waits.
-runner_count() {
-  rc=$(printf '%s\n' "$1" | tr -d '\r' | sed -n 's/.*"runners"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' | head -n 1)
-  echo "${rc:-3}"
+# runner_key_note RUNNERS_JSON
+# The repository holds no runner count: the runners GitHub has registered
+# and the machine's cores are the facts. A .claude/runners.json that still
+# says "runners": N gets one line saying the key is no longer read.
+runner_key_note() {
+  printf '%s\n' "$1" | tr -d '\r' | grep -q '"runners"[[:space:]]*:' &&
+    echo 'the "runners" key in .claude/runners.json is no longer read; the registered runners and the cores are. Remove it when you next sync.'
+  return 0
 }
 
-# runner_status RUNNERS WANT
-# RUNNERS is one self-hosted runner per line, "name<TAB>status<TAB>busy".
-# One line for the brief and the doctor: "3 of 3 online", or "2 of 3
-# online; sipnship-3 offline", or "2 of 3 wanted are registered; 2 online".
+# machine_cores: this machine's logical processors; 0 when unknown.
+machine_cores() {
+  mc=$(nproc 2>/dev/null || echo "${NUMBER_OF_PROCESSORS:-0}")
+  echo "${mc:-0}"
+}
+
+# runner_status RUNNERS [CORES]
+# RUNNERS is one self-hosted runner per line, "name<TAB>status<TAB>busy",
+# as GitHub has them registered. One line for the brief and the doctor:
+# "3 of 3 online", or "2 of 3 online; sipnship-3 offline". With CORES, a
+# count past the rule (one runner per two cores) says so.
 runner_status() {
-  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v want="${2:-3}" '
+  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v cores="${2:-0}" '
     NF >= 2 { total++; if ($2 == "online") on++; else off = off (off == "" ? "" : ", ") $1 " " $2 }
     END {
-      if (total == 0) { printf "no runner registered; %d wanted\n", want; exit }
-      if (total < want) printf "%d of %d wanted are registered; %d online", total, want, on
-      else printf "%d of %d online", on, total
+      if (total == 0) { printf "no runner registered\n"; exit }
+      printf "%d of %d online", on, total
       if (off != "") printf "; %s", off
+      if (cores + 0 > 0 && total > int(cores / 2)) printf "; %d cores allow %d (one per two cores)", cores, int(cores / 2)
       printf "\n"
     }'
 }
 
-# load_verdicts SAMPLE WANT
+# load_verdicts SAMPLE
 # SAMPLE is one line: "cpu_pct<TAB>mem_pct<TAB>disk_free_gb<TAB>jobs_running
 # <TAB>wait_min<TAB>runners_here<TAB>cores" (wait_min: how long jobs waited
 # for a runner on average lately; runners_here: every project's runners on
@@ -171,7 +179,7 @@ runner_status() {
 # builder's words; nothing when the machine is fine. The ids let the watch
 # say a condition once when it starts and once when it ends.
 load_verdicts() {
-  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v want="${2:-3}" '
+  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' '
     NF >= 7 {
       cpu = $1 + 0; mem = $2 + 0; disk = $3 + 0; jobs = $4 + 0; wait = $5 + 0; here = $6 + 0; cores = $7 + 0
       if (wait >= 5 && cpu < 50) printf "idle-wait|jobs waited %d minutes on average and the processor was %d%% busy; one more runner would help\n", wait, cpu

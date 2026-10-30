@@ -20,7 +20,6 @@ print_only=no; [ "$1" = --print ] && print_only=yes
 command -v gh >/dev/null 2>&1 || { echo "gh is not installed; the watch needs it to read the runners." >&2; exit 2; }
 repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null || git remote get-url origin 2>/dev/null | sed 's#.*github.com[:/]##; s#\.git$##')
 [ -n "$repo" ] || { echo "Not in a GitHub repository." >&2; exit 2; }
-want=$(runner_count "$(cat .claude/runners.json 2>/dev/null)")
 home=${SIPNSHIP_HOME:-$HOME/.sipnship}
 dir="$home/runner-watch"; mkdir -p "$dir" 2>/dev/null || true
 key=$(printf '%s' "$repo" | tr '/' '-')
@@ -28,7 +27,6 @@ now=$(date +%s)
 
 # 1. The runners, as GitHub sees them.
 runners=$(gh api "repos/$repo/actions/runners" --jq '.runners[] | [.name, .status, (.busy | tostring)] | @tsv' 2>/dev/null | tr -d '\r')
-status=$(runner_status "$runners" "$want")
 jobs=$(printf '%s\n' "$runners" | awk -F'\t' '$3 == "true"' | grep -c . || true)
 
 # 2. Runs queued too long, and how long jobs waited for a runner lately.
@@ -65,12 +63,16 @@ cpu=$(printf '%s' "$m" | cut -f1); mem=$(printf '%s' "$m" | cut -f2); disk=$(pri
 # job's worker process), and what one runner per two cores allows.
 mline=$(machine_line "${cores:-0}" "${here:-0}" "${busy:-0}")
 sample=$(printf '%s\t%s\t%s\t%s\t%s\t%s\t%s' "${cpu:-0}" "${mem:-0}" "${disk:-0}" "$jobs" "$wait_min" "${here:-0}" "${cores:-0}")
+# The registered runners against this machine's cores; no count in the
+# repository.
+status=$(runner_status "$runners" "${cores:-0}")
 
-# 4. What holds now.
-verdicts=$(load_verdicts "$sample" "$want")
+# 4. What holds now. Whether jobs waited while the processor idled is the
+# signal for one more runner; it comes from load_verdicts.
+verdicts=$(load_verdicts "$sample")
 offline=$(printf '%s\n' "$runners" | awk -F'\t' 'NF >= 2 && $2 != "online" { printf "offline-%s|runner %s is %s\n", $1, $1, $2 }')
-total=$(printf '%s\n' "$runners" | grep -c . || true)
-short=""; [ "$total" -lt "$want" ] 2>/dev/null && short="short|$status (add one: scripts/ci/add-runner.ps1)"
+online=$(printf '%s\n' "$runners" | awk -F'\t' '$2 == "online"' | grep -c . || true)
+short=""; [ "$online" -lt 2 ] 2>/dev/null && short="short|$status; one runner makes every job wait for the last (add one: scripts/ci/add-runner.ps1)"
 stuckline=""; [ -n "$stuck" ] && stuckline="stuck|$(printf '%s\n' "$stuck" | grep -c .) run(s) queued for more than ten minutes; no runner is picking them up"
 now_lines=$(printf '%s\n%s\n%s\n%s\n' "$verdicts" "$offline" "$short" "$stuckline" | sed '/^$/d')
 
