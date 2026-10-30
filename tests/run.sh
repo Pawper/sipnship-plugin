@@ -484,6 +484,14 @@ eq "the log grows one line at a time" "7" "$(printf '%s\n' "$flog" | wc -l | tr 
 eq "offenders: failed then passed, twice, with their PRs" "2	src/preview.test.tsx > renders	41,42" "$(flaky_offenders "$flog" 2)"
 eq "one flake is not yet an offender, a plain failure never is" "1	src/other.test.ts > once	43
 2	src/preview.test.tsx > renders	41,42" "$(flaky_offenders "$flog" 1 | sort -t'	' -k2)"
+flog2=$(flaky_log_add '' 2026-10-29 51 'console.test.js' failed)
+flog2=$(flaky_log_add "$flog2" 2026-10-29 51 'console.test.js' failed)
+flog2=$(flaky_log_add "$flog2" 2026-10-29 51 'console.test.js' passed)
+eq "two failures before a pass on one pull request are two flakes" "2	console.test.js	51" "$(flaky_offenders "$flog2" 2)"
+flog2=$(flaky_log_add "$flog2" 2026-10-29 52 'console.test.js' failed)
+flog2=$(flaky_log_add "$flog2" 2026-10-29 52 'console.test.js' passed)
+flog2=$(flaky_log_add "$flog2" 2026-10-29 52 'console.test.js' passed)
+eq "failures add up across pull requests, a second pass adds none" "3	console.test.js	51,52" "$(flaky_offenders "$flog2" 2)"
 eq "main in flight" "yes" "$(main_in_flight "$(printf '1\tmain\tin_progress\tpush\n2\tfeature\tqueued\tpull_request\n')")"
 eq "main quiet" "no" "$(main_in_flight "$(printf '1\tmain\tcompleted\tpush\n2\tfeature\tin_progress\tpull_request\n')")"
 
