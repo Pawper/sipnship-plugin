@@ -1061,6 +1061,11 @@ eq "the required check failed" "failed" "$(required_check "$(printf 'CI passed\t
 eq "a project's own required check" "passed" "$(required_check "$(printf 'all green\tcompleted\tsuccess')" 'all green')"
 eq "the summary failing on a cancelled job is not red" "cancelled" "$(rest_rollup_named "$(printf 'app\tcancelled\nclassify\tsuccess\nCI passed\tfailure')")"
 eq "a real failure beside a cancel is red" "red" "$(rest_rollup_named "$(printf 'app\tcancelled\ntests\tfailure\nCI passed\tfailure')")"
+eq "a job whose step failed and then cancelled its run is a failure" "failure" "$(job_outcome cancelled 'success success failure success')"
+eq "a job cancelled with no failed step stays cancelled" "cancelled" "$(job_outcome cancelled 'success skipped')"
+eq "failed-then-cancelled beside cancelled siblings is red, one retry" "red" "$(rest_rollup_named "$(printf 'checks\tsuccess\nplugin\t%s\napp\tcancelled\nCI passed\tfailure' "$(job_outcome cancelled 'success failure success')")")"
+eq "only cancellations keep the every-round re-run" "cancelled" "$(rest_rollup_named "$(printf 'checks\tsuccess\nplugin\t%s\napp\tcancelled\nCI passed\tfailure' "$(job_outcome cancelled 'success')")")"
+eq "the queue reads a cancelled job's steps" "2" "$(grep -c 'job_real_outcome "\$' "$root/templates/scripts/ci/merge-queue.sh")"
 eq "the summary failing alone is red" "red" "$(rest_rollup_named "$(printf 'app\tsuccess\nCI passed\tfailure')")"
 eq "a project's own summary name" "cancelled" "$(rest_rollup_named "$(printf 'web\tcancelled\nall green\tfailure')" 'all green')"
 eq "an issue a member closes is carried" "Closes #64" "$(carried_refs 'An emote per title.

@@ -231,8 +231,23 @@ pr_tsv() {
   cat "$pt_f" 2>/dev/null || true
 }
 pr_field() { pr_tsv "$1" | cut -f"$2" | tr -d '\r'; }
+# job_real_outcome JOB_ID CONCLUSION: a cancelled job whose own step failed
+# is a failure (job_outcome); one REST call, only for a cancelled job.
+job_real_outcome() {
+  case "$2" in
+    cancelled|canceled) job_outcome "$2" "$(gh api "repos/{owner}/{repo}/actions/jobs/$1" --jq '[.steps[]?.conclusion // empty] | join(" ")' 2>/dev/null)" ;;
+    *) echo "$2" ;;
+  esac
+}
+# check_lines SHA: "name<TAB>outcome" per check run, with job_real_outcome.
+check_lines() {
+  gh api "repos/{owner}/{repo}/commits/$1/check-runs?per_page=100" --jq '.check_runs[] | "\(.name)\t\(.conclusion // .status)\t\(.id)"' 2>"$gh_err" \
+  | tr -d '\r' | while IFS="$(printf '\t')" read -r cl_name cl_out cl_id; do
+    printf '%s\t%s\n' "$cl_name" "$(job_real_outcome "$cl_id" "$cl_out")"
+  done
+}
 pr_rollup() {
-  rest_rollup_named "$(gh api "repos/{owner}/{repo}/commits/$1/check-runs?per_page=100" --jq '.check_runs[] | "\(.name)\t\(.conclusion // .status)"' 2>"$gh_err" || { rate_stop; echo; })" "${QUEUE_SUMMARY_CHECK:-CI passed}"
+  rest_rollup_named "$(check_lines "$1" || { rate_stop; echo; })" "${QUEUE_SUMMARY_CHECK:-CI passed}"
 }
 
 # One queue at a time. A queue takes .scratch/queue/lock and a second one
@@ -333,6 +348,7 @@ latest_run() {
 jobs_of() { # RUN_ID -> one job per line for run_verdict
   gh run view "$1" --json jobs --jq '.jobs[] | [.name, .status, (.conclusion // ""), (.startedAt // ""), .databaseId] | @tsv' 2>/dev/null \
   | while IFS="$tab" read -r name status conc started jobid; do
+    conc=$(job_real_outcome "$jobid" "$conc")
     # Annotations: for a job still waiting (an outage) and for one that
     # failed with no step run (a billing refusal says so only there).
     ann=""
@@ -1451,7 +1467,9 @@ else
   # A job cancelled before a runner took it fails the required check
   # without anything being wrong: re-run the failed and cancelled jobs once
   # and wait again, rather than close a good batch.
-  checks=$(gh api "repos/{owner}/{repo}/commits/$batch_sha/check-runs?per_page=100" --jq '.check_runs[] | "\(.name)\t\(.conclusion // .status)"' 2>/dev/null)
+  # A cancelled job whose own step failed reads as failed (check_lines), so
+  # a real failure that cancelled its siblings is never re-run here.
+  checks=$(check_lines "$batch_sha" 2>/dev/null)
   if [ "$(rest_rollup_named "$checks" "${QUEUE_SUMMARY_CHECK:-CI passed}")" = cancelled ]; then
     run=$(latest_run "$branch"); run_id=${run%%	*}
     if [ -n "$run_id" ] && gh run rerun "$run_id" --failed >/dev/null 2>&1; then
