@@ -46,10 +46,13 @@ fi
 green=0; held_green=0
 if [ "$mode" = full ]; then
   tab=$(printf '\t')
-  gh api "repos/{owner}/{repo}/pulls?state=open&base=$base&per_page=100" --jq '.[] | select(.draft == false) | "\(.head.sha)\t\(([.labels[].name] | join(",") | if . == "" then "-" else . end))\t\((.body // "") | gsub("[\r\n]+"; " | "))"' 2>/dev/null > "${TMPDIR:-/tmp}/deploy-gate.$$" || true
-  while IFS="$tab" read -r sha g_labels g_body; do
+  gh api "repos/{owner}/{repo}/pulls?state=open&base=$base&per_page=100" --jq '.[] | select(.draft == false) | "\(.number)\t\(.head.sha)\t\(([.labels[].name] | join(",") | if . == "" then "-" else . end))\t\((.body // "") | gsub("[\r\n]+"; " | "))"' 2>/dev/null > "${TMPDIR:-/tmp}/deploy-gate.$$" || true
+  while IFS="$tab" read -r g_num sha g_labels g_body; do
     [ -n "$sha" ] || continue
     [ "$g_labels" = - ] && g_labels=""
+    # Only one the queue can still merge now; QUEUE_DEPLOY_SKIP names the
+    # ones this drain tried and left open.
+    [ "$(deploy_waits_for "$g_num" "$g_labels" "${QUEUE_DEPLOY_SKIP:-}")" = yes ] || continue
     st=$(gh api "repos/{owner}/{repo}/commits/$sha/check-runs?per_page=100" --jq '[.check_runs[] | .conclusion] | if length == 0 then "none" elif all(. == "success" or . == "skipped" or . == "neutral") then "green" else "other" end' 2>/dev/null | tr -d '\r')
     [ "$st" = green ] || continue
     g_why=$(held_reason "$(printf '%s' "$g_labels" | tr ',' '\n')" "$(printf '%s' "$g_body" | sed 's/ | /\
@@ -59,6 +62,18 @@ if [ "$mode" = full ]; then
   rm -f "${TMPDIR:-/tmp}/deploy-gate.$$"
 fi
 now=$(date +%s)
+# The hold is bounded: QUEUE_DEPLOY_HELD_DRAINS (the drains in a row that
+# held it, which the queue passes) or QUEUE_DEPLOY_MAX_HOLD minutes since the
+# last deploy, and it goes anyway, saying why. The queue still starts
+# nothing when nothing that ships landed.
+if [ "$green" -gt 0 ]; then
+  bound=$(deploy_hold_bound "${QUEUE_DEPLOY_HELD_DRAINS:-0}" "$last" "$now" "${QUEUE_DEPLOY_MAX_HOLD:-30}")
+  if [ -n "$bound" ]; then
+    echo "deploy: due anyway, $(deploy_gate "$green" "" "$now" "$interval") but $bound"
+    held_note "$held_green"
+    exit 0
+  fi
+fi
 deploy_state "$green" "$last" "$now" "$interval"
 held_note "$held_green"
 if [ -n "$(deploy_gate "$green" "$last" "$now" "$interval")" ]; then exit 1; fi

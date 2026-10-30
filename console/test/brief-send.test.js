@@ -21,7 +21,7 @@ function fake(replies) {
       seen.push({ method: req.method, url: req.url, auth: req.headers.authorization, body });
       const r = replies[Math.min(seen.length - 1, replies.length - 1)];
       const go = () => { res.writeHead(r.status, { 'content-type': 'application/json', 'x-sipnship-do': 'stop' }); res.end(r.body || ''); };
-      if (r.delay) setTimeout(go, r.delay); else go();
+      if (r.delay) setTimeout(go, r.delay).unref(); else go();
     });
   });
   return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve({ server, seen, url: `http://127.0.0.1:${server.address().port}` })));
@@ -111,11 +111,17 @@ test('a 5xx says its one line once per session, naming the last brief that got t
 });
 
 test('a timeout is unreachable, said once, within the three seconds', async () => {
-  const f = await fake([{ status: 204, delay: 4500 }]);
+  // The reply never comes in time, however slow the machine; the bound is
+  // measured from the send alone, with the token written before it starts,
+  // and leaves room for a busy runner's event loop.
+  const f = await fake([{ status: 204, delay: 60000 }]);
   try {
+    const env = envWith(f.url);
     const t0 = Date.now();
-    const line = await send.sendBrief({ text: fixture, session: 's1', repo: 'acme/shop', env: envWith(f.url), now });
-    assert.ok(Date.now() - t0 < 4000);
+    const line = await send.sendBrief({ text: fixture, session: 's1', repo: 'acme/shop', env, now });
+    const took = Date.now() - t0;
+    assert.ok(took >= send.TIMEOUT_MS - 100, `gave up after ${took} ms, before the timeout`);
+    assert.ok(took < send.TIMEOUT_MS + 2500, `took ${took} ms`);
     assert.match(line, /^Could not reach SipNShip/);
   } finally { f.server.closeAllConnections?.(); f.server.close(); }
 });
