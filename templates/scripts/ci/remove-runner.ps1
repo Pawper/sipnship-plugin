@@ -4,7 +4,8 @@
 # because removing a service does; an agent launches it and the owner
 # clicks the prompt:
 #   Start-Process powershell -Verb RunAs -Wait -ArgumentList '-ExecutionPolicy Bypass -File scripts\ci\remove-runner.ps1 -Name build-3'
-# Afterwards, lower "runners" in .claude/runners.json to the count you keep.
+# It writes nothing to the repository: the doctor, the watch and the
+# session brief read the runners GitHub has registered.
 param(
   [Parameter(Mandatory = $true)][string]$Name,
   [string]$Root = ""
@@ -25,4 +26,4 @@ try {
 } finally { Pop-Location }
 $aside = "$dir.removed-" + (Get-Date -Format "yyyy-MM-dd")
 Move-Item -Path $dir -Destination $aside -Force
-Write-Output "Runner $Name is unregistered and its service is gone; its folder was moved to $aside (delete it by hand when you are sure). Lower `"runners`" in .claude/runners.json if you keep fewer now."
+Write-Output "Runner $Name is unregistered and its service is gone; its folder was moved to $aside (delete it by hand when you are sure)."

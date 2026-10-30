@@ -93,9 +93,13 @@ if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
     done
     offline=$(printf '%s\n' "$runners" | awk -F'\t' '$2 != "online"' | wc -l | tr -d ' ')
     warns=$((warns + offline))
-    want=$(runner_count "$(cat .claude/runners.json 2>/dev/null)")
+    # Judged from what GitHub has registered and this machine's cores; the
+    # repository holds no count.
+    cores=$(machine_cores)
     have=$(printf '%s\n' "$runners" | grep -c .)
-    if [ "$have" -lt "$want" ]; then say warn "runners: $(runner_status "$(printf '%s\n' "$runners" | cut -f1-3)" "$want") (.claude/runners.json wants $want; add one with scripts/ci/add-runner.ps1)"; fi
+    say "$( [ "$have" -lt 2 ] && echo warn || echo ok )" "runners: $(runner_status "$(printf '%s\n' "$runners" | cut -f1-3)" "$cores")$( [ "$have" -lt 2 ] && printf ' (one runner makes every job wait for the last; add one with scripts/ci/add-runner.ps1)')"
+    keynote=$(runner_key_note "$(cat .claude/runners.json 2>/dev/null)")
+    [ -n "$keynote" ] && note "$keynote"
   fi
 else
   say warn "runners: gh is not signed in, so the registered runners could not be listed"

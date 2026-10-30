@@ -1,4 +1,3 @@
 {
-  "_comment": "This project's self-hosted runners, on the owner's machine. runners: how many the project keeps (the bootstrap installs that many; the doctor and the session brief say when fewer are online). Three by default: two so a pull request's jobs run side by side, one a merge-queue drain may hold while it waits. scripts/ci/RUNNERS.md says how to choose. The runner watch (scripts/ci/runner-watch.sh, a scheduled task on the runners' machine) reads this too.",
-  "runners": 3
+  "_comment": "This project's self-hosted runners, on the owner's machine. The file holds no runner count: the doctor, the session brief and the runner watch (scripts/ci/runner-watch.sh, a scheduled task on the runners' machine) read the runners GitHub has registered for the repository and the machine's cores, and judge from those: how many are online, how many one runner per two cores allows, and whether jobs waited while the processor idled. scripts/ci/RUNNERS.md says how to choose."
 }
