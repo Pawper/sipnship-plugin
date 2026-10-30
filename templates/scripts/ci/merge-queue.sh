@@ -815,7 +815,16 @@ deploy_if_due() {
   if [ "$d_end" = "$1" ]; then say "Nothing merged, so nothing to deploy."; return 0; fi
   [ -f .claude/deploy.json ] || { say "No .claude/deploy.json; main deploys on its own."; return 0; }
   # The gate: no other green pull request waiting, and the interval passed.
-  if gate=$(sh "$here/deploy-gate.sh" "$base" 2>/dev/null); then :; else say "${gate:-deploy: held} (the Deploy workflow's own dispatch in Actions forces one)"; return 0; fi
+  # A pull request this drain tried and left open never holds it, and the
+  # hold is bounded by the drains in a row that held it (a repository
+  # variable) and by QUEUE_DEPLOY_MAX_HOLD.
+  d_held=$(gh api "repos/{owner}/{repo}/actions/variables/QUEUE_DEPLOY_HELD" --jq .value 2>/dev/null | tr -dc '0-9'); d_held=${d_held:-0}
+  if gate=$(QUEUE_DEPLOY_SKIP="${tried:-}" QUEUE_DEPLOY_HELD_DRAINS="$d_held" sh "$here/deploy-gate.sh" "$base" 2>/dev/null); then
+    [ "$d_held" = 0 ] || set_repo_var QUEUE_DEPLOY_HELD 0 || true
+  else
+    case "$gate" in *"green PR"*) set_repo_var QUEUE_DEPLOY_HELD "$((d_held + 1))" || true ;; esac
+    say "${gate:-deploy: held} (the Deploy workflow's own dispatch in Actions forces one)"; return 0
+  fi
   # Nothing that ships changed since the last deploy (or since this run
   # began, when none is recorded): start nothing. A template sync that
   # touched only scripts/ci and workflows once started a web build and two

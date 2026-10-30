@@ -1167,13 +1167,19 @@ eq "the state line when due" "deploy: due; last deploy 66 min ago (interval 60)"
 eq "no held line when nothing is held" "" "$(held_note 0)"
 eq "a held green pull request is said, singular" "deploy: 1 green PR on hold, not waited for" "$(held_note 1)"
 eq "and plural" "deploy: 2 green PRs on hold, not waited for" "$(held_note 2)"
+eq "a green pull request the queue can merge holds the deploy" "yes" "$(deploy_waits_for 12 'state:ready' '')"
+eq "one this drain dropped never holds it" "no" "$(deploy_waits_for 12 'state:ready' ' 11 12 ')"
+eq "one labelled blocked never holds it" "no" "$(deploy_waits_for 13 'state:blocked' '')"
+eq "a hold under the bound stays held" "" "$(deploy_hold_bound 1 4000 5000 30)"
+eq "held across two drains, the deploy goes" "held across 2 drains" "$(deploy_hold_bound 2 4000 5000 30)"
+eq "last deploy past the bound, the deploy goes" "last deploy 33 minutes ago, over the 30-minute bound" "$(deploy_hold_bound 0 3000 5000 30)"
 eq "the gate skips held pull requests the way the drain does" "1" "$(grep -c 'held_reason' "$root/templates/scripts/ci/deploy-gate.sh" | awk '{print ($1 >= 1) ? 1 : 0}')"
 gh_stub_d=$(mktemp -d); mkdir -p "$gh_stub_d/.claude"
 printf '{ "intervalMinutes": 0 }\n' > "$gh_stub_d/.claude/deploy.json"
 cat > "$gh_stub_d/gh" <<'GHEOF'
 #!/bin/sh
 case "$2" in
-  *pulls*) printf 'abc123	-	%s\n' 'Fix. | Queue: hold | waiting on an owner step' ;;
+  *pulls*) printf '7	abc123	-	%s\n' 'Fix. | Queue: hold | waiting on an owner step' ;;
   *check-runs*) echo green ;;
 esac
 GHEOF
