@@ -63,6 +63,7 @@ jobs:
       actions: write
     outputs:
       classes: ${{ steps.classes.outputs.classes }}
+      parts: ${{ steps.classes.outputs.parts }}
     env:
       # On a pull request github.sha is the merge of the branch into main as
       # it is now, and its first parent is that main. The recorded base.sha
@@ -81,6 +82,11 @@ jobs:
           classes=$(sh scripts/ci/classify.sh "$base" "${{ github.sha }}")
           echo "classes=$classes" >> "$GITHUB_OUTPUT"
           echo "Classes: $classes"
+          # The test parts of those classes (the "!parts" lines of
+          # classes.txt), as the "tests" job's matrix; [] when none.
+          parts=$(sh scripts/ci/test-parts.sh matrix "$classes")
+          echo "parts=$parts" >> "$GITHUB_OUTPUT"
+          echo "Test parts: $parts"
       - name: Fail when a text file has CRLF endings
         # Every PR and every push: mixed endings make every diff a conflict.
         run: sh scripts/ci/line-endings.sh
@@ -203,6 +209,38 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh run cancel ${{ github.run_id }} --repo ${{ github.repository }}
 
+  tests:
+    # One entry per test part of the classes the change touched, from the
+    # "!parts" lines of scripts/ci/classes.txt, side by side. The first red
+    # part cancels the rest. Skipped when the change touched no class with
+    # parts, or when classes.txt names none.
+    needs: checks
+    if: github.event_name == 'pull_request' && needs.checks.outputs.parts != '[]' && needs.checks.outputs.parts != ''
+    strategy:
+      fail-fast: true
+      matrix:
+        part: ${{ fromJSON(needs.checks.outputs.parts) }}
+    name: tests (${{ matrix.part }})
+    runs-on: RUNS_ON
+    permissions:
+      # The workflow's own, plus actions: write so a failure can stop the run.
+      contents: read
+      issues: write
+      pull-requests: read
+      actions: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run this part
+        run: sh scripts/ci/test-parts.sh run "${{ matrix.part }}"
+      - name: Stop the rest of this run when this job fails
+        # A pull request's run is red once one job fails; the jobs still
+        # running would only hold runners. "CI passed" still reports red.
+        # Never on main: the full run always finishes.
+        if: failure() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run cancel ${{ github.run_id }} --repo ${{ github.repository }}
+
   screens:
     # Each touched screen beside its mock: only on a pull request that
     # changes a UI file mapped in scripts/ci/mocks.txt on a line with an
@@ -279,14 +317,18 @@ jobs:
     # "app" is skipped when a change does not need it, and a required check
     # that never reports blocks the merge.
     name: CI passed
-    needs: [checks, app, screens]
+    needs: [checks, app, tests, screens]
     if: always() && github.event_name == 'pull_request'
     runs-on: RUNS_ON
     steps:
       - name: Report once for every job
+        env:
+          PARTS: ${{ needs.checks.outputs.parts }}
         run: |
           failed=0
-          for pair in "checks:${{ needs.checks.result }}" "app:${{ needs.app.result }}" "screens:${{ needs.screens.result }}"; do
+          parts=$(printf '%s' "${PARTS:-[]}" | tr -cd ',"' | tr -d ',' | wc -c)
+          echo "test parts: $((parts / 2)) ran as one matrix"
+          for pair in "checks:${{ needs.checks.result }}" "app:${{ needs.app.result }}" "tests:${{ needs.tests.result }}" "screens:${{ needs.screens.result }}"; do
             job=${pair%%:*}
             result=${pair#*:}
             echo "$job: $result"
@@ -311,6 +353,10 @@ jobs:
     runs-on: RUNS_ON
     steps:
       - uses: actions/checkout@v4
+      - name: Every test part of every class
+        # The "!parts" lines of classes.txt, each to the end; nothing when
+        # there are none.
+        run: sh scripts/ci/test-parts.sh all
       - name: Run everything
         run: echo "replace with the install, the build and the full suite"
 

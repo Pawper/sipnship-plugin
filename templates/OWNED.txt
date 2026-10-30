@@ -15,6 +15,7 @@
 feature core
 scripts/ci/lib.sh
 scripts/ci/classify.sh
+scripts/ci/test-parts.sh
 scripts/ci/line-endings.sh
 scripts/ci/spec-check.sh
 scripts/ci/setup-check.sh

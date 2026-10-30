@@ -113,6 +113,42 @@ rerun_free_classes() {
     $1 == "!rerun-free" { $1 = ""; sub(/^[ \t]+/, ""); print; exit }'
 }
 
+# class_parts CLASSES RULES
+# The test parts a change of CLASSES runs, one "NAME<tab>COMMAND" line each,
+# from the "!parts" lines of classes.txt:
+#   !parts CLASS[,CLASS...] NAME=COMMAND; NAME=COMMAND
+# A part runs when one of its classes is among CLASSES; every part runs
+# when CLASSES holds "other" or "all" (main's full run). A name given twice
+# runs once, as first written. Nothing when no "!parts" line matches.
+class_parts() {
+  printf '%s\n' "$2" | tr -d '\r' | awk -v want=" $1 " '
+    { sub(/#.*/, "") }
+    $1 != "!parts" { next }
+    {
+      n = split($2, cs, ","); hit = (want ~ / (other|all) /)
+      for (i = 1; i <= n; i++) if (index(want, " " cs[i] " ")) hit = 1
+      if (!hit) next
+      rest = $0; sub(/^[ \t]*!parts[ \t]+[^ \t]+[ \t]*/, "", rest)
+      m = split(rest, ps, ";")
+      for (i = 1; i <= m; i++) {
+        p = ps[i]; eq = index(p, "="); if (!eq) continue
+        name = substr(p, 1, eq - 1); cmd = substr(p, eq + 1)
+        gsub(/^[ \t]+|[ \t]+$/, "", name); gsub(/^[ \t]+|[ \t]+$/, "", cmd)
+        if (name == "" || cmd == "" || (name in seen)) continue
+        seen[name] = 1; print name "\t" cmd
+      }
+    }'
+}
+
+# parts_matrix PARTS
+# The JSON list of part names CI builds its test matrix from, from
+# class_parts's lines: ["web","service"], or [] when there are none.
+parts_matrix() {
+  printf '%s\n' "$1" | awk -F '\t' '
+    NF >= 2 { gsub(/["\\]/, "", $1); out = out (out == "" ? "" : ",") "\"" $1 "\"" }
+    END { print "[" out "]" }'
+}
+
 # needs_rerun PR_CLASSES MAIN_CLASSES [FREE_CLASSES]
 # Print "yes" when a green PR must run CI again before merging because main
 # moved in a class the PR touches, in the ci class, or in an unclassified

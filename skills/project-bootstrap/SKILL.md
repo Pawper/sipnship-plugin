@@ -124,6 +124,13 @@ mechanical check: "report what was not done" and "stop every shell." Say so in C
 ## 4. CI and merging from day one
 
 - Classify a PR by the files it touches and run only what those touch; shard the slow suite across runners.
+- Test parts: a `!parts` line in `scripts/ci/classes.txt` splits a class's tests into named commands, for example
+  `!parts app web=npx vitest run packages/web; service=npx vitest run packages/service`. The `checks` job turns
+  the classes a pull request touched into a list of parts (`sh scripts/ci/test-parts.sh matrix "CLASSES"`), the
+  `tests` job runs one matrix entry per part side by side with `fail-fast: true`, so the first red part cancels
+  the rest, and `CI passed` counts the entries. An unclassified path runs every part; main's full run runs every
+  part of every class to the end (`test-parts.sh all`). A class with one command is one part, and a project with
+  no `!parts` line skips the job and runs as before.
 - One summary check, `CI passed`, waits for whichever class jobs ran and reports once. Branch protection on main
   requires exactly that check and never a per-class job, since those are skipped on purpose.
 - The full run is the gate on main after every merge; a red main opens an issue automatically.

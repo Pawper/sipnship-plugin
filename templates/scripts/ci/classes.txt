@@ -10,6 +10,17 @@
 # CI again after main moved, so ten pull requests that each name a spec do
 # not invalidate one another on every merge.
 !rerun-free docs specs status
+#
+# A "!parts" line names a class's test parts, each a command run from the
+# repository root (no "#" in a command):
+#   !parts CLASS[,CLASS...] NAME=COMMAND; NAME=COMMAND
+# for example
+#   !parts app web=npx vitest run packages/web; service=npx vitest run packages/service
+# A pull request's "tests" job is a matrix of one entry per part of the
+# classes it touched (every part when a path is unclassified), stopping the
+# rest at the first red; main's full run runs every part of every class.
+# A class with one command is one part. With no "!parts" line the job is
+# skipped and nothing changes.
 ci     .github/* scripts/ci/*
 status status/* STATUS.md
 specs  specs/*

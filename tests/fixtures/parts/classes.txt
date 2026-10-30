@@ -1,0 +1,7 @@
+# The rooftop-garden app: three parts for the app, one for CI, none for docs.
+!parts app beds=npx vitest run packages/web/test/beds.test.ts; watering=npx vitest run packages/web/test/watering.test.ts; sensors=npx vitest run packages/service/test/sensors.test.ts
+!parts ci endings=sh scripts/ci/line-endings.sh
+plugin plugin/*
+ci     .github/* scripts/ci/*
+docs   docs/* *.md
+app    src/* packages/* package.json pnpm-lock.yaml

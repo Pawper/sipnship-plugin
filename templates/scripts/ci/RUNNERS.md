@@ -61,6 +61,8 @@ To start a runner by hand from Git Bash anyway, strip it first: `env -u NoDefaul
 
 Each runner runs one job at a time, so a CI run's length is roughly its number of jobs divided by the runners, times a job's length. Ten jobs on two runners is five jobs deep: most of the wall time is jobs queued, not tests running. The queue says so while it waits ("6 jobs queued, 2 of 2 runners busy; about 12 minutes"). When queue time dominates, add a runner with `add-runner.ps1`, or trim jobs a change does not need; `QUEUE_JOB_MINUTES` sets the queue's estimate of one job's length.
 
+A slow suite split into test parts (`!parts` lines in `classes.txt`) runs as one `tests` job per part, so each part is a job here: three parts on three runners finish in the time of the longest, and the first red part cancels the rest and frees their runners.
+
 ## Nobody stops the daemon
 
 A build daemon (Gradle's, Nx's, the .NET build server) is one process for every build on the machine. On a machine that also hosts a runner, an agent that runs `gradlew --stop` from its worktree, meaning to tidy up, kills the runner's daemon mid-build, and the android job fails with "Gradle build daemon has been stopped". The `block-loose-ends` hook refuses `gradlew --stop`, `gradle --stop`, `nx reset`, `nx daemon --stop` and `dotnet build-server shutdown`. Stopping what you started means your own servers and watchers; a daemon idles out on its own. If no runner is on the machine, `DAEMON_STOP_OK=1` in front of the command says so.

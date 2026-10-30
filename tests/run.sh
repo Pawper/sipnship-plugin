@@ -2,14 +2,54 @@
 # Tests for the pure part of every script in this repository.
 # Run from the repository root with: sh tests/run.sh
 # Needs only sh and awk, like the scripts themselves.
+#
+#   --fail-fast   end at the first block with a failure, naming it and its
+#                 failing lines (a pull request's run; main runs everything)
+#   --part NAME   run only one part: shell, console or queue (CI runs the
+#                 three side by side); the prelude and summary run in each
 
-root=$(cd "$(dirname "$0")/.." && pwd)
+root=${RUN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}
 . "$root/hooks/scripts/lib.sh"
 . "$root/templates/status/lib.sh"
 . "$root/templates/scripts/ci/lib.sh"
+. "$root/tests/parts-lib.sh"
+# Sourced again by their blocks; here too, so each part has them.
+. "$root/templates/scripts/ci/batch-lib.sh"
+. "$root/templates/scripts/ci/run-lib.sh"
+. "$root/hooks/scripts/session-brief-lib.sh"
+
+fail_fast=no
+part=
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --fail-fast) fail_fast=yes ;;
+    --part) part=$2; shift ;;
+    --part=*) part=${1#--part=} ;;
+    *) printf 'unknown option: %s\n' "$1"; exit 2 ;;
+  esac
+  shift
+done
+# Main's full run (scripts/ci/test-parts.sh all) runs every block.
+[ "$CI_FULL_RUN" = yes ] && fail_fast=no
+if [ -n "$part" ] && [ -z "$RUN_PART" ]; then
+  if ! part_names | grep -qxF -- "$part"; then
+    printf 'unknown part: %s (one of: %s)\n' "$part" "$(part_names | tr '\n' ' ' | sed 's/ $//')"
+    exit 2
+  fi
+  part_file=$(mktemp)
+  part_script "$part" < "$root/tests/run.sh" > "$part_file"
+  ff=; [ "$fail_fast" = yes ] && ff=--fail-fast
+  RUN_ROOT=$root RUN_PART=$part sh "$part_file" $ff
+  part_rc=$?
+  mv "$part_file" "$part_file.done" 2>/dev/null || true
+  exit $part_rc
+fi
 
 pass=0
 fail=0
+block=
+block_fails=
+fx="$root/tests/fixtures"
 
 # eq NAME EXPECTED ACTUAL
 eq() {
@@ -19,10 +59,11 @@ eq() {
   else
     fail=$((fail + 1))
     printf 'FAIL  %s\n      expected: %s\n      actual:   %s\n' "$1" "$2" "$3"
+    block_failed "$(printf 'FAIL  %s\n      expected: %s\n      actual:   %s' "$1" "$2" "$3")"
   fi
 }
 
-printf '\n# json_field\n'
+section 'json_field'
 eq "reads a string field" "ls -la" "$(json_field '{"tool_input":{"command":"ls -la"}}' command)"
 eq "undoes escapes" 'echo "hi" && cat a\b' "$(json_field '{"command":"echo \"hi\" && cat a\\b"}' command)"
 eq "turns \\n into a newline" "a
@@ -30,7 +71,7 @@ b" "$(json_field '{"command":"a\nb"}' command)"
 eq "missing key prints nothing" "" "$(json_field '{"x":"y"}' command)"
 eq "skips spaces around the colon" "p" "$(json_field '{ "file_path" : "p" }' file_path)"
 
-printf '\n# split_commands\n'
+section 'split_commands'
 eq "splits on && ; | and ||" "a
 b
 c
@@ -84,7 +125,7 @@ echo hi
 EOF
 rm -rf build')"
 
-printf '\n# delete_reason\n'
+section 'delete_reason'
 eq "rm" "rm" "$(delete_reason 'rm -rf build')"
 eq "rm after cd" "rm" "$(delete_reason 'cd x && rm -r y')"
 eq "rm by full path" "rm" "$(delete_reason '/bin/rm x')"
@@ -99,7 +140,7 @@ eq "a word containing rm is fine" "" "$(delete_reason 'npm run format')"
 eq "git rm is not a delete of history" "" "$(delete_reason 'git rm --cached x')"
 eq "removing in a string is fine" "" "$(delete_reason 'echo "do not rm this"')"
 
-printf '\n# force_push_reason\n'
+section 'force_push_reason'
 eq "--force" "--force" "$(force_push_reason 'git push --force origin main')"
 eq "--force-with-lease" "--force-with-lease=main" "$(force_push_reason 'git push --force-with-lease=main origin main')"
 eq "-f" "-f" "$(force_push_reason 'git push -f')"
@@ -111,7 +152,7 @@ eq "plain push is fine" "" "$(force_push_reason 'git push -u origin feature')"
 eq "a commit named force is fine" "" "$(force_push_reason 'git commit -m "force"')"
 eq "push in a later command" "-f" "$(force_push_reason 'git fetch && git push -f')"
 
-printf '\n# full_sweep_reason\n'
+section 'full_sweep_reason'
 eq "bare pytest" "pytest" "$(full_sweep_reason 'pytest')"
 eq "pytest with options only" "pytest" "$(full_sweep_reason 'pytest -q --maxfail=1')"
 eq "pytest with a file is fine" "" "$(full_sweep_reason 'pytest tests/test_a.py')"
@@ -148,7 +189,7 @@ eq "one .tsx file piped to tail" "" "$(full_sweep_reason 'npx vitest run src/Foo
 eq "npm run build is fine" "" "$(full_sweep_reason 'npm run build')"
 eq "ls is fine" "" "$(full_sweep_reason 'ls tests')"
 
-printf '\n# generated_page_reason\n'
+section 'generated_page_reason'
 pages="# comment
 STATUS.md
 docs/generated/*"
@@ -160,7 +201,7 @@ eq "a stub is fine" "" "$(generated_page_reason /proj/status/stubs/x.md /proj "$
 eq "an unrelated file is fine" "" "$(generated_page_reason /proj/src/a.ts /proj "$pages")"
 eq "a comment line never matches" "" "$(generated_page_reason '/proj/# comment' /proj "$pages")"
 
-printf '\n# state_label_reason\n'
+section 'state_label_reason'
 eq "no label" "gh issue create" "$(state_label_reason 'gh issue create --title x --body y')"
 eq "a label without a state" "gh issue create" "$(state_label_reason 'gh issue create -t x -l bug')"
 eq "--label state:" "" "$(state_label_reason 'gh issue create -t x --label state:ready')"
@@ -186,7 +227,7 @@ eq "-p" "" "$(project_flag_reason 'gh issue create -t x -p Board')"
 eq "a state label alone is not enough here" "gh issue create" "$(project_flag_reason 'gh issue create -t x -l state:ready')"
 eq "--web" "" "$(project_flag_reason 'gh issue create --web')"
 
-printf '\n# batch_merge_reason\n'
+section 'batch_merge_reason'
 eq "three PRs with no flag" "3" "$(batch_merge_reason 'sh scripts/ci/merge-queue.sh 41 42 45')"
 eq "three PRs with --batch" "" "$(batch_merge_reason 'sh scripts/ci/merge-queue.sh --batch 41 42 45')"
 eq "three PRs with --serial" "" "$(batch_merge_reason 'sh scripts/ci/merge-queue.sh --serial 41 42 45')"
@@ -195,7 +236,7 @@ eq "one PR as before" "" "$(batch_merge_reason 'sh scripts/ci/merge-queue.sh 41 
 eq "a chained serial run after cd" "4" "$(batch_merge_reason 'cd app && sh ./scripts/ci/merge-queue.sh 1 2 3 4')"
 eq "another script with numbers is fine" "" "$(batch_merge_reason 'sh scripts/other.sh 1 2 3')"
 
-printf '\n# batch helpers\n'
+section 'batch helpers'
 . "$root/templates/scripts/ci/batch-lib.sh"
 eq "order kept, repeats dropped, words ignored" "41
 42
@@ -216,7 +257,7 @@ eq "batch PR body" "- #41 Add retries. Closes #41
 eq "one line per PR" "#13 dropped: conflicts with the batch so far" "$(batch_line 13 dropped 'conflicts with the batch so far')"
 eq "one line without a reason" "#12 merged into the batch" "$(batch_line 12 'merged into the batch')"
 
-printf '\n# session brief\n'
+section 'session brief'
 . "$root/hooks/scripts/session-brief-lib.sh"
 fx="$root/tests/fixtures"
 eq "json_number reads a number" "40" "$(json_number '{"maxLines": 40, "x": "y"}' maxLines)"
@@ -319,7 +360,7 @@ eq "worktrees counted with their folders, the agent runtime's apart" "Worktrees:
 eq "only the main checkout, nothing said" "" "$(worktree_summary 'worktree /repo
 branch refs/heads/main')"
 
-printf '\n# the queue runs a test file with its own runner\n'
+section 'the queue runs a test file with its own runner'
 rt="$root/templates/scripts/ci/run-test-file.mjs"; rtf="$fx/test-runner"
 eq "a node:test file is picked up by node --test" "node" "$(node "$rt" --which "$rtf/node-test/a.test.js" | tr -d '\r')"
 eq "a node:test file runs and passes" "0" "$(node "$rt" "$rtf/node-test/a.test.js" >/dev/null 2>&1; echo $?)"
@@ -328,7 +369,7 @@ eq "an unknown runner is told as unknown" "unknown" "$(node "$rt" --which "$rtf/
 eq "an unknown runner is not run, never red" "3" "$(node "$rt" "$rtf/unknown/a.test.ts" >/dev/null 2>&1; echo $?)"
 eq "the queue reports a file not run here" "1" "$(grep -c 'not run here:' "$root/templates/scripts/ci/merge-queue.sh")"
 
-printf '\n# reading a run\n'
+section 'reading a run'
 . "$root/templates/scripts/ci/run-lib.sh"
 # --- Spec 001: the queue publishes its state.
 . "$root/templates/scripts/ci/publish-lib.sh"
@@ -376,7 +417,7 @@ eq "the queue publishes as it drains and at its end" "2" "$(grep -c 'publish_now
 eq "the drain workflow may write issues" "1" "$(grep -c '^  issues: write' "$root/templates/.github/workflows/queue-drain.yml")"
 eq "the queue label exists" "1" "$(grep -c 'mk "queue"' "$root/templates/scripts/labels.sh")"
 
-printf '\n# the queue on the service road (spec 006)\n'
+section 'the queue on the service road (spec 006)'
 sv_waits="$(printf '1000\t-\tci / unit\t3\t3\t4\n1100\t-\tci / app\t1\t3\t2\n10\t-\told job\t1\t1\t9')"
 eq "the wait lines are the jobs since the cutoff, in seconds, with why" '[{"job":"ci / unit","waitedSeconds":240,"why":"all 3 runners were busy"},{"job":"ci / app","waitedSeconds":120,"why":"1 of 3 runners were busy"}]' "$(service_waits_json "$sv_waits" 500)"
 eq "no waits is an empty list" '[]' "$(service_waits_json "" 0)"
@@ -528,7 +569,7 @@ eq "failures add up across pull requests, a second pass adds none" "3	console.te
 eq "main in flight" "yes" "$(main_in_flight "$(printf '1\tmain\tin_progress\tpush\n2\tfeature\tqueued\tpull_request\n')")"
 eq "main quiet" "no" "$(main_in_flight "$(printf '1\tmain\tcompleted\tpush\n2\tfeature\tin_progress\tpull_request\n')")"
 
-printf '\n# runner doctor\n'
+section 'runner doctor'
 . "$root/templates/scripts/ci/doctor-lib.sh"
 eq "WSL bash on PATH warns" "warn" "$(bash_verdict 'C:\Windows\System32\bash.exe')"
 eq "Git bash is fine" "ok" "$(bash_verdict '/c/Program Files/Git/usr/bin/bash')"
@@ -540,7 +581,7 @@ eq "an open policy is fine" "ok" "$(policy_verdict 'MachinePolicy=Undefined Loca
 eq "a shell that sets NoDefaultCurrentDirectoryInExePath warns" "warn" "$(exepath_verdict 1)"
 eq "a shell that does not set it is fine" "ok" "$(exepath_verdict '')"
 
-printf '\n# board digest\n'
+section 'board digest'
 . "$root/scripts/board/board-lib.sh"
 dfacts=$(cat "$fx/board-facts-dated.tsv")
 ddigest=$(cat "$fx/board-digest.tsv")
@@ -574,7 +615,7 @@ eq "goals labels alone would miss, from current summaries only" "mark-waiting 20
 set-ready 31	Pick the price (the owner answered)" "$(digest_goals "$dfacts" "$ddigest")"
 eq "no digest, no extra goals" "" "$(digest_goals "$dfacts" '')"
 
-printf '\n# clean endings (hook library)\n'
+section 'clean endings (hook library)'
 . "$root/hooks/scripts/worktree-lib.sh"
 status=' M scripts/upload.sh
 ?? tests/admin.test.ts
@@ -608,7 +649,7 @@ eq "closing a PR with no comment" "gh pr close" "$(pr_close_reason 'gh pr close 
 eq "closing with a comment is fine" "" "$(pr_close_reason 'gh pr close 41 --comment "replaced by #52"')"
 eq "closing with -c is fine" "" "$(pr_close_reason 'gh pr close 41 -c "duplicate of #40"')"
 
-printf '\n# long_command_reason\n'
+section 'long_command_reason'
 eq "a short titled command is fine" "" "$(long_command_reason 'git status' 'Show the working tree')"
 eq "no description is named" "no description" "$(long_command_reason 'git status' '')"
 eq "a whitespace description is no description" "no description" "$(long_command_reason 'git status' '  ')"
@@ -627,7 +668,7 @@ eq "a rate limit is a refusal, not a sign-out" "yes" "$(gh_refusal 'GraphQL: API
 eq "unknown owner type is a refusal" "yes" "$(gh_refusal 'unknown owner type: someone')"
 eq "a sign-out is not" "no" "$(gh_refusal 'You are not logged into any GitHub hosts')"
 
-printf '\n# daemon_stop_reason\n'
+section 'daemon_stop_reason'
 eq "gradlew --stop is refused" "gradlew --stop" "$(daemon_stop_reason './gradlew --stop')"
 eq "the Windows wrapper too" "gradlew --stop" "$(daemon_stop_reason 'cd android && .\gradlew.bat --stop')"
 eq "gradle --stop is refused" "gradle --stop" "$(daemon_stop_reason 'gradle --stop')"
@@ -643,7 +684,7 @@ eq "git branch -d is not a worktree add" "" "$(worktree_add_reason 'git branch -
 wtpairs=$(printf '/w/a\tretries\n/w/b\tparser\n/w/c\trename\n/w/d\t\n')
 eq "stale and detached worktrees counted" "1	1" "$(stale_worktrees "$wtpairs" 'retries' "$(printf 'retries\t1000000\nparser\t1000000\nrename\t1900000\n')" 2000000 3)"
 
-printf '\n# worktrees\n'
+section 'worktrees'
 . "$root/templates/scripts/worktrees-lib.sh"
 pairs=$(worktree_branches "$porcelain")
 eq "the worktree of a branch" "C:/Users/me/Documents/GitHub/app-parser" "$(worktree_for_branch "$pairs" parser)"
@@ -662,7 +703,7 @@ old-fix' "$pairs" main)"
 eq "the queue's folder test matches the hook's" "scripts/upload.sh" "$(dirty_non_scratch ' M scripts/upload.sh
 ?? .scratch/x')"
 
-printf '\n# shared code and ended branches\n'
+section 'shared code and ended branches'
 shared='# comment
 scripts/build/*
 src/lib/*'
@@ -697,7 +738,7 @@ rename' rename)"
 eq "an unmerged branch is not prunable" "" "$(prunable_worktrees "$pairs" 'other')"
 eq "places counted" "2 2" "$(worktree_places "$pairs" | cut -f1 | tr '\n' ' ' | sed 's/ $//')"
 
-printf '\n# project drive\n'
+section 'project drive'
 . "$root/scripts/drive/drive-lib.sh"
 snap=$(cat "$fx/drive-snapshot.tsv")
 eq "a full proposal, in order" "merge-batch 41 42 45 46
@@ -769,7 +810,7 @@ Blocked:
 Blocked:
 #9 on the owner' 2)"
 
-printf '\n# task_tier and agent_model_reason\n'
+section 'task_tier and agent_model_reason'
 eq "Explore is a lookup" "lookup" "$(task_tier Explore 'Find config' 'Find where the port is set')"
 eq "Plan is hard" "hard" "$(task_tier Plan 'Plan it' 'Plan the cache')"
 eq "a short find is a lookup" "lookup" "$(task_tier general-purpose 'Find the parser' 'Find which file parses dates and report the path')"
@@ -786,12 +827,12 @@ eq "a lighter model is always fine" "" "$(agent_model_reason general-purpose 'Fi
 eq "opus on hard work is fine" "" "$(agent_model_reason Plan 'Plan it' 'Plan the cache' opus)"
 eq "model ranks" "1 2 3 4 0" "$(printf '%s %s %s %s %s' "$(model_rank haiku)" "$(model_rank claude-sonnet-5-5)" "$(model_rank Opus)" "$(model_rank fable)" "$(model_rank '')")"
 
-printf '\n# workflow_model_reason\n'
+section 'workflow_model_reason'
 eq "every call has a model" "" "$(workflow_model_reason 'await agent("a", {model: "haiku"}); await agent("b", { model : "sonnet" })')"
 eq "one call without a model" "1" "$(workflow_model_reason 'await agent("a", {model: "haiku"}); await agent("b", {label: "x"})')"
 eq "no agents, nothing" "" "$(workflow_model_reason 'return 1')"
 
-printf '\n# status page\n'
+section 'status page'
 fixtures=$(mktemp -d)
 mkdir -p "$fixtures/stubs"
 printf 'name: Sign in\nstate: done\nissue: #3\nnote: Password and magic link.\n' > "$fixtures/stubs/sign-in.md"
@@ -814,7 +855,7 @@ printf 'name: Only\nstate: done\n' > "$fixtures/stubs/sign-in.md"
 printf 'name: Only\nstate: done\n' > "$fixtures/stubs/export.md"
 eq "all done says so" "Nothing. Every feature is done." "$(render_status "$fixtures/stubs" | tail -n 1)"
 
-printf '\n# status check\n'
+section 'status check'
 proj=$(mktemp -d)
 cp -R "$root/templates/status" "$proj/status"
 check=$(cd "$proj" && sh status/check.sh 2>&1; echo "exit $?")
@@ -829,7 +870,7 @@ check=$(cd "$proj" && sh status/check.sh 2>&1; echo "exit $?")
 eq "stale page fails" "STATUS.md is stale: run sh status/build.sh and commit the result.
 exit 1" "$check"
 
-printf '\n# classify_paths\n'
+section 'classify_paths'
 rules=$(cat "$root/templates/scripts/ci/classes.txt")
 eq "app" "app" "$(classify_paths 'src/a.ts' "$rules")"
 eq "deep path under src" "app" "$(classify_paths 'src/deep/er/a.ts' "$rules")"
@@ -844,7 +885,7 @@ eq "unknown path is other" "other" "$(classify_paths 'weird.bin' "$rules")"
 eq "Windows separators are fine" "app" "$(classify_paths 'src\a.ts' "$rules")"
 eq "empty input, no classes" "" "$(classify_paths '' "$rules")"
 
-printf '\n# needs_rerun\n'
+section 'needs_rerun'
 eq "no overlap merges" "no" "$(needs_rerun 'app' 'docs')"
 eq "overlap reruns" "yes" "$(needs_rerun 'app tests' 'data app')"
 eq "other on main reruns" "yes" "$(needs_rerun 'app' 'other')"
@@ -854,7 +895,7 @@ eq "main unchanged merges" "no" "$(needs_rerun 'app' '')"
 eq "an unclassified file on the PR merges when main has not moved" "no" "$(needs_rerun 'ci docs other' '')"
 eq "blank main classes count as unmoved" "no" "$(needs_rerun 'other' ' ')"
 
-printf '\n# state_label_from_body\n'
+section 'state_label_from_body'
 body="### State
 
 waiting on owner
@@ -874,7 +915,7 @@ eq "empty response, no label" "" "$(state_label_from_body '### State
 _No response_')"
 eq "CRLF body" "state:parked" "$(state_label_from_body "$(printf '### State\r\n\r\nparked\r\n')")"
 
-printf '\n# spec_check_reason\n'
+section 'spec_check_reason'
 eq "a configured root counts as source" "missing" "$(spec_check_reason 'android/app/Main.kt' '' "$(printf 'src/\nandroid/')")"
 eq "a root without its slash still counts" "missing" "$(spec_check_reason 'android/app/Main.kt' '' 'android')"
 eq "outside every root is not source" "" "$(spec_check_reason 'docs/a.md' '' "$(printf 'src/\nandroid/')")"
@@ -902,7 +943,7 @@ eq "a spec path mentioned in the body counts" "" "$(spec_check_reason 'src/auth.
 eq "a body that names no spec is still missing" "missing" "$(spec_check_reason 'src/auth.ts' 'Adds the sign-in form. Closes #12')"
 eq "the constitution named in the body does not count" "missing" "$(spec_check_reason 'src/auth.ts' 'per specs/constitution.md')"
 
-printf '\n# rerun-free classes\n'
+section 'rerun-free classes'
 eq "the directive names the classes" "docs specs status" "$(rerun_free_classes "$rules")"
 eq "no directive, nothing" "" "$(rerun_free_classes 'app src/*')"
 eq "the directive is not a class" "app" "$(classify_paths 'src/a.ts' '!rerun-free docs
@@ -913,7 +954,7 @@ eq "ci on main still re-runs" "yes" "$(needs_rerun 'app' 'docs ci' 'docs specs s
 eq "other on main still re-runs" "yes" "$(needs_rerun 'app' 'docs other' 'docs specs status')"
 eq "a spec class" "specs" "$(classify_paths 'specs/sign-in/spec.md' "$rules")"
 
-printf '\n# board mappings\n'
+section 'board mappings'
 eq "label to state name" "Waiting on owner" "$(state_name_from_label state:waiting-on-owner)"
 eq "a spaced label too" "Waiting on owner" "$(state_name_from_label 'state: waiting on owner')"
 eq "a slug from either form" "in-progress in-progress" "$(state_slug state:in-progress) $(state_slug 'State: In Progress')"
@@ -937,7 +978,7 @@ eq "status for in progress" "In Progress" "$(status_for 'In progress' false)"
 eq "status for ready" "Todo" "$(status_for Ready false)"
 eq "status for parked" "Todo" "$(status_for Parked false)"
 eq "status for a closed issue is Done whatever the state" "Done" "$(status_for 'In progress' true)"
-printf '\n# workflow_breaks\n'
+section 'workflow_breaks'
 wb_changes=$(printf '.github/workflows/audit.yml\t1000\t2026-10-15\tSync templates to plugin 0.22.1\n.github/workflows/board-sync.yml\t1000\t2026-10-15\tSync templates to plugin 0.22.1\n.github/workflows/ci.yml\t500\t2026-10-10\tci\n')
 wb_runs=$(printf '.github/workflows/audit.yml\tfailure\t3000\n.github/workflows/audit.yml\tfailure\t2000\n.github/workflows/audit.yml\tsuccess\t900\n.github/workflows/board-sync.yml\tfailure\t2000\n.github/workflows/board-sync.yml\tsuccess\t1500\n.github/workflows/board-sync.yml\tsuccess\t900\n.github/workflows/ci.yml\tfailure\t600\n.github/workflows/ci.yml\tfailure\t400\n')
 eq "a workflow that passed before its change and failed every run since is named" "audit.yml has failed every run (2) since it was changed on 2026-10-15 (Sync templates to plugin 0.22.1)" "$(workflow_breaks "$wb_runs" "$wb_changes")"
@@ -946,14 +987,14 @@ eq "nor one with no run since" "" "$(workflow_breaks "$(printf '.github/workflow
 eq "nor one with a pass since" "" "$(workflow_breaks "$(printf '.github/workflows/audit.yml\tsuccess\t3000\n.github/workflows/audit.yml\tfailure\t2000\n.github/workflows/audit.yml\tsuccess\t900\n')" "$wb_changes")"
 eq "a cancelled run since is not a failure" "" "$(workflow_breaks "$(printf '.github/workflows/audit.yml\tcancelled\t2000\n.github/workflows/audit.yml\tsuccess\t900\n')" "$wb_changes")"
 eq "the brief and the audit both run workflow-breaks.sh" "1 1" "$(grep -c 'sh scripts/ci/workflow-breaks.sh' "$root/hooks/scripts/session-brief.sh") $(grep -c 'sh scripts/ci/workflow-breaks.sh' "$root/templates/.github/workflows/audit.yml")"
-printf '\n# drain_late\n'
+section 'drain_late'
 eq "a drain last run 6 h ago on a 2 h schedule is late" "Queue drain: last ran 6 h ago, scheduled every 2 h; GitHub is firing it late. A green pull request waits until then or until a session runs sh scripts/ci/merge-queue.sh --drain." "$(drain_late 1000 $((1000 + 21600)) 2)"
 eq "one 3 h ago is not" "" "$(drain_late 1000 $((1000 + 10800)) 2)"
 eq "exactly twice the interval is not" "" "$(drain_late 1000 $((1000 + 14400)) 2)"
 eq "no last run says nothing" "" "$(drain_late "" 99999 2)"
 eq "the brief and the audit both run drain-late.sh" "1 1" "$(grep -c 'sh scripts/ci/drain-late.sh' "$root/hooks/scripts/session-brief.sh") $(grep -c 'sh scripts/ci/drain-late.sh' "$root/templates/.github/workflows/audit.yml")"
 
-printf '\n# audit helpers\n'
+section 'audit helpers'
 eq "issues without a state label" "12
 15" "$(issues_without_state '12 bug,task
 14 state:ready,task
@@ -982,7 +1023,7 @@ Open issues with no State label:
 eq "red only" "Main is red and the issue is still open:
 - #77" "$(audit_comment '' '' '77')"
 
-printf '\n# setup_check_reason and has_crlf\n'
+section 'setup_check_reason and has_crlf'
 setup_pats=$(cat "$root/templates/scripts/ci/setup-paths.txt")
 eq "migration without SETUP.md" "migrations/0002_x.sql" "$(setup_check_reason 'src/a.ts
 migrations/0002_x.sql' "$setup_pats")"
@@ -1004,7 +1045,7 @@ SETUP.md' "$own_pats")"
 eq "crlf found" "yes" "$(has_crlf "$(printf 'a\r\nb')")"
 eq "lf only" "" "$(has_crlf "$(printf 'a\nb')")"
 
-printf '\n# quoted text is text, and nothing waits on input\n'
+section 'quoted text is text, and nothing waits on input'
 eq "a multi-line --body with quotes keeps the label after it" "" "$(state_label_reason 'gh issue create --title "Fix chimes" --body "First line.
 The setting says "off" here.
 Last line." --label state:in-progress')"
@@ -1036,7 +1077,7 @@ body
 EOF
 )"')"
 
-printf '\n# merging only through the queue\n'
+section 'merging only through the queue'
 eq "a direct merge" "gh pr merge" "$(direct_merge_reason 'gh pr merge 41 --squash')"
 eq "a direct merge after cd" "gh pr merge" "$(direct_merge_reason 'cd ../wt && gh pr merge 41 --merge --delete-branch')"
 eq "turning auto-merge off is allowed" "" "$(direct_merge_reason 'gh pr merge 41 --disable-auto')"
@@ -1045,7 +1086,7 @@ eq "viewing a pull request is not a merge" "" "$(direct_merge_reason 'gh pr view
 eq "a drain names its mode" "" "$(batch_merge_reason 'sh scripts/ci/merge-queue.sh --drain')"
 eq "a drain with more than two numbers is still named" "" "$(batch_merge_reason 'sh scripts/ci/merge-queue.sh --drain 1 2 3')"
 
-printf '\n# drain\n'
+section 'drain'
 . "$root/templates/scripts/ci/batch-lib.sh"
 open='41	false	MERGEABLE	green	main
 42	false	MERGEABLE	pending	main
@@ -1074,7 +1115,7 @@ eq "three green: batch now" "no" "$(drain_hold 3 4)"
 eq "nothing running: merge" "no" "$(drain_hold 1 0)"
 eq "nothing green: nothing to hold" "no" "$(drain_hold 0 2)"
 
-printf '\n# check-runs and mergeable_state through REST\n'
+section 'check-runs and mergeable_state through REST'
 eq "no check runs is none" "none" "$(rest_rollup '')"
 eq "all success is green" "green" "$(rest_rollup 'success
 skipped
@@ -1322,14 +1363,14 @@ eq "behind is still mergeable" "MERGEABLE" "$(mergeable_word behind)"
 eq "unknown is unknown" "UNKNOWN" "$(mergeable_word unknown)"
 eq "empty is unknown" "UNKNOWN" "$(mergeable_word '')"
 
-printf '\n# board calls refused for a rate limit\n'
+section 'board calls refused for a rate limit'
 eq "gh's unknown owner type is a refusal" "yes" "$(board_refusal 'unknown owner type: someone')"
 eq "a rate limit message is a refusal" "yes" "$(board_refusal 'GraphQL: API rate limit exceeded for user ID 1')"
 eq "a secondary limit is a refusal" "yes" "$(board_refusal 'You have exceeded a secondary rate limit')"
 eq "a missing field is not" "no" "$(board_refusal 'Project 3 has no State field')"
 eq "empty output is not" "no" "$(board_refusal '')"
 
-printf '\n# pull request bodies, stray closing keywords\n'
+section 'pull request bodies, stray closing keywords'
 . "$root/templates/scripts/pr-lib.sh"
 eq "a deliberate Closes line passes" "" "$(pr_stray_closers 'Closes #115
 Spec: specs/x
@@ -1345,7 +1386,7 @@ eq "owner/repo form is refused" "resolved Pawper/other#9" "$(pr_stray_closers 'r
 eq "a second keyword on the deliberate line is refused" "Closes #1, fixes #2" "$(pr_stray_closers 'Closes #1, fixes #2')"
 eq "a keyword inside a word is not one" "" "$(pr_stray_closers 'the prefix #4 and disclosed #5')"
 
-printf '\n# decisions, one file each\n'
+section 'decisions, one file each'
 . "$root/templates/scripts/decisions-lib.sh"
 eq "table rows become number, date and text" "123	2026-10-13	Voice long lines in chunks.
 124	2026-10-13	No affirmation in the meditation." "$(decision_rows '| Decision | Date | What |
@@ -1382,7 +1423,7 @@ eq "split keeps the rest of the brief" "1" "$(sed -n 4p "$dd.out")"
 eq "split numbers decisions by file" "decision docs/decisions/*.md" "$(sed -n 5p "$dd.out")"
 eq "list reads them back" "| D2 | 2026-10-02 | Second thing. |" "$(sed -n 6p "$dd.out")"
 
-printf '\n# batches and the drain, sharing pull requests\n'
+section 'batches and the drain, sharing pull requests'
 eq "a batch body's members" "303
 305" "$(batch_members "$(batch_pr_body "$(printf '303\tAI fill\n305\tHighlights\n')")")"
 eq "the drain drops an open batch's members" "301	false	sha	main" "$(drop_members "$(printf '301\tfalse\tsha\tmain\n303\tfalse\tsha\tmain\n305\tfalse\tsha\tmain')" '303 305')"
@@ -1392,7 +1433,7 @@ eq "jobs waiting on machines are said with a rough time" "6 job(s) queued, 2 of 
 eq "queued with no runner online" "3 job(s) queued and no runner online." "$(queue_eta 3 0 0)"
 eq "nothing queued, nothing said" "" "$(queue_eta 0 2 2)"
 
-printf '\n# a batch anchored on the earliest pull request\n'
+section 'a batch anchored on the earliest pull request'
 eq "no conflicts, everyone in" "251 252 253" "$(anchored_group '251 252 253' '' | tr '\n' ' ' | sed 's/ $//')"
 eq "the earliest stays in, its conflicts go" "251 254" "$(anchored_group '251 252 253 254' "$(printf '251 252\n251 253')" | tr '\n' ' ' | sed 's/ $//')"
 eq "the largest set beside the earliest, not the first that fits" "251 253 254" "$(anchored_group '251 252 253 254' "$(printf '252 253\n252 254')" | tr '\n' ' ' | sed 's/ $//')"
@@ -1402,7 +1443,7 @@ eq "the notice names the files and the fix" "yes" "$(conflict_notice "$(printf '
 eq "conflicts are noticed once per head commit" "1" "$(grep -cF 'grep -qx "$1 $nc_sha" "$nc_seen"' "$root/templates/scripts/ci/merge-queue.sh")"
 eq "the queue notices in all three places" "3" "$(grep -c '^ *notify_conflict "\$pr"' "$root/templates/scripts/ci/merge-queue.sh")"
 
-printf '\n# when a green pull request needs a second run\n\'
+section 'when a green pull request needs a second run'
 eq "main moved outside its classes: merge" "merge" "$(rerun_decision no red)"
 eq "main moved in its classes and main is green: merge, main's run is the gate" "merge" "$(rerun_decision yes green)"
 eq "main is red: re-run" "update" "$(rerun_decision yes red)"
@@ -1410,7 +1451,7 @@ eq "main's newest commit has not finished its run: re-run" "update" "$(rerun_dec
 eq "main unreadable: re-run" "update" "$(rerun_decision yes unknown)"
 eq "the old rule on request" "update" "$(rerun_decision yes green classes)"
 
-printf '\n# labels over REST, and waiting on a machine\n'
+section 'labels over REST, and waiting on a machine'
 eq "the state label replaces the old one and keeps the rest" '{"labels":["bug","task","state:in-progress"]}' "$(state_labels_json 'bug
 state:ready
 task' 'state:in-progress')"
@@ -1427,7 +1468,7 @@ eq "queued with a runner online: wait" "" "$(runner_stall yes 1)"
 eq "queued and the runners unreadable: say so" "unknown" "$(runner_stall yes unknown)"
 eq "running: wait" "" "$(runner_stall no 0)"
 
-printf '\n# serial merges, enforced by the queue\n'
+section 'serial merges, enforced by the queue'
 eq "alone with nothing else ready may go" "" "$(serial_refusal '' '')"
 eq "a reason always may go" "" "$(serial_refusal '81 82 83' migration)"
 eq "others ready and no reason is refused, naming them" "3 other green pull request(s) are ready to land with it (#81 #82 #83); merge them together with --drain (or --batch), or give the reason this one must land alone: --serial N --because migration|conflict|must-land-alone|\"why\"" "$(serial_refusal '81 82 83 ' '')"
@@ -1445,7 +1486,7 @@ worktree C:/r/app-wt/a
 worktree C:/r/app-wt/b
 worktree C:/r/app/.claude/worktrees/agent-1')"
 
-printf '\n# the API budget and one queue at a time\n'
+section 'the API budget and one queue at a time'
 eq "plenty left, no wait" "0" "$(rate_wait "4000	2000" 1000)"
 eq "under the floor, wait until the reset" "600" "$(rate_wait "120	1600" 1000)"
 eq "under the floor but the window has reset" "0" "$(rate_wait "120	900" 1000)"
@@ -1484,7 +1525,7 @@ eq "a lock whose process is gone is free" "" "$(queue_lock_reason "4242	1000	--d
 eq "a lock older than three hours is free" "" "$(queue_lock_reason "4242	1000	--batch" 20000 yes)"
 eq "no lock is free" "" "$(queue_lock_reason '' 1720 yes)"
 
-printf '\n# the package a file belongs to\n'
+section 'the package a file belongs to'
 roots='.
 web
 web/packages/ui
@@ -1496,7 +1537,7 @@ eq "Windows separators are fine" "web" "$(nearest_root 'web\src\a.test.ts' "$roo
 eq "a sibling name is not a prefix" "." "$(nearest_root 'webapp/a.test.ts' "$roots")"
 eq "no root at all, nothing" "" "$(nearest_root 'a.test.ts' 'web')"
 
-printf '\n# numbering\n'
+section 'numbering'
 . "$root/templates/scripts/ci/numbering-lib.sh"
 eq "the glob for a kind" "supabase/migrations/*.sql" "$(numbering_glob '# note
 migration supabase/migrations/*.sql
@@ -1549,7 +1590,7 @@ eq "no migration added, nothing" "" "$(pending_migrations "$manual" 'src/a.ts' '
 eq "a manual line without the extension still counts, and still blocks when not yet run" "0002_profiles.sql	not yet run" "$(pending_migrations '| 0002_profiles | Not yet run |' 'supabase/migrations/0002_profiles.sql' 'supabase/migrations/*.sql')"
 eq "a manual line without the extension marked done passes" "" "$(pending_migrations '| 0002_profiles | Done 2026-10-10 |' 'supabase/migrations/0002_profiles.sql' 'supabase/migrations/*.sql')"
 
-printf '\n# decision numbers inside a file\n'
+section 'decision numbers inside a file'
 brief='## Decisions
 
 | ID | Decision | Date |
@@ -1577,7 +1618,7 @@ eq "two pull requests that both took D55" "D55" "$(duplicate_ids "$brief
 eq "the next free decision" "D58" "$(next_free_id "$(id_definitions "$brief" D)" D)"
 eq "the first decision" "D1" "$(next_free_id '' D)"
 
-printf '\n# env-lib\n'
+section 'env-lib'
 . "$root/templates/scripts/env-lib.sh"
 eq "a missing key is appended" "A=1
 B=2" "$(env_set 'A=1' B 2)"
@@ -1594,7 +1635,7 @@ eq "a password is the asked length" "32" "$(random_password 32 | tr -d '\n' | wc
 eq "a password is letters and digits only" "0" "$(random_password 32 | tr -d 'A-Za-z0-9\n' | wc -c | tr -d ' ')"
 eq "two passwords differ" "no" "$([ "$(random_password)" = "$(random_password)" ] && echo yes || echo no)"
 
-printf '\n# template refresh\n'
+section 'template refresh'
 . "$root/scripts/sync/sync-lib.sh"
 owned='# comment
 scripts/ci/merge-queue.sh
@@ -1904,23 +1945,24 @@ eq "the template itself is not" "" "$(split_checks "$(cat "$root/templates/.gith
 eq "sync points a split ci.yml, and one without pull-requests: read, at the migration page" "2" "$(grep -c 'plugin/CI-MIGRATION.md' "$root/scripts/sync/sync-templates.sh")"
 eq "the migration page ships with the plugin" "yes" "$([ -f "$root/CI-MIGRATION.md" ] && echo yes || echo no)"
 
-printf '\n# the CI template is three jobs on a pull request, and the screens job where mocks have routes\n'
+section 'the CI template is three jobs on a pull request, and the screens job where mocks have routes'
 ciy=$(cat "$root/templates/.github/workflows/ci.yml")
 eq "its jobs" "checks
 app
+tests
 screens
 ci-passed
 full
 report-red
 report-green" "$(workflow_jobs "$ciy")"
-eq "CI passed waits on checks, app and screens" "1" "$(printf '%s\n' "$ciy" | grep -c 'needs: \[checks, app, screens\]')"
-eq "one checkout in checks, app, screens and full" "4" "$(printf '%s\n' "$ciy" | grep -c 'uses: actions/checkout@v4')"
+eq "CI passed waits on checks, app, tests and screens" "1" "$(printf '%s\n' "$ciy" | grep -c 'needs: \[checks, app, tests, screens]')"
+eq "one checkout in checks, app, tests, screens and full" "5" "$(printf '%s\n' "$ciy" | grep -c 'uses: actions/checkout@v4')"
 eq "a newer push cancels an older pull request run" "1" "$(printf '%s\n' "$ciy" | grep -c 'cancel-in-progress: true')"
 eq "main pushes are each their own group" "1" "$(printf '%s\n' "$ciy" | grep -c "pull_request.number || github.sha")"
 eq "every rule script still runs" "8" "$(for f in classify.sh line-endings.sh status/check.sh numbering-check.sh spec-check.sh setup-check.sh shared-check.sh delete-check.sh; do printf '%s\n' "$ciy" | grep -q "$f" && echo x; done | grep -c x)"
 eq "the env check still runs" "1" "$(printf '%s\n' "$ciy" | grep -c 'client-env-check.sh')"
 
-printf '\n# set -e never swallows a return code\n'
+section 'set -e never swallows a return code'
 eq "no bare msg=\$(f); code=\$? in the queue" "0" "$(grep -c '=\$([^)]*); *code=\$?' "$root/templates/scripts/ci/merge-queue.sh")"
 eq "a pending run says it is waiting, in both waits" "2" "$(grep -cF 'code=0; msg=$(diagnose "$run_id") || code=$?' "$root/templates/scripts/ci/merge-queue.sh")"
 eq "the drain drops what settling merged or closed" "1" "$(grep -c 'drop_members "$listed" "$members $settled"' "$root/templates/scripts/ci/merge-queue.sh")"
@@ -1933,7 +1975,7 @@ eq "close says a pull request was already closed" "1" "$(grep -c 'was already cl
 eq "close reads and closes over REST" "0" "$(grep -c 'gh pr view\|gh pr close' "$root/templates/scripts/worktrees.sh")"
 
 
-printf '\n# what an agent did after a refusal\n'
+section 'what an agent did after a refusal'
 . "$root/hooks/scripts/resolution-lib.sh"
 eq "moved the file aside: followed" "followed" "$(resolution_of block-delete Bash 'git mv a.txt aside/a.txt')"
 eq "deleted it through Python: a possible workaround" "workaround" "$(resolution_of block-delete Bash "python -c 'import os; os.remove(\"a\")'")"
@@ -1955,7 +1997,7 @@ t1	block-force-push	followed" "$(resolution_feed "$(printf 't1\tblock-force-push
 eq "a hook line from before ids is keyed by its time" "t0	block-delete	followed" "$(resolution_feed "$(printf 't0\tblock-delete')" "$(printf 'x\tt0\tblock-delete\ts\tfollowed')")"
 eq "every refusing hook logs, and the watcher is registered three times" "10 3" "$(grep -l 'refusal-log.sh' "$root"/hooks/scripts/block-*.sh "$root"/hooks/scripts/require-*.sh | wc -l | tr -d ' ') $(grep -c watch-resolution "$root/hooks/hooks.json")"
 
-printf '\n# one design source for every platform\n'
+section 'one design source for every platform'
 . "$root/templates/scripts/design/design-lib.sh"
 dtok=$(cat "$root/templates/design/tokens.json")
 eq "the font names tokens.json declares" "Figtree
@@ -2066,7 +2108,7 @@ fi
 eq "the CI template runs the design check where tokens exist" "1" "$(grep -c "hashFiles('design/tokens.json') != ''" "$root/templates/.github/workflows/ci.yml")"
 eq "batches carry a Design: line" "1" "$(grep -c 'QUEUE_CARRY_KEYS:-Deletes Mock Parity Twin Design' "$root/templates/scripts/ci/batch-lib.sh")"
 eq "the brief has a screens section" "1" "$(grep -c 'leftover screens handoff' "$root/hooks/scripts/session-brief-lib.sh")"
-printf '\n# a screen and its mock change together\n'
+section 'a screen and its mock change together'
 . "$root/templates/scripts/ci/mock-lib.sh"
 mtxt=$(cat "$root/tests/fixtures/mocks/scripts/ci/mocks.txt")
 eq "mapping lines, the keyword lines left out" "home	src/app/page.tsx	design/mocks/Home.dc.html design/mocks/HomeDark.dc.html
@@ -2107,7 +2149,7 @@ eq "the CI template runs the mock check where mocks.txt exists" "1" "$(grep -c "
 eq "the template mocks.txt has no live lines" "" "$(mock_lines "$(cat "$root/templates/scripts/ci/mocks.txt")")"
 eq "the brief has a stale-mock line" "1" "$(grep -c 'mock-check.sh" --stale' "$root/hooks/scripts/session-brief.sh")"
 
-printf '\n# copy from the mocks\n'
+section 'copy from the mocks'
 . "$root/templates/scripts/design/design-lib.sh"
 callow=$(cat "$root/templates/scripts/ci/copy-allow.txt")
 ccalls=$(copy_section "$callow" "user-facing calls")
@@ -2163,7 +2205,7 @@ else
   printf 'skip  node is not installed, so the copy extractor did not run\n'
 fi
 
-printf '\n# a screen beside its mock\n'
+section 'a screen beside its mock'
 . "$root/templates/scripts/ci/mock-lib.sh"
 . "$root/templates/scripts/design/design-lib.sh"
 sd_fx="$root/tests/fixtures/screens-diff"
@@ -2224,10 +2266,10 @@ exit 0" "$(cat "$sdr.stub")"
 ciy_s="$root/templates/.github/workflows/ci.yml"
 eq "the CI template has a screens job after checks" "1" "$(awk '/^  screens:$/{j=1} j && /needs: checks/{n++; j=0} END{print n+0}' "$ciy_s")"
 eq "it uploads the images, writes the summary, and edits one comment" "1 1 1 1" "$(grep -c 'actions/upload-artifact@v4' "$ciy_s") $(grep -c 'GITHUB_STEP_SUMMARY' "$ciy_s") $(grep -c "marker='<!-- screens: side by side -->'" "$ciy_s") $(grep -c 'gh api -X PATCH' "$ciy_s")"
-eq "CI passed waits on the screens job" "1" "$(grep -c 'needs: \[checks, app, screens\]' "$ciy_s")"
+eq "CI passed waits on the screens job" "1" "$(grep -c 'needs: \[checks, app, tests, screens\]' "$ciy_s")"
 eq "the brief names screens not compared with their mock" "1" "$(grep -c 'compare --mock NAME' "$root/hooks/scripts/session-brief.sh")"
 
-printf '\n# runner watch\n'
+section 'runner watch'
 runs=$(printf '11\tCI\tfeature\tqueued\t1000\n12\tCI\tmain\tqueued\t1500\n13\tCI\tother\tin_progress\t100\n14\tCI\tx\tqueued\t1900\n')
 eq "runs queued past ten minutes, oldest first" "11	CI	feature	16
 12	CI	main	8" "$(stuck_runs "$runs" 2000 5)"
@@ -2237,7 +2279,7 @@ Only 1 of 2 self-hosted runner(s) online; one runner makes every job wait for th
 eq "two online runners are fine" "" "$(runner_problems "$(printf 'build-1\tonline\ttrue\nbuild-2\tonline\tfalse\n')")"
 eq "no runners listed, nothing said" "" "$(runner_problems '')"
 
-printf '\n# deploys: keeping the host'"'"'s build CPU down\n'
+section 'deploys: keeping the host'"'"'s build CPU down'
 . "$root/templates/scripts/ci/deploy-lib.sh"
 eq "app code ships" "yes" "$(ships_path 'src/app/page.tsx' .)"
 eq "a doc does not ship" "no" "$(ships_path 'docs/plan.md' .)"
@@ -2353,7 +2395,7 @@ if command -v node >/dev/null 2>&1; then
 fi
 mv "$dt" "$dt.done" 2>/dev/null || true
 
-printf '\n# owner console (node)\n'
+section 'owner console (node)'
 if command -v node >/dev/null 2>&1; then
   if node --test --test-reporter tap "$root"/console/test/*.test.js >"$root/tests/console.log" 2>&1; then
     node_count=$(sed -n 's/^# pass \([0-9]*\).*/\1/p' "$root/tests/console.log" | tr -d '\r')
@@ -2363,19 +2405,20 @@ if command -v node >/dev/null 2>&1; then
     fail=$((fail + 1))
     printf 'FAIL  console tests, see tests/console.log\n'
     grep -E '^not ok|^# (fail|pass)' "$root/tests/console.log"
+    block_failed "$(printf 'FAIL  console tests\n'; grep -E '^not ok' "$root/tests/console.log")"
   fi
   mv "$root/tests/console.log" "$root/tests/console.log.last"
 else
   printf 'skip  node is not installed, so the console tests did not run\n'
 fi
 
-printf '\n# drive skill scheduling\n'
+section 'drive skill scheduling'
 drive_sched=$(sed -n '/^## Scheduling/,$p' "$root/skills/project-drive/SKILL.md")
 for w in desktop terminal scheduled; do
   eq "drive skill scheduling names the $w way" "1" "$(printf '%s\n' "$drive_sched" | grep -qi "$w" && echo 1 || echo 0)"
 done
 
-printf '\n# drive release goal\n'
+section 'drive release goal'
 . "$root/scripts/drive/drive-lib.sh"
 eq "next patch bumps the last part" "0.23.8" "$(next_patch 0.23.7)"
 eq "next patch carries no overflow" "1.0.10" "$(next_patch 1.0.9)"
@@ -2416,7 +2459,7 @@ eq "session brief names the unreleased count" "1" "$(grep -q 'unreleased commit'
 eq "drive skill names the release goal" "1" "$(grep -q 'release X.Y.Z' "$root/skills/project-drive/SKILL.md" && echo 1 || echo 0)"
 eq "plan script adds the release goal" "1" "$(grep -q 'release_goal' "$root/scripts/drive/plan.sh" && echo 1 || echo 0)"
 
-printf '\n# hook counterparts\n'
+section 'hook counterparts'
 cp_file="$root/hooks/COUNTERPARTS.txt"
 for cp_h in "$root"/hooks/scripts/block-*.sh "$root"/hooks/scripts/require-*.sh; do
   cp_n=$(basename "$cp_h" .sh)
@@ -2436,7 +2479,7 @@ while IFS='|' read -r cp_n cp_c cp_r; do
 done < "$cp_file"
 
 
-printf '\n# the delete check\n'
+section 'the delete check'
 dc="$root/templates/scripts/ci/delete-check.sh"
 dr=$(mktemp -d)
 git -C "$dr" init -q
@@ -2471,7 +2514,7 @@ eq "a batch whose members state no reason still fails" "1" "$(cd "$dr" && PR_BOD
 eq "a carried Mock line reads as the member's" "copy only" "$(mock_escape "$dc_body")"
 eq "a single pull request's body is read as before" "0" "$(cd "$dr" && PR_BODY="Deletes: the file was a stray copy" sh "$dc" "$move_sha" "$del_sha" >/dev/null 2>&1; echo $?)"
 eq "without a number no header is added" "Deletes: x" "$(carried_refs 'Deletes: x')"
-printf '\n# workspace install\n'
+section 'workspace install'
 ws=$(mktemp -d)
 mkdir -p "$ws/pn/packages/a" "$ws/pn/packages/b" "$ws/pn/packages/notpkg" "$ws/np/libs/x" "$ws/np/apps/y" "$ws/per/web"
 printf 'packages:\n  - "packages/*"\n' > "$ws/pn/pnpm-workspace.yaml"
@@ -2502,7 +2545,7 @@ eq "pnpm installs frozen" "1" "$(workspace_install_command "$ws/pn" pnpm | grep 
 eq "the queue installs a workspace from its root" "1" "$(grep -c 'ensure_workspace "\$em_kind"' "$root/templates/scripts/ci/merge-queue.sh")"
 
 
-printf '\n# a draft tokens file seeded from the mocks\n'
+section 'a draft tokens file seeded from the mocks'
 sl="$root/templates/scripts/design/seed-lib.mjs"
 sq() { node --input-type=module -e "import * as s from 'file:///$(printf '%s' "$sl" | sed 's|^/\([a-zA-Z]\)/|\1:/|')'; $1"; }
 eq "a style string gives its declarations" '[["font-family","'"'"'Display Serif'"'"', serif"],["font-size","32px"],["padding","16px 24px"]]' "$(sq 'console.log(JSON.stringify(s.parseStyle("font-family: '"'"'Display Serif'"'"', serif; font-size: 32px; padding: 16px 24px")))')"
@@ -2541,7 +2584,7 @@ eq "the families with the weights seen beside them" "body Inter 400 3, display D
 eq "the type scale by size, largest first" "title display 32/800 1.1 0 false 2, heading body 16/600 1.5 0 false 5, subheading body 12/600 1.3 0.08 true 3" "$(sj 'j.type.roles.map(r=>[r.key,r.family,r.size+"/"+r.weight,r.lineHeight,r.letterSpacing,r.uppercase,r.seen].join(" ")).join(", ")')"
 eq "radii and spacing as scales, counts under _seen" '{"small":8,"round":999} {"xs":8,"sm":12,"md":16,"lg":24} {"radii":{"small":3,"round":2},"spacing":{"xs":1,"sm":2,"md":3,"lg":4}}' "$(sj 'JSON.stringify(j.radii)+" "+JSON.stringify(j.spacing)+" "+JSON.stringify(j._seen)')"
 eq "the bootstrap's mocks step runs the seeder" "1" "$(grep -c 'node scripts/design/seed-tokens.mjs' "$root/skills/project-bootstrap/SKILL.md" | awk '{print ($1>=1)?1:0}')"
-printf '\n# deploy targets\n'
+section 'deploy targets'
 dt_tpl=$(cat "$root/templates/.github/workflows/deploy.yml")
 dt_ci=$(printf 'jobs:\n  a:\n    runs-on: [self-hosted, windows]\n    steps:\n      - name: a\n        shell: %s\n' "'C:\PROGRA~1\Git\bin\bash.exe --noprofile --norc -eo pipefail {0}'")
 dt_win=$(. "$root/scripts/sync/sync-lib.sh"; filled_text "$dt_tpl" "$(ci_runs_on "$dt_ci")" "$(ci_shell "$dt_ci")")
@@ -2555,7 +2598,7 @@ eq "the Cloudflare job has both secrets" "2" "$(dt_job deploy-cloudflare "$dt_tp
 eq "rendered for Windows, the plan and the Cloudflare job name Git's bash in every step" "1/1 3/3" "$(for j in plan deploy-cloudflare; do t=$(dt_job $j "$dt_win"); printf '%s/%s ' "$(printf '%s\n' "$t" | grep -c 'shell:.*Git\\bin\\bash.exe')" "$(printf '%s\n' "$t" | grep -c 'shell:')"; done | sed 's/ $//')"
 eq "and never a bare bash there" "0" "$(printf '%s\n%s\n' "$(dt_job plan "$dt_win")" "$(dt_job deploy-cloudflare "$dt_win")" | grep -cE 'shell:[[:space:]]*(bash|RUN_SHELL)')"
 eq "the sync takes a rendered copy as current, CRLF or not" "yes yes" "$(. "$root/scripts/sync/sync-lib.sh"; same_text "$dt_win" "$(filled_text "$dt_tpl" "$(ci_runs_on "$dt_ci")" "$(ci_shell "$dt_ci")")" | tr -d '\n'; printf ' '; same_text "$(printf '%s\n' "$dt_win" | sed 's/$/\r/')" "$dt_win")"
-printf '\n# waits for a runner and the machine line\n'
+section 'waits for a runner and the machine line'
 . "$root/templates/scripts/ci/batch-lib.sh"
 . "$root/templates/scripts/ci/run-lib.sh"
 wl_dir=$(mktemp -d); wl_now=1800000000
@@ -2587,5 +2630,42 @@ eq "the watch prints the machine line" "1" "$(grep -c 'echo "machine line: $mlin
 eq "the brief reads the waits log and the machine file" "1 1" "$(grep -c 'waits_line "$(tail -n 500' "$root/hooks/scripts/session-brief.sh") $(grep -c 'machine_brief_line "$(head -n 1' "$root/hooks/scripts/session-brief.sh")"
 mv "$wl_dir" "$wl_dir.done" 2>/dev/null || true
 
+section 'test parts: only for the classes touched, side by side, stopping at the first red'
+pj_fx="$root/tests/fixtures/parts"
+pj_classes=$(cat "$pj_fx/classes.txt")
+pj_matrix() { parts_matrix "$(class_parts "$(classify_paths "$(cat "$pj_fx/paths-$1.txt")" "$pj_classes")" "$pj_classes")"; }
+eq "a class with three parts is three matrix entries" '["beds","watering","sensors"]' "$(pj_matrix web-only)"
+eq "a class with no parts is no entry" '[]' "$(pj_matrix docs-only)"
+eq "a change touching two classes runs the parts of both" '["beds","watering","sensors","endings"]' "$(pj_matrix two-classes)"
+eq "an unclassified path runs every part" '["beds","watering","sensors","endings"]' "$(pj_matrix unclassified)"
+eq "main's full run takes every part, with its command" "4 sh scripts/ci/line-endings.sh" "$(class_parts all "$pj_classes" | grep -c .) $(class_parts all "$pj_classes" | awk -F '\t' '$1 == "endings" { print $2 }')"
+eq "a project with no parts lines builds no matrix" '[]' "$(parts_matrix "$(class_parts 'app ci other' "$(grep -v '^!parts' "$pj_fx/classes.txt")")")"
+eq "a name given twice runs once" '["a"]' "$(parts_matrix "$(class_parts 'x y' "$(printf '!parts x a=one\n!parts y a=two')")")"
+eq "the template's classes.txt has no parts, so a new project runs as before" '[]' "$(parts_matrix "$(class_parts other "$(cat "$root/templates/scripts/ci/classes.txt")")")"
+eq "test-parts.sh, the classify step and the tests job are in the template" "1 1 1 1" "$(grep -c 'test-parts.sh matrix' "$root/templates/.github/workflows/ci.yml") $(grep -c 'fromJSON(needs.checks.outputs.parts)' "$root/templates/.github/workflows/ci.yml") $(grep -c 'test-parts.sh all' "$root/templates/.github/workflows/ci.yml") $(grep -cx 'scripts/ci/test-parts.sh' "$root/templates/OWNED.txt")"
+pj_repo="$root/../scripts/ci/classes.txt"
+if [ -f "$pj_repo" ] && grep -q '^!parts plugin' "$pj_repo"; then
+  pj_rc=$(cat "$pj_repo")
+  for pj_case in web-only:'[]' plugin:'["shell","console","queue"]' ci:'["shell","console","queue"]' unclassified:'["shell","console","queue"]'; do
+    pj_name=${pj_case%%:*}
+    eq "this repository's suite for a $pj_name change" "${pj_case#*:}" "$(parts_matrix "$(class_parts "$(classify_paths "$(cat "$pj_fx/paths-$pj_name.txt")" "$pj_rc")" "$pj_rc")")"
+  done
+  eq "each of this repository's parts stops at the first red" "3" "$(class_parts plugin "$pj_rc" | grep -c 'run.sh --fail-fast --part')"
+fi
+eq "a web-only change is app and docs" "app docs" "$(classify_paths "$(cat "$pj_fx/paths-web-only.txt")" "$pj_classes" | tr ' ' '\n' | sort | tr '\n' ' ' | sed 's/ $//')"
+eq "every block of the suite falls in one of three parts" "console queue shell" "$(grep "^section '" "$root/tests/run.sh" | sed "s/^section '//; s/'\$//" | while IFS= read -r b; do part_of "$b"; done | sort -u | tr '\n' ' ' | sed 's/ $//')"
+eq "every queue block named in the list is a block of the suite" "" "$(printf '%s\n' "$parts_queue_blocks" | while IFS= read -r b; do grep -qxF "section '$b'" "$root/tests/run.sh" || echo "$b"; done)"
+eq "the queue part keeps the prelude, its block and the summary" "1 0 1 0 1" "$(PARTS_LIB=x; t=$(part_script queue < "$pj_fx/suite.sh"); for s in '^pass=0' "garden beds" "section 'drain'" 'owner console' 'stop_if_red'; do printf '%s\n' "$t" | grep -c "$s"; done | tr '\n' ' ' | sed 's/ $//')"
+eq "the console part keeps only the console block" "0 1" "$(t=$(part_script console < "$pj_fx/suite.sh"); printf '%s\n' "$t" | grep -c 'watering' | tr '\n' ' '; printf '%s\n' "$t" | grep -c 'owner console')"
+pj_out=$(PARTS_LIB="$root/tests/parts-lib.sh" FAIL_FAST=yes sh "$pj_fx/suite.sh"; echo "rc $?")
+eq "with --fail-fast the run stops after the first failing block, naming it" "1 2 0 rc 1" "$(printf '%s\n' "$pj_out" | grep -c 'Stopped at the first failing block: watering schedule') $(printf '%s\n' "$pj_out" | grep -c '^FAIL  the morning round waters the herbs$') $(printf '%s\n' "$pj_out" | grep -c 'the queue drains') $(printf '%s\n' "$pj_out" | tail -n 1)"
+pj_out=$(PARTS_LIB="$root/tests/parts-lib.sh" sh "$pj_fx/suite.sh"; echo "rc $?")
+eq "without it every block runs" "1 0 rc 1" "$(printf '%s\n' "$pj_out" | grep -c 'the queue drains') $(printf '%s\n' "$pj_out" | grep -c 'Stopped at') $(printf '%s\n' "$pj_out" | tail -n 1)"
+eq "an unknown part is refused" "2" "$(RUN_PART= sh "$root/tests/run.sh" --part garden >/dev/null 2>&1; echo $?)"
+pj_out=$(RUN_PART= CI_FULL_RUN=yes sh "$root/tests/run.sh" --fail-fast --part nothing-here 2>&1; echo "rc $?")
+eq "main's full run still refuses an unknown part" "rc 2" "$(printf '%s\n' "$pj_out" | tail -n 1)"
+
+# --- end of blocks: the summary, kept in every part.
+stop_if_red
 printf '\n%s passed, %s failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

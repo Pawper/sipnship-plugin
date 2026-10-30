@@ -321,6 +321,7 @@ scripts/ci/spec-check.sh 300deec722d33bb28ebf874f4ab3c84aadb48725
 scripts/ci/spec-check.sh 5e8e0a1e12ceb28ae855f8c99968b032acf11761
 scripts/ci/spec-check.sh 5f8327eb2a071936b47744818e75afc85f4fff2d
 scripts/ci/spec-check.sh d64ec82b033803d21d02ca9577e30e099b7b93d8
+scripts/ci/test-parts.sh a44fe69bce82fa7a57cf88a9b0b3d388a26686c0
 scripts/ci/vercel-ignore.sh 4332c3b3327451b58885d6c769c7d889ab317f22
 scripts/ci/vercel-ignore.sh cffaae6c27984d90db3c9504214ef29503a8dd49
 scripts/ci/workflow-breaks.sh be6b9ba6b02e27050210f4fe91fb9f8aa6aab4bb
