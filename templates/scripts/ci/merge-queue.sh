@@ -291,6 +291,177 @@ publish_now() {
   return 0
 }
 
+# --- Requests to the queue: land this next, hold this, take it out ---
+# A person, their agent or the dashboard's helper asks; the queue honours
+# the request at the ticks it already wakes on (each drain round's start,
+# each two-minute hold, each two minutes of a batch's run), so a request
+# takes effect within two minutes. Read through the service road when this
+# machine is connected, else as comments in a fixed form on the Merge queue
+# issue. A request never merges red: "land this next" runs --serial and
+# nothing else. Bounded, never fatal: a request that cannot be read is said
+# once and the queue goes on without it.
+req_road=""; req_id=""; req_token=""; req_issue=""
+requests_road_set() {
+  [ -z "$req_road" ] || return 0
+  rr_switch=${QUEUE_PUBLISH_STATE:-}
+  [ -n "$rr_switch" ] || rr_switch=$(gh api "repos/{owner}/{repo}/actions/variables/QUEUE_PUBLISH_STATE" --jq .value 2>/dev/null || echo off)
+  req_road=none
+  case "$rr_switch" in
+    issue) req_road=issue ;;
+    service)
+      req_road=issue
+      req_token=${SIPNSHIP_REPO_TOKEN:-}; req_id=${SIPNSHIP_REPO_ID:-}
+      if [ -z "$req_token" ] && command -v node >/dev/null 2>&1; then
+        rr_repo=$(git remote get-url origin 2>/dev/null | tr -d '\r' | sed -n 's#.*github\.com[:/]\([^/]*\)/\([^/]*\)$#\1/\2#p' | sed 's/\.git$//')
+        rr_pair=$(node -e '
+          const fs = require("fs"), path = require("path"), os = require("os");
+          const home = process.env.SIPNSHIP_HOME || path.join(os.homedir(), ".sipnship");
+          try {
+            const repos = JSON.parse(fs.readFileSync(path.join(home, "tokens.json"), "utf8")).repos || {};
+            for (const [id, e] of Object.entries(repos)) if (e && String(e.fullName).toLowerCase() === process.argv[1].toLowerCase()) { process.stdout.write(id + "\t" + e.token); break; }
+          } catch {}' "$rr_repo" 2>/dev/null)
+        if [ -n "$rr_pair" ]; then req_id=${rr_pair%%	*}; req_token=${rr_pair#*	}; fi
+      fi
+      [ -n "$req_id" ] || req_id=$(gh api "repos/{owner}/{repo}" --jq .id 2>/dev/null | tr -d '\r')
+      if [ -n "$req_token" ] && [ -n "$req_id" ] && command -v curl >/dev/null 2>&1; then req_road=service; fi ;;
+  esac
+  return 0
+}
+
+# requests_open: the open requests, one "id kind pr asked_by reason" a line.
+requests_open() {
+  case "$req_road" in
+    service)
+      if ! printf 'Authorization: Bearer %s\n' "$req_token" | curl -s -f --max-time 5 -H @- "${SIPNSHIP_URL:-https://sipnship.dev}/v1/repos/$req_id/queue/requests/open" 2>/dev/null | tr -d '\r'; then
+        [ -f "$flaky_dir/requests.unreachable" ] || { say "Requests to the queue could not be read from SipNShip; going on without them."; : > "$flaky_dir/requests.unreachable"; }
+      fi ;;
+    issue)
+      [ -n "$req_issue" ] || req_issue=$(gh api "repos/{owner}/{repo}/issues?labels=queue&state=all&per_page=20" --jq '[.[] | select(.title == "Merge queue")] | .[0].number // empty' 2>/dev/null | tr -d '\r')
+      [ -n "$req_issue" ] || return 0
+      # Only a one-line comment in the exact form, whose author is the one it names.
+      gh api "repos/{owner}/{repo}/issues/$req_issue/comments?per_page=100&since=$(iso_utc $(( $(date +%s) - 2 * 86400 )))" \
+        --jq '.[] | select((.body | test("[\r\n]")) | not) | "\(.id)\t\(.user.login)\t\(.body)"' 2>/dev/null | tr -d '\r' \
+        | while IFS="$tab" read -r ro_id ro_login ro_body; do
+          ro_l=$(request_from_comment "$ro_id" "$ro_body")
+          [ -n "$ro_l" ] || continue
+          [ "$(printf '%s' "$ro_l" | cut -f4)" = "$ro_login" ] || continue
+          printf '%s\n' "$ro_l"
+        done ;;
+  esac
+  return 0
+}
+
+# requests_answer ID KIND PR OUTCOME: record what the queue did, on the
+# road the request came by. "next-after-batch" is a step, not the end.
+requests_answer() {
+  if [ "$4" = next-after-batch ] || [ "$4" = deploying ]; then
+    grep -qx "$1" "$flaky_dir/requests.after" 2>/dev/null && return 0
+    printf '%s\n' "$1" >> "$flaky_dir/requests.after"
+  else
+    printf '%s\n' "$1" >> "$flaky_dir/requests.done"
+  fi
+  say "request: $2 #$3: $4"
+  case "$req_road" in
+    service) printf 'Authorization: Bearer %s\n' "$req_token" | curl -s -o /dev/null --max-time 5 -X POST -H @- -H 'content-type: application/json' --data "{\"outcome\":\"$4\"}" "${SIPNSHIP_URL:-https://sipnship.dev}/v1/repos/$req_id/queue/requests/$1/outcome" 2>/dev/null || true ;;
+    issue) [ -z "$req_issue" ] || gh api -X POST "repos/{owner}/{repo}/issues/$req_issue/comments" -f body="$(request_answer_form "$2" "$3" "$4")" >/dev/null 2>&1 || true ;;
+  esac
+  return 0
+}
+
+# ships_since FROM TO: "skip" when nothing that ships changed between the
+# two commits, by the Deploy workflow's own rule. The one ask every deploy
+# decision makes: the drain's end and a "Deploy now" request alike.
+ships_since() { sh "$here/deploy-gate.sh" --ships "$1" "$2" 2>/dev/null; }
+
+# requests_deploy_now ID BY: "Deploy now", inside the current drain. The
+# person's word stands in for the interval and the green-others wait, as
+# the Deploy workflow's own manual dispatch does; the gate's "nothing that
+# ships changed" rule still holds. Started once; later ticks read its run.
+requests_deploy_now() {
+  dn_mark="$flaky_dir/requests.deploy-$1"
+  if grep -qx "$1" "$flaky_dir/requests.after" 2>/dev/null; then
+    dn_since=$(cat "$dn_mark" 2>/dev/null)
+    dn_run=$(gh api "repos/{owner}/{repo}/actions/workflows/deploy.yml/runs?event=workflow_dispatch&per_page=1&created=>=$(iso_utc "${dn_since:-0}")" --jq '.workflow_runs[0] | "\(.status)\t\(.conclusion // "")"' 2>/dev/null | tr -d '\r')
+    dn_out=$(deploy_run_outcome "${dn_run%%	*}" "${dn_run#*	}")
+    [ -z "$dn_out" ] || requests_answer "$1" deploy-now 0 "$dn_out"
+    return 0
+  fi
+  git fetch -q origin "$base" 2>/dev/null || true
+  dn_end=$(git ls-remote origin "refs/heads/$base" 2>/dev/null | cut -f1)
+  dn_from=$(git ls-remote origin refs/deploy/production 2>/dev/null | cut -f1)
+  if [ -n "$dn_from" ] && { [ "$dn_from" = "$dn_end" ] || [ "$(ships_since "$dn_from" "$dn_end")" = skip ]; }; then
+    requests_answer "$1" deploy-now 0 nothing-to-deploy
+    return 0
+  fi
+  if [ ! -f .github/workflows/deploy.yml ]; then
+    say "request: deploy-now: this project has no Deploy workflow; main deploys on its own."
+    requests_answer "$1" deploy-now 0 nothing-to-deploy
+    return 0
+  fi
+  date +%s > "$dn_mark"
+  if gh api -X POST "repos/{owner}/{repo}/actions/workflows/deploy.yml/dispatches" -f ref="$base" >/dev/null 2>&1; then
+    say "Started the Deploy workflow now, as $2 asked."
+    requests_answer "$1" deploy-now 0 deploying
+  else
+    say "$(deploy_refused_message "$base")"
+    requests_answer "$1" deploy-now 0 deploy-failed
+  fi
+  return 0
+}
+
+requests_classes() { classify_paths "$(gh api "repos/{owner}/{repo}/pulls/$1/files?per_page=100" --jq '.[].filename' 2>/dev/null)" "$rules"; }
+
+# requests_tick WHERE: honour the open requests. WHERE is "drain" between
+# rounds, or "batch" while a batch's full run is in flight.
+requests_tick() {
+  [ -z "${QUEUE_IN_REQUEST:-}" ] || return 0
+  requests_road_set
+  [ "$req_road" != none ] || return 0
+  rt_lines=$(requests_open)
+  [ -n "$rt_lines" ] || return 0
+  rt_members=$(tr '\n' ' ' < "$flaky_dir/batch.members" 2>/dev/null)
+  printf '%s\n' "$rt_lines" | while IFS="$tab" read -r rq_id rq_kind rq_pr rq_by rq_why; do
+    [ -n "$rq_id" ] || continue
+    grep -qx "$rq_id" "$flaky_dir/requests.done" 2>/dev/null && continue
+    if [ "$rq_kind" = deploy-now ]; then requests_deploy_now "$rq_id" "$rq_by"; continue; fi
+    rq_state=$(gh api "repos/{owner}/{repo}/pulls/$rq_pr" --jq '"\(.state)\t\(.head.sha)\t\(.mergeable_state // "")"' 2>/dev/null | tr -d '\r')
+    [ -n "$rq_state" ] || continue
+    if [ "${rq_state%%	*}" != open ]; then requests_answer "$rq_id" "$rq_kind" "$rq_pr" not-open; continue; fi
+    case "$rq_kind" in
+      hold)
+        gh api -X POST "repos/{owner}/{repo}/issues/$rq_pr/labels" -f "labels[]=queue:hold" >/dev/null 2>&1 && requests_answer "$rq_id" hold "$rq_pr" held ;;
+      release)
+        gh api -X DELETE "repos/{owner}/{repo}/issues/$rq_pr/labels/queue:hold" >/dev/null 2>&1 || true
+        requests_answer "$rq_id" release "$rq_pr" released ;;
+      drop)
+        if [ -f "$here/../worktrees.sh" ] && sh "$here/../worktrees.sh" close "$rq_pr" "Taken out of the queue at the request of $rq_by: $rq_why" >/dev/null 2>&1; then
+          requests_answer "$rq_id" drop "$rq_pr" dropped
+        fi ;;
+      land-next)
+        rq_rest=${rq_state#*	}; rq_sha=${rq_rest%%	*}
+        rq_conf=""; [ "$(mergeable_word "${rq_rest#*	}")" = CONFLICTING ] && rq_conf=yes
+        rq_batch=no; rq_over=no
+        case " $rt_members " in *" $rq_pr "*) continue ;; esac
+        if [ "$1" = batch ] && [ -n "$(printf '%s' "$rt_members" | tr -d ' ')" ]; then
+          rq_batch=yes
+          rq_over=$(classes_overlap "$(requests_classes "$rq_pr")" "$(for rq_m in $rt_members; do requests_classes "$rq_m"; echo; done)")
+        fi
+        case "$(land_next_step "$(pr_rollup "$rq_sha")" "$rq_conf" "$rq_batch" "$rq_over")" in
+          red) requests_answer "$rq_id" land-next "$rq_pr" red ;;
+          conflicts) requests_answer "$rq_id" land-next "$rq_pr" conflicts ;;
+          after-batch) requests_answer "$rq_id" land-next "$rq_pr" next-after-batch ;;
+          serial-now)
+            say "request: landing #$rq_pr next, as $rq_by asked"
+            QUEUE_IN_DRAIN=1 QUEUE_IN_REQUEST=1 sh "$0" --serial --base "$base" --because "landing next at the request of $rq_by" "$rq_pr" 2>&1 | tee -a "$log_file" || true
+            rm -f "$flaky_dir/pr-$rq_pr.tsv" 2>/dev/null
+            if [ "$(gh api "repos/{owner}/{repo}/pulls/$rq_pr" --jq .merged 2>/dev/null)" = true ]; then requests_answer "$rq_id" land-next "$rq_pr" landed; fi ;;
+          *) : ;;
+        esac ;;
+    esac
+  done
+  return 0
+}
+
 # The batch as it changes shape, for publish-state.sh (spec 001): one line
 # per fact in batch.state ("stage\tS", "branch\tB", "pr\tN", "run\tID",
 # "member\tN\tTITLE\tSTATE", "dropped\tN\tTITLE\tWHY"); later lines win.
@@ -533,6 +704,8 @@ wait_for_run() {
       jq_counts=${jq_info%%	*}; [ -n "$jq_counts" ] || jq_counts=0
       rinfo=$(GH_TOKEN="${ADMIN_TOKEN:-${GH_TOKEN:-}}" gh api 'repos/{owner}/{repo}/actions/runners' --jq '"\([.runners[] | select(.status == "online")] | length)\t\([.runners[] | select(.busy)] | length)"' 2>/dev/null || true)
       [ -n "$rinfo" ] && queue_eta "$jq_counts" "${rinfo#*	}" "${rinfo%%	*}" "${QUEUE_JOB_MINUTES:-4}"
+      # A batch's full run is a tick too: a request takes effect within two minutes.
+      if [ -s "$flaky_dir/batch.members" ]; then requests_tick batch; fi
       # Keep each wait in the local log: when it began, which job, how busy.
       if [ "$jq_counts" -gt 0 ] 2>/dev/null; then
         [ -n "${w_seen:-}" ] || { w_seen=$(date +%s); w_job="run $run_id: ${jq_info#*	}"; }
@@ -883,7 +1056,7 @@ deploy_if_due() {
   git fetch -q origin "$base" 2>/dev/null || true
   d_from=$(git ls-remote origin refs/deploy/production 2>/dev/null | cut -f1)
   if [ -z "$d_from" ] || ! git cat-file -e "$d_from^{commit}" 2>/dev/null; then d_from=$1; fi
-  if [ "$(sh "$here/deploy-gate.sh" --ships "$d_from" "$d_end" 2>/dev/null)" = skip ]; then
+  if [ "$(ships_since "$d_from" "$d_end")" = skip ]; then
     say "deploy: skipped, nothing that ships changed since $(printf '%s' "$d_from" | cut -c1-7)"
     return 0
   fi
@@ -914,6 +1087,12 @@ if [ "$mode" = drain ]; then
     round=$((round + 1))
     queue_step="drain round $round: reading the open pull requests"
     rate_guard
+    # Requests to the queue, at every tick: this round's start, which each
+    # two-minute hold also comes back to. A "land this next" left waiting
+    # behind a batch lands here first, ahead of any other green one.
+    queue_step="drain round $round: reading requests"
+    requests_tick drain
+    queue_step="drain round $round: reading the open pull requests"
     # One REST list, then one metadata call and one check-runs call per
     # open pull request, each on the REST budget and cached for the round.
     # A listing that fails is an error, never an empty queue: one run read
@@ -1519,6 +1698,9 @@ echo "batch PR #$batch_pr opened; waiting for the one full CI run"
 batch_note pr "$batch_pr"; batch_moment testing
 batch_sha=$(git -C "$wt" rev-parse HEAD)
 batch_ok=no
+# The members, so a request read during the run knows which classes it runs.
+printf '%s\n' "$carried" | cut -f1 > "$flaky_dir/batch.members" 2>/dev/null || true
+if [ "$have_lock" = yes ]; then trap ': > "$flaky_dir/batch.members" 2>/dev/null; queue_exit' EXIT; else trap ': > "$flaky_dir/batch.members" 2>/dev/null' EXIT; fi
 if wait_for_run "$batch_pr" "$branch" && wait_required "$batch_sha"; then batch_ok=yes
 else
   # A job cancelled before a runner took it fails the required check

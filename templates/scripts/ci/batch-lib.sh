@@ -466,6 +466,59 @@ held_reason() {
   return 0
 }
 
+# --- Requests to the queue: land this next, hold, take out, release. ---
+# A request is a proposal the queue honours at its ticks; it never merges
+# anything red and "land this next" runs the serial path, nothing else.
+
+# request_from_comment ID BODY: one request line "id<TAB>kind<TAB>pr<TAB>
+# asked_by<TAB>reason" when BODY is exactly the fixed form, one line:
+#   Queue request: land-next #48 by maya: speeds the others up
+# Nothing otherwise, so a comment that only mentions landing never acts. A
+# take-out ("drop") always carries its reason.
+request_from_comment() {
+  rc_body=$(printf '%s' "$2" | tr -d '\r')
+  [ "$(printf '%s\n' "$rc_body" | wc -l | tr -d ' ')" = 1 ] || return 0
+  rc_t=$(printf '\t')
+  rc_l=$(printf '%s\n' "$rc_body" | sed -nE "s/^Queue request: (land-next|hold|drop|release) #([0-9]+) by ([A-Za-z0-9][A-Za-z0-9-]{0,38})(: (.+))?\$/\\1${rc_t}\\2${rc_t}\\3${rc_t}\\5/p")
+  # "Deploy now" names no pull request; it is kept as 0.
+  [ -n "$rc_l" ] || rc_l=$(printf '%s\n' "$rc_body" | sed -nE "s/^Queue request: deploy-now by ([A-Za-z0-9][A-Za-z0-9-]{0,38})(: (.+))?\$/deploy-now${rc_t}0${rc_t}\\1${rc_t}\\3/p")
+  [ -n "$rc_l" ] || return 0
+  case "$rc_l" in "drop${rc_t}"*"${rc_t}") return 0 ;; esac
+  printf '%s\t%s\n' "$1" "$rc_l"
+}
+
+# request_answer_form KIND PR OUTCOME: the queue's answer on the issue road.
+request_answer_form() {
+  if [ "$1" = deploy-now ]; then printf 'Queue answer: deploy-now: %s\n' "$3"; else printf 'Queue answer: %s #%s: %s\n' "$1" "$2" "$3"; fi
+}
+
+# deploy_run_outcome STATUS CONCLUSION: what a deploy-now request answers
+# once its Deploy run is read: nothing while it runs, deployed or
+# deploy-failed when it ends.
+deploy_run_outcome() {
+  [ "$1" = completed ] || return 0
+  if [ "$2" = success ]; then echo deployed; else echo deploy-failed; fi
+}
+
+# classes_overlap A B: "yes" when the two space-separated class lists share one.
+classes_overlap() {
+  for co_a in $1; do for co_b in $2; do
+    if [ "$co_a" = "$co_b" ]; then echo yes; return 0; fi
+  done; done
+  return 0
+}
+
+# land_next_step ROLLUP CONFLICTS BATCH_RUNNING OVERLAP: what "land this
+# next" does at a tick. red and conflicts end the request; wait leaves it
+# open; after-batch lands it first once the batch lands; serial-now runs the
+# serial path at once (between rounds, or beside a running batch whose
+# classes it does not share, the rule the queue already merges under).
+land_next_step() {
+  if [ "$2" = yes ]; then echo conflicts; return 0; fi
+  case "$1" in red) echo red; return 0 ;; green) ;; *) echo wait; return 0 ;; esac
+  if [ "$3" = yes ] && [ "$4" = yes ]; then echo after-batch; else echo serial-now; fi
+}
+
 # pause_until NOW SPEC
 # NOW in epoch seconds, SPEC a length: "2h", "45m", or bare minutes "90".
 # Print the epoch the pause ends; nothing for a SPEC it cannot read.
