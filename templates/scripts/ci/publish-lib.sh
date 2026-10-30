@@ -7,11 +7,17 @@
 # Inputs, one record per line, tab separated:
 #   OPEN      number, title, state, say      (state: waiting green red
 #             draft conflicts-with-main clash held)
-#   BATCH     number, members (space separated), anchor, done, total,
-#             minutes left; empty when no batch pull request is open
+#   BATCH     first line: number (empty before its pull request opens),
+#             members (space separated, in order), anchor, done, total,
+#             minutes left, stage (cut building testing landed), run id,
+#             runner; then one line per member "pull\tN\tTITLE\tSTATE"
+#             (planned merged) and per member dropped "dropped\tN\tTITLE\tWHY".
+#             Empty when no batch is under way. batch_from_state builds it
+#             from the queue's batch.state file.
 #   BUILDING  "merged total current member..." while a batch is built on
 #             the queue's machine; empty otherwise
-#   CLASHES   leftOut, with, files (space separated), told (yes/no)
+#   CLASHES   leftOut, with, with's title, files (space separated), why
+#             (the queue's own words), told (yes/no)
 #   LANDED    number, title, how (serial/batch), at (ISO)
 #   RUNNERS   online, busy, queued, longest wait in minutes; empty if unread
 #   ATTENTION number, what, why, first error line
@@ -43,6 +49,37 @@ numbers_said() {
   printf '%s\n' $1 | sed '/^$/d' | awk -v n="$ns_n" '{ if (NR == 1) printf "#%s", $1; else if (NR == n) printf " and #%s", $1; else printf ", #%s", $1 }'
 }
 
+# batch_head BATCH: its first line, the one the fields above describe.
+batch_head() { printf '%s\n' "$1" | sed -n 1p; }
+
+# batch_from_state STATE DONE TOTAL MINUTES RUNNER: the BATCH record from
+# the queue's batch.state lines ("stage\tS", "pr\tN", "run\tID",
+# "member\tN\tTITLE\tSTATE", "dropped\tN\tTITLE\tWHY"), with the run's
+# progress as publish-state.sh read it. Nothing when STATE has no member.
+batch_from_state() {
+  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v done="$2" -v total="$3" -v min="$4" -v runner="$5" '
+    $1 == "stage" { stage = $2 } $1 == "pr" { pr = $2 } $1 == "run" { run = $2 }
+    $1 == "member" { if (!($2 in seen)) { seen[$2] = 1; m[++n] = $2; t[$2] = $3; st[$2] = ($4 == "" ? "planned" : $4) } else if ($4 != "") st[$2] = $4 }
+    $1 == "dropped" { d[++k] = $2 "\t" $3 "\t" $4; gone[$2] = 1 }
+    END {
+      list = ""; anchor = ""
+      for (i = 1; i <= n; i++) if (!(m[i] in gone)) { list = list (list == "" ? "" : " ") m[i]; if (anchor == "") anchor = m[i] }
+      if (list == "") exit
+      printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", pr, list, anchor, done, total, min, stage, run, runner
+      for (i = 1; i <= n; i++) if (!(m[i] in gone)) printf "pull\t%s\t%s\t%s\n", m[i], t[m[i]], st[m[i]]
+      for (i = 1; i <= k; i++) printf "dropped\t%s\n", d[i]
+    }'
+}
+
+# files_said FILES: "dates.ts", or "dates.ts and 2 other files", by base name.
+files_said() {
+  fs_n=$(printf '%s\n' $1 | sed '/^$/d' | wc -l | tr -d ' ')
+  fs_first=$(printf '%s\n' $1 | sed '/^$/d' | head -n 1 | sed 's#.*/##')
+  if [ "$fs_n" = 0 ]; then printf 'files the batch changes'
+  elif [ "$fs_n" = 1 ]; then printf '%s' "$fs_first"
+  else printf '%s and %s' "$fs_first" "$(plural $((fs_n - 1)) 'other file' 'other files')"; fi
+}
+
 # publish_say OPEN BATCH BUILDING CLASHES ATTENTION RUNNERS DEPLOY MODE PAUSED_UNTIL
 # Three sentences, one per line: what the queue is doing now; what is
 # waiting and why; what needs a person. Plain words, never a field name.
@@ -54,12 +91,26 @@ publish_say() {
     ps_online=$(printf '%s' "$ps_runners" | cut -f1); ps_b=$(printf '%s' "$ps_runners" | cut -f2)
     if [ "${ps_online:-0}" -gt 0 ] 2>/dev/null; then ps_busy="$ps_b of $ps_online runners busy"; fi
   fi
-  if [ -n "$ps_batch" ]; then
-    pb_num=$(printf '%s' "$ps_batch" | cut -f1); pb_members=$(printf '%s' "$ps_batch" | cut -f2); pb_total=$(printf '%s\n' $pb_members | sed '/^$/d' | wc -l | tr -d ' '); pb_min=$(printf '%s' "$ps_batch" | cut -f6)
-    s1="Testing a batch of $(plural "$pb_total" 'pull request' 'pull requests') together ($(numbers_said "$pb_members"))"
-    [ -n "$pb_min" ] && s1="$s1; about $(plural "$pb_min" minute minutes) left"
-    [ -n "$ps_busy" ] && s1="$s1, $ps_busy"
-    s1="$s1."
+  ps_bh=$(batch_head "$ps_batch")
+  pb_num=$(printf '%s' "$ps_bh" | cut -f1); pb_stage=$(printf '%s' "$ps_bh" | cut -f7)
+  if [ -n "$ps_bh" ] && [ -z "$pb_num" ] && [ -z "$ps_building" ]; then
+    pb_members=$(printf '%s' "$ps_bh" | cut -f2); pb_total=$(printf '%s\n' $pb_members | sed '/^$/d' | wc -l | tr -d ' ')
+    s1="Building a batch of $(plural "$pb_total" 'pull request' 'pull requests') on the queue's own machine ($(numbers_said "$pb_members"))."
+  elif [ -n "$ps_bh" ] && [ -n "$pb_num" ]; then
+    pb_members=$(printf '%s' "$ps_bh" | cut -f2); pb_total=$(printf '%s\n' $pb_members | sed '/^$/d' | wc -l | tr -d ' '); pb_min=$(printf '%s' "$ps_bh" | cut -f6)
+    pb_d=$(printf '%s' "$ps_bh" | cut -f4); pb_t=$(printf '%s' "$ps_bh" | cut -f5); pb_runner=$(printf '%s' "$ps_bh" | cut -f9)
+    if [ "$pb_stage" = landed ]; then
+      s1="A batch of $(plural "$pb_total" 'pull request' 'pull requests') ($(numbers_said "$pb_members")) landed on main."
+    else
+      s1="Testing a batch of $(plural "$pb_total" 'pull request' 'pull requests') together ($(numbers_said "$pb_members"))"
+      pb_more=""
+      if [ "${pb_t:-0}" -gt 0 ] 2>/dev/null; then pb_more="$((pb_d * 100 / pb_t))% through the checks"; fi
+      [ -n "$pb_min" ] && pb_more="${pb_more:+$pb_more, }about $(plural "$pb_min" minute minutes) left"
+      [ -n "$pb_runner" ] && pb_more="${pb_more:+$pb_more, }on $pb_runner"
+      [ -n "$pb_more" ] && s1="$s1; $pb_more"
+      [ -n "$ps_busy" ] && s1="$s1, $ps_busy"
+      s1="$s1."
+    fi
   elif [ -n "$ps_building" ]; then
     set -- $ps_building
     s1="Building a batch of $(plural "$2" 'pull request' 'pull requests') on the queue's own machine: $1 merged, checking #$3."
@@ -86,7 +137,11 @@ publish_say() {
   total=$(printf '%s\n' "$ps_open" | grep -c . || true)
   if [ "$total" -eq 0 ]; then s2="Nothing is waiting."; else s2="$(plural "$total" 'pull request is open' 'pull requests are open'): $parts."; fi
   if [ -n "$ps_clashes" ]; then
-    s2="$s2 $(printf '%s\n' "$ps_clashes" | awk -F'\t' '{ files = $3; gsub(/ /, ", ", files); told = ($4 == "yes") ? ", and its owner has been told" : ""; printf "#%s was left out: it clashes with #%s in %s%s.", $1, $2, (files == "" ? "files the batch changes" : files), told } END { }' | paste -sd' ' -)"
+    s2="$s2 $(printf '%s\n' "$ps_clashes" | sed '/^$/d' | while IFS= read -r pc_l; do
+      pc_a=$(printf '%s' "$pc_l" | cut -f1); pc_w=$(printf '%s' "$pc_l" | cut -f2); pc_t=$(printf '%s' "$pc_l" | cut -f3); pc_f=$(printf '%s' "$pc_l" | cut -f4); pc_told=$(printf '%s' "$pc_l" | cut -f6)
+      if [ "$pc_w" = main ]; then pc_other=main; elif [ -n "$pc_t" ]; then pc_other="\"$pc_t\" (#$pc_w)"; else pc_other="#$pc_w"; fi
+      printf '#%s was left out: it changes %s, which %s changes too%s.\n' "$pc_a" "$(files_said "$pc_f")" "$pc_other" "$( [ "$pc_told" = yes ] && printf ', and its owner has been told')"
+    done | paste -sd' ' -)"
   fi
   # 3. Needs a person.
   s3=""
@@ -117,10 +172,18 @@ publish_json() {
   printf '],'
   printf '"checking":%s,' "$(json_list "$pj_checking")"
   if [ -n "$pj_building" ]; then set -- $pj_building; m=$1; t=$2; c=$3; shift 3; printf '"building":{"merged":%s,"total":%s,"current":%s,"members":%s},' "$(json_num "$m")" "$(json_num "$t")" "$(json_num "$c")" "$(json_list "$*")"; else printf '"building":null,'; fi
-  if [ -n "$pj_batch" ]; then
-    printf '"batch":{"number":%s,"members":%s,"anchor":%s,"done":%s,"total":%s,"minutesLeft":%s},' "$(json_num "$(printf '%s' "$pj_batch" | cut -f1)")" "$(json_list "$(printf '%s' "$pj_batch" | cut -f2)")" "$(json_num "$(printf '%s' "$pj_batch" | cut -f3)")" "$(json_num "$(printf '%s' "$pj_batch" | cut -f4)")" "$(json_num "$(printf '%s' "$pj_batch" | cut -f5)")" "$(json_num "$(printf '%s' "$pj_batch" | cut -f6)")"
+  pj_bh=$(batch_head "$pj_batch")
+  if [ -n "$pj_bh" ]; then
+    pj_f() { printf '%s' "$pj_bh" | cut -f"$1"; }
+    pj_opt() { if [ -n "$1" ]; then json_str "$1"; else printf null; fi; }
+    pj_pulls=$(printf '%s\n' "$pj_batch" | awk -F'\t' '$1 == "pull"' | while IFS= read -r l; do printf '{"number":%s,"title":%s,"state":%s},' "$(json_num "$(printf '%s' "$l" | cut -f2)")" "$(json_str "$(printf '%s' "$l" | cut -f3)")" "$(json_str "$(printf '%s' "$l" | cut -f4)")"; done | sed 's/,$//')
+    pj_drop=$(printf '%s\n' "$pj_batch" | awk -F'\t' '$1 == "dropped"' | while IFS= read -r l; do printf '{"number":%s,"title":%s,"why":%s},' "$(json_num "$(printf '%s' "$l" | cut -f2)")" "$(json_str "$(printf '%s' "$l" | cut -f3)")" "$(json_str "$(printf '%s' "$l" | cut -f4)")"; done | sed 's/,$//')
+    printf '"batch":{"number":%s,"stage":%s,"members":%s,"pulls":[%s],"anchor":%s,"run":%s,"runner":%s,"done":%s,"total":%s,"minutesLeft":%s,"dropped":[%s]},' "$(json_num "$(pj_f 1)")" "$(pj_opt "$(pj_f 7)")" "$(json_list "$(pj_f 2)")" "$pj_pulls" "$(json_num "$(pj_f 3)")" "$(json_num "$(pj_f 8)")" "$(pj_opt "$(pj_f 9)")" "$(json_num "$(pj_f 4)")" "$(json_num "$(pj_f 5)")" "$(json_num "$(pj_f 6)")" "$pj_drop"
   else printf '"batch":null,'; fi
-  printf '"clashes":[%s],' "$(printf '%s\n' "$pj_clashes" | sed '/^$/d' | while IFS="$(printf '\t')" read -r a b f told; do printf '{"leftOut":%s,"with":%s,"files":[%s],"told":%s},' "$(json_num "$a")" "$(json_num "$b")" "$(for x in $f; do json_str "$x"; printf ','; done | sed 's/,$//')" "$( [ "$told" = yes ] && printf true || printf false)"; done | sed 's/,$//')"
+  printf '"clashes":[%s],' "$(printf '%s\n' "$pj_clashes" | sed '/^$/d' | while IFS= read -r l; do
+    a=$(printf '%s' "$l" | cut -f1); b=$(printf '%s' "$l" | cut -f2); bt=$(printf '%s' "$l" | cut -f3); f=$(printf '%s' "$l" | cut -f4); why=$(printf '%s' "$l" | cut -f5); told=$(printf '%s' "$l" | cut -f6)
+    fn=$(printf '%s\n' $f | sed '/^$/d' | wc -l | tr -d ' ')
+    printf '{"leftOut":%s,"with":%s,"withTitle":%s,"files":[%s],"file":%s,"fileCount":%s,"why":%s,"told":%s},' "$(json_num "$a")" "$( [ "$b" = main ] && json_str main || json_num "$b")" "$( [ -n "$bt" ] && json_str "$bt" || printf null)" "$(for x in $f; do json_str "$x"; printf ','; done | sed 's/,$//')" "$( [ "$fn" -gt 0 ] && json_str "$(printf '%s\n' $f | head -n 1)" || printf null)" "$fn" "$( [ -n "$why" ] && json_str "$why" || printf null)" "$( [ "$told" = yes ] && printf true || printf false)"; done | sed 's/,$//')"
   printf '"landed":[%s],' "$(printf '%s\n' "$pj_landed" | sed '/^$/d' | while IFS="$(printf '\t')" read -r n t how at; do printf '{"number":%s,"title":%s,"how":%s,"at":%s},' "$(json_num "$n")" "$(json_str "$t")" "$(json_str "$how")" "$(json_str "$at")"; done | sed 's/,$//')"
   if [ -n "$pj_runners" ]; then printf '"runners":{"online":%s,"busy":%s,"queued":%s,"longestWaitMinutes":%s},' "$(json_num "$(printf '%s' "$pj_runners" | cut -f1)")" "$(json_num "$(printf '%s' "$pj_runners" | cut -f2)")" "$(json_num "$(printf '%s' "$pj_runners" | cut -f3)")" "$(json_num "$(printf '%s' "$pj_runners" | cut -f4)")"; else printf '"runners":null,'; fi
   printf '"needsAttention":[%s],' "$(printf '%s\n' "$pj_att" | sed '/^$/d' | while IFS="$(printf '\t')" read -r n what why line; do printf '{"number":%s,"what":%s,"why":%s,"line":%s},' "$(json_num "$n")" "$(json_str "$what")" "$(json_str "$why")" "$(json_str "$line")"; done | sed 's/,$//')"
@@ -142,8 +205,14 @@ publish_body() {
     printf '%s\n' "$pb_open" | sed '/^$/d' | awk -F'\t' '{ printf "- #%s %s: %s\n", $1, $2, $4 }'
     printf '\n'
   fi
-  if [ -n "$pb_batch" ]; then
-    printf '## Batch\n\n- #%s, testing %s\n\n' "$(printf '%s' "$pb_batch" | cut -f1)" "$(numbers_said "$(printf '%s' "$pb_batch" | cut -f2)")"
+  pb_bh=$(batch_head "$pb_batch")
+  if [ -n "$pb_bh" ]; then
+    pb_bn=$(printf '%s' "$pb_bh" | cut -f1)
+    printf '## Batch\n\n'
+    if [ -n "$pb_bn" ]; then printf -- '- #%s, %s %s\n' "$pb_bn" "$( [ "$(printf '%s' "$pb_bh" | cut -f7)" = landed ] && printf landed || printf testing)" "$(numbers_said "$(printf '%s' "$pb_bh" | cut -f2)")"
+    else printf -- '- Being built, %s\n' "$(numbers_said "$(printf '%s' "$pb_bh" | cut -f2)")"; fi
+    printf '%s\n' "$pb_batch" | awk -F'\t' '$1 == "pull" { printf "  - #%s %s (%s)\n", $2, $3, $4 } $1 == "dropped" { printf "  - #%s %s: dropped, %s\n", $2, $3, $4 }'
+    printf '\n'
   fi
   if [ -n "$pb_landed" ]; then
     printf '## Landed lately\n\n'

@@ -1,0 +1,7 @@
+branch	batch/2026-10-29-1
+member	249	Water the beds on a schedule	merged
+member	250	Show frost warnings	merged
+member	253	Name each bed	merged
+pr	260
+run	9001
+stage	landed

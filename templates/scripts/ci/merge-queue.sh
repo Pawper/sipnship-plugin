@@ -276,8 +276,28 @@ publish_now() {
   return 0
 }
 
+# The batch as it changes shape, for publish-state.sh (spec 001): one line
+# per fact in batch.state ("stage\tS", "branch\tB", "pr\tN", "run\tID",
+# "member\tN\tTITLE\tSTATE", "dropped\tN\tTITLE\tWHY"); later lines win.
+# batch_note writes one; batch_moment publishes it, at most once a minute,
+# and a moment held back by that minute goes with the next look.
+batch_note() {
+  bn_line=""
+  for bn_f in "$@"; do bn_line="$bn_line${bn_line:+	}$(printf '%s' "$bn_f" | tr '\t\r\n' '   ')"; done
+  printf '%s\n' "$bn_line" >> "$flaky_dir/batch.state" 2>/dev/null || true
+}
+batch_moment() { batch_note stage "$1"; publish_now batch; }
+# batch_out PR WHAT WHY: a member that does not go in, said and published.
+batch_out() {
+  batch_line "$1" "$2" "$3"
+  batch_note dropped "$1" "$(pr_field "$1" 3)" "$2${3:+: $3}"
+  publish_now batch
+}
+
 queue_exit() {
   qe_rc=$?
+  # A batch ends with the run: nothing stale is drawn after it.
+  : > "$flaky_dir/batch.state" 2>/dev/null || true
   # The last word on the issue: idle, with what landed.
   case "${mode:-}" in drain|serial|batch) publish_now idle ;; esac
   # The console's "what the queue is doing now" line ends with the run.
@@ -465,6 +485,12 @@ wait_for_run() {
     run=$(latest_run "$2"); run_id=${run%%	*}
     rate_stop
     [ -n "$run_id" ] || { echo "No run found for $2 yet."; sleep 30; continue; }
+    # The batch's full run has started: publish which run it waits on, then
+    # its progress every five minutes, or sooner when a moment was held back.
+    if [ "$2" = "${branch:-}" ] && grep -q '^pr	' "$flaky_dir/batch.state" 2>/dev/null; then
+      if ! grep -qx "run	$run_id" "$flaky_dir/batch.state" 2>/dev/null; then batch_note run "$run_id"; batch_moment testing
+      elif [ -s "$flaky_dir/publish.pending" ] || [ $(( $(date +%s) - $(cat "$flaky_dir/published.at" 2>/dev/null || echo 0) )) -ge 300 ]; then publish_now batch; fi
+    fi
     # set -e ends the script at a bare failing assignment, so the code is
     # caught here: a pending run (2) once exited the queue with no word.
     code=0; msg=$(diagnose "$run_id") || code=$?
@@ -1286,7 +1312,8 @@ if [ -n "$pairs" ]; then
     with=$(printf '%s\n' "$pairs" | awk -v p="$pr" -v g=" $group " '$1 == p && index(g, " " $2 " ") { print $2; exit } $2 == p && index(g, " " $1 " ") { print $1; exit }')
     files=$(git -C "$wt" merge-tree --write-tree --name-only "refs/queue/pr-$pr" "refs/queue/pr-$with" 2>/dev/null | sed -n '2,$p' | sed '/^$/,$d')
     batch_line "$pr" "left for later" "conflicts with #$with, which goes in this batch"
-    printf '%s %s\n' "$pr" "$with" >> "$flaky_dir/clashes" 2>/dev/null || true
+    # The record names the files, the other change by its title, and why.
+    printf '%s\t%s\t%s\t%s\t%s\n' "$pr" "$with" "$(pr_field "$with" 3 | tr '\t' ' ')" "$(printf '%s' "$files" | tr '\n' ' ' | sed 's/ *$//')" "conflicts with #$with, which goes in this batch" >> "$flaky_dir/clashes" 2>/dev/null || true
     notify_conflict "$pr" "$files" "$with"
   done
   prs=$group
@@ -1296,22 +1323,27 @@ fi
 # "building MERGED TOTAL CURRENT MEMBER...", cleared when the loop ends.
 b_total=$(printf '%s\n' $prs | grep -c .)
 b_merged=0
+# The batch branch is cut: its members in order, the first the anchor.
+: > "$flaky_dir/batch.state" 2>/dev/null || true
+batch_note branch "$branch"
+for pr in $prs; do batch_note member "$pr" "$(pr_field "$pr" 3)" planned; done
+batch_moment cut
 for pr in $prs; do
   printf 'building %s %s %s %s\n' "$b_merged" "$b_total" "$pr" "$(printf '%s ' $prs | sed 's/ $//')" > "$flaky_dir/now" 2>/dev/null || true
   hw=$(pr_held "$pr")
-  if [ -n "$hw" ]; then batch_line "$pr" "left out" "$hw"; continue; fi
+  if [ -n "$hw" ]; then batch_out "$pr" "left out" "$hw"; continue; fi
   # Read fresh, not from the cache: a pull request merged or closed since
   # the list was made has nothing left to merge.
   pst=$(gh api "repos/{owner}/{repo}/pulls/$pr" --jq '"\(.state) \(.merged)"' 2>/dev/null || true)
   case "$pst" in
-    "closed true") batch_line "$pr" "skipped" "already merged"; continue ;;
-    closed*) batch_line "$pr" "skipped" "closed"; continue ;;
+    "closed true") batch_out "$pr" "skipped" "already merged"; continue ;;
+    closed*) batch_out "$pr" "skipped" "closed"; continue ;;
   esac
   why=$(folder_blocks "$pr"); [ -n "$why" ] || why=$(migration_blocks "$pr")
-  if [ -n "$why" ]; then batch_line "$pr" "refused" "$why"; continue; fi
+  if [ -n "$why" ]; then batch_out "$pr" "refused" "$why"; continue; fi
   # Merge the head the pull request reports: from its pull ref, or from
   # its branch when GitHub's pull ref lags behind.
-  head=$(fetch_pr_head "$pr" "$wt") || { batch_line "$pr" "left for later" "$fph_why"; continue; }
+  head=$(fetch_pr_head "$pr" "$wt") || { batch_out "$pr" "left for later" "$fph_why"; continue; }
   title=$(pr_field "$pr" 3); [ -n "$title" ] || title="PR $pr"
   if ! git -C "$wt" merge -q --no-ff --no-edit -m "Merge PR #$pr into $branch: $title" "$head" >/dev/null 2>&1; then
     git -C "$wt" merge --abort >/dev/null 2>&1 || true
@@ -1331,7 +1363,7 @@ for pr in $prs; do
           echo "  #$pr conflicted only in generated files; took either side and rebuilt them ($rb)."
         else
           git -C "$wt" reset -q --hard "$good"
-          batch_line "$pr" "dropped" "conflicted only in generated files, but the rebuild failed: $(tail -n 1 "$flaky_dir/rebuild.err" 2>/dev/null | tr -d '\r')"
+          batch_out "$pr" "dropped" "conflicted only in generated files, but the rebuild failed: $(tail -n 1 "$flaky_dir/rebuild.err" 2>/dev/null | tr -d '\r')"
           dropped="$dropped $pr"
           continue
         fi
@@ -1342,9 +1374,9 @@ for pr in $prs; do
       git -C "$wt" merge --abort >/dev/null 2>&1 || true
       git -C "$wt" reset -q --hard "$good"
       if [ "$gen_note" = generated ]; then
-        batch_line "$pr" "dropped" "conflicts with the batch so far; generated only: a rebuild on the batch would resolve this"
+        batch_out "$pr" "dropped" "conflicts with the batch so far; generated only: a rebuild on the batch would resolve this"
       else
-        batch_line "$pr" "dropped" "conflicts with the batch so far"
+        batch_out "$pr" "dropped" "conflicts with the batch so far"
       fi
       notify_conflict "$pr" "$cfl" main "$gen_note"
       dropped="$dropped $pr"
@@ -1359,7 +1391,7 @@ package-lock.json"*|*"/package-lock.json"*|*"pnpm-lock.yaml"*|*"yarn.lock"*|*"
 package.json"*|*"/package.json"*) ensure_modules ;; esac
   if [ -n "$typecheck" ] && ! typecheck_ok "$changed" "$wt"; then
     git -C "$wt" reset -q --hard "$good"
-    batch_line "$pr" "dropped" "the type-check went red after merging it: $(head -n 1 "$flaky_dir/typecheck.err" 2>/dev/null | tr -d '\r')"
+    batch_out "$pr" "dropped" "the type-check went red after merging it: $(head -n 1 "$flaky_dir/typecheck.err" 2>/dev/null | tr -d '\r')"
     dropped="$dropped $pr"
     continue
   fi
@@ -1388,7 +1420,7 @@ package.json"*|*"/package.json"*) ensure_modules ;; esac
   done
   if [ -n "$red" ]; then
     git -C "$wt" reset -q --hard "$good"
-    batch_line "$pr" "dropped" "$red went red after merging it"
+    batch_out "$pr" "dropped" "$red went red after merging it"
     dropped="$dropped $pr"
     continue
   fi
@@ -1409,7 +1441,7 @@ package.json"*|*"/package.json"*) ensure_modules ;; esac
 "
   refs="$refs$(carried_refs "$(gh api "repos/{owner}/{repo}/pulls/$pr" --jq '.body // ""' 2>/dev/null)" "$pr")
 "
-  batch_line "$pr" "merged into the batch"
+  batch_line "$pr" "merged into the batch"; batch_note member "$pr" "$title" merged; batch_moment building
   b_merged=$((b_merged + 1))
 done
 : > "$flaky_dir/now" 2>/dev/null || true
@@ -1421,6 +1453,7 @@ if [ -n "$carried" ] && [ "$(printf '%s\n' "$carried" | grep -c .)" -eq 1 ]; the
   only=$(printf '%s' "$carried" | cut -f1)
   echo "Only #$only survived the batch; merging it serially instead of opening a batch of one."
   because="batch of one"
+  : > "$flaky_dir/batch.state" 2>/dev/null || true
   serial_one "$only"
   for pr in $dropped; do serial_one "$pr"; done
   exit 0
@@ -1428,6 +1461,7 @@ fi
 
 if [ -z "$carried" ]; then
   echo "Nothing survived the batch; running the serial queue for all of them."
+  : > "$flaky_dir/batch.state" 2>/dev/null || true
   because="dropped from batch"
   for pr in $dropped; do serial_one "$pr"; done
   exit 0
@@ -1453,6 +1487,7 @@ git -C "$wt" push -q -u origin "$branch"
 body=$(batch_pr_body "$carried" "$refs")
 batch_pr=$(gh api -X POST "repos/{owner}/{repo}/pulls" -f base="$base" -f head="$branch" -f title="Batch $day: $(printf '%s' "$carried" | wc -l | tr -d ' ') pull requests" -f body="$body" --jq .number 2>"$gh_err") || { rate_stop; echo "Could not open the batch pull request: $(head -n 1 "$gh_err" 2>/dev/null). The branch $branch is pushed; open it by hand or run the batch again."; exit 1; }
 echo "batch PR #$batch_pr opened; waiting for the one full CI run"
+batch_note pr "$batch_pr"; batch_moment testing
 batch_sha=$(git -C "$wt" rev-parse HEAD)
 batch_ok=no
 if wait_for_run "$batch_pr" "$branch" && wait_required "$batch_sha"; then batch_ok=yes
@@ -1478,6 +1513,7 @@ fi
 wait_quiet_main
 merged_sha=$(gh api -X PUT "repos/{owner}/{repo}/pulls/$batch_pr/merge" -f merge_method=merge --jq .sha 2>"$gh_err") || { rate_stop; echo "GitHub refused the batch merge: $(head -n 1 "$gh_err" 2>/dev/null). Nothing merged; run the batch again."; exit 1; }
 echo "batch PR #$batch_pr merged into $base with a merge commit"
+batch_moment landed
 # GitHub can show a carried pull request as "closed, not merged", which
 # reads as abandoned. Say on each where it went.
 for pr in $(printf '%s' "$carried" | cut -f1); do

@@ -41,8 +41,10 @@ now_epoch=$(date +%s)
 # Once a minute at most, unless the mode ended (idle) or --print.
 if [ "$print_only" = no ] && [ "$mode" != idle ] && [ -f "$flaky_dir/published.at" ]; then
   last=$(cat "$flaky_dir/published.at" 2>/dev/null || echo 0)
-  if [ $((now_epoch - last)) -lt 60 ]; then exit 0; fi
+  # A moment held back is marked, so the queue's next look sends it.
+  if [ $((now_epoch - last)) -lt 60 ]; then printf '%s\n' "$now_epoch" > "$flaky_dir/publish.pending"; exit 0; fi
 fi
+[ "$print_only" = yes ] || : > "$flaky_dir/publish.pending"
 
 # 1. Open pull requests, with a state and a sentence each.
 if [ -n "$open_file" ] && [ -f "$open_file" ]; then rows=$(cat "$open_file"); else
@@ -78,7 +80,23 @@ done)
 # The open batch pull request, if any.
 batch_row=$(printf '%s\n' "$titles" | awk -F'\t' '$4 ~ /<!-- merge-queue:batch -->/ || $4 ~ /^One integration run for the pull requests below/ { print $1; exit }')
 batch_tsv=""
-if [ -n "$batch_row" ]; then
+# The batch the queue is building or testing now, from its own batch.state
+# (written at each change of shape): members in order with titles, the
+# anchor, its pull request and the run it waits on, the runner.
+bstate=$(tr -d '\r' < "$flaky_dir/batch.state" 2>/dev/null)
+if printf '%s\n' "$bstate" | grep -q '^member	'; then
+  bs_pr=$(printf '%s\n' "$bstate" | awk -F'\t' '$1 == "pr" { v = $2 } END { print v }')
+  bs_run=$(printf '%s\n' "$bstate" | awk -F'\t' '$1 == "run" { v = $2 } END { print v }')
+  bdone=""; btotal=""; brunner=""; bmin=""
+  if [ -n "$bs_run" ]; then
+    prog=$(gh api "repos/{owner}/{repo}/actions/runs/$bs_run/jobs?per_page=100" --jq '"\([.jobs[] | select(.status == "completed")] | length)\t\(.jobs | length)\t\([.jobs[] | select(.status == "in_progress") | .runner_name // empty] | first // "")"' 2>/dev/null | tr -d '\r')
+    bdone=$(printf '%s' "$prog" | cut -f1); btotal=$(printf '%s' "$prog" | cut -f2); brunner=$(printf '%s' "$prog" | cut -f3)
+    [ "${btotal:-0}" -gt 0 ] 2>/dev/null && bmin=$(( (btotal - bdone) * ${QUEUE_JOB_MINUTES:-4} ))
+  fi
+  batch_tsv=$(batch_from_state "$bstate" "$bdone" "$btotal" "$bmin" "$brunner")
+  [ -n "$bs_pr" ] && batch_row=""
+fi
+if [ -z "$batch_tsv" ] && [ -n "$batch_row" ]; then
   bbody=$(gh api "repos/{owner}/{repo}/pulls/$batch_row" --jq '.body // ""' 2>/dev/null)
   members=$(batch_members "$bbody" | tr '\n' ' ' | sed 's/ $//')
   anchor=$(printf '%s\n' $members | head -n 1)
@@ -96,7 +114,11 @@ case "$now_line" in
   checking\ *) checking=${now_line#checking } ;;
   building\ *) building=${now_line#building } ;;
 esac
-clashes_tsv=$(awk 'NF >= 2 { printf "%s\t%s\t\tyes\n", $1, $2 }' "$flaky_dir/clashes" 2>/dev/null)
+# The clashes file: "leftOut\twith\twith's title\tfiles\twhy" per line (an
+# older queue wrote "leftOut with"). Fields are cut, never read with a
+# tab IFS: read collapses empty tab fields, and a clash once published
+# its told flag where the file's name belongs.
+clashes_tsv=$(tr -d '\r' < "$flaky_dir/clashes" 2>/dev/null | awk -F'\t' 'NF >= 2 { printf "%s\t%s\t%s\t%s\t%s\tyes\n", $1, $2, $3, $4, $5; next } { split($0, a, " "); if (a[2] != "") printf "%s\t%s\t\t\t\tyes\n", a[1], a[2] }')
 attention_tsv=$(awk -F'\t' 'NF >= 2' "$flaky_dir/attention.tsv" 2>/dev/null)
 paused_until=""
 if [ "$mode" = idle ]; then
