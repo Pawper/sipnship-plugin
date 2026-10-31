@@ -18,6 +18,7 @@
 here=$(dirname "$0")
 . "$here/publish-lib.sh"
 . "$here/batch-lib.sh"
+. "$here/gate-lib.sh"
 mode=idle; open_file=""; print_only=no
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -144,12 +145,11 @@ fi
 # checkout.
 main_sha=$(gh api "repos/{owner}/{repo}/commits/$base" --jq '.sha[0:7]' 2>/dev/null | tr -d '\r')
 [ -n "$main_sha" ] || main_sha=$(git rev-parse "origin/$base" 2>/dev/null | cut -c1-7)
-main_run=$(gh api "repos/{owner}/{repo}/actions/workflows/${QUEUE_CI_WORKFLOW:-ci.yml}/runs?branch=$base&event=push&per_page=1" --jq '.workflow_runs[0] | "\(.head_sha[0:7])\t\(.status)\t\(.conclusion // "")"' 2>/dev/null | tr -d '\r')
-main_state=unknown
-if [ -n "$main_run" ]; then
-  mr_sha=${main_run%%	*}; mr_rest=${main_run#*	}; mr_status=${mr_rest%%	*}; mr_conc=${mr_rest#*	}
-  if [ "$mr_sha" != "$main_sha" ] || [ "$mr_status" != completed ]; then main_state=pending; elif [ "$mr_conc" = success ]; then main_state=green; else main_state=red; fi
-fi
+# Main's state is the last gate's result (gate.sh last), with the time the
+# gate ran: main gets no run per landing, so its push runs are no record.
+main_gate=$(sh "$here/gate.sh" last 2>/dev/null | tr -d '\r')
+main_state=$(gate_main_state "$main_gate")
+main_checked=$(gate_checked_at "$main_gate")
 landed_src=$(gh api "repos/{owner}/{repo}/commits?sha=$base&per_page=40" --jq '.[] | "\(.commit.message | split("\n")[0])\t\(.commit.committer.date)"' 2>/dev/null | tr -d '\r')
 [ -n "$landed_src" ] || landed_src=$(git log "origin/$base" -n 40 --format='%s%x09%cI' 2>/dev/null)
 landed_tsv=$(printf '%s\n' "$landed_src" | awk -F'\t' '{ if (match($1, /\(#[0-9]+\)/)) { n = substr($1, RSTART + 2, RLENGTH - 3); how = ($1 ~ /\[batch/ || $1 ~ /^batch PR/ || $1 ~ /merged into main/) ? "batch" : "serial"; t = $1; sub(/ \(#[0-9]+\).*$/, "", t); if (!(n in seen)) { seen[n] = 1; printf "%s\t%s\t%s\t%s\n", n, t, how, $2; c++ } } if (c >= 10) exit }')
@@ -160,6 +160,14 @@ if [ -n "$rr" ]; then
   longest=$(gh api "repos/{owner}/{repo}/actions/runs?status=queued&per_page=50" --jq --arg now "$now_epoch" '[.workflow_runs[] | (($now | tonumber) - (.created_at | fromdate)) / 60 | floor] | max // 0' 2>/dev/null || echo 0)
   runners_tsv=$(printf '%s\t%s\t%s' "$rr" "${queued:-0}" "${longest:-0}")
 fi
+# A run on main that GitHub left queued over ten minutes with every runner
+# idle is said as GitHub's wait, not a machine's.
+main_waiting=""
+main_runs=$(gh api "repos/{owner}/{repo}/actions/workflows/${QUEUE_CI_WORKFLOW:-ci.yml}/runs?branch=$base&status=queued&per_page=10" --jq '.workflow_runs[] | [.id, "main", .status, .event, (.created_at | fromdate)] | @tsv' 2>/dev/null | tr -d '\r')
+if [ -n "$main_runs" ] && [ -n "$rr" ]; then
+  main_idle=no; [ "${rr%%	*}" -gt 0 ] 2>/dev/null && [ "${rr#*	}" = 0 ] && main_idle=yes
+  main_waiting=$(main_waiting_said "$(main_unassigned "$main_runs" "$now_epoch" "$main_idle")")
+fi
 deploy_line=""; [ -f .claude/deploy.json ] && [ -f "$here/deploy-gate.sh" ] && deploy_line=$(sh "$here/deploy-gate.sh" --last "$base" 2>/dev/null | head -n 1)
 
 # 4. Compose.
@@ -167,7 +175,7 @@ deploy_line=""; [ -f .claude/deploy.json ] && [ -f "$here/deploy-gate.sh" ] && d
 stopped_line=""; [ "$mode" = idle ] && stopped_line=$(head -n 1 "$flaky_dir/stopped" 2>/dev/null | tr -d '\r')
 say=$(publish_say "$open_tsv" "$batch_tsv" "$building" "$clashes_tsv" "$attention_tsv" "$runners_tsv" "$deploy_line" "$mode" "$paused_until" "$stopped_line")
 now_iso=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-json=$(publish_json "$open_tsv" "$batch_tsv" "$building" "$clashes_tsv" "$landed_tsv" "$runners_tsv" "$attention_tsv" "$(printf '%s\t%s' "$main_sha" "$main_state")" "$deploy_line" "$mode" "$paused_until" "$checking" "$say" "$now_iso" "$rush_tsv")
+json=$(publish_json "$open_tsv" "$batch_tsv" "$building" "$clashes_tsv" "$landed_tsv" "$runners_tsv" "$attention_tsv" "$(printf '%s\t%s\t%s\t%s' "$main_sha" "$main_state" "$main_checked" "$main_waiting")" "$deploy_line" "$mode" "$paused_until" "$checking" "$say" "$now_iso" "$rush_tsv")
 
 # 5. Only a change worth a write: the time stamp and the two numbers that
 # tick with time (how long a queued run has waited, a batch's minutes left)

@@ -90,6 +90,14 @@ failed_tests_from_log() {
     /^--- FAIL: / { t = $3; if (!seen[t]++) print t; next }'
 }
 
+# without_report_job NAMES REPORT
+# NAMES is failing tests, one per line (a job is "job:NAME"). Print them
+# without the report job REPORT (QUEUE_SUMMARY_CHECK, "CI passed"): it fails
+# whenever any job before it fails, so it is never a test and never a flake.
+without_report_job() {
+  printf '%s\n' "$1" | tr -d '\r' | awk -v r="$2" 'NF && $0 != r && $0 != "job:" r'
+}
+
 # flaky_log_add LOG DATE PR TEST RESULT
 # Print LOG with one line appended: "DATE<TAB>PR<TAB>TEST<TAB>RESULT".
 flaky_log_add() {
@@ -123,9 +131,16 @@ flaky_offenders() {
 # drain (workflow_run, schedule, dispatch) and housekeeping runs (issues,
 # label and board syncs) also run on main; counting them made a drain wait
 # on itself. A line without an event is counted, as before.
+#
+# A fifth field, the run's created epoch, with NOW (epoch) and IDLE ("yes"
+# when runners are online and none is busy) as the second and third
+# arguments, lets a run that GitHub never assigned to a machine drop out:
+# queued over ten minutes while every runner sits idle is not in flight, it
+# is waiting on GitHub (main_unassigned says so).
 main_in_flight() {
-  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' '
+  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v now="${2:-0}" -v idle="${3:-}" '
     NF >= 4 && $4 != "push" { next }
+    NF >= 3 && $2 == "main" && ($3 == "queued" || $3 == "waiting" || $3 == "requested") && idle == "yes" && now + 0 > 0 && $5 + 0 > 0 && now - $5 > 600 { next }
     NF >= 3 && $2 == "main" && ($3 == "queued" || $3 == "in_progress" || $3 == "waiting" || $3 == "requested") { f = 1 }
     END { print f ? "yes" : "no" }'
 }

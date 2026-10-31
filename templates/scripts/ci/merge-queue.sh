@@ -147,6 +147,7 @@ test_one=${QUEUE_TEST_COMMAND:-"node $here/run-test-file.mjs"}
 
 [ -f "$here/../worktrees-lib.sh" ] && . "$here/../worktrees-lib.sh"
 . "$here/run-lib.sh"
+. "$here/gate-lib.sh"
 tab=$(printf '\t')
 
 # Reading a run. One call for the run, one for its jobs, one for the
