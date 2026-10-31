@@ -75,6 +75,23 @@ test('the runner watch\'s machine file becomes the sample', () => {
   assert.strictEqual(send.runnerSample(''), undefined);
 });
 
+test('the measures after the machine line become the sample\'s measures, and a blank one is left out', () => {
+  const row = '1761754320\t8\t5\t2\t8 cores, 5 runners\t65\t44\t18.7\t5.7\t313000\t620\t54\t2';
+  assert.deepStrictEqual(send.runnerSample(row).measures, { startMs: 65, uptimeHours: 44, pagedGb: 18.7, nonPagedGb: 5.7, handles: 313000, processes: 620, avShare: 54, oldShells: 2 });
+  assert.deepStrictEqual(send.runnerSample('1761754320\t8\t5\t2\t8 cores, 5 runners\t17\t8.7\t\t\t\t\t\t').measures, { startMs: 17, uptimeHours: 8.7 });
+  assert.strictEqual(send.runnerSample('1761754320\t8\t5\t2\t8 cores, 5 runners\t\t\t\t\t\t\t\t').measures, undefined);
+});
+
+test('the owner\'s steps are the marked lines under their heading in SETUP.md, and nothing else of the manual', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sns-steps-'));
+  fs.writeFileSync(path.join(dir, 'SETUP.md'), '# Setup\n\n- [ ] Not a step\n\n## Steps for the owner\n\n- [ ] Water the beds | [Garden](https://example.com/beds) | They dry out\n- [x] Open the hatch | Air\nplain words\n\n## Next\n- [ ] Elsewhere\n');
+  assert.deepStrictEqual(send.ownerSteps(dir), ['- [ ] Water the beds | [Garden](https://example.com/beds) | They dry out', '- [x] Open the hatch | Air']);
+  assert.deepStrictEqual(send.ownerSteps(path.join(dir, 'missing')), []);
+  const body = send.briefBody('Main:\nabc1234 Release', { now: new Date(0), machine: 'Maya\'s desktop', ownerSteps: send.ownerSteps(dir) });
+  assert.strictEqual(body.ownerSteps.length, 2);
+  assert.strictEqual(send.briefBody('Main:\nabc1234 Release', { now: new Date(0) }).ownerSteps, undefined);
+});
+
 test('with a token, one request to /brief with the bearer, and nothing printed', async () => {
   const f = await fake([{ status: 204 }]);
   try {

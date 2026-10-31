@@ -116,6 +116,7 @@ function briefBody(text, opts = {}) {
   }
   const body = { version: 1, sentAt: (opts.now || new Date()).toISOString(), machine: opts.machine || os.hostname(), cards: out };
   if (opts.runners) body.runners = opts.runners;
+  if (opts.ownerSteps && opts.ownerSteps.length) body.ownerSteps = opts.ownerSteps;
   if (opts.sessions && opts.sessions.length) body.sessions = opts.sessions.map((s) => (s.lastLine ? { ...s, lastLine: sessions.lastLine(s.lastLine) } : s));
   return body;
 }
@@ -126,7 +127,38 @@ function runnerSample(row) {
   const n = (v) => (/^\d+$/.test(v || '') ? Number(v) : undefined);
   if (f.length < 4 || n(f[1]) === undefined || n(f[2]) === undefined) return undefined;
   const at = n(f[0]) ? new Date(n(f[0]) * 1000).toISOString() : undefined;
-  return { cores: n(f[1]), runners: n(f[2]), busy: Math.min(n(f[3]) || 0, n(f[2])), ...(at ? { at } : {}) };
+  const measures = measuresOf(f.slice(5));
+  return { cores: n(f[1]), runners: n(f[2]), busy: Math.min(n(f[3]) || 0, n(f[2])), ...(at ? { at } : {}), ...(measures ? { measures } : {}) };
+}
+
+// The runner watch's measures, after the machine line, in this order: program
+// start time (ms), uptime (hours), paged and non-paged pool (GB), handles,
+// processes, the antivirus engine's share of one core (%), shells older than a day.
+const MEASURES = ['startMs', 'uptimeHours', 'pagedGb', 'nonPagedGb', 'handles', 'processes', 'avShare', 'oldShells'];
+function measuresOf(fields) {
+  const out = {};
+  MEASURES.forEach((name, i) => {
+    const v = String(fields[i] === undefined ? '' : fields[i]).trim();
+    if (/^\d+(\.\d+)?$/.test(v)) out[name] = Number(v);
+  });
+  return Object.keys(out).length ? out : undefined;
+}
+
+/**
+ * The owner's steps from the project's manual: the marked lines under the
+ * "Steps for the owner" heading of SETUP.md, as written. The service reads
+ * them into cards; nothing else of the manual is sent.
+ */
+function ownerSteps(root) {
+  let text;
+  try { text = fs.readFileSync(path.join(root, 'SETUP.md'), 'utf8'); } catch { return []; }
+  const out = [];
+  let inside = false;
+  for (const raw of text.replace(/\r/g, '').split('\n')) {
+    if (/^#{1,6}\s/.test(raw)) { inside = /^##\s+Steps for the owner\s*$/i.test(raw.trim()); continue; }
+    if (inside && /^\s*[-*]\s+\[[ xX]\]\s+\S/.test(raw)) out.push(raw.trim().slice(0, 600));
+  }
+  return out.slice(0, 20);
 }
 
 /** The body as text, trimmed item by item until it fits under the limit; undefined when it never does. */
@@ -175,14 +207,14 @@ function remember(env, repoId, m) {
 }
 
 /** Send the brief; returns the line to print ('' for none). */
-async function sendBrief({ text, session = '', repo, env = process.env, now = new Date(), runners, sessions: agents }) {
+async function sendBrief({ text, session = '', repo, env = process.env, now = new Date(), runners, sessions: agents, ownerSteps: steps }) {
   const entry = tokens.find(repo, env);
   if (!entry || !tokens.looksLikeToken(entry.token)) return '';
   const mem = recall(env, entry.repoId);
   const same = mem.session && mem.session === session;
   // Refused once this session: nothing more is sent until the next one.
   if (same && mem.said === 'not_connected') return '';
-  const body = fit(briefBody(text, { now, machine: entry.machine, runners, sessions: agents }));
+  const body = fit(briefBody(text, { now, machine: entry.machine, runners, sessions: agents, ownerSteps: steps }));
   const outcome = body === undefined ? 'too_large' : await post(`${base(env)}/v1/repos/${entry.repoId}/brief`, entry.token, body);
   if (outcome === 'ok') {
     remember(env, entry.repoId, { session, said: same ? mem.said : '', lastOk: now.getTime() });
@@ -203,10 +235,10 @@ async function main() {
   if (machineFile) { try { runners = runnerSample(fs.readFileSync(machineFile, 'utf8')); } catch { /* no sample */ } }
   let agents;
   try { agents = sessions.readSessions({ root: process.cwd() }); } catch { /* no sample */ }
-  const line = await sendBrief({ text, session: arg('--session') || '', repo: arg('--repo'), runners, sessions: agents });
+  const line = await sendBrief({ text, session: arg('--session') || '', repo: arg('--repo'), runners, sessions: agents, ownerSteps: ownerSteps(process.cwd()) });
   if (line) process.stdout.write(line + '\n');
 }
 
 if (require.main === module) main().catch(() => {}).finally(() => { process.exitCode = 0; });
 
-module.exports = { post, briefBody, runnerSample, fit, failureLine, sendBrief, base, SEND_MAX_BYTES, TIMEOUT_MS };
+module.exports = { post, briefBody, runnerSample, ownerSteps, measuresOf, fit, failureLine, sendBrief, base, SEND_MAX_BYTES, TIMEOUT_MS };

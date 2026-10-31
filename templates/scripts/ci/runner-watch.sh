@@ -57,6 +57,40 @@ sample_machine() {
     printf '%s\t%s\t%s\t%s\t%s\t%s\n' "${cpu:-0}" "${mem:-0}" "${disk:-0}" "${here:-0}" "${cores:-1}" "${busy:-0}"
   fi
 }
+# The machine's own slowness, for the owner's card when a computer needs a
+# restart (spec 005, "Needs you"): how long a small program takes to start
+# (the median of eight), uptime in hours, the kernel's paged and non-paged
+# pool in GB, handles and processes, the antivirus engine's share of one
+# core, and shell processes older than a day. One tab-separated line; a
+# measure the system cannot give is left empty.
+sample_measures() {
+  if [ -n "$WINDIR" ]; then
+    powershell -NoProfile -Command '
+      $psi = New-Object Diagnostics.ProcessStartInfo
+      $psi.FileName = "$env:WINDIR\System32\cmd.exe"; $psi.Arguments = "/c exit"; $psi.UseShellExecute = $false; $psi.CreateNoWindow = $true
+      $times = foreach ($i in 1..8) { $sw = [Diagnostics.Stopwatch]::StartNew(); $p = [Diagnostics.Process]::Start($psi); $p.WaitForExit(); $sw.Stop(); $sw.Elapsed.TotalMilliseconds }
+      $sorted = @($times | Sort-Object); $start = [math]::Round($sorted[[int]($sorted.Count / 2)])
+      $os = Get-CimInstance Win32_OperatingSystem
+      $up = [math]::Round(((Get-Date) - $os.LastBootUpTime).TotalHours, 1)
+      $mem = Get-CimInstance Win32_PerfFormattedData_PerfOS_Memory
+      $paged = [math]::Round($mem.PoolPagedBytes / 1GB, 2); $nonpaged = [math]::Round($mem.PoolNonpagedBytes / 1GB, 2)
+      $all = @(Get-Process -ErrorAction SilentlyContinue)
+      $handles = ($all | Measure-Object HandleCount -Sum).Sum
+      $null = Get-CimInstance Win32_PerfFormattedData_PerfProc_Process -ErrorAction SilentlyContinue; Start-Sleep -Seconds 1
+      $av = (Get-CimInstance Win32_PerfFormattedData_PerfProc_Process -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq "MsMpEng" } | Measure-Object PercentProcessorTime -Sum).Sum
+      $cut = (Get-Date).AddHours(-24)
+      $old = @(Get-Process cmd, bash, sh, pwsh, powershell -ErrorAction SilentlyContinue | Where-Object { $_.Id -ne $PID } | ForEach-Object { try { if ($_.StartTime -lt $cut) { 1 } } catch { } }).Count
+      "$start`t$up`t$paged`t$nonpaged`t$handles`t$($all.Count)`t$([int]$av)`t$old"' 2>/dev/null | tr -d '\r'
+  else
+    t0=$(date +%s%N 2>/dev/null); i=0
+    while [ "$i" -lt 8 ]; do sh -c : ; i=$((i + 1)); done
+    t1=$(date +%s%N 2>/dev/null)
+    start=""; case "$t0$t1" in *[!0-9]*|"") ;; *) start=$(( (t1 - t0) / 8000000 )) ;; esac
+    up=$(awk '{ printf "%.1f", $1 / 3600 }' /proc/uptime 2>/dev/null)
+    printf '%s\t%s\t\t\t\t\t\t\n' "$start" "$up"
+  fi
+}
+meas=$(sample_measures)
 m=$(sample_machine)
 cpu=$(printf '%s' "$m" | cut -f1); mem=$(printf '%s' "$m" | cut -f2); disk=$(printf '%s' "$m" | cut -f3); here=$(printf '%s' "$m" | cut -f4); cores=$(printf '%s' "$m" | cut -f5); busy=$(printf '%s' "$m" | cut -f6)
 # The machine line: cores, runners here across repositories, busy now (a
@@ -80,6 +114,7 @@ if [ "$print_only" = yes ]; then
   echo "runners: $status"
   echo "machine: processor ${cpu}%, memory ${mem}%, ${disk} GB free, $jobs job(s) running, jobs waited ${wait_min} min on average, $here runner(s) on this machine, $cores cores"
   echo "machine line: $mline"
+  echo "measures: $(printf '%s' "$meas" | awk -F'\t' '{ printf "programs start in %s ms, on for %s h, paged pool %s GB, non-paged pool %s GB, %s handles, %s processes, antivirus %s%% of a core, %s old shells", $1, $2, $3, $4, $5, $6, $7, $8 }')"
   if [ -n "$now_lines" ]; then printf '%s\n' "$now_lines" | sed 's/^[^|]*|/  /'; else echo "nothing to say"; fi
   exit 0
 fi
@@ -92,7 +127,8 @@ changes=$(watch_changes "$prev" "$now_lines")
 printf '%s\n' "$now_lines" > "$dir/$key.state"
 printf '%s\t%s\n' "$now" "$status" > "$dir/$key.latest"
 # The machine line, for the session brief and the console; one per machine.
-printf '%s\t%s\t%s\t%s\t%s\n' "$now" "${cores:-0}" "${here:-0}" "${busy:-0}" "$mline" > "$dir/machine.tsv" 2>/dev/null || true
+# The measures follow the line, tab-separated, in the order sample_measures gives them.
+printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$now" "${cores:-0}" "${here:-0}" "${busy:-0}" "$mline" "$meas" > "$dir/machine.tsv" 2>/dev/null || true
 
 # 6. Say what changed, once.
 if [ -n "$changes" ]; then
