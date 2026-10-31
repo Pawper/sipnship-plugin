@@ -46,6 +46,22 @@ default scripts/ci/task-files.txt
 feature queue
 scripts/ci/merge-queue.sh
 scripts/ci/batch-lib.sh
+# scripts/ci/queue/ is an owned folder: one library a step of the queue, and
+# the pure rules batch-lib.sh loads. A file added there is listed here.
+scripts/ci/queue/state.sh
+scripts/ci/queue/requests.sh
+scripts/ci/queue/rush.sh
+scripts/ci/queue/runs.sh
+scripts/ci/queue/choose.sh
+scripts/ci/queue/serial.sh
+scripts/ci/queue/batch.sh
+scripts/ci/queue/deploy.sh
+scripts/ci/queue/rules-batch.sh
+scripts/ci/queue/rules-drain.sh
+scripts/ci/queue/rules-serial.sh
+scripts/ci/queue/rules-requests.sh
+scripts/ci/queue/rules-deploy.sh
+scripts/ci/queue/rules-checkout.sh
 scripts/ci/run-lib.sh
 scripts/ci/run-test-file.mjs
 scripts/ci/QUEUE.md

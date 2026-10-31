@@ -138,6 +138,7 @@ scripts/ci/batch-lib.sh a7be4d01a3846080b1ecf0277b8790cdcc6759a6
 scripts/ci/batch-lib.sh abd447b6013f9ca4909e2e7112c2ea4f8838b786
 scripts/ci/batch-lib.sh ad6dd423904a3dcdacf1ab772934950b8c1b4412
 scripts/ci/batch-lib.sh b081b2624b5b4bf5a1fa143ece50c9bfed00b78f
+scripts/ci/batch-lib.sh b31d0a9be0897402491804a5c4414544bcbc5398
 scripts/ci/batch-lib.sh b9194f780f06cbf947c3c9b133701a489664deb8
 scripts/ci/batch-lib.sh bddee3c45acff18180c631b700ea96172eadda6d
 scripts/ci/batch-lib.sh c8feb8a287d2008d849b183b598dcde31fe71351
@@ -218,6 +219,7 @@ scripts/ci/merge-queue.sh 0bce09d72db9e34ea1af24b234bea8b3f0fb07c0
 scripts/ci/merge-queue.sh 0db1e5d0b28ef2372a477757996e5c10fb736f47
 scripts/ci/merge-queue.sh 0e168c4eeb48a8f43ffa3a9f75ba44942693ed7a
 scripts/ci/merge-queue.sh 1298ed09e066dcba241afca32cd1a152f94da611
+scripts/ci/merge-queue.sh 131bb7483f1c302e7bc7828024dcc628a6ead537
 scripts/ci/merge-queue.sh 19de4abcf9192b7e68c45ed9e6a6b627050aff11
 scripts/ci/merge-queue.sh 1a97828bf5aa7944d0c912bc19421a23e9d01a28
 scripts/ci/merge-queue.sh 1b7c2e04fc40c3584b6b5939745c50785f9f130b
@@ -308,6 +310,20 @@ scripts/ci/publish-state.sh 7f79d3b2d7852ca7b6513f1b38f6e0aa95619b23
 scripts/ci/publish-state.sh 9a9764800a50352bd2977638e3f38070e0a26a74
 scripts/ci/publish-state.sh a7ef55721f761482abc257e5355d7fda35d6a0aa
 scripts/ci/publish-state.sh e6213adf837d40b4675fed56ef337ca784492c66
+scripts/ci/queue/batch.sh d93afc5f3c9d0e36c1d31038932b7ef603087b81
+scripts/ci/queue/choose.sh 07685d9f7e7578b472bc5d3d6b4c20b9646b0a60
+scripts/ci/queue/deploy.sh 2fba418eed08e229c70c6fd8f9890c09c1ce35c5
+scripts/ci/queue/requests.sh 36d19effc79fd0c312240f066051de5130131387
+scripts/ci/queue/rules-batch.sh a31d3fe468610454c7b888568b5d54e9db65575f
+scripts/ci/queue/rules-checkout.sh ec0d3af86c16d373f8c032ef06b16f1ee2918910
+scripts/ci/queue/rules-deploy.sh 6d577237872904ae992d5721022530773731c972
+scripts/ci/queue/rules-drain.sh 51e1f9cb36dcc777910f93efa1e8de5420061de3
+scripts/ci/queue/rules-requests.sh f78d260b156acf0761d1200f3fecde44baa022b7
+scripts/ci/queue/rules-serial.sh 367d29dc3143c91ce1d0f4fcb7a5ffa410769f0c
+scripts/ci/queue/runs.sh e893c4052ec550c538804740dae0dcfec86c8ea5
+scripts/ci/queue/rush.sh 211680f93762d8485c993fbe6d9d0041237f1c22
+scripts/ci/queue/serial.sh 04dacd52db5a2bcf2634bdc6ebd54c4209668a2b
+scripts/ci/queue/state.sh 6562f452bd8fc8ad6ff666dca1fc96aa3c526861
 scripts/ci/remove-runner.ps1 20bc17d0f981845b8c8850dcedfea5084161800f
 scripts/ci/remove-runner.ps1 b6e829e790e3229b4f29109492a9b122ba8800d6
 scripts/ci/run-lib.sh 05ae7db3aabe8daff0627d631361d639d175f484

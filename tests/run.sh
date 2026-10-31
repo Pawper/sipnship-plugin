@@ -68,6 +68,14 @@ TMPDIR=$SUITE_TMP_ROOT
 GIT_CEILING_DIRECTORIES=$SUITE_TMP_ROOT
 export TMPDIR SUITE_TMP_ROOT GIT_CEILING_DIRECTORIES
 
+# The queue is one main script and a library a step (templates/scripts/ci/queue/).
+# Blocks that read its text read these two files: the libraries in sourcing
+# order, then the main script (so a function is defined before its call).
+mq_all=$SUITE_TMP_ROOT/merge-queue.all.sh
+cat "$root"/templates/scripts/ci/queue/state.sh "$root"/templates/scripts/ci/queue/requests.sh "$root"/templates/scripts/ci/queue/rush.sh "$root"/templates/scripts/ci/queue/runs.sh "$root"/templates/scripts/ci/queue/choose.sh "$root"/templates/scripts/ci/queue/serial.sh "$root"/templates/scripts/ci/queue/batch.sh "$root"/templates/scripts/ci/queue/deploy.sh "$root"/templates/scripts/ci/merge-queue.sh > "$mq_all"
+bl_all=$SUITE_TMP_ROOT/batch-lib.all.sh
+cat "$root"/templates/scripts/ci/batch-lib.sh "$root"/templates/scripts/ci/queue/rules-*.sh > "$bl_all"
+
 # bounded SECONDS COMMAND...: run a command the suite starts (a nested suite
 # above all) with a time bound, wait for it, and end it and its children when
 # the bound passes. Its process is written down so the end of the run can
@@ -362,9 +370,9 @@ eq "an escaped backtick in a body does not cut the command before its labels" ""
 eq "nor an escaped semicolon outside quotes" "" "$(state_label_reason 'gh api repos/o/r/issues -f title=x -f body=a\;b -f labels[]=state:ready')"
 eq "a real command substitution in double quotes is still seen" "rm" "$(split_commands 'echo "$(rm -rf x)"' | awk '{print $1}' | grep -x rm)"
 eq "a budget getting low says so early" "GraphQL 1,200 of 5,000 left, resets 09:19Z (in 23 min); REST 3,469 of 5,000 left. Getting low: switch to the REST forms now (scripts/issue-open.sh, pr-open.sh, pr-checks.sh, gh api); gh pr, gh issue and gh project spend these points." "$(budget_line "1200	5000	1760001540	3469	5000	1760001540" 1760000200)"
-eq "every fetch of main goes through the retry" "0 3" "$(grep -c '^[[:space:]]*git fetch -q origin "\$base"\( "pull\|$\)' "$root/templates/scripts/ci/merge-queue.sh") $(grep -c 'fetch_base' "$root/templates/scripts/ci/merge-queue.sh" | awk '{print ($1 >= 3) ? 3 : $1}')"
-eq "a round that could not fetch main puts its pull requests back" "1" "$(grep -c 'case " \$untried " in' "$root/templates/scripts/ci/merge-queue.sh")"
-eq "the queue waits only on the REST budget it spends" "1" "$(grep -c "rate_limit --jq '.resources.core |" "$root/templates/scripts/ci/merge-queue.sh")"
+eq "every fetch of main goes through the retry" "0 3" "$(grep -c '^[[:space:]]*git fetch -q origin "\$base"\( "pull\|$\)' "$mq_all") $(grep -c 'fetch_base' "$mq_all" | awk '{print ($1 >= 3) ? 3 : $1}')"
+eq "a round that could not fetch main puts its pull requests back" "1" "$(grep -c 'case " \$untried " in' "$mq_all")"
+eq "the queue waits only on the REST budget it spends" "1" "$(grep -c "rate_limit --jq '.resources.core |" "$mq_all")"
 eq "no record, no line" "" "$(budget_line '' 1760000200)"
 eq "under the floor is low" "yes" "$(budget_low "312	5000	1760001540	3469	5000	1760001540")"
 eq "at the floor is not" "no" "$(budget_low "500	5000	1760001540	3469	5000	1760001540")"
@@ -428,7 +436,7 @@ eq "a node:test file runs and passes" "0" "$(node "$rt" "$rtf/node-test/a.test.j
 eq "a vitest file is still run by vitest" "vitest" "$(node "$rt" --which "$rtf/vitest/a.test.ts" | tr -d '\r')"
 eq "an unknown runner is told as unknown" "unknown" "$(node "$rt" --which "$rtf/unknown/a.test.ts" | tr -d '\r')"
 eq "an unknown runner is not run, never red" "3" "$(node "$rt" "$rtf/unknown/a.test.ts" >/dev/null 2>&1; echo $?)"
-eq "the queue reports a file not run here" "1" "$(grep -c 'not run here:' "$root/templates/scripts/ci/merge-queue.sh")"
+eq "the queue reports a file not run here" "1" "$(grep -c 'not run here:' "$mq_all")"
 
 section 'reading a run'
 . "$root/templates/scripts/ci/run-lib.sh"
@@ -460,7 +468,7 @@ bm_land=$(batch_from_state "$(cat "$bm_dir/landed.state")" "" "" "" "")
 eq "landed: the batch says it landed" "A batch of 3 pull requests (#249, #250 and #253) landed on main." "$(publish_say "" "$bm_land" "" "" "" "" "" batch "" | sed -n 1p)"
 bm_cl=$(awk -F'\t' 'NF >= 2 { printf "%s\t%s\t%s\t%s\t%s\tyes\n", $1, $2, $3, $4, $5 }' "$bm_dir/clashes")
 eq "a clash record names the files, the other change and why, never a flag" "dates.ts|2|Water the beds on a schedule|249|conflicts with #249, which goes in this batch|true" "$(bm_json "$bm_land" "$bm_cl" | bm_q '[j.clashes[0].file.split("/").pop(), j.clashes[0].fileCount, j.clashes[0].withTitle, j.clashes[0].with, j.clashes[0].why, j.clashes[0].told].join("|")')"
-eq "the queue publishes at each moment of a batch" "5" "$(grep -c 'batch_moment cut\|batch_moment building\|batch_moment testing\|batch_moment landed' "$root/templates/scripts/ci/merge-queue.sh")"
+eq "the queue publishes at each moment of a batch" "5" "$(grep -c 'batch_moment cut\|batch_moment building\|batch_moment testing\|batch_moment landed' "$mq_all")"
 eq "what needs a person is said with its error line" "Needs you: #14 failed CI twice: FAIL  the chime rings." "$(publish_say "" "" "" "" "$(printf '14\tfailed CI twice\tits checks stay red\tFAIL  the chime rings')" "" "" idle "" | sed -n 3p)"
 eq "no runner online is said" "No runner is online, so nothing can be tested; start one." "$(publish_say "" "" "" "" "" "$(printf '0\t0\t2\t15')" "" idle "" | sed -n 3p)"
 eq "paused says until when" "The scheduled queue is paused until 2026-10-22T20:00:00Z; a drain run by hand still runs." "$(publish_say "" "" "" "" "" "" "" paused 2026-10-22T20:00:00Z | sed -n 1p)"
@@ -474,7 +482,7 @@ eq "the first body explains the queue" "1" "$(printf '%s\n' "$po_body" | grep -c
 eq "a later body does not" "0" "$(publish_body "$po_say" "$po_open" "" "" "$po_json" no | grep -c "own page")"
 eq "the body lists each open pull request with its sentence" "- #12 Add retries: green and waiting to merge" "$(printf '%s\n' "$po_body" | grep '^- #12')"
 eq "the JSON block is read back out of the body" "yes" "$(published_json "$po_body" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{console.log(JSON.parse(s).version===1?"yes":"no")})')"
-eq "the queue publishes as it drains and at its end" "2" "$(grep -c 'publish_now draining\|publish_now idle' "$root/templates/scripts/ci/merge-queue.sh")"
+eq "the queue publishes as it drains and at its end" "2" "$(grep -c 'publish_now draining\|publish_now idle' "$mq_all")"
 eq "the drain workflow may write issues" "1" "$(grep -c '^  issues: write' "$root/templates/.github/workflows/queue-drain.yml")"
 eq "the queue label exists" "1" "$(grep -c 'mk "queue"' "$root/templates/scripts/labels.sh")"
 
@@ -984,7 +992,7 @@ eq "a configured root counts as source" "missing" "$(spec_check_reason 'android/
 eq "a root without its slash still counts" "missing" "$(spec_check_reason 'android/app/Main.kt' '' 'android')"
 eq "outside every root is not source" "" "$(spec_check_reason 'docs/a.md' '' "$(printf 'src/\nandroid/')")"
 eq "the default root is src" "missing" "$(spec_check_reason 'src/a.ts' '')"
-eq "the queue names the build when the project has one" "1" "$(grep -c 'build \$d_build' "$root/templates/scripts/ci/merge-queue.sh")"
+eq "the queue names the build when the project has one" "1" "$(grep -c 'build \$d_build' "$mq_all")"
 eq "both Deploy paths pass the build id" "2" "$(grep -c 'scripts/ci/build-id.sh HEAD' "$root/templates/.github/workflows/deploy.yml")"
 eq "QUEUE.md no longer names --deploy as a flag to pass" "0" "$(grep -c '(`--deploy`, or\|`--deploy` starts' "$root/templates/scripts/ci/QUEUE.md")"
 eq "the sync can stage without committing, and leaves project-owned files alone" "2" "$(grep -c 'no_commit=yes\|project-owned.txt; never compared' "$root/scripts/sync/sync-templates.sh")"
@@ -1211,7 +1219,7 @@ eq "a job whose step failed and then cancelled its run is a failure" "failure" "
 eq "a job cancelled with no failed step stays cancelled" "cancelled" "$(job_outcome cancelled 'success skipped')"
 eq "failed-then-cancelled beside cancelled siblings is red, one retry" "red" "$(rest_rollup_named "$(printf 'checks\tsuccess\nplugin\t%s\napp\tcancelled\nCI passed\tfailure' "$(job_outcome cancelled 'success failure success')")")"
 eq "only cancellations keep the every-round re-run" "cancelled" "$(rest_rollup_named "$(printf 'checks\tsuccess\nplugin\t%s\napp\tcancelled\nCI passed\tfailure' "$(job_outcome cancelled 'success')")")"
-eq "the queue reads a cancelled job's steps" "2" "$(grep -c 'job_real_outcome "\$' "$root/templates/scripts/ci/merge-queue.sh")"
+eq "the queue reads a cancelled job's steps" "2" "$(grep -c 'job_real_outcome "\$' "$mq_all")"
 eq "the summary failing alone is red" "red" "$(rest_rollup_named "$(printf 'app\tsuccess\nCI passed\tfailure')")"
 eq "a project's own summary name" "cancelled" "$(rest_rollup_named "$(printf 'web\tcancelled\nall green\tfailure')" 'all green')"
 eq "an issue a member closes is carried" "Closes #64" "$(carried_refs 'An emote per title.
@@ -1231,7 +1239,7 @@ eq "a batch body starts with the queue's marker" "<!-- merge-queue:batch -->" "$
 eq "a batch is known by its marker" "yes" "$(is_batch_body "$(batch_pr_body "$(printf '41\tA\n')")")"
 eq "and by the sentence older batches had" "yes" "$(is_batch_body 'One integration run for the pull requests below, merged in this order')"
 eq "a branch named batch-something is not a batch" "" "$(is_batch_body 'Carry escape lines into batch bodies. Closes #483')"
-eq "the queue finds batches by body, not branch (the rush keep list too)" "0 3" "$(grep -c 'startswith("batch-")' "$root/templates/scripts/ci/merge-queue.sh") $(grep -c 'contains("<!-- merge-queue:batch -->")' "$root/templates/scripts/ci/merge-queue.sh")"
+eq "the queue finds batches by body, not branch (the rush keep list too)" "0 3" "$(grep -c 'startswith("batch-")' "$mq_all") $(grep -c 'contains("<!-- merge-queue:batch -->")' "$mq_all")"
 eq "each run's batch branch is its own" "batch-2026-10-15-041200" "$(batch_branch_name 2026-10-15 1 041200)"
 eq "and the second that minute" "batch-2026-10-15-041200-2" "$(batch_branch_name 2026-10-15 2 041200)"
 eq "a hold label holds" "held by its label" "$(held_reason "$(printf 'bug\nqueue:hold')" '')"
@@ -1254,9 +1262,9 @@ eq "deploy now's answer" "Queue answer: deploy-now: nothing-to-deploy" "$(reques
 eq "a deploy still running answers nothing" "" "$(deploy_run_outcome in_progress '')"
 eq "a deploy that went through" "deployed" "$(deploy_run_outcome completed success)"
 eq "a deploy that failed" "deploy-failed" "$(deploy_run_outcome completed failure)"
-eq "deploy now keeps the ships rule, through the drain's one ask" "1" "$(sed -n '/^requests_deploy_now()/,/^}/p' "$root/templates/scripts/ci/merge-queue.sh" | grep -c 'ships_since "\$dn_from" "\$dn_end"')"
-eq "the drain's end asks through the same helper" "1" "$(sed -n '/^deploy_if_due()/,/^}/p' "$root/templates/scripts/ci/merge-queue.sh" | grep -c 'ships_since "\$d_from" "\$d_end"')"
-eq "deploy now starts the same dispatch the drain's end uses" "1" "$(sed -n '/^requests_deploy_now()/,/^}/p' "$root/templates/scripts/ci/merge-queue.sh" | grep -c 'workflows/deploy.yml/dispatches')"
+eq "deploy now keeps the ships rule, through the drain's one ask" "1" "$(sed -n '/^requests_deploy_now()/,/^}/p' "$mq_all" | grep -c 'ships_since "\$dn_from" "\$dn_end"')"
+eq "the drain's end asks through the same helper" "1" "$(sed -n '/^deploy_if_due()/,/^}/p' "$mq_all" | grep -c 'ships_since "\$d_from" "\$d_end"')"
+eq "deploy now starts the same dispatch the drain's end uses" "1" "$(sed -n '/^requests_deploy_now()/,/^}/p' "$mq_all" | grep -c 'workflows/deploy.yml/dispatches')"
 eq "classes overlap" "yes" "$(classes_overlap "app other" "docs app")"
 eq "classes apart" "" "$(classes_overlap "docs" "app")"
 eq "land next: never red" "red" "$(land_next_step red "" no no)"
@@ -1265,23 +1273,23 @@ eq "land next: a clash with main ends it" "conflicts" "$(land_next_step green ye
 eq "land next: green between rounds lands at once" "serial-now" "$(land_next_step green "" no no)"
 eq "land next: beside a batch whose classes it does not share, at once" "serial-now" "$(land_next_step green "" yes "")"
 eq "land next: sharing the batch's classes, first after it" "after-batch" "$(land_next_step green "" yes yes)"
-eq "the drain reads requests at each round's start" "1" "$(grep -c 'requests_tick drain' "$root/templates/scripts/ci/merge-queue.sh")"
-eq "a batch's run reads them every two minutes" "1" "$(grep -c 'then requests_tick batch; fi' "$root/templates/scripts/ci/merge-queue.sh")"
-eq "land next runs the serial path, nothing else (a proven chain one too)" "2" "$(grep -c 'QUEUE_IN_REQUEST=1 sh "\$0" --serial' "$root/templates/scripts/ci/merge-queue.sh")"
-eq "a take-out goes through the close path with its reason" "1" "$(grep -c 'worktrees.sh" close "\$rq_pr" "Taken out of the queue at the request of \$rq_by: \$rq_why"' "$root/templates/scripts/ci/merge-queue.sh")"
-eq "a request never merges through the API itself" "0" "$(sed -n '/^requests_tick()/,/^}/p' "$root/templates/scripts/ci/merge-queue.sh" | grep -c '/merge')"
+eq "the drain reads requests at each round's start" "1" "$(grep -c 'requests_tick drain' "$mq_all")"
+eq "a batch's run reads them every two minutes" "1" "$(grep -c 'then requests_tick batch; fi' "$mq_all")"
+eq "land next runs the serial path, nothing else (a proven chain one too)" "2" "$(grep -c 'QUEUE_IN_REQUEST=1 sh "\$0" --serial' "$mq_all")"
+eq "a take-out goes through the close path with its reason" "1" "$(grep -c 'worktrees.sh" close "\$rq_pr" "Taken out of the queue at the request of \$rq_by: \$rq_why"' "$mq_all")"
+eq "a request never merges through the API itself" "0" "$(sed -n '/^requests_tick()/,/^}/p' "$mq_all" | grep -c '/merge')"
 eq "pause for two hours" "7200" "$(( $(pause_until 0 2h) ))"
 eq "pause for 45 minutes" "2700" "$(pause_until 0 45m)"
 eq "bare minutes" "5400" "$(pause_until 0 90)"
 eq "a length it cannot read pauses nothing" "" "$(pause_until 0 soon)"
-eq "the drain, a batch and --serial all honour a hold" "3" "$(grep -c 'held_reason\|pr_held "\$pr"' "$root/templates/scripts/ci/merge-queue.sh" | awk '{print ($1 >= 3) ? 3 : $1}')"
+eq "the drain, a batch and --serial all honour a hold" "3" "$(grep -c 'held_reason\|pr_held "\$pr"' "$mq_all" | awk '{print ($1 >= 3) ? 3 : $1}')"
 eq "the scheduled drain skips while paused or a session drains" "2" "$(grep -c 'p="\${{ vars.QUEUE_PAUSED_UNTIL }}"\|l="\${{ vars.QUEUE_LOCAL_DRAIN_UNTIL }}"' "$root/templates/.github/workflows/queue-drain.yml")"
 # A session's drain window is short, renewed and cleared (fixtures/queue-stop).
 qs_dir="$root/tests/fixtures/queue-stop"
 IFS="$(printf '\t')" read -r qs_now qs_min qs_until < "$qs_dir/window.tsv"
 eq "the window is now plus QUEUE_DRAIN_MINUTES" "$qs_until" "$(drain_window_until "$qs_now" "$qs_min")"
 eq "the window defaults to 25 minutes" "$qs_until" "$(drain_window_until "$qs_now")"
-qs_mq="$root/templates/scripts/ci/merge-queue.sh"
+qs_mq="$mq_all"
 eq "the window is set at the start and renewed each round" "2" "$(grep -c '^ *renew_window$\|local_drain_mark=yes; renew_window' "$qs_mq")"
 eq "the exit trap clears the window" "1" "$(grep -c 'local_drain_mark:-}" ]; then set_repo_var QUEUE_LOCAL_DRAIN_UNTIL ""' "$qs_mq")"
 eq "the backstop drains when the queue says idle inside a window" "1" "$(grep -c '"mode":"idle"' "$root/templates/.github/workflows/queue-drain.yml")"
@@ -1347,23 +1355,23 @@ eq "nor a workflow named CI elsewhere" "" "$(. "$root/scripts/sync/sync-lib.sh";
 eq "the release workflows in deploy.json" "play-internal.yml
 app-distribution.yml" "$(release_workflows '{"path": "guard", "releases": ["play-internal.yml", "app-distribution.yml"]}')"
 eq "none listed, none started" "" "$(release_workflows '{"path": "guard"}')"
-eq "the queue starts the listed releases when no Deploy run will" "1" "$(grep -c 'Started the release workflow' "$root/templates/scripts/ci/merge-queue.sh")"
+eq "the queue starts the listed releases when no Deploy run will" "1" "$(grep -c 'Started the release workflow' "$mq_all")"
 eq "the drain never runs hosted by default" "0" "$(grep -v '^#' "$root/templates/.github/workflows/queue-drain.yml" | grep -c 'ubuntu-latest')"
 eq "its runs-on falls back to self-hosted" "1" "$(grep -c "runs-on: \${{ vars.QUEUE_RUNS_ON || 'self-hosted' }}" "$root/templates/.github/workflows/queue-drain.yml")"
 eq "and with QUEUE_RUNS_ON unset the Windows job runs on a self-hosted Windows runner" "2" "$(grep -c "vars.QUEUE_RUNS_ON == '' || contains(vars.QUEUE_RUNS_ON, 'windows')\|runs-on: \${{ vars.QUEUE_RUNS_ON || 'windows' }}" "$root/templates/.github/workflows/queue-drain.yml")"
 eq "the other drain job runs only for a label not naming Windows" "1" "$(grep -c "if: \${{ vars.QUEUE_RUNS_ON != '' && !contains(vars.QUEUE_RUNS_ON, 'windows')" "$root/templates/.github/workflows/queue-drain.yml")"
 eq "and skips itself after a recent drain, or while paused" "3" "$(grep -c 'skipping this one' "$root/templates/.github/workflows/queue-drain.yml")"
-eq "the batch checkout links packages only when the lockfiles match" "1" "$(grep -c 'if \[ "\$em_lock" = "\$em_main" \] && \[ -d "\$main_dir/\$d/node_modules" \]' "$root/templates/scripts/ci/merge-queue.sh")"
-eq "a stale link is removed, never the packages behind it" "1" "$(grep -c 'cmd //c rmdir' "$root/templates/scripts/ci/merge-queue.sh")"
+eq "the batch checkout links packages only when the lockfiles match" "1" "$(grep -c 'if \[ "\$em_lock" = "\$em_main" \] && \[ -d "\$main_dir/\$d/node_modules" \]' "$mq_all")"
+eq "a stale link is removed, never the packages behind it" "1" "$(grep -c 'cmd //c rmdir' "$mq_all")"
 eq "file: dependencies by path" "packages/core
 ../shared" "$(file_deps '{"dependencies": {"@app/core": "file:packages/core", "react": "^18"}, "devDependencies": {"@app/shared": "file:../shared"}}')"
 eq "no file: dependency, nothing" "" "$(file_deps '{"dependencies": {"react": "^18"}}')"
-eq "the file: trees are part of the install hash and a stale install is named, not main" "2 1" "$(grep -c 'pkg_hash "\$' "$root/templates/scripts/ci/merge-queue.sh") $(grep -c "installed packages are older than origin" "$root/templates/scripts/ci/merge-queue.sh")"
-eq "a member that changes dependencies is installed for" "1" "$(grep -c 'package.json"\*) ensure_modules' "$root/templates/scripts/ci/merge-queue.sh")"
-eq "the project's install command can be named" "1" "$(grep -c 'QUEUE_INSTALL_COMMAND:-npm ci' "$root/templates/scripts/ci/merge-queue.sh")"
-eq "a lagging pull ref falls back to the branch" "1" "$(grep -c 'fetch -q origin "+refs/heads/$fph_branch:refs/queue/pr-$1"' "$root/templates/scripts/ci/merge-queue.sh")"
-eq "and is said as lagging, never 'try again'" "0" "$(grep -c 'try again' "$root/templates/scripts/ci/merge-queue.sh")"
-eq "the gate and the batch use the same fetch, and the rush test head too" "4" "$(grep -c 'fetch_pr_head "' "$root/templates/scripts/ci/merge-queue.sh")"
+eq "the file: trees are part of the install hash and a stale install is named, not main" "2 1" "$(grep -c 'pkg_hash "\$' "$mq_all") $(grep -c "installed packages are older than origin" "$mq_all")"
+eq "a member that changes dependencies is installed for" "1" "$(grep -c 'package.json"\*) ensure_modules' "$mq_all")"
+eq "the project's install command can be named" "1" "$(grep -c 'QUEUE_INSTALL_COMMAND:-npm ci' "$mq_all")"
+eq "a lagging pull ref falls back to the branch" "1" "$(grep -c 'fetch -q origin "+refs/heads/$fph_branch:refs/queue/pr-$1"' "$mq_all")"
+eq "and is said as lagging, never 'try again'" "0" "$(grep -c 'try again' "$mq_all")"
+eq "the gate and the batch use the same fetch, and the rush test head too" "4" "$(grep -c 'fetch_pr_head "' "$mq_all")"
 # A loop whose last command is "[ test ] && cmd" returns 1 when the test is
 # false; inside $(...) under set -e that ends the script without a word.
 # It did, three times (worktrees.sh close, --serial, the hold scan).
@@ -1376,14 +1384,14 @@ eq "no loop in any script ends on a bare test" "" "$tail_tests"
 # not merged, for a moment).
 oneline_tests=$(cd "$root" && grep -rnE 'do .*\] *&& [^|]*; *done' --include='*.sh' templates hooks scripts status 2>/dev/null | grep -v '||' | cut -d: -f1,2)
 eq "nor any one-line loop" "" "$oneline_tests"
-eq "the queue never stops without a word, on screen and in its log" "2" "$(grep -c 'stopped (exit \$qe_rc) during: \$queue_step' "$root/templates/scripts/ci/merge-queue.sh")"
-eq "the hold scan ends on an if" "1" "$(grep -c 'if \[ -n "\$h_why" \]; then printf' "$root/templates/scripts/ci/merge-queue.sh")"
-eq "the queue deploys from state after a serial, a batch and a drain, never from a flag" "3 0" "$(grep -c 'deploy_if_due "\$' "$root/templates/scripts/ci/merge-queue.sh") $(grep -c 'then_deploy' "$root/templates/scripts/ci/merge-queue.sh")"
+eq "the queue never stops without a word, on screen and in its log" "2" "$(grep -c 'stopped (exit \$qe_rc) during: \$queue_step' "$mq_all")"
+eq "the hold scan ends on an if" "1" "$(grep -c 'if \[ -n "\$h_why" \]; then printf' "$mq_all")"
+eq "the queue deploys from state after a serial, a batch and a drain, never from a flag" "3 0" "$(grep -c 'deploy_if_due "\$' "$mq_all") $(grep -c 'then_deploy' "$mq_all")"
 eq "the plugin's own scripts never ship" "no no no yes" "$(. "$root/templates/scripts/ci/deploy-lib.sh"; for p in scripts/ci/merge-queue.sh scripts/design/generate.mjs scripts/pr-open.sh scripts/core/pack.sh; do ships_path "$p" .; done | tr '\n' ' ' | sed 's/ $//')"
 eq "a scripts-only landing deploys nothing" "skip" "$(. "$root/templates/scripts/ci/deploy-lib.sh"; deploy_skip "$(printf 'scripts/ci/merge-queue.sh\n.github/workflows/ci.yml\n.claude/deploy.json\nSETUP.md')" .)"
 eq "one shipping path among them deploys" "build" "$(. "$root/templates/scripts/ci/deploy-lib.sh"; deploy_skip "$(printf 'scripts/ci/merge-queue.sh\nsrc/app/page.tsx')" .)"
-eq "the queue asks what ships before starting Deploy" "1 1" "$(grep -c 'deploy-gate.sh" --ships' "$root/templates/scripts/ci/merge-queue.sh") $(grep -c 'deploy: skipped, nothing that ships changed' "$root/templates/scripts/ci/merge-queue.sh")"
-eq "the drain's deploy function is defined before the drain calls it" "yes" "$(awk '/^deploy_if_due\(\) \{/ && !d { d = NR } /^  deploy_if_due "\$d_begin"/ && !c { c = NR } END { print (d && c && d < c) ? "yes" : "no" }' "$root/templates/scripts/ci/merge-queue.sh")"
+eq "the queue asks what ships before starting Deploy" "1 1" "$(grep -c 'deploy-gate.sh" --ships' "$mq_all") $(grep -c 'deploy: skipped, nothing that ships changed' "$mq_all")"
+eq "the drain's deploy function is defined before the drain calls it" "yes" "$(awk '/^deploy_if_due\(\) \{/ && !d { d = NR } /^  deploy_if_due "\$d_begin"/ && !c { c = NR } END { print (d && c && d < c) ? "yes" : "no" }' "$mq_all")"
 eq "releaseOn ask" "ask" "$(release_on '{"releases": ["a.yml"], "releaseOn": "ask"}')"
 eq "releaseOn defaults to deploy" "deploy" "$(release_on '{"releases": ["a.yml"]}')"
 eq "a turned-off release is held" "(it is turned off; a turned-off release is held on purpose)" "$(release_hold disabled_manually deploy landing)"
@@ -1434,12 +1442,12 @@ gate_out=$(cd "$gh_stub_d" && PATH="$gh_stub_d:$PATH" sh "$root/templates/script
 eq "a held pull request with no labels is not waited for" "deploy: due" "$(printf '%s' "$gate_out" | cut -c1-11)"
 eq "the gate writes an empty labels column as a dash" "1" "$(grep -c 'if . == "" then "-"' "$root/templates/scripts/ci/deploy-gate.sh")"
 eq "the state line with no deploy yet" "deploy: due; none recorded (interval 60)" "$(deploy_state 0 '' 5000 60)"
-eq "a run that is re-running is pending, whatever its old checks say" "1" "$(grep -c 'its run is \$run_status (a new attempt)' "$root/templates/scripts/ci/merge-queue.sh")"
-eq "--serial by hand waits for checks already running" "1" "$(grep -c 'its checks are still running; waiting for them' "$root/templates/scripts/ci/merge-queue.sh")"
-eq "and for a pending required check" "1" "$(grep -c 'is still running; waiting for it, then merging' "$root/templates/scripts/ci/merge-queue.sh")"
-eq "a drain never waits on one pull request" "2" "$(grep -c '\[ -z "\$QUEUE_IN_DRAIN" \] && \[ -z "\${serial_waited:-}" \]' "$root/templates/scripts/ci/merge-queue.sh")"
-eq "--serial waits once for the run its refresh started" "1" "$(grep -c 'serial_refreshed=1' "$root/templates/scripts/ci/merge-queue.sh")"
-eq "an unknown mergeable state is read again" "1" "$(grep -c 'while \[ "\$o_mw" = UNKNOWN \]' "$root/templates/scripts/ci/merge-queue.sh")"
+eq "a run that is re-running is pending, whatever its old checks say" "1" "$(grep -c 'its run is \$run_status (a new attempt)' "$mq_all")"
+eq "--serial by hand waits for checks already running" "1" "$(grep -c 'its checks are still running; waiting for them' "$mq_all")"
+eq "and for a pending required check" "1" "$(grep -c 'is still running; waiting for it, then merging' "$mq_all")"
+eq "a drain never waits on one pull request" "2" "$(grep -c '\[ -z "\$QUEUE_IN_DRAIN" \] && \[ -z "\${serial_waited:-}" \]' "$mq_all")"
+eq "--serial waits once for the run its refresh started" "1" "$(grep -c 'serial_refreshed=1' "$mq_all")"
+eq "an unknown mergeable state is read again" "1" "$(grep -c 'while \[ "\$o_mw" = UNKNOWN \]' "$mq_all")"
 eq "CI may read pull requests" "1" "$(grep -c '^  pull-requests: read' "$root/templates/.github/workflows/ci.yml")"
 ci_job() { awk -v j="  $1:" '$0 == j {f=1; next} /^  [a-z-]*:$/ {f=0} f' "$root/templates/.github/workflows/ci.yml"; }
 ci_says() { ci_job "$1" | grep -c -e '^      actions: read$' -e '^        if: failure()$' -e 'run: sh scripts/ci/failure-report.sh job'; }
@@ -1455,7 +1463,7 @@ Spec: specs/004-dashboard
 Closes #64' | tail -n 4)"
 eq "the runner-path build keeps its own variable, never a placeholder" "0" "$(awk '/^  build-on-runner:$/{j=1;next} /^  [a-z-]*:$/{j=0} j' "$root/templates/.github/workflows/deploy.yml" | grep -cwE 'RUNS_ON|RUN_SHELL')"
 eq "the Deploy workflow does not need jq" "0" "$(grep -c 'jq -r\| jq ' "$root/templates/.github/workflows/deploy.yml")"
-eq "the queue never reads FETCH_HEAD" "0" "$(grep -c 'rev-parse FETCH_HEAD' "$root/templates/scripts/ci/merge-queue.sh")"
+eq "the queue never reads FETCH_HEAD" "0" "$(grep -c 'rev-parse FETCH_HEAD' "$mq_all")"
 eq "dirty is conflicting" "CONFLICTING" "$(mergeable_word dirty)"
 eq "clean is mergeable" "MERGEABLE" "$(mergeable_word clean)"
 eq "behind is still mergeable" "MERGEABLE" "$(mergeable_word behind)"
@@ -1474,7 +1482,7 @@ eq "the one-drain group still never cancels" "1 1" "$(printf '%s\n' "$qd_live" |
 eq "it never runs hosted" "0" "$(printf '%s\n' "$qd_live" | grep -c 'ubuntu-latest\|macos-latest')"
 
 section 'the drain reads with its own token and merges with the queue token'
-qt_mq="$root/templates/scripts/ci/merge-queue.sh"
+qt_mq="$mq_all"
 eq "the workflow may read checks and statuses" "1 1" "$(printf '%s\n' "$qd_live" | grep -c '^  checks: read$') $(printf '%s\n' "$qd_live" | grep -c '^  statuses: read$')"
 eq "the drain steps read with the workflow's token and pass the queue token apart" "2 1" "$(printf '%s\n' "$qd_live" | grep -c '^          GH_TOKEN: \${{ github.token }}$') $(printf '%s\n' "$qd_live" | grep -c '^          QUEUE_MERGE_TOKEN: \${{ secrets.QUEUE_TOKEN }}$')"
 eq "the missing-secret guard checks the queue token" "1" "$(printf '%s\n' "$qd_live" | grep -c 'if \[ -z "\$QUEUE_MERGE_TOKEN" \]')"
@@ -1572,8 +1580,8 @@ eq "the largest set beside the earliest, not the first that fits" "251 253 254" 
 eq "on a tie, the earlier one" "251 252" "$(anchored_group '251 252 253' "$(printf '252 253')" | tr '\n' ' ' | sed 's/ $//')"
 eq "one pull request is its own batch" "251" "$(anchored_group '251' '')"
 eq "the notice names the files and the fix" "yes" "$(conflict_notice "$(printf 'src/cart.ts\nsrc/a.ts')" 252 | grep -q '#252, which goes into this batch first in:' && conflict_notice 'src/cart.ts' main | grep -q 'Never rebase or force-push' && echo yes)"
-eq "conflicts are noticed once per head commit" "1" "$(grep -cF 'grep -qx "$1 $nc_sha" "$nc_seen"' "$root/templates/scripts/ci/merge-queue.sh")"
-eq "the queue notices in all three places" "3" "$(grep -c '^ *notify_conflict "\$pr"' "$root/templates/scripts/ci/merge-queue.sh")"
+eq "conflicts are noticed once per head commit" "1" "$(grep -cF 'grep -qx "$1 $nc_sha" "$nc_seen"' "$mq_all")"
+eq "the queue notices in all three places" "3" "$(grep -c '^ *notify_conflict "\$pr"' "$mq_all")"
 
 section 'when a green pull request needs a second run'
 eq "main moved outside its classes: merge" "merge" "$(rerun_decision no red)"
@@ -1612,7 +1620,7 @@ eq "three spread over a day are not" "" "$(serial_bursts "$(printf '20000\tC [se
 eq "a conflict names its files" "conflicts with main in web/src/a.ts docs/product-brief.md; resolve it on the branch, then queue it again" "$(conflict_line 'web/src/a.ts
 docs/product-brief.md')"
 eq "a conflict with no files named still says so" "conflicts with main; resolve it on the branch, then queue it again" "$(conflict_line '')"
-eq "the queue waits on the CI workflow's run, not the newest of any" "1" "$(grep -c -- '--workflow "${QUEUE_CI_WORKFLOW:-ci.yml}"' "$root/templates/scripts/ci/merge-queue.sh")"
+eq "the queue waits on the CI workflow's run, not the newest of any" "1" "$(grep -c -- '--workflow "${QUEUE_CI_WORKFLOW:-ci.yml}"' "$mq_all")"
 eq "agent worktrees are a known place, not a stray folder" "Worktrees: 2 besides the main checkout, in 1 folder, and 1 made by Claude Code for dispatched agents in .claude/worktrees." "$(worktree_summary 'worktree C:/r/app
 worktree C:/r/app-wt/a
 worktree C:/r/app-wt/b
@@ -1633,7 +1641,7 @@ eq "a running drain refuses a second queue" "a --drain started 12 minute(s) ago 
 eq "a running queue's status" "running: a --drain started 12 minute(s) ago is still running (pid 4242); last line: 10:02 merged #51" "$(queue_status "a --drain started 12 minute(s) ago is still running (pid 4242)" "10:02 merged #51")"
 eq "an idle queue's status" "idle; last line: 10:05 queue done (exit 0); lock released" "$(queue_status "" "10:05 queue done (exit 0); lock released")"
 eq "idle with no log yet" "idle" "$(queue_status "" "")"
-eq "the queue's last word goes to the log after the lock" "yes" "$(grep -q 'queue done (exit \$qe_rc); lock released' "$root/templates/scripts/ci/merge-queue.sh" && grep -c 'echo "queue done"' "$root/templates/scripts/ci/merge-queue.sh" | awk '{ print ($1 == 1) ? "yes" : "no: " $1 }')"
+eq "the queue's last word goes to the log after the lock" "yes" "$(grep -q 'queue done (exit \$qe_rc); lock released' "$mq_all" && grep -c 'echo "queue done"' "$mq_all" | awk '{ print ($1 == 1) ? "yes" : "no: " $1 }')"
 eq "prose in a quoted body is not a merge" "" "$(batch_merge_reason "printf 'Run merge-queue.sh 1 2 3 4 5 or --force' > .scratch/issue.md && gh api repos/{owner}/{repo}/issues -f title=t -F body=@.scratch/issue.md")"
 eq "the real invocation beside the prose still counts" "3" "$(batch_merge_reason "echo 'merge-queue.sh is fine' && sh scripts/ci/merge-queue.sh 1 2 3")"
 eq "a quoted gh pr merge is prose" "" "$(direct_merge_reason "printf 'never run gh pr merge 12' >> notes.md")"
@@ -1652,7 +1660,7 @@ eq "no files, not generated-only" "no" "$(generated_only '' "$gen_cfg_t")"
 eq "the drop line says when a rebuild would have done" "conflicts with main in packages/core/index.js; generated only: a rebuild on the batch would resolve this; resolve it on the branch, then queue it again" "$(conflict_line 'packages/core/index.js' generated)"
 eq "the conflict comment too" "1" "$(conflict_notice 'packages/core/index.js' main generated | grep -c 'generated build output')"
 eq "a plain conflict comment says nothing of it" "0" "$(conflict_notice 'src/a.ts' main | grep -c 'generated build output')"
-eq "the batch takes either side of generated files and rebuilds" "1 1" "$(grep -c 'merge -q --no-ff --no-edit -X theirs' "$root/templates/scripts/ci/merge-queue.sh") $(grep -c 'rb=$(rebuild_command "$gen_cfg")' "$root/templates/scripts/ci/merge-queue.sh")"
+eq "the batch takes either side of generated files and rebuilds" "1 1" "$(grep -c 'merge -q --no-ff --no-edit -X theirs' "$mq_all") $(grep -c 'rb=$(rebuild_command "$gen_cfg")' "$mq_all")"
 eq "a lock whose process is gone is free" "" "$(queue_lock_reason "4242	1000	--drain" 1720 no)"
 eq "a lock older than three hours is free" "" "$(queue_lock_reason "4242	1000	--batch" 20000 yes)"
 eq "no lock is free" "" "$(queue_lock_reason '' 1720 yes)"
@@ -2108,12 +2116,12 @@ eq "every rule script still runs" "8" "$(for f in classify.sh line-endings.sh st
 eq "the env check still runs" "1" "$(printf '%s\n' "$ciy" | grep -c 'client-env-check.sh')"
 
 section 'set -e never swallows a return code'
-eq "no bare msg=\$(f); code=\$? in the queue" "0" "$(grep -c '=\$([^)]*); *code=\$?' "$root/templates/scripts/ci/merge-queue.sh")"
-eq "a pending run says it is waiting, in both waits" "2" "$(grep -cF 'code=0; msg=$(diagnose "$run_id") || code=$?' "$root/templates/scripts/ci/merge-queue.sh")"
-eq "the drain drops what settling merged or closed" "1" "$(grep -c 'drop_members "$listed" "$members $settled"' "$root/templates/scripts/ci/merge-queue.sh")"
-eq "a batch skips a pull request already merged" "1" "$(grep -c '"skipped" "already merged"' "$root/templates/scripts/ci/merge-queue.sh")"
+eq "no bare msg=\$(f); code=\$? in the queue" "0" "$(grep -c '=\$([^)]*); *code=\$?' "$mq_all")"
+eq "a pending run says it is waiting, in both waits" "2" "$(grep -cF 'code=0; msg=$(diagnose "$run_id") || code=$?' "$mq_all")"
+eq "the drain drops what settling merged or closed" "1" "$(grep -c 'drop_members "$listed" "$members $settled"' "$mq_all")"
+eq "a batch skips a pull request already merged" "1" "$(grep -c '"skipped" "already merged"' "$mq_all")"
 eq "settled batch and its members leave the list" "301	false	sha	main" "$(drop_members "$(printf '301\tfalse\tsha\tmain\n320\tfalse\tsha\tmain\n328\tfalse\tsha\tmain')" ' 328 320')"
-eq "a batch of one merges serially" "1" "$(grep -c 'merging it serially instead of opening a batch of one' "$root/templates/scripts/ci/merge-queue.sh")"
+eq "a batch of one merges serially" "1" "$(grep -c 'merging it serially instead of opening a batch of one' "$mq_all")"
 eq "worktrees.sh never stops without a word" "1" "$(grep -c 'stopped with exit \$rc at' "$root/templates/scripts/worktrees.sh")"
 eq "no loop in worktrees.sh ends on a bare test" "0" "$(grep -c '^ *\[ [^]]*\] && printf' "$root/templates/scripts/worktrees.sh")"
 eq "close says a pull request was already closed" "1" "$(grep -c 'was already closed; added the reason' "$root/templates/scripts/worktrees.sh")"
@@ -2251,7 +2259,7 @@ else
   printf 'skip  node is not installed, so the design generator did not run\n'
 fi
 eq "the CI template runs the design check where tokens exist" "1" "$(grep -c "hashFiles('design/tokens.json') != ''" "$root/templates/.github/workflows/ci.yml")"
-eq "batches carry a Design: line" "1" "$(grep -c 'QUEUE_CARRY_KEYS:-Deletes Mock Parity Twin Design' "$root/templates/scripts/ci/batch-lib.sh")"
+eq "batches carry a Design: line" "1" "$(grep -c 'QUEUE_CARRY_KEYS:-Deletes Mock Parity Twin Design' "$bl_all")"
 eq "the brief has a screens section" "1" "$(grep -c 'leftover screens handoff' "$root/hooks/scripts/session-brief-lib.sh")"
 section 'a screen and its mock change together'
 . "$root/templates/scripts/ci/mock-lib.sh"
@@ -2687,7 +2695,7 @@ eq "a member's package.json changes the hash" "1" "$([ "$h1" != "$(workspace_has
 eq "yarn installs immutably" "yarn install --immutable" "$(workspace_install_command "$ws/np" yarn)"
 eq "npm installs with ci" "npm ci --no-audit --no-fund" "$(workspace_install_command "$ws/np" npm)"
 eq "pnpm installs frozen" "1" "$(workspace_install_command "$ws/pn" pnpm | grep -c 'pnpm install --frozen-lockfile\|pnpm@9 install --frozen-lockfile')"
-eq "the queue installs a workspace from its root" "1" "$(grep -c 'ensure_workspace "\$em_kind"' "$root/templates/scripts/ci/merge-queue.sh")"
+eq "the queue installs a workspace from its root" "1" "$(grep -c 'ensure_workspace "\$em_kind"' "$mq_all")"
 
 
 section 'a draft tokens file seeded from the mocks'
@@ -2781,7 +2789,7 @@ eq "no comments, no scan line" "" "$(brief_scan_line "")"
 eq "add-runner adds the exclusions and never removes one" "2 0" "$(grep -c 'Add-MpPreference -ExclusionPath' "$root/templates/scripts/ci/add-runner.ps1") $(grep -c 'Remove-MpPreference' "$root/templates/scripts/ci/add-runner.ps1")"
 eq "the brief names an old runners key once" "1|" "$(brief_runner_key_line '{ "runners": 3 }' | grep -c 'no longer read')|$(brief_runner_key_line '{}')"
 eq "the brief reads no count from the file" "0" "$(grep -c 'runner_count' "$root/hooks/scripts/session-brief.sh")"
-eq "the queue logs its waits" "1" "$(grep -c 'waits_append .scratch/queue/waits.tsv' "$root/templates/scripts/ci/merge-queue.sh")"
+eq "the queue logs its waits" "1" "$(grep -c 'waits_append .scratch/queue/waits.tsv' "$mq_all")"
 eq "the watch prints the machine line" "1" "$(grep -c 'echo "machine line: $mline"' "$root/templates/scripts/ci/runner-watch.sh")"
 eq "the brief reads the waits log and the machine file" "1 1" "$(grep -c 'waits_line "$(tail -n 500' "$root/hooks/scripts/session-brief.sh") $(grep -c 'machine_brief_line "$(head -n 1' "$root/hooks/scripts/session-brief.sh")"
 mv "$wl_dir" "$wl_dir.done" 2>/dev/null || true

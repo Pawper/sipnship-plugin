@@ -1,0 +1,188 @@
+#!/bin/sh
+# Requests to the queue: land this next, hold, take out, release.
+# Sourced by scripts/ci/merge-queue.sh; functions only.
+
+# --- Requests to the queue: land this next, hold this, take it out ---
+# A person, their agent or the dashboard's helper asks; the queue honours
+# the request at the ticks it already wakes on (each drain round's start,
+# each two-minute hold, each two minutes of a batch's run), so a request
+# takes effect within two minutes. Read through the service road when this
+# machine is connected, else as comments in a fixed form on the Merge queue
+# issue. A request never merges red: "land this next" runs --serial and
+# nothing else. Bounded, never fatal: a request that cannot be read is said
+# once and the queue goes on without it.
+req_road=""; req_id=""; req_token=""; req_issue=""
+requests_road_set() {
+  [ -z "$req_road" ] || return 0
+  rr_switch=${QUEUE_PUBLISH_STATE:-}
+  [ -n "$rr_switch" ] || rr_switch=$(gh api "repos/{owner}/{repo}/actions/variables/QUEUE_PUBLISH_STATE" --jq .value 2>/dev/null || echo off)
+  req_road=none
+  case "$rr_switch" in
+    issue) req_road=issue ;;
+    service)
+      req_road=issue
+      req_token=${SIPNSHIP_REPO_TOKEN:-}; req_id=${SIPNSHIP_REPO_ID:-}
+      if [ -z "$req_token" ] && command -v node >/dev/null 2>&1; then
+        rr_repo=$(git remote get-url origin 2>/dev/null | tr -d '\r' | sed -n 's#.*github\.com[:/]\([^/]*\)/\([^/]*\)$#\1/\2#p' | sed 's/\.git$//')
+        rr_pair=$(node -e '
+          const fs = require("fs"), path = require("path"), os = require("os");
+          const home = process.env.SIPNSHIP_HOME || path.join(os.homedir(), ".sipnship");
+          try {
+            const repos = JSON.parse(fs.readFileSync(path.join(home, "tokens.json"), "utf8")).repos || {};
+            for (const [id, e] of Object.entries(repos)) if (e && String(e.fullName).toLowerCase() === process.argv[1].toLowerCase()) { process.stdout.write(id + "\t" + e.token); break; }
+          } catch {}' "$rr_repo" 2>/dev/null)
+        if [ -n "$rr_pair" ]; then req_id=${rr_pair%%	*}; req_token=${rr_pair#*	}; fi
+      fi
+      [ -n "$req_id" ] || req_id=$(gh api "repos/{owner}/{repo}" --jq .id 2>/dev/null | tr -d '\r')
+      if [ -n "$req_token" ] && [ -n "$req_id" ] && command -v curl >/dev/null 2>&1; then req_road=service; fi ;;
+  esac
+  return 0
+}
+
+# requests_open: the open requests, one "id kind pr asked_by reason" a line.
+requests_open() {
+  case "$req_road" in
+    service)
+      if ! printf 'Authorization: Bearer %s\n' "$req_token" | curl -s -f --max-time 5 -H @- "${SIPNSHIP_URL:-https://sipnship.dev}/v1/repos/$req_id/queue/requests/open" 2>/dev/null | tr -d '\r'; then
+        [ -f "$flaky_dir/requests.unreachable" ] || { say "Requests to the queue could not be read from SipNShip; going on without them."; : > "$flaky_dir/requests.unreachable"; }
+      fi ;;
+    issue)
+      [ -n "$req_issue" ] || req_issue=$(gh api "repos/{owner}/{repo}/issues?labels=queue&state=all&per_page=20" --jq '[.[] | select(.title == "Merge queue")] | .[0].number // empty' 2>/dev/null | tr -d '\r')
+      [ -n "$req_issue" ] || return 0
+      # Only a one-line comment in the exact form, whose author is the one it names.
+      gh api "repos/{owner}/{repo}/issues/$req_issue/comments?per_page=100&since=$(iso_utc $(( $(date +%s) - 2 * 86400 )))" \
+        --jq '.[] | select((.body | test("[\r\n]")) | not) | "\(.id)\t\(.user.login)\t\(.body)"' 2>/dev/null | tr -d '\r' \
+        | while IFS="$tab" read -r ro_id ro_login ro_body; do
+          ro_l=$(request_from_comment "$ro_id" "$ro_body")
+          [ -n "$ro_l" ] || continue
+          [ "$(printf '%s' "$ro_l" | cut -f4)" = "$ro_login" ] || continue
+          printf '%s\n' "$ro_l"
+        done ;;
+  esac
+  return 0
+}
+
+# requests_answer ID KIND PR OUTCOME: record what the queue did, on the
+# road the request came by. "next-after-batch" is a step, not the end.
+requests_answer() {
+  if [ "$4" = next-after-batch ] || [ "$4" = deploying ]; then
+    grep -qx "$1" "$flaky_dir/requests.after" 2>/dev/null && return 0
+    printf '%s\n' "$1" >> "$flaky_dir/requests.after"
+  else
+    printf '%s\n' "$1" >> "$flaky_dir/requests.done"
+  fi
+  say "request: $2 #$3: $4"
+  case "$req_road" in
+    service) printf 'Authorization: Bearer %s\n' "$req_token" | curl -s -o /dev/null --max-time 5 -X POST -H @- -H 'content-type: application/json' --data "{\"outcome\":\"$4\"}" "${SIPNSHIP_URL:-https://sipnship.dev}/v1/repos/$req_id/queue/requests/$1/outcome" 2>/dev/null || true ;;
+    issue) [ -z "$req_issue" ] || gh_write api -X POST "repos/{owner}/{repo}/issues/$req_issue/comments" -f body="$(request_answer_form "$2" "$3" "$4")" >/dev/null 2>&1 || true ;;
+  esac
+  return 0
+}
+
+
+# requests_deploy_now ID BY: "Deploy now", inside the current drain. The
+# person's word stands in for the interval and the green-others wait, as
+# the Deploy workflow's own manual dispatch does; the gate's "nothing that
+# ships changed" rule still holds. Started once; later ticks read its run.
+requests_deploy_now() {
+  dn_mark="$flaky_dir/requests.deploy-$1"
+  if grep -qx "$1" "$flaky_dir/requests.after" 2>/dev/null; then
+    dn_since=$(cat "$dn_mark" 2>/dev/null)
+    dn_run=$(gh api "repos/{owner}/{repo}/actions/workflows/deploy.yml/runs?event=workflow_dispatch&per_page=1&created=>=$(iso_utc "${dn_since:-0}")" --jq '.workflow_runs[0] | "\(.status)\t\(.conclusion // "")"' 2>/dev/null | tr -d '\r')
+    dn_out=$(deploy_run_outcome "${dn_run%%	*}" "${dn_run#*	}")
+    [ -z "$dn_out" ] || requests_answer "$1" deploy-now 0 "$dn_out"
+    return 0
+  fi
+  git fetch -q origin "$base" 2>/dev/null || true
+  dn_end=$(git ls-remote origin "refs/heads/$base" 2>/dev/null | cut -f1)
+  dn_from=$(git ls-remote origin refs/deploy/production 2>/dev/null | cut -f1)
+  if [ -n "$dn_from" ] && { [ "$dn_from" = "$dn_end" ] || [ "$(ships_since "$dn_from" "$dn_end")" = skip ]; }; then
+    requests_answer "$1" deploy-now 0 nothing-to-deploy
+    return 0
+  fi
+  if [ ! -f .github/workflows/deploy.yml ]; then
+    say "request: deploy-now: this project has no Deploy workflow; main deploys on its own."
+    requests_answer "$1" deploy-now 0 nothing-to-deploy
+    return 0
+  fi
+  date +%s > "$dn_mark"
+  if gh_write api -X POST "repos/{owner}/{repo}/actions/workflows/deploy.yml/dispatches" -f ref="$base" >/dev/null 2>&1; then
+    say "Started the Deploy workflow now, as $2 asked."
+    requests_answer "$1" deploy-now 0 deploying
+  else
+    say "$(deploy_refused_message "$base")"
+    requests_answer "$1" deploy-now 0 deploy-failed
+  fi
+  return 0
+}
+
+requests_classes() { classify_paths "$(gh api "repos/{owner}/{repo}/pulls/$1/files?per_page=100" --jq '.[].filename' 2>/dev/null)" "$rules"; }
+
+# requests_tick WHERE: honour the open requests. WHERE is "drain" between
+# rounds, or "batch" while a batch's full run is in flight.
+requests_tick() {
+  [ -z "${QUEUE_IN_REQUEST:-}" ] || return 0
+  requests_road_set
+  [ "$req_road" != none ] || return 0
+  rt_lines=$(requests_open)
+  # A rush reserves the machines first, at the very tick it is read.
+  rt_rush=$(rush_order "$rt_lines" "$(cat "$flaky_dir/requests.done" 2>/dev/null)")
+  rush_tick "$rt_rush"
+  [ -n "$rt_lines" ] || return 0
+  rt_members=$(tr '\n' ' ' < "$flaky_dir/batch.members" 2>/dev/null)
+  printf '%s\n' "$rt_lines" | while IFS="$tab" read -r rq_id rq_kind rq_pr rq_by rq_why; do
+    [ -n "$rq_id" ] || continue
+    grep -qx "$rq_id" "$flaky_dir/requests.done" 2>/dev/null && continue
+    if [ "$rq_kind" = deploy-now ]; then requests_deploy_now "$rq_id" "$rq_by"; continue; fi
+    rq_state=$(gh api "repos/{owner}/{repo}/pulls/$rq_pr" --jq '"\(.state)\t\(.head.sha)\t\(.mergeable_state // "")"' 2>/dev/null | tr -d '\r')
+    [ -n "$rq_state" ] || continue
+    if [ "${rq_state%%	*}" != open ]; then requests_answer "$rq_id" "$rq_kind" "$rq_pr" not-open; continue; fi
+    case "$rq_kind" in
+      hold)
+        gh_write api -X POST "repos/{owner}/{repo}/issues/$rq_pr/labels" -f "labels[]=queue:hold" >/dev/null 2>&1 && requests_answer "$rq_id" hold "$rq_pr" held ;;
+      release)
+        gh_write api -X DELETE "repos/{owner}/{repo}/issues/$rq_pr/labels/queue:hold" >/dev/null 2>&1 || true
+        requests_answer "$rq_id" release "$rq_pr" released ;;
+      drop)
+        if [ -f "$here/../worktrees.sh" ] && sh "$here/../worktrees.sh" close "$rq_pr" "Taken out of the queue at the request of $rq_by: $rq_why" >/dev/null 2>&1; then
+          requests_answer "$rq_id" drop "$rq_pr" dropped
+        fi ;;
+      land-next)
+        rq_rest=${rq_state#*	}; rq_sha=${rq_rest%%	*}
+        rq_conf=""; [ "$(mergeable_word "${rq_rest#*	}")" = CONFLICTING ] && rq_conf=yes
+        rq_batch=no; rq_over=no
+        case " $rt_members " in *" $rq_pr "*) continue ;; esac
+        # The chain: behind another rush one it waits on its test head; once
+        # those ahead have landed, a green test head of the same tree is
+        # its result, and it merges with no further run.
+        rq_ahead=$(rush_chain "$rt_rush" | awk -F'\t' -v p="$rq_pr" '$1 == p { print $2 }')
+        rq_proof=""; [ -n "$rq_ahead" ] || rq_proof=$(rush_proof "$rq_pr" "$rq_sha")
+        case "$(rush_step "$(pr_rollup "$rq_sha")" "$rq_conf" "$rq_ahead" "${rq_proof%%	*}" "$(printf '%s' "$rq_proof" | cut -f2)")" in
+          chain) continue ;;
+          proven)
+            say "request: landing #$rq_pr next on its test head's green run, as $rq_by asked"
+            QUEUE_CHAIN_PROVEN=yes QUEUE_IN_DRAIN=1 QUEUE_IN_REQUEST=1 sh "$0" --serial --base "$base" --because "landing next at the request of $rq_by" "$rq_pr" 2>&1 | tee -a "$log_file" || true
+            rm -f "$flaky_dir/pr-$rq_pr.tsv" 2>/dev/null
+            if [ "$(gh api "repos/{owner}/{repo}/pulls/$rq_pr" --jq .merged 2>/dev/null)" = true ]; then requests_answer "$rq_id" land-next "$rq_pr" landed; fi
+            continue ;;
+        esac
+        if [ "$1" = batch ] && [ -n "$(printf '%s' "$rt_members" | tr -d ' ')" ]; then
+          rq_batch=yes
+          rq_over=$(classes_overlap "$(requests_classes "$rq_pr")" "$(for rq_m in $rt_members; do requests_classes "$rq_m"; echo; done)")
+        fi
+        case "$(land_next_step "$(pr_rollup "$rq_sha")" "$rq_conf" "$rq_batch" "$rq_over")" in
+          red) requests_answer "$rq_id" land-next "$rq_pr" red ;;
+          conflicts) requests_answer "$rq_id" land-next "$rq_pr" conflicts ;;
+          after-batch) requests_answer "$rq_id" land-next "$rq_pr" next-after-batch ;;
+          serial-now)
+            say "request: landing #$rq_pr next, as $rq_by asked"
+            QUEUE_IN_DRAIN=1 QUEUE_IN_REQUEST=1 sh "$0" --serial --base "$base" --because "landing next at the request of $rq_by" "$rq_pr" 2>&1 | tee -a "$log_file" || true
+            rm -f "$flaky_dir/pr-$rq_pr.tsv" 2>/dev/null
+            if [ "$(gh api "repos/{owner}/{repo}/pulls/$rq_pr" --jq .merged 2>/dev/null)" = true ]; then requests_answer "$rq_id" land-next "$rq_pr" landed; fi ;;
+          *) : ;;
+        esac ;;
+    esac
+  done
+  return 0
+}
+
