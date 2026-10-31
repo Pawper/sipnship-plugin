@@ -173,6 +173,12 @@ if grep -qs 'self-hosted' .github/workflows/*.yml 2>/dev/null && command -v gh >
   [ -n "$rr_line" ] && add "Runners: $rr_line"
   rr_key=$(brief_runner_key_line "$(cat .claude/runners.json 2>/dev/null)")
   [ -n "$rr_key" ] && add "Runners: $rr_key"
+  # The runner check leaves a "scan exclusions" line on the audit issue.
+  rs_num=$(run_bounded 5 gh api 'repos/{owner}/{repo}/issues?labels=audit&state=open&per_page=1' --jq '.[0].number' 2>/dev/null || true)
+  if [ -n "$rs_num" ]; then
+    rs_line=$(brief_scan_line "$(run_bounded 5 gh api "repos/{owner}/{repo}/issues/$rs_num/comments?per_page=100" --jq '.[].body' 2>/dev/null || true)")
+    [ -n "$rs_line" ] && add "Runners: $rs_line"
+  fi
   # What the runner watch on this machine last found, if it is running.
   rw_key=$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null | tr '/' '-')
   rw_state="${SIPNSHIP_HOME:-$HOME/.sipnship}/runner-watch/$rw_key.state"

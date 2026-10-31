@@ -34,6 +34,9 @@ on:
 jobs:
   windows:
     runs-on: [self-hosted, windows]
+    permissions:
+      contents: read
+      issues: write
     defaults:
       run:
         # Fix 1: Git's bash by path, never "bash" from PATH.
@@ -73,3 +76,23 @@ jobs:
           echo @echo ran from the current folder> here-check.bat
           call .\here-check.bat
           move /y here-check.bat here-check.bat.done >nul
+      - name: Whether the antivirus scans this runner's work folder
+        # Defender inspects every process start, which makes a shell suite two to four times slower. The result goes on the issue labeled audit, in the words the session brief reads.
+        # A bash step that hands the script to powershell on stdin, so the policy is named once, here.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -Command - <<'PS'
+          $work = Split-Path -Parent $env:RUNNER_WORKSPACE
+          $name = $env:RUNNER_NAME
+          $excluded = @()
+          try { $excluded = @((Get-MpPreference -ErrorAction Stop).ExclusionPath) } catch { Write-Output "Could not read Defender's exclusions: $($_.Exception.Message)"; exit 0 }
+          $covered = $false
+          foreach ($e in $excluded) { if ($e -and $work.TrimEnd('\').StartsWith($e.TrimEnd('\'), [StringComparison]::OrdinalIgnoreCase)) { $covered = $true } }
+          if ($covered) { $line = "scan exclusions present on $name" }
+          else { $line = "scan exclusions missing on ${name}: ${name}'s work folder is scanned by the antivirus; a shell suite runs two to four times slower. Run add-runner.ps1 as administrator, or the Add-MpPreference line in scripts/ci/RUNNERS.md." }
+          Write-Output $line
+          $issue = (gh api "repos/$env:REPO/issues?labels=audit&state=open&per_page=1" --jq '.[0].number')
+          if ($issue) { gh api "repos/$env:REPO/issues/$issue/comments" -f "body=$line" | Out-Null }
+          PS

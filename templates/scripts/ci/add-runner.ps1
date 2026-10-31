@@ -57,5 +57,25 @@ try {
   if ($LASTEXITCODE -ne 0) { throw "config.cmd failed with exit code $LASTEXITCODE" }
 } finally { Pop-Location }
 
+# Windows Defender scans every process start and every file a job writes,
+# which makes a shell suite two to four times slower. Exclude the runner's
+# folders, Git, node and pnpm's store. Exclusions are only ever added, never
+# removed. If Defender cannot be changed from here (no rights, or another
+# antivirus), print the line to run by hand and go on.
+$gitDir = "C:\Program Files\Git"
+$nodeCmd = Get-Command node -ErrorAction SilentlyContinue
+$nodeDir = if ($nodeCmd) { Split-Path -Parent $nodeCmd.Source } else { "" }
+$pnpmStore = ""
+if (Get-Command pnpm -ErrorAction SilentlyContinue) { $pnpmStore = (& pnpm store path 2>$null | Select-Object -First 1) }
+$exclusions = @($Root, (Join-Path $dir "_work"), $gitDir, $nodeDir, $pnpmStore) | Where-Object { $_ -and (Test-Path $_) }
+$paths = ($exclusions | ForEach-Object { "'$_'" }) -join ","
+try {
+  Add-MpPreference -ExclusionPath $exclusions -ErrorAction Stop
+  Write-Output "Defender will skip: $($exclusions -join '; ')"
+} catch {
+  Write-Output "Could not add Defender exclusions ($($_.Exception.Message)). Run this by hand as administrator:"
+  Write-Output "Add-MpPreference -ExclusionPath $paths"
+}
+
 Write-Output "Runner $Name is registered and running as a service."
 Write-Output "Next: sh scripts/ci/runner-doctor.sh, then the Runner check workflow from the Actions tab."

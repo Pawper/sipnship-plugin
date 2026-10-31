@@ -2636,6 +2636,17 @@ eq "the brief says nothing when all are online within the rule" "" "$(brief_runn
 eq "the brief says when none is online" "1" "$(brief_runner_line "$(printf 'a\toffline\tfalse\nb\toffline\tfalse')" 16 | grep -c 'none of the 2')"
 eq "the brief says when one is all there is" "1 of 1 online; one runner makes every job wait for the last." "$(brief_runner_line "$(printf 'a\tonline\tfalse')" 16)"
 eq "the brief judges against the cores" "3 of 3 online; 4 cores allow 2 (one per two cores)." "$(brief_runner_line "$(printf 'a\tonline\tfalse\nb\tonline\tfalse\nc\tonline\tfalse')" 4)"
+eq "the scan exclusions for a rooftop-garden runner" "C:\\actions-runner-rooftop-garden
+C:\\actions-runner-rooftop-garden\\garden-3\\_work
+C:\\Program Files\\Git
+C:\\node
+D:\\pnpm" "$(scan_exclusions 'C:\actions-runner-rooftop-garden' garden-3 'C:\Program Files\Git' 'C:\node' 'D:\pnpm')"
+eq "a missing tool leaves its line out" "3" "$(scan_exclusions 'C:\r' g 'C:\Git' '' '' | wc -l | tr -d ' ')"
+eq "the scan warning names the runner" "1" "$(scan_warning_line garden-3 | grep -c "^scan exclusions missing on garden-3: garden-3's work folder is scanned by the antivirus; a shell suite runs two to four times slower")"
+eq "the brief says which runners lack exclusions" "scan exclusions missing on garden-3" "$(brief_scan_line "$(scan_warning_line garden-3)")"
+eq "a later present line clears the brief" "" "$(brief_scan_line "$(scan_warning_line garden-3; echo 'scan exclusions present on garden-3')")"
+eq "no comments, no scan line" "" "$(brief_scan_line "")"
+eq "add-runner adds the exclusions and never removes one" "2 0" "$(grep -c 'Add-MpPreference -ExclusionPath' "$root/templates/scripts/ci/add-runner.ps1") $(grep -c 'Remove-MpPreference' "$root/templates/scripts/ci/add-runner.ps1")"
 eq "the brief names an old runners key once" "1|" "$(brief_runner_key_line '{ "runners": 3 }' | grep -c 'no longer read')|$(brief_runner_key_line '{}')"
 eq "the brief reads no count from the file" "0" "$(grep -c 'runner_count' "$root/hooks/scripts/session-brief.sh")"
 eq "the queue logs its waits" "1" "$(grep -c 'waits_append .scratch/queue/waits.tsv' "$root/templates/scripts/ci/merge-queue.sh")"

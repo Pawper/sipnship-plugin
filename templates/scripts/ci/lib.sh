@@ -505,3 +505,19 @@ drain_late() {
   [ "$age" -gt $(( $3 * 7200 )) ] || return 0
   printf 'Queue drain: last ran %d h ago, scheduled every %d h; GitHub is firing it late. A green pull request waits until then or until a session runs sh scripts/ci/merge-queue.sh --drain.\n' $(( age / 3600 )) "$3"
 }
+
+# scan_exclusions ROOT NAME GIT_DIR NODE_DIR PNPM_STORE
+# The folders Windows Defender's real-time scan is told to skip for one
+# runner, one per line: the runner root, the runner's work folder, Git's
+# folder, node's folder and pnpm's store. An empty argument is left out.
+# add-runner.ps1 adds these when elevated and prints them otherwise.
+scan_exclusions() {
+  printf '%s\n' "$1" "$1\\$2\\_work" "$3" "$4" "$5" | grep -v '^$'
+}
+
+# scan_warning_line NAME
+# The plain line runner-check.yml leaves on its issue for a runner whose
+# work folder is scanned. The first words are what the session brief reads.
+scan_warning_line() {
+  printf "scan exclusions missing on %s: %s's work folder is scanned by the antivirus; a shell suite runs two to four times slower. Run add-runner.ps1 as administrator, or the Add-MpPreference line in scripts/ci/RUNNERS.md.\n" "$1" "$1"
+}

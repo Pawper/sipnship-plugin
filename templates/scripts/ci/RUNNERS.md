@@ -61,6 +61,14 @@ To start a runner by hand from Git Bash anyway, strip it first: `env -u NoDefaul
 
 Each runner runs one job at a time, so a CI run's length is roughly its number of jobs divided by the runners, times a job's length. Ten jobs on two runners is five jobs deep: most of the wall time is jobs queued, not tests running. The queue says so while it waits ("6 jobs queued, 2 of 2 runners busy; about 12 minutes"). When queue time dominates, add a runner with `add-runner.ps1`, or trim jobs a change does not need; `QUEUE_JOB_MINUTES` sets the queue's estimate of one job's length.
 
+Windows Defender's real-time scan is the other limit. A shell suite is thousands of short process starts, and every start and every file a job writes is scanned. Measured on 2026-10-30: 32 cores at 39% load, and a ten-minute suite that took twenty-five, because every process start is scanned. `add-runner.ps1` excludes the runner root (`C:\actions-runner-<repo>`), its `_work` folder, Git's folder (`C:\Program Files\Git`), node's folder and pnpm's store (`pnpm store path`) from the scan when it can; exclusions are only ever added, never removed. When it cannot, run this by hand in an elevated PowerShell, with the folders that exist on the machine:
+
+```powershell
+Add-MpPreference -ExclusionPath 'C:\actions-runner-<repo>','C:\actions-runner-<repo>\<name>\_work','C:\Program Files\Git','<node folder>','<pnpm store>'
+```
+
+The `Runner check` workflow says "scan exclusions missing on NAME" on the audit issue when a work folder is still scanned, and the session brief repeats it.
+
 A slow suite split into test parts (`!parts` lines in `classes.txt`) runs as one `tests` job per part, so each part is a job here: three parts on three runners finish in the time of the longest, and the first red part cancels the rest and frees their runners.
 
 ## Nobody stops the daemon

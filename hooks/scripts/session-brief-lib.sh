@@ -324,3 +324,14 @@ brief_runner_key_line() {
     echo 'the "runners" key in .claude/runners.json is no longer read; the registered runners and the cores are. Remove it when you next sync.'
   return 0
 }
+
+# brief_scan_line COMMENTS
+# COMMENTS is the text of the runner check's comments on its issue, newest
+# last. The newest line starting "scan exclusions missing on NAMES" gives
+# the line; a later "scan exclusions present" clears it.
+brief_scan_line() {
+  printf '%s\n' "$1" | tr -d '\r' | awk '
+    /^scan exclusions missing on / { s = $0; sub(/^scan exclusions missing on /, "", s); sub(/:.*/, "", s); names = s }
+    /^scan exclusions present/ { names = "" }
+    END { if (names != "") print "scan exclusions missing on " names }'
+}
