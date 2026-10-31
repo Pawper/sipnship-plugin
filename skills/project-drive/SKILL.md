@@ -75,6 +75,17 @@ The goal lines and what each means:
   agent-model hook allows for its tier, and a brief that names the issue, the files it may touch, the rules in
   CLAUDE.md, and the pull request it must open with `Closes #N`. Set the issue to `state:in-progress` with
   `scripts/state.sh`.
+  The plan groups ready issues by the files they are guessed to touch (the paths and specs the body names,
+  the project's mocks map, and the files past work on the same spec changed). `dispatch 12 14` with a
+  third column "Why together: both change ..." is a bundle: one agent, one worktree, one pull request that
+  closes every issue named, with a `Closes #N` line for each. Units in one proposal never share a file, so
+  they run side by side. When the agent starts, note how it started so the machine can report it: append
+  `WORKTREE-NAME<TAB>round` (or `next` for a one-off start, `hand` for a terminal) to
+  `.scratch/drive/started-with.tsv`. One round runs at a time: propose the next while this one runs, planned
+  against the files the running bundles change.
+- **`hold N TITLE After: RUNNING TITLE`.** The issue touches files a running bundle touches. Do not start it;
+  it is shown as waiting after that bundle and is planned again in the next proposal. It needs no approval
+  and does nothing.
 - **`ask-owner N`.** A ready issue whose words touch something the owner has said is theirs. Put one comment
   on it with the question, the options and a recommendation, and set `state:waiting-on-owner`. This is a
   proposal line so the person sees it, but it is the one goal that may run without approval, since it asks

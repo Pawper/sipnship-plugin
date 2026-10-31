@@ -17,6 +17,7 @@ here=$(dirname "$0")
 . "$here/../../hooks/scripts/lib.sh"
 . "$here/../../hooks/scripts/session-brief-lib.sh"
 . "$here/drive-lib.sh"
+. "$here/bundle-lib.sh"
 
 show_snapshot=no; fast=no; facts_file=""
 while [ $# -gt 0 ]; do
@@ -132,6 +133,35 @@ fi
 
 echo "proposal for $(date '+%A %Y-%m-%d'), the owner's local day (runners $runners, at most $max_agents agents, at most $max_minutes minutes; $note):"
 round=$(propose_round "$snapshot" "$runners" "$max_agents")
+# Plan the ready issues by the files they touch: overlapping guesses become
+# one bundle (one agent, one pull request), disjoint ones stay apart, and an
+# issue touching files a running issue touches is held, naming it.
+mocks_text=""; [ -f scripts/ci/mocks.txt ] && mocks_text=$(cat scripts/ci/mocks.txt)
+past=$(past_spec_files "$(git log -n 300 --name-only --format='@@ %s' main 2>/dev/null || git log -n 300 --name-only --format='@@ %s' 2>/dev/null)")
+guesses=""; running=""
+while IFS="$tab" read -r kind num title a b c d e; do
+  [ "$kind" = issue ] || continue
+  case "$(state_of_labels "$a")" in
+    ready)
+      case "$(printf '%s\n' "$snapshot" | awk -F'\t' -v n="$num" '$1 == "issue" && $2 == n { print $5 }')" in yes) continue ;; esac
+      g=$(guess_files "$title $c" "$mocks_text" "$past")
+      guesses="${guesses}${num}${tab}${title}${tab}${g}
+" ;;
+    in-progress)
+      g=$(guess_files "$title $c" "$mocks_text" "$past")
+      [ -n "$g" ] && running="${running}${title}${tab}${g}
+" ;;
+  esac
+done <<EOF_FACTS
+$facts
+EOF_FACTS
+if [ -n "$guesses" ]; then
+  units=$(plan_units "$guesses" "$running")
+  inprog=$(printf '%s\n' "$snapshot" | awk -F'\t' '$1 == "issue" && $4 == "in-progress" { n++ } END { print n + 0 }')
+  slots=$runners; [ "$max_agents" -lt "$slots" ] && slots=$max_agents
+  slots=$(( slots - inprog )); [ "$slots" -lt 0 ] && slots=0
+  round=$(apply_units "$round" "$units" "$slots")
+fi
 # Unreleased plugin work: one release goal, from this repository's history.
 plugin_ver=$(json_field "$(cat plugin/.claude-plugin/plugin.json 2>/dev/null)" version)
 rel_line=$(release_goal "$plugin_ver" "$(plugin_unreleased_count)")

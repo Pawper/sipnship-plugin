@@ -2822,6 +2822,43 @@ eq "an unknown part is refused" "2" "$(RUN_PART= sh "$root/tests/run.sh" --part 
 pj_out=$(RUN_PART= CI_FULL_RUN=yes sh "$root/tests/run.sh" --fail-fast --part nothing-here 2>&1; echo "rc $?")
 eq "main's full run still refuses an unknown part" "rc 2" "$(printf '%s\n' "$pj_out" | tail -n 1)"
 
+section 'drive bundles issues by the files they touch'
+. "$root/scripts/drive/bundle-lib.sh"
+db="$fx/drive-bundles"
+db_ready=$(cat "$db/ready.tsv")
+db_units=$(plan_units "$db_ready" "")
+eq "overlapping guesses bundle, through a third issue too" "unit	12 14 17	Water the beds on a schedule | Remind me before a frost night | Name the reminder screen	all 3 change src/schedule.ts	src/schedule.ts,specs/030-watering/,src/reminders.ts,src/home.ts" "$(printf '%s\n' "$db_units" | sed -n 1p)"
+eq "disjoint guesses stay separate units" "2" "$(printf '%s\n' "$db_units" | grep -c '^unit	1[56]	')"
+eq "a unit with a bundle says why together in plain words" "both change src/beds" "$(plan_units "$(printf '1\tA\tsrc/beds/\n2\tB\tsrc/beds/list.ts\n')" "" | awk -F'\t' '{ print $4 }' | sed 's#/list.ts##')"
+db_held=$(plan_units "$db_ready" "$(cat "$db/running.tsv")")
+eq "a unit touching running work is held, naming the running bundle" "hold	16	Tint the bed cards by moisture	After: Frost alerts show the night's low" "$(printf '%s\n' "$db_held" | grep '^hold')"
+eq "held work is not in any unit" "0" "$(printf '%s\n' "$db_held" | grep '^unit' | grep -c '	16	\|^unit	16')"
+eq "a proposal never holds two units sharing a file" "yes" "$(units_disjoint "$db_held")"
+eq "the disjointness check catches a shared file" "no" "$(units_disjoint "$(printf 'unit\t1\tA\t\tsrc/a.ts,src/b/\nunit\t2\tB\t\tsrc/b/c.ts\n')")"
+eq "a folder and a file in it overlap" "unit	1 2	A | B	both change src/beds/list.ts	src/beds/,src/beds/list.ts" "$(plan_units "$(printf '1\tA\tsrc/beds/\n2\tB\tsrc/beds/list.ts\n')" "")"
+eq "units from a full set are disjoint" "yes" "$(units_disjoint "$db_units")"
+eq "a body's paths: files and folders, not links, issue numbers or prose" "src/sun.ts
+specs/030-watering/
+src/beds/card.ts" "$(body_paths "$(cat "$db/body-watering.txt")")"
+db_past=$(past_spec_files "$(cat "$db/history.txt")")
+eq "past work on a spec names the files it touched" "specs/030-watering	src/sun.ts" "$db_past"
+eq "the mocks map adds the whole screen" "src/beds/*.ts
+design/mocks/Beds.html
+design/mocks/BedsDark.html" "$(mocks_files 'src/beds/card.ts' "$(cat "$db/mocks.txt")")"
+eq "a guess joins the body's paths, the screen's mocks and the spec's past files" "design/mocks/Beds.html,design/mocks/BedsDark.html,specs/030-watering/,src/beds/*.ts,src/beds/card.ts,src/sun.ts" "$(guess_files "$(cat "$db/body-watering.txt")" "$(cat "$db/mocks.txt")" "$db_past")"
+eq "a body naming no path guesses nothing" "" "$(guess_files 'Make the tomatoes happier' "" "")"
+db_round=$(printf 'dispatch 12\tWater\ndispatch 15\tPhotos\nstop: proposal ready for approval')
+eq "units replace dispatches: a bundle is one goal with its why" "dispatch 12 14 17	Water the beds on a schedule | Remind me before a frost night | Name the reminder screen	Why together: all 3 change src/schedule.ts
+dispatch 15	Add a plant photo to each bed
+hold 16	Tint the bed cards by moisture	After: Frost alerts show the night's low
+stop: proposal ready for approval" "$(apply_units "$db_round" "$db_held" 2)"
+eq "units beyond the free runners are deferred" "dispatch 12 14 17	Water the beds on a schedule | Remind me before a frost night | Name the reminder screen	Why together: all 3 change src/schedule.ts
+hold 16	Tint the bed cards by moisture	After: Frost alerts show the night's low
+defer 1 unit(s): no free runner this round
+stop: proposal ready for approval" "$(apply_units "$db_round" "$db_held" 1)"
+eq "when everything is held the round says work is in flight" "hold 16	Tint the bed cards by moisture	After: Frost alerts show the night's low
+stop: work is in flight; nothing to propose until it lands" "$(apply_units "$(printf 'dispatch 16\tTint\nstop: proposal ready for approval')" "$(plan_units "$(printf '16\tTint the bed cards by moisture\tsrc/beds/list.ts\n')" "$(cat "$db/running.tsv")")" 2)"
+
 # --- end of blocks: the summary, kept in every part.
 block_end
 stop_if_red

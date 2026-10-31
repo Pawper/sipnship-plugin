@@ -1,0 +1,2 @@
+Water the beds from src/sun.ts, as in specs/030-watering. See https://example.com/a/b and #12, and/or later.
+The bed card also changes: src/beds/card.ts.
