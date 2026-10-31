@@ -272,6 +272,9 @@ jobs:
         env:
           # Main's gate goes to the end of each part.
           CI_FULL_RUN: ${{ github.event_name != 'pull_request' && 'yes' || '' }}
+          # The job's own temp folder, so what a test leaves is the job's to
+          # clear and never piles up in the machine's Temp folder.
+          TMPDIR: ${{ runner.temp }}
         run: sh scripts/ci/test-parts.sh run "${{ matrix.part }}" 2>&1 | tee "$RUNNER_TEMP/part.log"
       - name: Say what failed
         # A summary and an annotation naming the failed step and its last

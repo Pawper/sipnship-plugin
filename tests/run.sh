@@ -31,6 +31,67 @@ while [ $# -gt 0 ]; do
 done
 # Main's full run (scripts/ci/test-parts.sh all) runs every block.
 [ "$CI_FULL_RUN" = yes ] && fail_fast=no
+
+# One temp root for the whole run, inside the project's ignored scratch
+# area (which a machine's antivirus exclusions cover), never the system
+# Temp folder: every file a test makes there leaves kernel records for as
+# long as it exists. Every block's mktemp lands here through TMPDIR, and the
+# run removes this root, and nothing else, when it ends or is interrupted.
+# A part run by the outer process shares the outer run's root.
+suite_tmp_clean() {
+  case "$SUITE_TMP_ROOT" in
+    */.scratch/tests-tmp/run-*/*) return 0 ;;
+    */.scratch/tests-tmp/run-*) [ -d "$SUITE_TMP_ROOT" ] && [ ! -L "$SUITE_TMP_ROOT" ] && rm -rf "$SUITE_TMP_ROOT" ;;
+  esac
+  return 0
+}
+if [ -z "$SUITE_TMP_ROOT" ]; then
+  tt_base=$(git -C "$root" rev-parse --show-toplevel 2>/dev/null) || tt_base=$root
+  # The shell's own form of the path (git prints C:/..., and a colon splits a PATH).
+  tt_base=$(cd "$tt_base" && pwd)
+  tt_dir="$tt_base/.scratch/tests-tmp"
+  mkdir -p "$tt_dir"
+  # A run killed outright leaves its root; roots over a day old are not any
+  # run's now.
+  find "$tt_dir" -maxdepth 1 -type d -name 'run-*' -mtime +0 2>/dev/null | while IFS= read -r tt_old; do
+    SUITE_TMP_ROOT=$tt_old suite_tmp_clean
+  done
+  SUITE_TMP_ROOT="$tt_dir/run-$$"
+  mkdir -p "$SUITE_TMP_ROOT"
+  : > "$SUITE_TMP_ROOT/.spawned"
+  trap 'suite_tmp_clean' EXIT
+  trap 'exit 130' INT TERM HUP
+fi
+TMPDIR=$SUITE_TMP_ROOT
+# The root sits inside the project's own checkout; a folder a test makes there
+# must not find that checkout as its parent repository.
+GIT_CEILING_DIRECTORIES=$SUITE_TMP_ROOT
+export TMPDIR SUITE_TMP_ROOT GIT_CEILING_DIRECTORIES
+
+# bounded SECONDS COMMAND...: run a command the suite starts (a nested suite
+# above all) with a time bound, wait for it, and end it and its children when
+# the bound passes. Its process is written down so the end of the run can
+# fail when anything the suite started is still running.
+bounded() {
+  b_secs=$1; shift
+  timeout -k 5 "$b_secs" "$@" &
+  b_pid=$!
+  printf '%s\n' "$b_pid" >> "$SUITE_TMP_ROOT/.spawned"
+  wait "$b_pid"
+}
+
+# spawned_alive: the processes this suite started that are still running,
+# one pid per line; each is ended as it is named.
+spawned_alive() {
+  [ -f "$SUITE_TMP_ROOT/.spawned" ] || return 0
+  while IFS= read -r sa_pid; do
+    [ -n "$sa_pid" ] || continue
+    if kill -0 "$sa_pid" 2>/dev/null; then
+      printf '%s\n' "$sa_pid"
+      kill -9 "$sa_pid" 2>/dev/null
+    fi
+  done < "$SUITE_TMP_ROOT/.spawned"
+}
 if [ -n "$part" ] && [ -z "$RUN_PART" ]; then
   if ! part_names | grep -qxF -- "$part"; then
     printf 'unknown part: %s (one of: %s)\n' "$part" "$(part_names | tr '\n' ' ' | sed 's/ $//')"
@@ -2821,8 +2882,8 @@ eq "a block over its limit warns, naming its time, and passes" "1 1 0" "$(block=
 eq "on CI the warning is also an annotation naming the block" "1" "$(block='garden beds'; block_start=$(( $(date +%s) - 61 )); fail=0; block_fails=; pj_o=$(GITHUB_ACTIONS=true block_end); printf '%s\n' "$pj_o" | grep -c '^::warning title=A slow test block::"garden beds" took 6[0-9]s, over its limit of 60s$')"
 eq "a block far over its limit still passes, warning" "1 1 0" "$(block='garden beds'; block_start=$(( $(date +%s) - 300 )); fail=0; block_fails=; GITHUB_ACTIONS=; pj_o=$(block_end; echo "fail=$fail"); printf '%s\n' "$pj_o" | grep -c '^WARN  the block "garden beds" took 30[0-9]s, over its limit of 60s' | tr '\n' ' '; printf '%s\n' "$pj_o" | grep -c '^fail=0$' | tr '\n' ' '; printf '%s\n' "$pj_o" | grep -c '^FAIL')"
 eq "a block within its limit prints its time and passes" "1 0" "$(block='garden beds'; block_start=$(date +%s); fail=0; pj_o=$(block_end; echo "fail=$fail"); printf '%s\n' "$pj_o" | grep -c '^time  garden beds: [01]s (limit 60s)$' | tr '\n' ' '; printf '%s\n' "$pj_o" | grep -c '^FAIL')"
-eq "an unknown part is refused" "2" "$(RUN_PART= sh "$root/tests/run.sh" --part garden >/dev/null 2>&1; echo $?)"
-pj_out=$(RUN_PART= CI_FULL_RUN=yes sh "$root/tests/run.sh" --fail-fast --part nothing-here 2>&1; echo "rc $?")
+eq "an unknown part is refused" "2" "$(bounded 120 env RUN_PART= sh "$root/tests/run.sh" --part garden >/dev/null 2>&1; echo $?)"
+pj_out=$(bounded 120 env RUN_PART= CI_FULL_RUN=yes sh "$root/tests/run.sh" --fail-fast --part nothing-here 2>&1; echo "rc $?")
 eq "main's full run still refuses an unknown part" "rc 2" "$(printf '%s\n' "$pj_out" | tail -n 1)"
 
 section 'drive bundles issues by the files they touch'
@@ -2862,7 +2923,37 @@ stop: proposal ready for approval" "$(apply_units "$db_round" "$db_held" 1)"
 eq "when everything is held the round says work is in flight" "hold 16	Tint the bed cards by moisture	After: Frost alerts show the night's low
 stop: work is in flight; nothing to propose until it lands" "$(apply_units "$(printf 'dispatch 16\tTint\nstop: proposal ready for approval')" "$(plan_units "$(printf '16\tTint the bed cards by moisture\tsrc/beds/list.ts\n')" "$(cat "$db/running.tsv")")" 2)"
 
+section 'temp files stay in the run, and nothing it starts outlives it'
+eq "every block's temp folder is inside the run's own root" "yes" "$(case "$TMPDIR" in */.scratch/tests-tmp/run-*) echo yes ;; *) echo no ;; esac)"
+tt_probe=$(mktemp -d)
+eq "mktemp lands in the run's root" "$TMPDIR" "$(dirname "$tt_probe")"
+eq "no script the suite runs writes to the system Temp folder, only through TMPDIR" "" "$(cd "$root" && grep -rn '/tmp' --include='*.sh' hooks scripts templates 2>/dev/null | grep -v 'TMPDIR:-/tmp' | grep -v '^[^:]*:[0-9]*:[ 	]*#' | head -n 5)"
+mkdir -p "$TMPDIR/keep-me"
+eq "the clean-up refuses a folder that is not a run's root" "yes" "$(SUITE_TMP_ROOT="$TMPDIR/keep-me" suite_tmp_clean; [ -d "$TMPDIR/keep-me" ] && echo yes)"
+tt_runs() { ls "$(dirname "$TMPDIR")" | grep -c '^run-'; }
+tt_before=$(tt_runs)
+env -u SUITE_TMP_ROOT -u RUN_PART sh "$root/tests/run.sh" --part nothing-here >/dev/null 2>&1
+eq "a run that ends removes its own root, even when it fails" "$tt_before" "$(tt_runs)"
+tt_start=$(date +%s)
+tt_rc=$(bounded 1 sh -c 'sleep 60' >/dev/null 2>&1; echo $?)
+eq "a hung command is ended at its time bound" "124" "$tt_rc"
+eq "and it was not left waiting for the full minute" "yes" "$([ $(( $(date +%s) - tt_start )) -lt 30 ] && echo yes)"
+eq "nothing the suite started is still running after that" "" "$(spawned_alive)"
+tt_pid=$(sleep 120 >/dev/null 2>&1 & echo $!)
+printf '%s\n' "$tt_pid" >> "$SUITE_TMP_ROOT/.spawned"
+eq "a process the suite started and left running is named" "$tt_pid" "$(spawned_alive)"
+sed -i "/^$tt_pid$/d" "$SUITE_TMP_ROOT/.spawned"
+eq "a Temp folder over the limit is named with its count" "1" "$(temp_entries_warning 31000 5000 | grep -c "holds 31000 entries (more than 5000)")"
+eq "a Temp folder under the limit says nothing" "" "$(temp_entries_warning 40 5000)"
+eq "an unreadable count says nothing" "" "$(temp_entries_warning '' 5000)"
+eq "kernel memory over the limit is named in gigabytes" "1" "$(kernel_pool_warning 25769803776 4294967296 | grep -c "holds 24 GB of non-paged memory (more than 4 GB)")"
+eq "kernel memory under the limit says nothing" "" "$(kernel_pool_warning 1073741824 4294967296)"
+eq "shells older than a day are counted and the oldest named" "1" "$(old_shells_warning "$(printf '11\t30\tsh.exe\n12\t2\tsh.exe\n13\t52\tbash.exe\n')" 24 | grep -c "has 2 shell processes running for more than 24 hours.*13 (bash.exe, 52 hours), 11 (sh.exe, 30 hours)")"
+eq "no shell older than a day says nothing" "" "$(old_shells_warning "$(printf '12\t2\tsh.exe\n')" 24)"
+eq "the audit runs the machine check and the CI tests step sets the job's temp folder" "2 1" "$(grep -c 'machine-upkeep.sh' "$root/templates/.github/workflows/audit.yml" | tr '\n' ' ')$(grep -c 'TMPDIR: ${{ runner.temp }}' "$root/templates/.github/workflows/ci.yml")"
+
 # --- end of blocks: the summary, kept in every part.
+eq "no process started by this suite is still running" "" "$(spawned_alive)"
 block_end
 stop_if_red
 printf '\n%s passed, %s failed\n' "$pass" "$fail"

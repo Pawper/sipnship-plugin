@@ -140,12 +140,21 @@ jobs:
             [ -n "$quota" ] && runner=$(printf '%s\n\n- %s' "$runner" "$quota" | sed '/./,$!d')
           fi
 
+          # What the runner's machine is quietly collecting: a Temp folder that
+          # only grows, kernel memory held for its files, and shells left running
+          # for more than a day.
+          hygiene=""
+          if [ -f scripts/ci/machine-upkeep.sh ]; then
+            hygiene=$(sh scripts/ci/machine-upkeep.sh | sed 's/^/- /')
+          fi
+
           body=$(audit_comment "$missing" "$stale" "$red" "$branches")
           if [ -n "$runner" ]; then body=$(printf '%s\n\n%s' "$body" "$runner" | sed '/./,$!d'); fi
           if [ -n "$serial" ]; then body=$(printf '%s\n\n- %s' "$body" "$serial" | sed '/./,$!d'); fi
           if [ -n "$deploy" ]; then body=$(printf '%s\n\n- %s' "$body" "$deploy" | sed '/./,$!d'); fi
           if [ -n "$breaks" ]; then body=$(printf '%s\n\n%s' "$body" "$breaks" | sed '/./,$!d'); fi
           if [ -n "$late" ]; then body=$(printf '%s\n\n%s' "$body" "$late" | sed '/./,$!d'); fi
+          if [ -n "$hygiene" ]; then body=$(printf '%s\n\n%s' "$body" "$hygiene" | sed '/./,$!d'); fi
           if [ -z "$body" ]; then
             echo "Clean. Nothing to say."
             exit 0

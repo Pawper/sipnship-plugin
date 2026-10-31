@@ -521,3 +521,31 @@ scan_exclusions() {
 scan_warning_line() {
   printf "scan exclusions missing on %s: %s's work folder is scanned by the antivirus; a shell suite runs two to four times slower. Run add-runner.ps1 as administrator, or the Add-MpPreference line in scripts/ci/RUNNERS.md.\n" "$1" "$1"
 }
+
+# temp_entries_warning COUNT LIMIT [FOLDER]: one line when a machine's Temp
+# folder holds more than LIMIT entries; nothing otherwise. Every file left
+# there keeps kernel records for as long as it exists.
+temp_entries_warning() {
+  case "$1" in ''|*[!0-9]*) return 0 ;; esac
+  [ "$1" -gt "$2" ] || return 0
+  printf "The machine's Temp folder holds %s entries (more than %s). Each file left there keeps kernel records and slows every program start; clear it and find what leaves files behind.\n" "$1" "$2"
+}
+
+# kernel_pool_warning BYTES LIMIT: one line when the kernel's non-paged
+# memory is over LIMIT bytes; nothing otherwise.
+kernel_pool_warning() {
+  case "$1" in ''|*[!0-9]*) return 0 ;; esac
+  [ "$1" -gt "$2" ] || return 0
+  printf "The machine's kernel holds %s GB of non-paged memory (more than %s GB), which usually means a build-up of open or leftover files.\n" "$(($1 / 1073741824))" "$(($2 / 1073741824))"
+}
+
+# old_shells_warning ROWS HOURS: ROWS is "PID<TAB>AGE_HOURS<TAB>NAME", one
+# per line. One line naming how many shell processes are older than HOURS
+# and the oldest few; nothing when none.
+old_shells_warning() {
+  os_old=$(printf '%s\n' "$1" | awk -F'\t' -v h="$2" '$2 ~ /^[0-9]+$/ && $2 + 0 > h + 0' | sort -t'	' -k2,2nr)
+  [ -n "$os_old" ] || return 0
+  os_n=$(printf '%s\n' "$os_old" | wc -l | tr -d ' ')
+  os_list=$(printf '%s\n' "$os_old" | head -n 3 | awk -F'\t' '{ printf "%s%s (%s, %s hours)", (NR > 1 ? ", " : ""), $1, $3, $2 }')
+  printf 'A runner machine has %s shell processes running for more than %s hours, from a test or script that never ended: %s.\n' "$os_n" "$2" "$os_list"
+}
