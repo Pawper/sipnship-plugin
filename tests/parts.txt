@@ -1,0 +1,81 @@
+# Which part each block of tests/run.sh runs in: PART NAME, one per line,
+# the name exactly as its section line gives it. CI runs the parts side by
+# side (scripts/ci/classes.txt lists them); each should stay under about
+# two and a half minutes. A block named nowhere runs in no part, and a test
+# of the suite fails it. Measured seconds are in tests/block-limits.txt for
+# the slow ones; every block prints its time at its end.
+console owner console (node)
+queue batch_merge_reason
+queue batch helpers
+queue the queue runs a test file with its own runner
+queue reading a run
+queue the queue on the service road (spec 006)
+queue merging only through the queue
+queue drain
+queue check-runs and mergeable_state through REST
+queue batches and the drain, sharing pull requests
+queue a batch anchored on the earliest pull request
+queue when a green pull request needs a second run
+queue labels over REST, and waiting on a machine
+queue serial merges, enforced by the queue
+queue the API budget and one queue at a time
+queue waits for a runner and the machine line
+shell-2 json_field
+shell-2 split_commands
+shell-2 delete_reason
+shell-2 force_push_reason
+shell-2 full_sweep_reason
+shell-2 generated_page_reason
+shell-2 state_label_reason
+shell-2 session brief
+shell-2 runner doctor
+shell-2 board digest
+shell-2 clean endings (hook library)
+shell-2 long_command_reason
+shell-2 daemon_stop_reason
+shell-2 worktrees
+shell-2 shared code and ended branches
+shell-2 project drive
+shell-2 task_tier and agent_model_reason
+shell-2 workflow_model_reason
+shell-2 status page
+shell-2 status check
+shell-2 classify_paths
+shell-2 needs_rerun
+shell-2 state_label_from_body
+shell-2 spec_check_reason
+shell-2 rerun-free classes
+shell-2 board mappings
+shell-2 workflow_breaks
+shell-2 drain_late
+shell-2 audit helpers
+shell-2 setup_check_reason and has_crlf
+shell-2 quoted text is text, and nothing waits on input
+shell-2 board calls refused for a rate limit
+shell-2 pull request bodies, stray closing keywords
+shell-2 decisions, one file each
+shell-2 the package a file belongs to
+shell-2 numbering
+shell-2 decision numbers inside a file
+shell-2 env-lib
+shell-1 template refresh
+shell-4 template refresh, the sync in a throwaway project
+shell-2 the CI template is three jobs on a pull request, and the screens job where mocks have routes
+shell-2 set -e never swallows a return code
+shell-2 what an agent did after a refusal
+shell-3 one design source for every platform
+shell-3 a screen and its mock change together
+shell-3 copy from the mocks
+shell-3 a screen beside its mock
+shell-3 runner watch
+shell-3 deploys: keeping the host's build CPU down
+shell-3 drive skill scheduling
+shell-3 drive release goal
+shell-3 hook counterparts
+shell-3 the delete check
+shell-3 workspace install
+shell-3 a draft tokens file seeded from the mocks
+shell-3 deploy targets
+shell-3 test parts: only for the classes touched, side by side, stopping at the first red
+shell-2 a failing job says what failed and never cancels the run
+shell-2 main is gated by one full run after a quiet hour

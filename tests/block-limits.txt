@@ -1,8 +1,14 @@
 # The seconds a block of tests/run.sh may take, when it honestly needs
 # more than the 60 every other block gets. One line each: SECONDS, then
-# the block's name exactly as its section line gives it.
-# template refresh: about 17 runs of the sync, each 15 to 28 s of process
-# starts on Windows; measured 331 s alone and 510 s in the shell part on
-# 2026-10-30. The next cost to cut: fewer sync runs, or a sync with fewer
-# processes.
-540 template refresh
+# the block's name exactly as its section line gives it. A block over its
+# limit prints a warning (on CI an annotation too) and passes, since the
+# parts share one machine and load alone slows a block; only a block over
+# twice its limit fails.
+# template refresh and its second half: about 17 runs of the sync and of
+# the known-hashes script, each 8 to 15 s of process starts on Windows;
+# measured 68 s and 71 s on 2026-10-30 (one block of 171 to 202 s before
+# it was split, 510 s when it shared the shell part). Each has a part of
+# its own in tests/parts.txt. The next cost to cut: fewer sync runs, or a
+# sync with fewer processes.
+150 template refresh
+150 template refresh, the sync in a throwaway project

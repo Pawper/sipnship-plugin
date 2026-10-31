@@ -1,0 +1,4 @@
+# The rooftop-garden suite's assignment: the watering schedule is named nowhere.
+beds garden beds
+wet drain
+console owner console (node)

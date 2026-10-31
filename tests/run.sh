@@ -5,7 +5,7 @@
 #
 #   --fail-fast   end at the first block with a failure, naming it and its
 #                 failing lines (a pull request's run; main runs everything)
-#   --part NAME   run only one part: shell, console or queue (CI runs the
+#   --part NAME   run only one part: one of the names in tests/parts.txt (CI runs the
 #                 three side by side); the prelude and summary run in each
 
 root=${RUN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}
@@ -1825,6 +1825,17 @@ eq "a new file goes only where its folder is" "0" "$(printf '%s\n' "$ss_dry" | g
 (cd "$ss_d" && sh "$root/scripts/sync/sync-templates.sh" --apply --no-commit >/dev/null 2>&1)
 eq "and --apply adds them" "yes yes" "$([ -f "$ss_d/scripts/ci/mock-check.sh" ] && echo yes || echo no) $(git -C "$ss_d" diff --cached --name-only | grep -qx scripts/ci/mock-lib.sh && echo yes || echo no)"
 
+section 'template refresh, the sync in a throwaway project'
+. "$root/scripts/sync/sync-lib.sh"
+fixtures_sync="$root/tests/fixtures/sync"
+ss_new() {
+  ss_d=$(mktemp -d)
+  git -C "$ss_d" init -q -b main
+  git -C "$ss_d" config user.email t@example.com; git -C "$ss_d" config user.name t
+  mkdir -p "$ss_d/scripts" "$ss_d/.github/workflows"
+  cp "$root/templates/scripts/board-lib.sh" "$ss_d/scripts/board-lib.sh"
+  echo "$ss_d"
+}
 # A filled workflow the project edited is not kept whole: a template step
 # its copy lacks is carried in by name, and its own steps stay.
 cs_tpl=$(filled_text "$(cat "$root/templates/.github/workflows/ci.yml")" '[self-hosted, windows]' bash)
@@ -1946,6 +1957,7 @@ eq "sync points a split ci.yml, and one without pull-requests: read, at the migr
 eq "the migration page ships with the plugin" "yes" "$([ -f "$root/CI-MIGRATION.md" ] && echo yes || echo no)"
 
 section 'the CI template is three jobs on a pull request, and the screens job where mocks have routes'
+. "$root/scripts/sync/sync-lib.sh"
 ciy=$(cat "$root/templates/.github/workflows/ci.yml")
 eq "its jobs" "gate
 checks
@@ -2631,30 +2643,6 @@ eq "the watch prints the machine line" "1" "$(grep -c 'echo "machine line: $mlin
 eq "the brief reads the waits log and the machine file" "1 1" "$(grep -c 'waits_line "$(tail -n 500' "$root/hooks/scripts/session-brief.sh") $(grep -c 'machine_brief_line "$(head -n 1' "$root/hooks/scripts/session-brief.sh")"
 mv "$wl_dir" "$wl_dir.done" 2>/dev/null || true
 
-section 'test parts: only for the classes touched, side by side, stopping at the first red'
-pj_fx="$root/tests/fixtures/parts"
-pj_classes=$(cat "$pj_fx/classes.txt")
-pj_matrix() { parts_matrix "$(class_parts "$(classify_paths "$(cat "$pj_fx/paths-$1.txt")" "$pj_classes")" "$pj_classes")"; }
-eq "a class with three parts is three matrix entries" '["beds","watering","sensors"]' "$(pj_matrix web-only)"
-eq "a class with no parts is no entry" '[]' "$(pj_matrix docs-only)"
-eq "a change touching two classes runs the parts of both" '["beds","watering","sensors","endings"]' "$(pj_matrix two-classes)"
-eq "an unclassified path runs every part" '["beds","watering","sensors","endings"]' "$(pj_matrix unclassified)"
-eq "main's full run takes every part, with its command" "4 sh scripts/ci/line-endings.sh" "$(class_parts all "$pj_classes" | grep -c .) $(class_parts all "$pj_classes" | awk -F '\t' '$1 == "endings" { print $2 }')"
-eq "a project with no parts lines builds no matrix" '[]' "$(parts_matrix "$(class_parts 'app ci other' "$(grep -v '^!parts' "$pj_fx/classes.txt")")")"
-eq "a name given twice runs once" '["a"]' "$(parts_matrix "$(class_parts 'x y' "$(printf '!parts x a=one\n!parts y a=two')")")"
-eq "the template's classes.txt has no parts, so a new project runs as before" '[]' "$(parts_matrix "$(class_parts other "$(cat "$root/templates/scripts/ci/classes.txt")")")"
-eq "test-parts.sh, the classify step and the tests job are in the template" "2 1 1" "$(grep -c 'test-parts.sh matrix' "$root/templates/.github/workflows/ci.yml") $(grep -c "fromJSON(needs.checks.outputs.parts || needs.gate.outputs.parts || '\[\]')" "$root/templates/.github/workflows/ci.yml") $(grep -cx 'scripts/ci/test-parts.sh' "$root/templates/OWNED.txt")"
-pj_ci="$root/templates/.github/workflows/ci.yml"
-pj_tests=$(awk '$0 == "  tests:" {f=1; next} /^  [a-z-]*:$/ {f=0} f' "$pj_ci")
-pj_full=$(awk '$0 == "  full:" {f=1; next} /^  [a-z-]*:$/ {f=0} f' "$pj_ci")
-pj_gate=$(awk '$0 == "  gate:" {f=1; next} /^  [a-z-]*:$/ {f=0} f' "$pj_ci")
-eq "main's gate takes every part as the same matrix, not one serial job" "1 1 0 0" "$(printf '%s\n' "$pj_gate" | grep -c 'test-parts.sh matrix all') $(printf '%s\n' "$pj_tests" | grep -c "fail-fast: \${{ github.event_name == 'pull_request' }}") $(printf '%s\n' "$pj_tests" | grep -c "^    if: github.event_name == 'pull_request'") $(printf '%s\n' "$pj_full" | grep -c 'test-parts.sh')"
-eq "the gate's parts go to the end, and a red gate opens or adds to the red-main issue" "1 2 1" "$(printf '%s\n' "$pj_tests" | grep -c "CI_FULL_RUN: \${{ github.event_name != 'pull_request' && 'yes' || '' }}") $(grep -c '^    needs: \[full, tests\]' "$pj_ci") $(grep -c 'The gate failed again on' "$pj_ci")"
-eq "main gets no run on push: an hourly schedule and a by-hand run instead" "0 1 1" "$(sed -n '/^on:/,/^[a-z]/p' "$pj_ci" | grep -c '^  push:') $(grep -c "^    - cron: '0 \* \* \* \*'" "$pj_ci") $(grep -c '^  workflow_dispatch:' "$pj_ci")"
-eq "the quiet time lives in one place, read by the gate script" "1 1 0" "$(grep -c 'GATE_QUIET_MINUTES: 60' "$pj_ci") $(grep -c 'GATE_QUIET_MINUTES:-60' "$root/templates/scripts/ci/gate.sh") $(grep -c -e '-lt 60' -e ':-60' -e '"60"' "$root/templates/scripts/ci/gate-lib.sh")"
-eq "no test or app job runs on a push or a schedule but through the gate" "1 1 1" "$(printf '%s\n' "$pj_tests" | grep -c '^    needs: \[gate, checks\]') $(awk '$0 == "  checks:" {f=1; next} /^  [a-z-]*:$/ {f=0} f' "$pj_ci" | grep -c "^    if: github.event_name == 'pull_request'") $(awk '$0 == "  app:" {f=1; next} /^  [a-z-]*:$/ {f=0} f' "$pj_ci" | grep -c '^    needs: checks')"
-eq "the tests job has a plain name, the part in its step" "1 0 1" "$(printf '%s\n' "$pj_tests" | grep -cx '    name: tests') $(printf '%s\n' "$pj_tests" | grep -c '^    name: .*matrix') $(printf '%s\n' "$pj_tests" | grep -c 'name: Run the ${{ matrix.part }} part')"
-
 section 'a failing job says what failed and never cancels the run'
 . "$root/templates/scripts/ci/failure-lib.sh"
 fr_fx="$root/tests/fixtures/failure"
@@ -2688,18 +2676,53 @@ eq "a head that landed after the red gate goes on its own green landing run" "" 
 eq "a green gate holds nothing" "" "$(gate_holds_deploy "$(last_gated "$(cat "$gt_fx/runs-green.tsv")")" 1793419000)"
 eq "no gate yet holds nothing" "" "$(gate_holds_deploy '' 1793419000)"
 eq "the deploy gate asks the full gate" "1" "$(grep -c 'gate_holds_deploy "$(sh "$here/gate.sh" last' "$root/templates/scripts/ci/deploy-gate.sh")"
+section 'test parts: only for the classes touched, side by side, stopping at the first red'
+pj_fx="$root/tests/fixtures/parts"
+pj_classes=$(cat "$pj_fx/classes.txt")
+pj_matrix() { parts_matrix "$(class_parts "$(classify_paths "$(cat "$pj_fx/paths-$1.txt")" "$pj_classes")" "$pj_classes")"; }
+eq "a class with three parts is three matrix entries" '["beds","watering","sensors"]' "$(pj_matrix web-only)"
+eq "a class with no parts is no entry" '[]' "$(pj_matrix docs-only)"
+eq "a change touching two classes runs the parts of both" '["beds","watering","sensors","endings"]' "$(pj_matrix two-classes)"
+eq "an unclassified path runs every part" '["beds","watering","sensors","endings"]' "$(pj_matrix unclassified)"
+eq "main's full run takes every part, with its command" "4 sh scripts/ci/line-endings.sh" "$(class_parts all "$pj_classes" | grep -c .) $(class_parts all "$pj_classes" | awk -F '\t' '$1 == "endings" { print $2 }')"
+eq "a project with no parts lines builds no matrix" '[]' "$(parts_matrix "$(class_parts 'app ci other' "$(grep -v '^!parts' "$pj_fx/classes.txt")")")"
+eq "a name given twice runs once" '["a"]' "$(parts_matrix "$(class_parts 'x y' "$(printf '!parts x a=one\n!parts y a=two')")")"
+eq "the template's classes.txt has no parts, so a new project runs as before" '[]' "$(parts_matrix "$(class_parts other "$(cat "$root/templates/scripts/ci/classes.txt")")")"
+eq "test-parts.sh, the classify step and the tests job are in the template" "2 1 1" "$(grep -c 'test-parts.sh matrix' "$root/templates/.github/workflows/ci.yml") $(grep -c "fromJSON(needs.checks.outputs.parts || needs.gate.outputs.parts || '\[\]')" "$root/templates/.github/workflows/ci.yml") $(grep -cx 'scripts/ci/test-parts.sh' "$root/templates/OWNED.txt")"
+pj_ci="$root/templates/.github/workflows/ci.yml"
+pj_tests=$(awk '$0 == "  tests:" {f=1; next} /^  [a-z-]*:$/ {f=0} f' "$pj_ci")
+pj_full=$(awk '$0 == "  full:" {f=1; next} /^  [a-z-]*:$/ {f=0} f' "$pj_ci")
+pj_gate=$(awk '$0 == "  gate:" {f=1; next} /^  [a-z-]*:$/ {f=0} f' "$pj_ci")
+eq "main's gate takes every part as the same matrix, not one serial job" "1 1 0 0" "$(printf '%s\n' "$pj_gate" | grep -c 'test-parts.sh matrix all') $(printf '%s\n' "$pj_tests" | grep -c "fail-fast: \${{ github.event_name == 'pull_request' }}") $(printf '%s\n' "$pj_tests" | grep -c "^    if: github.event_name == 'pull_request'") $(printf '%s\n' "$pj_full" | grep -c 'test-parts.sh')"
+eq "the gate's parts go to the end, and a red gate opens or adds to the red-main issue" "1 2 1" "$(printf '%s\n' "$pj_tests" | grep -c "CI_FULL_RUN: \${{ github.event_name != 'pull_request' && 'yes' || '' }}") $(grep -c '^    needs: \[full, tests\]' "$pj_ci") $(grep -c 'The gate failed again on' "$pj_ci")"
+eq "main gets no run on push: an hourly schedule and a by-hand run instead" "0 1 1" "$(sed -n '/^on:/,/^[a-z]/p' "$pj_ci" | grep -c '^  push:') $(grep -c "^    - cron: '0 \* \* \* \*'" "$pj_ci") $(grep -c '^  workflow_dispatch:' "$pj_ci")"
+eq "the quiet time lives in one place, read by the gate script" "1 1 0" "$(grep -c 'GATE_QUIET_MINUTES: 60' "$pj_ci") $(grep -c 'GATE_QUIET_MINUTES:-60' "$root/templates/scripts/ci/gate.sh") $(grep -c -e '-lt 60' -e ':-60' -e '"60"' "$root/templates/scripts/ci/gate-lib.sh")"
+eq "no test or app job runs on a push or a schedule but through the gate" "1 1 1" "$(printf '%s\n' "$pj_tests" | grep -c '^    needs: \[gate, checks\]') $(awk '$0 == "  checks:" {f=1; next} /^  [a-z-]*:$/ {f=0} f' "$pj_ci" | grep -c "^    if: github.event_name == 'pull_request'") $(awk '$0 == "  app:" {f=1; next} /^  [a-z-]*:$/ {f=0} f' "$pj_ci" | grep -c '^    needs: checks')"
+eq "the tests job has a plain name, the part in its step" "1 0 1" "$(printf '%s\n' "$pj_tests" | grep -cx '    name: tests') $(printf '%s\n' "$pj_tests" | grep -c '^    name: .*matrix') $(printf '%s\n' "$pj_tests" | grep -c 'name: Run the ${{ matrix.part }} part')"
+
 pj_repo="$root/../scripts/ci/classes.txt"
 if [ -f "$pj_repo" ] && grep -q '^!parts plugin' "$pj_repo"; then
   pj_rc=$(cat "$pj_repo")
-  for pj_case in web-only:'[]' plugin:'["shell","console","queue"]' ci:'["shell","console","queue"]' unclassified:'["shell","console","queue"]'; do
+  for pj_case in web-only:'[]' plugin:'["shell-1","shell-2","shell-3","shell-4","queue","console"]' ci:'["shell-1","shell-2","shell-3","shell-4","queue","console"]' unclassified:'["shell-1","shell-2","shell-3","shell-4","queue","console"]'; do
     pj_name=${pj_case%%:*}
     eq "this repository's suite for a $pj_name change" "${pj_case#*:}" "$(parts_matrix "$(class_parts "$(classify_paths "$(cat "$pj_fx/paths-$pj_name.txt")" "$pj_rc")" "$pj_rc")")"
   done
-  eq "each of this repository's parts stops at the first red" "3" "$(class_parts plugin "$pj_rc" | grep -c 'run.sh --fail-fast --part')"
+  eq "each of this repository's parts stops at the first red" "6" "$(class_parts plugin "$pj_rc" | grep -c 'run.sh --fail-fast --part')"
 fi
 eq "a web-only change is app and docs" "app docs" "$(classify_paths "$(cat "$pj_fx/paths-web-only.txt")" "$pj_classes" | tr ' ' '\n' | sort | tr '\n' ' ' | sed 's/ $//')"
-eq "every block of the suite falls in one of three parts" "console queue shell" "$(grep "^section '" "$root/tests/run.sh" | sed "s/^section '//; s/'\$//" | while IFS= read -r b; do part_of "$b"; done | sort -u | tr '\n' ' ' | sed 's/ $//')"
-eq "every queue block named in the list is a block of the suite" "" "$(printf '%s\n' "$parts_queue_blocks" | while IFS= read -r b; do grep -qxF "section '$b'" "$root/tests/run.sh" || echo "$b"; done)"
+pj_blocks=$(suite_blocks < "$root/tests/run.sh")
+eq "every block of the suite is named in exactly one part, in tests/parts.txt" "" "$(printf '%s\n' "$pj_blocks" | while IFS= read -r b; do c=$(parts_data | awk -v b="$b" '{ n = $0; sub(/^[^ ]+ /, "", n); if (n == b) c++ } END { print c + 0 }'); [ "$c" = 1 ] || echo "$b"; done)"
+eq "every line of tests/parts.txt names a block of the suite" "" "$(parts_data | sed 's/^[^ ]* //' | while IFS= read -r b; do printf '%s\n' "$pj_blocks" | grep -qxF -- "$b" || echo "$b"; done)"
+eq "the parts are the first column of tests/parts.txt, and no block list is kept in the library" "$(parts_data | awk '{ print $1 }' | sort -u | tr '\n' ' ')0" "$(part_names | sort | tr '\n' ' ')$(grep -c 'parts_queue_blocks' "$root/tests/parts-lib.sh")"
+pj_pf="$pj_fx/parts.txt"
+eq "the file gives the part names in its order" "beds wet console" "$(PARTS_FILE=$pj_pf part_names | tr '\n' ' ' | sed 's/ $//')"
+eq "a block the file names nowhere belongs to no part" "beds||wet" "$(PARTS_FILE=$pj_pf part_of 'garden beds')|$(PARTS_FILE=$pj_pf part_of 'watering schedule')|$(PARTS_FILE=$pj_pf part_of 'drain')"
+eq "a block named nowhere runs in none of the parts" "0" "$(for p in beds wet console; do PARTS_FILE=$pj_pf part_script $p < "$pj_fx/suite.sh"; done | grep -c "section 'watering schedule'")"
+eq "each part keeps the prelude and the summary, and only its own blocks" "1 1 1 0" "$(t=$(PARTS_FILE=$pj_pf part_script wet < "$pj_fx/suite.sh"); { printf '%s\n' "$t" | grep -c '^pass=0'; printf '%s\n' "$t" | grep -c 'stop_if_red'; printf '%s\n' "$t" | grep -c "section 'drain'"; printf '%s\n' "$t" | grep -c "section 'garden beds'"; } | tr '\n' ' ' | sed 's/ $//')"
+if [ -f "$pj_repo" ] && grep -q '^!parts plugin' "$pj_repo"; then
+  eq "the matrix lists the parts of tests/parts.txt, each run by its own name" "$(part_names | sort | tr '\n' ' ')" "$(class_parts plugin "$pj_rc" | while IFS="	" read -r n c; do [ "$c" = "cd plugin && sh tests/run.sh --fail-fast --part $n" ] && echo "$n"; done | sort | tr '\n' ' ')"
+fi
+eq "every block of the suite falls in a part the file lists" "" "$(printf '%s\n' "$pj_blocks" | while IFS= read -r b; do part_names | grep -qxF -- "$(part_of "$b")" || echo "$b"; done)"
 eq "the queue part keeps the prelude, its block and the summary" "1 0 1 0 1" "$(PARTS_LIB=x; t=$(part_script queue < "$pj_fx/suite.sh"); for s in '^pass=0' "garden beds" "section 'drain'" 'owner console' 'stop_if_red'; do printf '%s\n' "$t" | grep -c "$s"; done | tr '\n' ' ' | sed 's/ $//')"
 eq "the console part keeps only the console block" "0 1" "$(t=$(part_script console < "$pj_fx/suite.sh"); printf '%s\n' "$t" | grep -c 'watering' | tr '\n' ' '; printf '%s\n' "$t" | grep -c 'owner console')"
 pj_out=$(PARTS_LIB="$root/tests/parts-lib.sh" FAIL_FAST=yes sh "$pj_fx/suite.sh"; echo "rc $?")
@@ -2712,7 +2735,9 @@ pj_lim='# seconds, then the block
 120 the queue drains'
 eq "a block the limits file names gets its limit" "90" "$(block_limit 'watering schedule' "$pj_lim")"
 eq "any other block gets 60 seconds" "60" "$(block_limit 'garden beds' "$pj_lim")"
-eq "a block over its limit fails, naming its time" "1 1" "$(block='garden beds'; block_start=$(( $(date +%s) - 61 )); fail=0; block_fails=; pj_o=$(block_end; echo "fail=$fail"); printf '%s\n' "$pj_o" | grep -c '^FAIL  the block "garden beds" took 6[0-9]s, over its limit of 60s$' | tr '\n' ' '; printf '%s\n' "$pj_o" | grep -c '^fail=1$')"
+eq "a block over its limit warns, naming its time, and passes" "1 1 0" "$(block='garden beds'; block_start=$(( $(date +%s) - 61 )); fail=0; block_fails=; GITHUB_ACTIONS=; pj_o=$(block_end; echo "fail=$fail"); printf '%s\n' "$pj_o" | grep -c '^WARN  the block "garden beds" took 6[0-9]s, over its limit of 60s' | tr '\n' ' '; printf '%s\n' "$pj_o" | grep -c '^fail=0$' | tr '\n' ' '; printf '%s\n' "$pj_o" | grep -c '^FAIL')"
+eq "on CI the warning is also an annotation naming the block" "1" "$(block='garden beds'; block_start=$(( $(date +%s) - 61 )); fail=0; block_fails=; pj_o=$(GITHUB_ACTIONS=true block_end); printf '%s\n' "$pj_o" | grep -c '^::warning title=A slow test block::"garden beds" took 6[0-9]s, over its limit of 60s$')"
+eq "a block over twice its limit fails, saying so" "1 1" "$(block='garden beds'; block_start=$(( $(date +%s) - 121 )); fail=0; block_fails=; pj_o=$(block_end; echo "fail=$fail"); printf '%s\n' "$pj_o" | grep -c '^FAIL  the block "garden beds" took 12[0-9]s, over twice its limit of 60s$' | tr '\n' ' '; printf '%s\n' "$pj_o" | grep -c '^fail=1$')"
 eq "a block within its limit prints its time and passes" "1 0" "$(block='garden beds'; block_start=$(date +%s); fail=0; pj_o=$(block_end; echo "fail=$fail"); printf '%s\n' "$pj_o" | grep -c '^time  garden beds: [01]s (limit 60s)$' | tr '\n' ' '; printf '%s\n' "$pj_o" | grep -c '^FAIL')"
 eq "an unknown part is refused" "2" "$(RUN_PART= sh "$root/tests/run.sh" --part garden >/dev/null 2>&1; echo $?)"
 pj_out=$(RUN_PART= CI_FULL_RUN=yes sh "$root/tests/run.sh" --fail-fast --part nothing-here 2>&1; echo "rc $?")
