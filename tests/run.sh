@@ -1673,6 +1673,10 @@ eq "the batch takes either side of generated files and rebuilds" "1 1" "$(grep -
 eq "a lock whose process is gone is free" "" "$(queue_lock_reason "4242	1000	--drain" 1720 no)"
 eq "a lock older than three hours is free" "" "$(queue_lock_reason "4242	1000	--batch" 20000 yes)"
 eq "no lock is free" "" "$(queue_lock_reason '' 1720 yes)"
+eq "a Queue drain in progress on GitHub refuses a local queue" "the Queue drain on GitHub started 12 minute(s) ago is still running (run 77)" "$(remote_drain_reason "77	in_progress	1000" 1720)"
+eq "a queued Queue drain says queued" "the Queue drain on GitHub started 3 minute(s) ago is queued (run 78)" "$(remote_drain_reason "78	queued	1540" 1720)"
+eq "no Queue drain runs is free" "" "$(remote_drain_reason '' 1720)"
+eq "the lock asks GitHub only outside Actions" "1 1" "$(grep -c 'queue-drain.yml/runs?per_page=5' "$mq_all") $(grep -c '\[ -z "\$why" \] && \[ -z "\${GITHUB_ACTIONS:-}" \]' "$mq_all")"
 
 section 'the package a file belongs to'
 roots='.
