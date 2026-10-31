@@ -156,6 +156,20 @@ take_lock() {
   lpid=${l%%	*}
   alive=no; [ -n "$lpid" ] && kill -0 "$lpid" 2>/dev/null && alive=yes
   why=$(queue_lock_reason "$l" "$(date +%s)" "$alive")
+  if [ -z "$why" ] && [ -z "${GITHUB_ACTIONS:-}" ]; then
+    # The Queue drain workflow on GitHub is a queue too: one REST call, and a
+    # failed call (no network, rate limit) never blocks.
+    if rr=$(gh api "repos/{owner}/{repo}/actions/workflows/queue-drain.yml/runs?per_page=5" --jq '.workflow_runs[] | select(.status == "in_progress" or .status == "queued") | [.id, .status, .created_at] | @tsv' 2>/dev/null); then
+      IFS="	" read -r r_id r_st r_at <<EOF_RUN
+$(printf '%s\n' "$rr" | head -n 1)
+EOF_RUN
+      rruns=""
+      if [ -n "$r_id" ]; then rruns=$(printf '%s\t%s\t%s' "$r_id" "$r_st" "$(iso_epoch "$r_at")"); fi
+      why=$(remote_drain_reason "$rruns" "$(date +%s)")
+    else
+      echo "Could not check whether the Queue drain is running on GitHub; going on."
+    fi
+  fi
   if [ -n "$why" ]; then
     last=$(tail -n 1 "$flaky_dir/log" 2>/dev/null | cut -c1-160)
     st=$(cat "$flaky_dir/drain.state" 2>/dev/null | head -n 1)

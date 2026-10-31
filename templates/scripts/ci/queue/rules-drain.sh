@@ -191,3 +191,19 @@ queue_lock_reason() {
     }'
 }
 
+# remote_drain_reason RUNS NOW
+# RUNS is one line per Queue drain run on GitHub that is in progress or
+# queued: "id<TAB>status<TAB>created_epoch". Print why a local queue must not
+# start ("the Queue drain on GitHub started 12 minute(s) ago is still running
+# (run 123)", "queued" for a run not yet started), or nothing for no runs.
+remote_drain_reason() {
+  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v now="$2" '
+    NR == 1 && NF >= 3 && $1 != "" {
+      age = now - ($3 + 0)
+      if (age < 0) age = 0
+      st = ($2 == "queued") ? "queued" : "still running"
+      printf "the Queue drain on GitHub started %d minute(s) ago is %s (run %s)\n", int(age / 60), st, $1
+      exit
+    }'
+}
+
