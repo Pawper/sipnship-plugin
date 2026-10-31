@@ -68,6 +68,7 @@ shell-2 what an agent did after a refusal
 shell-3 one design source for every platform
 shell-3 a screen and its mock change together
 shell-3 copy from the mocks
+shell-3 token names a stylesheet defines for itself
 shell-3 a screen beside its mock
 shell-3 runner watch
 shell-3 deploys: keeping the host's build CPU down

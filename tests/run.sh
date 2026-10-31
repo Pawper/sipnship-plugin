@@ -2358,6 +2358,35 @@ else
   printf 'skip  node is not installed, so the copy extractor did not run\n'
 fi
 
+section 'token names a stylesheet defines for itself'
+if command -v node >/dev/null 2>&1; then
+  tn=$(mktemp -d)
+  (
+    cd "$tn" && git init -q -b main && git config user.email t@t && git config user.name t && git config core.autocrlf false
+    mkdir -p design scripts/ci scripts/design src/styles src/node_modules/x
+    cp "$root/templates/scripts/ci/design-check.sh" "$root/templates/scripts/ci/design-allow.txt" scripts/ci/
+    cp "$root/templates/scripts/design/design-lib.sh" scripts/design/
+    printf '{"outputs": {"css": "src/design.generated.css"}}\n' > design/tokens.json
+    printf 'src/**/*.css\n' > scripts/ci/design-ui.txt
+    printf ':root { --color-ink: #111; }\n' > src/design.generated.css
+    printf '.a { color: var(--color-ink); }\n' > src/styles/a.css
+    printf '.b { --handle-line: var(--color-ink); }\n' > src/top.css
+    printf ':root { --hidden-name: 1; }\n' > src/node_modules/x/dep.css
+    git add -A && git commit -qm base && git tag start
+    git checkout -q -b local && printf '.a { border-color: var(--handle-line); }\n' >> src/styles/a.css && git commit -qam local
+    sh scripts/ci/design-check.sh start HEAD >/dev/null 2>&1; echo $?
+    git checkout -q -b undefined start && printf '.a { border-color: var(--nowhere); }\n' >> src/styles/a.css && git commit -qam undefined
+    sh scripts/ci/design-check.sh start HEAD >/dev/null 2>&1; echo $?
+    git checkout -q -b hidden start && printf '.a { border-color: var(--hidden-name); }\n' >> src/styles/a.css && git commit -qam hidden
+    sh scripts/ci/design-check.sh start HEAD >/dev/null 2>&1; echo $?
+  ) > "$tn.out" 2>&1
+  eq "a custom property a stylesheet defines in its top folder is defined" "0" "$(sed -n 1p "$tn.out")"
+  eq "a name nothing defines still fails" "1" "$(sed -n 2p "$tn.out")"
+  eq "a name only a dependency defines still fails" "1" "$(sed -n 3p "$tn.out")"
+else
+  printf 'skip  node is not installed, so the design check did not run\n'
+fi
+
 section 'a screen beside its mock'
 . "$root/templates/scripts/ci/mock-lib.sh"
 . "$root/templates/scripts/design/design-lib.sh"

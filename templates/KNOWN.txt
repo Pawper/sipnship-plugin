@@ -170,6 +170,7 @@ scripts/ci/deploy-lib.sh e0a63fb408591c5af817f252548771989cb3cf70
 scripts/ci/deploy-lib.sh e3316bb09795ecd487470982c4cefcc101b51cb5
 scripts/ci/deploy-lib.sh efca5893ba28a3cb81fa01b41d3ed516bdcab0db
 scripts/ci/design-check.sh 019a9c34cf0d4a84844fd0121a66a3442fabad0d
+scripts/ci/design-check.sh 3ae1385e4793a10707dabd63cc1541921632c282
 scripts/ci/design-check.sh 4c41722ab7e78744eb2b048b225a8c5e869aecc4
 scripts/ci/design-check.sh 56932b0b8a8dd47f6e900f9f109b047aa14edbd0
 scripts/ci/design-check.sh 6c29989a5310597373f80079be32c96fa6c697ea

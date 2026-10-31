@@ -107,9 +107,14 @@ if [ -n "$css_gen" ] && [ -f "$css_gen" ]; then
   step "token names added to UI files that $css_gen does not define"
   # Names a UI file sets itself (a style attribute, a local custom
   # property) are defined too.
+  # :(glob) makes **/ match any depth, the top folder too; a plain
+  # pathspec reads src/**/*.css as one level down or deeper only.
+  glob_specs=$(printf '%s\n' "$ui_globs" | sed 's/^/:(glob)/')
   set -f
   # shellcheck disable=SC2086
-  ui_files=$(git ls-files -- $ui_globs ':(exclude)**/node_modules/**' 2>/dev/null)
+  # ls-files does not honour a leading **/ in an exclude, so node_modules
+  # is filtered from the list instead.
+  ui_files=$({ git ls-files -- $glob_specs 2>/dev/null || true; } | { grep -v '/node_modules/' || true; })
   set +f
   defined=$( { cat "$css_gen"; for uf in $ui_files; do cat "$uf" 2>/dev/null; done; } )
   gaps=$(css_var_gaps "$ui_diff" "$(css_var_names "$defined")")
