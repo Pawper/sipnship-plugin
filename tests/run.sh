@@ -1287,7 +1287,7 @@ eq "the queue starts the listed releases when no Deploy run will" "1" "$(grep -c
 eq "the drain never runs hosted by default" "0" "$(grep -v '^#' "$root/templates/.github/workflows/queue-drain.yml" | grep -c 'ubuntu-latest')"
 eq "its runs-on falls back to self-hosted" "1" "$(grep -c "runs-on: \${{ vars.QUEUE_RUNS_ON || 'self-hosted' }}" "$root/templates/.github/workflows/queue-drain.yml")"
 eq "and with QUEUE_RUNS_ON unset the Windows job runs on a self-hosted Windows runner" "2" "$(grep -c "vars.QUEUE_RUNS_ON == '' || contains(vars.QUEUE_RUNS_ON, 'windows')\|runs-on: \${{ vars.QUEUE_RUNS_ON || 'windows' }}" "$root/templates/.github/workflows/queue-drain.yml")"
-eq "the other drain job runs only for a label not naming Windows" "1" "$(grep -c "if: \${{ vars.QUEUE_RUNS_ON != '' && !contains(vars.QUEUE_RUNS_ON, 'windows') }}" "$root/templates/.github/workflows/queue-drain.yml")"
+eq "the other drain job runs only for a label not naming Windows" "1" "$(grep -c "if: \${{ vars.QUEUE_RUNS_ON != '' && !contains(vars.QUEUE_RUNS_ON, 'windows')" "$root/templates/.github/workflows/queue-drain.yml")"
 eq "and skips itself after a recent drain, or while paused" "3" "$(grep -c 'skipping this one' "$root/templates/.github/workflows/queue-drain.yml")"
 eq "the batch checkout links packages only when the lockfiles match" "1" "$(grep -c 'if \[ "\$em_lock" = "\$em_main" \] && \[ -d "\$main_dir/\$d/node_modules" \]' "$root/templates/scripts/ci/merge-queue.sh")"
 eq "a stale link is removed, never the packages behind it" "1" "$(grep -c 'cmd //c rmdir' "$root/templates/scripts/ci/merge-queue.sh")"
@@ -1397,6 +1397,17 @@ eq "clean is mergeable" "MERGEABLE" "$(mergeable_word clean)"
 eq "behind is still mergeable" "MERGEABLE" "$(mergeable_word behind)"
 eq "unknown is unknown" "UNKNOWN" "$(mergeable_word unknown)"
 eq "empty is unknown" "UNKNOWN" "$(mergeable_word '')"
+
+section 'a green pull request starts the drain'
+qd_wf="$root/templates/.github/workflows/queue-drain.yml"
+qd_live=$(grep -v '^ *#' "$qd_wf")
+eq "the drain also starts when the CI workflow completes" "1 1" "$(printf '%s\n' "$qd_live" | grep -c '^  workflow_run:') $(printf '%s\n' "$qd_live" | grep -c '^    workflows: \[CI\]$')"
+eq "on completed only" "1" "$(printf '%s\n' "$qd_live" | grep -c '^    types: \[completed\]$')"
+eq "both jobs run for it only when a pull request's run succeeded" "2 2" "$(printf '%s\n' "$qd_live" | grep -c "github.event.workflow_run.event == 'pull_request'") $(printf '%s\n' "$qd_live" | grep -c "github.event.workflow_run.conclusion == 'success'")"
+eq "the schedule and the manual start stay" "1 1" "$(printf '%s\n' "$qd_live" | grep -c 'cron: "7 \*/2 \* \* \*"') $(printf '%s\n' "$qd_live" | grep -c '^  workflow_dispatch:')"
+eq "the recent-drain skip applies to the schedule only, so a green check is never skipped" "1 1" "$(printf '%s\n' "$qd_live" | grep -c 'if \[ -n "\$last" \] && \[ "\${{ github.event_name }}" = schedule \]') $(printf '%s\n' "$qd_live" | grep -c 'if \[ "\${{ github.event_name }}" = schedule \]; then')"
+eq "the one-drain group still never cancels" "1 1" "$(printf '%s\n' "$qd_live" | grep -c '^  group: queue-drain$') $(printf '%s\n' "$qd_live" | grep -c 'cancel-in-progress: false')"
+eq "it never runs hosted" "0" "$(printf '%s\n' "$qd_live" | grep -c 'ubuntu-latest\|macos-latest')"
 
 section 'board calls refused for a rate limit'
 eq "gh's unknown owner type is a refusal" "yes" "$(board_refusal 'unknown owner type: someone')"
