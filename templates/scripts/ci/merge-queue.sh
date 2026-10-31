@@ -61,6 +61,10 @@ if [ -z "$QUEUE_FROM_COPY" ]; then
 fi
 . "$here/lib.sh"
 . "$here/batch-lib.sh"
+# gh_write ARGS: every gh call that changes GitHub goes through here, with
+# QUEUE_MERGE_TOKEN when it is set (a token whose changes start follow-on
+# workflows), else GH_TOKEN. Reads keep GH_TOKEN.
+gh_write() { GH_TOKEN="${QUEUE_MERGE_TOKEN:-${GH_TOKEN:-}}" gh "$@"; }
 rules=$(cat "$here/classes.txt")
 
 mode=""
@@ -93,8 +97,8 @@ done
 # drain workflow reads as vars.NAME. Needs a token that can administer the
 # repository (the owner's own gh sign-in can).
 set_repo_var() {
-  gh api -X PATCH "repos/{owner}/{repo}/actions/variables/$1" -f name="$1" -f value="$2" >/dev/null 2>&1 \
-    || gh api -X POST "repos/{owner}/{repo}/actions/variables" -f name="$1" -f value="$2" >/dev/null 2>&1
+  gh_write api -X PATCH "repos/{owner}/{repo}/actions/variables/$1" -f name="$1" -f value="$2" >/dev/null 2>&1 \
+    || gh_write api -X POST "repos/{owner}/{repo}/actions/variables" -f name="$1" -f value="$2" >/dev/null 2>&1
 }
 iso_utc() { date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$1" +%Y-%m-%dT%H:%M:%SZ; }
 case "$mode" in
@@ -363,7 +367,7 @@ requests_answer() {
   say "request: $2 #$3: $4"
   case "$req_road" in
     service) printf 'Authorization: Bearer %s\n' "$req_token" | curl -s -o /dev/null --max-time 5 -X POST -H @- -H 'content-type: application/json' --data "{\"outcome\":\"$4\"}" "${SIPNSHIP_URL:-https://sipnship.dev}/v1/repos/$req_id/queue/requests/$1/outcome" 2>/dev/null || true ;;
-    issue) [ -z "$req_issue" ] || gh api -X POST "repos/{owner}/{repo}/issues/$req_issue/comments" -f body="$(request_answer_form "$2" "$3" "$4")" >/dev/null 2>&1 || true ;;
+    issue) [ -z "$req_issue" ] || gh_write api -X POST "repos/{owner}/{repo}/issues/$req_issue/comments" -f body="$(request_answer_form "$2" "$3" "$4")" >/dev/null 2>&1 || true ;;
   esac
   return 0
 }
@@ -399,7 +403,7 @@ requests_deploy_now() {
     return 0
   fi
   date +%s > "$dn_mark"
-  if gh api -X POST "repos/{owner}/{repo}/actions/workflows/deploy.yml/dispatches" -f ref="$base" >/dev/null 2>&1; then
+  if gh_write api -X POST "repos/{owner}/{repo}/actions/workflows/deploy.yml/dispatches" -f ref="$base" >/dev/null 2>&1; then
     say "Started the Deploy workflow now, as $2 asked."
     requests_answer "$1" deploy-now 0 deploying
   else
@@ -432,9 +436,9 @@ requests_tick() {
     if [ "${rq_state%%	*}" != open ]; then requests_answer "$rq_id" "$rq_kind" "$rq_pr" not-open; continue; fi
     case "$rq_kind" in
       hold)
-        gh api -X POST "repos/{owner}/{repo}/issues/$rq_pr/labels" -f "labels[]=queue:hold" >/dev/null 2>&1 && requests_answer "$rq_id" hold "$rq_pr" held ;;
+        gh_write api -X POST "repos/{owner}/{repo}/issues/$rq_pr/labels" -f "labels[]=queue:hold" >/dev/null 2>&1 && requests_answer "$rq_id" hold "$rq_pr" held ;;
       release)
-        gh api -X DELETE "repos/{owner}/{repo}/issues/$rq_pr/labels/queue:hold" >/dev/null 2>&1 || true
+        gh_write api -X DELETE "repos/{owner}/{repo}/issues/$rq_pr/labels/queue:hold" >/dev/null 2>&1 || true
         requests_answer "$rq_id" release "$rq_pr" released ;;
       drop)
         if [ -f "$here/../worktrees.sh" ] && sh "$here/../worktrees.sh" close "$rq_pr" "Taken out of the queue at the request of $rq_by: $rq_why" >/dev/null 2>&1; then
@@ -500,7 +504,7 @@ rush_pause_others() {
   rush_cancel_pick "$rp_runs" "$base" "$1 $(rush_keep)" | while IFS="$tab" read -r rp_run rp_pr rp_head; do
     [ -n "$rp_run" ] || continue
     grep -qx "$rp_run" "$flaky_dir/rush.cancelled" 2>/dev/null && continue
-    if gh api -X POST "repos/{owner}/{repo}/actions/runs/$rp_run/cancel" >/dev/null 2>&1; then
+    if gh_write api -X POST "repos/{owner}/{repo}/actions/runs/$rp_run/cancel" >/dev/null 2>&1; then
       printf '%s\n' "$rp_run" >> "$flaky_dir/rush.cancelled"
       printf '%s\t%s\t%s\t%s\n' "$rp_pr" "$rp_run" "$(date +%s)" "$rp_head" >> "$flaky_dir/rush.paused"
       say "rush: paused #$rp_pr's checks (run $rp_run) for #$(printf '%s' "$1" | awk '{print $1}'); they run again once the rush list has landed."
@@ -543,7 +547,7 @@ rush_build_head() {
   done
   git push -q origin "$rb_c:refs/heads/$3" 2>/dev/null || return 1
   rb_body=$(printf '%s\nThe rush test head for #%s: main plus%s plus it, merged in that order. The queue opened it so #%s is tested behind those ahead of it and merges on this result once they land; it is never merged itself.\n\n%s\n' "$RUSH_MARKER" "$1" "$(printf ' #%s' $2)" "$1" "$(printf '%s' "$rb_refs" | awk 'NF && !seen[$0]++')")
-  gh api -X POST "repos/{owner}/{repo}/pulls" -f base="$base" -f head="$3" -f title="Rush test head: #$1 on main plus$(printf ' #%s' $2)" -f body="$rb_body" -F draft=true --jq .number 2>/dev/null | tr -d '\r'
+  gh_write api -X POST "repos/{owner}/{repo}/pulls" -f base="$base" -f head="$3" -f title="Rush test head: #$1 on main plus$(printf ' #%s' $2)" -f body="$rb_body" -F draft=true --jq .number 2>/dev/null | tr -d '\r'
 }
 
 # rush_heads RUSH: a test head for each one with others ahead of it; a test
@@ -571,8 +575,8 @@ rush_heads() {
       [ "$(gh api "repos/{owner}/{repo}/pulls/$rh_a" --jq .merged 2>/dev/null)" = true ] || rh_end="#$rh_a ahead of it did not land, so #$rh_pr is tested again without it"
     done
     [ -n "$rh_end" ] || continue
-    gh api -X POST "repos/{owner}/{repo}/issues/$rh_num/comments" -f body="Closed by the queue: $rh_end." >/dev/null 2>&1 || true
-    gh api -X PATCH "repos/{owner}/{repo}/pulls/$rh_num" -f state=closed >/dev/null 2>&1 || true
+    gh_write api -X POST "repos/{owner}/{repo}/issues/$rh_num/comments" -f body="Closed by the queue: $rh_end." >/dev/null 2>&1 || true
+    gh_write api -X PATCH "repos/{owner}/{repo}/pulls/$rh_num" -f state=closed >/dev/null 2>&1 || true
     awk -F'\t' -v OFS='\t' -v n="$rh_name" '$2 == n { $5 = "closed" } { print }' "$flaky_dir/rush.heads" > "$flaky_dir/rush.heads.new" && mv "$flaky_dir/rush.heads.new" "$flaky_dir/rush.heads"
   done
   return 0
@@ -605,7 +609,7 @@ rush_resume() {
     rr_pick=$(rerun_choice "$ru_runs" "$ru_sha" "")
     case "$rr_pick" in
       rerun\ *)
-        if gh api -X POST "repos/{owner}/{repo}/actions/runs/${rr_pick#rerun }/rerun-failed-jobs" >/dev/null 2>&1; then say "rush: re-ran #$ru_pr's paused checks, now the rush list has landed."; fi ;;
+        if gh_write api -X POST "repos/{owner}/{repo}/actions/runs/${rr_pick#rerun }/rerun-failed-jobs" >/dev/null 2>&1; then say "rush: re-ran #$ru_pr's paused checks, now the rush list has landed."; fi ;;
       wait) say "rush: #$ru_pr already has a run going on its head; not re-running an older one." ;;
     esac
   done
@@ -814,7 +818,7 @@ record_flaky() {
   flaky_offenders "$rf_log" 2 | while IFS="$tab" read -r count test prs; do
     [ -n "$test" ] || continue
     grep -qxF "$test" "$flaky_dir/flaky-filed.txt" 2>/dev/null && continue
-    gh api -X POST "repos/{owner}/{repo}/issues" -f title="Flaky test: $test" -f 'labels[]=bug' -f "labels[]=$(state_label ready "$(project_label_form)")" \
+    gh_write api -X POST "repos/{owner}/{repo}/issues" -f title="Flaky test: $test" -f 'labels[]=bug' -f "labels[]=$(state_label ready "$(project_label_form)")" \
       -f body="This test failed and then passed on retry $count times, on pull requests $prs. The merge queue recorded it. An unreliable test is a bug, not weather: fix it or quarantine it with its own issue, do not re-run it again." >/dev/null 2>&1 \
       && { printf '%s\n' "$test" >> "$flaky_dir/flaky-filed.txt"; echo "Filed an issue for the flaky test $test ($count flakes on $prs)."; }
   done
@@ -855,7 +859,7 @@ wait_for_run() {
          return 0 ;;
       1) record_flaky "$1" "$run_id" failed; return 1 ;;
       3) if [ "$outage_on" = no ] && [ -n "$QUEUE_OUTAGE_ON" ]; then sh -c "$QUEUE_OUTAGE_ON" && { outage_on=yes; echo "Outage switch on for this run."; }; fi ;;
-      4) gh run rerun "$run_id" >/dev/null 2>&1 || true ;;
+      4) gh_write run rerun "$run_id" >/dev/null 2>&1 || true ;;
     esac
     if [ $(( $(date +%s) - w_start )) -gt $((wait_minutes * 60)) ]; then
       echo "Waited $wait_minutes minutes for run $run_id; giving up for now. Run the queue again later."
@@ -1036,7 +1040,7 @@ serial_one() {
     why="not green yet, nothing merged"
     code=2
     if [ -n "$run_id" ] && [ "$run_status" != completed ] && [ -n "$run_status" ]; then
-      # Re-run (gh run rerun --failed): the old attempt's red checks still
+      # Re-run (gh_write run rerun --failed): the old attempt's red checks still
       # show on the commit for a few seconds while the new attempt starts.
       # A run that is not completed is pending, whatever its old checks say.
       code=2; msg="its run is $run_status (a new attempt)"
@@ -1048,7 +1052,7 @@ serial_one() {
         4)
           # A job cancelled before a runner took it is not a failure:
           # re-run it and wait, rather than give up.
-          gh run rerun "$run_id" >/dev/null 2>&1 || true
+          gh_write run rerun "$run_id" >/dev/null 2>&1 || true
           batch_line "$pr" "waiting" "$msg; re-ran it and waiting for the result"
           if wait_for_run "$pr" "$hb"; then rm -f "$flaky_dir/pr-$pr.tsv"; serial_one "$pr"; return 0; fi
           return 0 ;;
@@ -1073,7 +1077,7 @@ serial_one() {
   # A rush one tested on main plus those ahead, now landed: that run is its result.
   if [ "${QUEUE_CHAIN_PROVEN:-}" = yes ]; then nr=no; merged_why="tested on main plus the rush change ahead of it, which has landed; it merges on that result"; fi
   if [ "$(rerun_decision "$nr" "$ms" "${QUEUE_RERUN:-green-main}")" = update ]; then
-    if ! gh api -X PUT "repos/{owner}/{repo}/pulls/$pr/update-branch" >/dev/null 2>"$gh_err"; then
+    if ! gh_write api -X PUT "repos/{owner}/{repo}/pulls/$pr/update-branch" >/dev/null 2>"$gh_err"; then
       rate_stop
       case "$(cat "$gh_err" 2>/dev/null)" in
         *onflict*) batch_line "$pr" "not merged" "$(conflict_line "$(git merge-tree --write-tree --name-only origin/"$base" "$head" 2>/dev/null | sed -n '2,$p' | sed '/^$/,$d')")" ;;
@@ -1120,7 +1124,7 @@ serial_one() {
   fi
   record_flaky "$pr" "" passed
   wait_quiet_main
-  gh api -X PUT "repos/{owner}/{repo}/pulls/$pr/merge" -f merge_method=squash -f commit_title="$(serial_title "$(pr_field "$pr" 3)" "$pr" "${because:-alone}")" >/dev/null 2>"$gh_err" || { rate_stop; batch_line "$pr" "not merged" "GitHub refused the merge: $(head -n 1 "$gh_err" 2>/dev/null)"; return 0; }
+  gh_write api -X PUT "repos/{owner}/{repo}/pulls/$pr/merge" -f merge_method=squash -f commit_title="$(serial_title "$(pr_field "$pr" 3)" "$pr" "${because:-alone}")" >/dev/null 2>"$gh_err" || { rate_stop; batch_line "$pr" "not merged" "GitHub refused the merge: $(head -n 1 "$gh_err" 2>/dev/null)"; return 0; }
   batch_line "$pr" "merged serially" "$merged_why"
   tidy_worktree "$head_branch"
 }
@@ -1188,7 +1192,7 @@ start_releases() {
     sr_state=$(gh api "repos/{owner}/{repo}/actions/workflows/$sr_f" --jq .state 2>/dev/null) || sr_state=""
     sr_why=$(release_hold "$sr_state" "$sr_on" "$1")
     if [ -n "$sr_why" ]; then say "release held: $sr_f $sr_why"; continue; fi
-    gh api -X POST "repos/{owner}/{repo}/actions/workflows/$sr_f/dispatches" -f ref="$base" >/dev/null 2>&1 \
+    gh_write api -X POST "repos/{owner}/{repo}/actions/workflows/$sr_f/dispatches" -f ref="$base" >/dev/null 2>&1 \
       && say "Started the release workflow $sr_f." || say "Could not start $sr_f; run it from the Actions tab."
   done
 }
@@ -1233,7 +1237,7 @@ deploy_if_due() {
     # A project that shows a build id (scripts/ci/build-id.sh) gets it named
     # here, so the line matches what Settings will show.
     d_build=""; if [ -f scripts/ci/build-id.sh ]; then d_build=$(sh scripts/ci/build-id.sh "$d_end" 2>/dev/null | head -n 1); fi
-    gh api -X POST "repos/{owner}/{repo}/actions/workflows/deploy.yml/dispatches" -f ref="$base" >/dev/null 2>&1 && say "Started the Deploy workflow for what was merged${d_build:+, build $d_build}." || say "$(deploy_refused_message "$base")"
+    gh_write api -X POST "repos/{owner}/{repo}/actions/workflows/deploy.yml/dispatches" -f ref="$base" >/dev/null 2>&1 && say "Started the Deploy workflow for what was merged${d_build:+, build $d_build}." || say "$(deploy_refused_message "$base")"
     return 0
   fi
   say "This project deploys from Git (the guard path) or has no Deploy workflow; main deploys on its own."
@@ -1311,16 +1315,16 @@ if [ "$mode" = drain ]; then
       # open batch here was left by an earlier run. Settle it.
       bstate=$(required_on "$(gh api "repos/{owner}/{repo}/pulls/$bp" --jq .head.sha 2>/dev/null)")
       if [ -n "$landed" ]; then
-        gh api -X POST "repos/{owner}/{repo}/issues/$bp/comments" -f body="Closed by the queue: member(s)$landed landed on their own, so this batch no longer matches main. The rest are queued again on their own." >/dev/null 2>&1 || true
-        gh api -X PATCH "repos/{owner}/{repo}/pulls/$bp" -f state=closed >/dev/null 2>&1 && say "round $round: closed batch #$bp, since$landed landed on their own."
+        gh_write api -X POST "repos/{owner}/{repo}/issues/$bp/comments" -f body="Closed by the queue: member(s)$landed landed on their own, so this batch no longer matches main. The rest are queued again on their own." >/dev/null 2>&1 || true
+        gh_write api -X PATCH "repos/{owner}/{repo}/pulls/$bp" -f state=closed >/dev/null 2>&1 && say "round $round: closed batch #$bp, since$landed landed on their own."
         settled="$settled $bp $(printf '%s' "$landed" | tr -d '#')"
-      elif [ "$bstate" = passed ] && bsha=$(gh api -X PUT "repos/{owner}/{repo}/pulls/$bp/merge" -f merge_method=merge --jq .sha 2>/dev/null); then
+      elif [ "$bstate" = passed ] && bsha=$(gh_write api -X PUT "repos/{owner}/{repo}/pulls/$bp/merge" -f merge_method=merge --jq .sha 2>/dev/null); then
         say "round $round: merged batch #$bp, left green by an earlier run (members:$(printf ' #%s' $bm))."
         settled="$settled $bp $bm"
-        for m in $bm; do gh api -X POST "repos/{owner}/{repo}/issues/$m/comments" -f body="Merged into $base in batch #$bp (commit $bsha), with its history kept. GitHub may show this pull request as closed rather than merged; its changes are on $base." >/dev/null 2>&1 || true; done
+        for m in $bm; do gh_write api -X POST "repos/{owner}/{repo}/issues/$m/comments" -f body="Merged into $base in batch #$bp (commit $bsha), with its history kept. GitHub may show this pull request as closed rather than merged; its changes are on $base." >/dev/null 2>&1 || true; done
       elif [ "$bstate" = failed ]; then
-        gh api -X POST "repos/{owner}/{repo}/issues/$bp/comments" -f body="Closed by the queue: left open by an earlier run with its required check failed. Its members are queued again on their own." >/dev/null 2>&1 || true
-        gh api -X PATCH "repos/{owner}/{repo}/pulls/$bp" -f state=closed >/dev/null 2>&1 && say "round $round: closed batch #$bp, whose required check failed; its members are queued again."
+        gh_write api -X POST "repos/{owner}/{repo}/issues/$bp/comments" -f body="Closed by the queue: left open by an earlier run with its required check failed. Its members are queued again on their own." >/dev/null 2>&1 || true
+        gh_write api -X PATCH "repos/{owner}/{repo}/pulls/$bp" -f state=closed >/dev/null 2>&1 && say "round $round: closed batch #$bp, whose required check failed; its members are queued again."
         settled="$settled $bp"
       else
         # Still running: its members wait with it rather than race it.
@@ -1344,6 +1348,7 @@ if [ "$mode" = drain ]; then
     rate_ok
     # While a rush list stands, the others are paused: only the rush ones
     # are read, and only the first of them is merged by the round.
+    mkdir -p "$flaky_dir" 2>/dev/null || true
     rush_now=$(tr -d '\r' < "$flaky_dir/rush.list" 2>/dev/null | tr '\n' ' ')
     if [ -n "$(printf '%s' "$rush_now" | tr -d ' ')" ]; then
       open=$(printf '%s\n' "$open" | awk -F'\t' -v k=" $rush_now " 'NF && index(k, " " $1 " ")')
@@ -1365,7 +1370,7 @@ if [ "$mode" = drain ]; then
       case "$choice" in
         rerun\ *)
           rid=${choice#rerun }
-          if gh api -X POST "repos/{owner}/{repo}/actions/runs/$rid/rerun-failed-jobs" >/dev/null 2>&1; then
+          if gh_write api -X POST "repos/{owner}/{repo}/actions/runs/$rid/rerun-failed-jobs" >/dev/null 2>&1; then
             say "round $round: #$r failed or had a job cancelled; re-running the failed jobs of its newest run (a cancelled head, once; a failure, once)."
           fi
           cancel_heads="$cancel_heads $rh" ;;
@@ -1499,10 +1504,10 @@ notify_conflict() {
   nc_sha=$(pr_field "$1" 2)
   nc_seen="$flaky_dir/noticed"
   grep -qx "$1 $nc_sha" "$nc_seen" 2>/dev/null && return 0
-  gh api -X POST "repos/{owner}/{repo}/issues/$1/comments" -f body="$(conflict_notice "$2" "$3" "${4:-}")" >/dev/null 2>&1 || return 0
+  gh_write api -X POST "repos/{owner}/{repo}/issues/$1/comments" -f body="$(conflict_notice "$2" "$3" "${4:-}")" >/dev/null 2>&1 || return 0
   nc_cur=$(gh api "repos/{owner}/{repo}/issues/$1/labels" --jq '.[].name' 2>/dev/null || true)
   nc_label=$(state_label blocked "$(project_label_form)")
-  state_labels_json "$nc_cur" "$nc_label" | gh api -X PUT "repos/{owner}/{repo}/issues/$1/labels" --input - >/dev/null 2>&1 || true
+  state_labels_json "$nc_cur" "$nc_label" | gh_write api -X PUT "repos/{owner}/{repo}/issues/$1/labels" --input - >/dev/null 2>&1 || true
   echo "$1 $nc_sha" >> "$nc_seen"
   say "  #$1: commented with the conflicting files and labeled it $nc_label."
 }
@@ -1852,9 +1857,9 @@ package.json"*|*"/package.json"*) ensure_modules ;; esac
   gh run list --branch "$(pr_field "$pr" 1)" --json databaseId,status -q '.[] | select(.status != "completed") | .databaseId' 2>/dev/null \
     | while read -r id; do
       [ -n "$id" ] || continue
-      gh run cancel "$id" >/dev/null 2>&1 || true
+      gh_write run cancel "$id" >/dev/null 2>&1 || true
       sleep 5
-      [ "$(gh api "repos/{owner}/{repo}/actions/runs/$id" --jq .status 2>/dev/null)" = completed ] || gh api -X POST "repos/{owner}/{repo}/actions/runs/$id/force-cancel" >/dev/null 2>&1 || true
+      [ "$(gh api "repos/{owner}/{repo}/actions/runs/$id" --jq .status 2>/dev/null)" = completed ] || gh_write api -X POST "repos/{owner}/{repo}/actions/runs/$id/force-cancel" >/dev/null 2>&1 || true
     done
   good=$(git -C "$wt" rev-parse HEAD)
   carried="$carried$pr	$title
@@ -1897,15 +1902,15 @@ fi
 # An earlier batch pull request still open is superseded by this one; close
 # it with a comment rather than leave it next to the new one.
 close_pr() { # NUMBER REASON
-  gh api -X POST "repos/{owner}/{repo}/issues/$1/comments" -f body="$2" >/dev/null 2>&1 || true
-  gh api -X PATCH "repos/{owner}/{repo}/pulls/$1" -f state=closed >/dev/null 2>&1 && echo "closed batch PR #$1: $2"
+  gh_write api -X POST "repos/{owner}/{repo}/issues/$1/comments" -f body="$2" >/dev/null 2>&1 || true
+  gh_write api -X PATCH "repos/{owner}/{repo}/pulls/$1" -f state=closed >/dev/null 2>&1 && echo "closed batch PR #$1: $2"
 }
 gh api "repos/{owner}/{repo}/pulls?state=open&per_page=100" --jq '.[] | select((.body // "") | (contains("<!-- merge-queue:batch -->") or startswith("One integration run for the pull requests below"))) | .number' 2>/dev/null \
   | while read -r old; do if [ -n "$old" ]; then close_pr "$old" "Superseded by a new batch from the queue; its members are carried there if still green."; fi; done
 
 git -C "$wt" push -q -u origin "$branch"
 body=$(batch_pr_body "$carried" "$refs")
-batch_pr=$(gh api -X POST "repos/{owner}/{repo}/pulls" -f base="$base" -f head="$branch" -f title="Batch $day: $(printf '%s' "$carried" | wc -l | tr -d ' ') pull requests" -f body="$body" --jq .number 2>"$gh_err") || { rate_stop; echo "Could not open the batch pull request: $(head -n 1 "$gh_err" 2>/dev/null). The branch $branch is pushed; open it by hand or run the batch again."; exit 1; }
+batch_pr=$(gh_write api -X POST "repos/{owner}/{repo}/pulls" -f base="$base" -f head="$branch" -f title="Batch $day: $(printf '%s' "$carried" | wc -l | tr -d ' ') pull requests" -f body="$body" --jq .number 2>"$gh_err") || { rate_stop; echo "Could not open the batch pull request: $(head -n 1 "$gh_err" 2>/dev/null). The branch $branch is pushed; open it by hand or run the batch again."; exit 1; }
 echo "batch PR #$batch_pr opened; waiting for the one full CI run"
 batch_note pr "$batch_pr"; batch_moment testing
 batch_sha=$(git -C "$wt" rev-parse HEAD)
@@ -1923,7 +1928,7 @@ else
   checks=$(check_lines "$batch_sha" 2>/dev/null)
   if [ "$(rest_rollup_named "$checks" "${QUEUE_SUMMARY_CHECK:-CI passed}")" = cancelled ]; then
     run=$(latest_run "$branch"); run_id=${run%%	*}
-    if [ -n "$run_id" ] && gh run rerun "$run_id" --failed >/dev/null 2>&1; then
+    if [ -n "$run_id" ] && gh_write run rerun "$run_id" --failed >/dev/null 2>&1; then
       echo "A job on the batch was cancelled before it ran; re-ran the failed and cancelled jobs and waiting again."
       sleep 30
       wait_for_run "$batch_pr" "$branch" && wait_required "$batch_sha" && batch_ok=yes
@@ -1936,13 +1941,13 @@ if [ "$batch_ok" != yes ]; then
   exit 1
 fi
 wait_quiet_main
-merged_sha=$(gh api -X PUT "repos/{owner}/{repo}/pulls/$batch_pr/merge" -f merge_method=merge --jq .sha 2>"$gh_err") || { rate_stop; echo "GitHub refused the batch merge: $(head -n 1 "$gh_err" 2>/dev/null). Nothing merged; run the batch again."; exit 1; }
+merged_sha=$(gh_write api -X PUT "repos/{owner}/{repo}/pulls/$batch_pr/merge" -f merge_method=merge --jq .sha 2>"$gh_err") || { rate_stop; echo "GitHub refused the batch merge: $(head -n 1 "$gh_err" 2>/dev/null). Nothing merged; run the batch again."; exit 1; }
 echo "batch PR #$batch_pr merged into $base with a merge commit"
 batch_moment landed
 # GitHub can show a carried pull request as "closed, not merged", which
 # reads as abandoned. Say on each where it went.
 for pr in $(printf '%s' "$carried" | cut -f1); do
-  gh api -X POST "repos/{owner}/{repo}/issues/$pr/comments" -f body="Merged into $base in batch #$batch_pr (commit ${merged_sha:-unknown}), with its history kept. GitHub may show this pull request as closed rather than merged; its changes are on $base." >/dev/null 2>&1 || true
+  gh_write api -X POST "repos/{owner}/{repo}/issues/$pr/comments" -f body="Merged into $base in batch #$batch_pr (commit ${merged_sha:-unknown}), with its history kept. GitHub may show this pull request as closed rather than merged; its changes are on $base." >/dev/null 2>&1 || true
   echo "#$pr merged via batch #$batch_pr"
 done
 for pr in $(printf '%s' "$carried" | cut -f1); do

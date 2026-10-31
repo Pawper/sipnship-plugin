@@ -21,6 +21,7 @@ queue serial merges, enforced by the queue
 queue the API budget and one queue at a time
 queue waits for a runner and the machine line
 queue a green pull request starts the drain
+queue the drain reads with its own token and merges with the queue token
 shell-2 json_field
 shell-2 split_commands
 shell-2 delete_reason

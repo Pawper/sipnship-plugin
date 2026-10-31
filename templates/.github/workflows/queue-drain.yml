@@ -52,6 +52,8 @@ permissions:
   issues: write
   pull-requests: write
   actions: write
+  checks: read
+  statuses: read
 
 concurrency:
   group: queue-drain
@@ -118,11 +120,12 @@ jobs:
       - name: Drain the queue
         if: steps.recent.outputs.skip != 'yes'
         env:
-          GH_TOKEN: ${{ secrets.QUEUE_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          QUEUE_MERGE_TOKEN: ${{ secrets.QUEUE_TOKEN }}
           GH_REPO: ${{ github.repository }}
           QUEUE_DRAIN_MINUTES: ${{ vars.QUEUE_DRAIN_MINUTES || '25' }}
         run: |
-          if [ -z "$GH_TOKEN" ]; then
+          if [ -z "$QUEUE_MERGE_TOKEN" ]; then
             echo "QUEUE_TOKEN is not set; a merge by the default token would not start the full run on main. See the comment at the top of this workflow."
             exit 0
           fi

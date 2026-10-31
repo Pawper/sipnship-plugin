@@ -1409,6 +1409,28 @@ eq "the recent-drain skip applies to the schedule only, so a green check is neve
 eq "the one-drain group still never cancels" "1 1" "$(printf '%s\n' "$qd_live" | grep -c '^  group: queue-drain$') $(printf '%s\n' "$qd_live" | grep -c 'cancel-in-progress: false')"
 eq "it never runs hosted" "0" "$(printf '%s\n' "$qd_live" | grep -c 'ubuntu-latest\|macos-latest')"
 
+section 'the drain reads with its own token and merges with the queue token'
+qt_mq="$root/templates/scripts/ci/merge-queue.sh"
+eq "the workflow may read checks and statuses" "1 1" "$(printf '%s\n' "$qd_live" | grep -c '^  checks: read$') $(printf '%s\n' "$qd_live" | grep -c '^  statuses: read$')"
+eq "the drain steps read with the workflow's token and pass the queue token apart" "2 1" "$(printf '%s\n' "$qd_live" | grep -c '^          GH_TOKEN: \${{ github.token }}$') $(printf '%s\n' "$qd_live" | grep -c '^          QUEUE_MERGE_TOKEN: \${{ secrets.QUEUE_TOKEN }}$')"
+eq "the missing-secret guard checks the queue token" "1" "$(printf '%s\n' "$qd_live" | grep -c 'if \[ -z "\$QUEUE_MERGE_TOKEN" \]')"
+eq "the checkout keeps the queue token" "1" "$(printf '%s\n' "$qd_live" | grep -c 'token: \${{ secrets.QUEUE_TOKEN || github.token }}')"
+qt_dir=".scratch/qt-stub.$$"
+mkdir -p "$qt_dir"
+printf '#!/bin/sh\necho "$GH_TOKEN" >> "$QT_LOG"\n' > "$qt_dir/gh"
+chmod +x "$qt_dir/gh"
+eval "$(grep '^gh_write()' "$qt_mq")"
+export QT_LOG="$qt_dir/log"
+: > "$QT_LOG"
+( PATH="$qt_dir:$PATH"; GH_TOKEN=read-token; unset QUEUE_MERGE_TOKEN; gh_write api x )
+( PATH="$qt_dir:$PATH"; GH_TOKEN=read-token; QUEUE_MERGE_TOKEN=merge-token; gh_write api x )
+eq "gh_write uses GH_TOKEN alone, then the queue token when set" "read-token merge-token" "$(tr '\n' ' ' < "$QT_LOG" | sed 's/ $//')"
+rm -f "$qt_dir/gh" "$QT_LOG"
+rmdir "$qt_dir" 2>/dev/null || true
+eq "no change to GitHub bypasses gh_write" "0" "$(grep -v '^[[:space:]]*#' "$qt_mq" | grep -c 'gh api -X \(POST\|PUT\|PATCH\|DELETE\)\|gh run \(rerun\|cancel\)')"
+eq "the rush folder is made before the list is read" "yes" "$(grep -B1 'rush_now=\$(tr' "$qt_mq" | grep -q 'mkdir -p "\$flaky_dir"' && echo yes || echo no)"
+eq "the queue note names the checks limit and the workflows permission" "1 1" "$(grep -c 'no such permission' "$root/templates/scripts/ci/QUEUE.md") $(grep -c 'Workflows read and write' "$root/templates/scripts/ci/QUEUE.md")"
+
 section 'board calls refused for a rate limit'
 eq "gh's unknown owner type is a refusal" "yes" "$(board_refusal 'unknown owner type: someone')"
 eq "a rate limit message is a refusal" "yes" "$(board_refusal 'GraphQL: API rate limit exceeded for user ID 1')"
