@@ -168,7 +168,8 @@ publish_json() {
   shift 9; pj_mode=$1; pj_until=$2; pj_checking=$3; pj_say=$4; pj_now=$5; pj_rush=${6:-}
   printf '{"version":1,"updatedAt":%s,"mode":%s,"pausedUntil":%s,' "$(json_str "$pj_now")" "$(json_str "$pj_mode")" "$( [ -n "$pj_until" ] && json_str "$pj_until" || printf null)"
   printf '"say":{"doing":%s,"waiting":%s,"needs":%s},' "$(json_str "$(printf '%s\n' "$pj_say" | sed -n 1p)")" "$(json_str "$(printf '%s\n' "$pj_say" | sed -n 2p)")" "$(json_str "$(printf '%s\n' "$pj_say" | sed -n 3p)")"
-  printf '"main":{"sha":%s,"state":%s},' "$(json_str "$(printf '%s' "$pj_main" | cut -f1)")" "$(json_str "$(printf '%s' "$pj_main" | cut -f2)")"
+  pj_checked=$(printf '%s' "$pj_main" | cut -s -f3); pj_mwait=$(printf '%s' "$pj_main" | cut -s -f4)
+  printf '"main":{"sha":%s,"state":%s,"checkedAt":%s,"waiting":%s},' "$(json_str "$(printf '%s' "$pj_main" | cut -f1)")" "$(json_str "$(printf '%s' "$pj_main" | cut -f2)")" "$( [ -n "$pj_checked" ] && json_str "$pj_checked" || printf null)" "$( [ -n "$pj_mwait" ] && json_str "$pj_mwait" || printf null)"
   printf '"open":['; first=yes
   printf '%s\n' "$pj_open" | sed '/^$/d' | while IFS="$(printf '\t')" read -r n t s say; do
     printf '%s{"number":%s,"title":%s,"state":%s,"say":%s}' "$( [ -f /dev/null ] && printf '' )" "$(json_num "$n")" "$(json_str "$t")" "$(json_str "$s")" "$(json_str "$say")"

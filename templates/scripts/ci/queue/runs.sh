@@ -26,17 +26,20 @@ jobs_of() { # RUN_ID -> one job per line for run_verdict
   done
 }
 
-# main_state: green, red or pending for main's newest CI run on main's
-# current commit; pending when that commit has no completed run yet,
-# unknown when it cannot be read. One REST call.
+# main_state: green or red as main's last gate saw it (gate.sh last: the
+# newest scheduled CI run whose tests ran), unknown when no gate has run
+# or it cannot be read. Main gets no run per landing, so its push runs are
+# not its record.
 main_state() {
-  ms_head=$(git rev-parse "origin/$base" 2>/dev/null)
-  ms=$(gh api "repos/{owner}/{repo}/actions/workflows/${QUEUE_CI_WORKFLOW:-ci.yml}/runs?branch=$base&event=push&per_page=1" --jq '.workflow_runs[0] | "\(.head_sha)\t\(.status)\t\(.conclusion // "")"' 2>/dev/null) || { echo unknown; return 0; }
-  [ -n "$ms" ] || { echo unknown; return 0; }
-  ms_sha=${ms%%	*}; ms_rest=${ms#*	}; ms_status=${ms_rest%%	*}; ms_conc=${ms_rest#*	}
-  if [ "$ms_sha" != "$ms_head" ] || [ "$ms_status" != completed ]; then echo pending
-  elif [ "$ms_conc" = success ]; then echo green
-  else echo red; fi
+  gate_main_state "$(sh "$here/gate.sh" last 2>/dev/null | tr -d '\r')"
+}
+
+# idle_runners: "yes" when self-hosted runners are online and none is busy,
+# "no" otherwise, "unknown" when they cannot be read.
+idle_runners() {
+  ir=$(GH_TOKEN="${ADMIN_TOKEN:-${GH_TOKEN:-}}" gh api 'repos/{owner}/{repo}/actions/runners' --jq '"\([.runners[] | select(.status == "online")] | length)\t\([.runners[] | select(.busy)] | length)"' 2>/dev/null | tr -d '\r')
+  [ -n "$ir" ] || { echo unknown; return 0; }
+  if [ "${ir%%	*}" -gt 0 ] 2>/dev/null && [ "${ir#*	}" = 0 ]; then echo yes; else echo no; fi
 }
 
 # required_on SHA: the required check's state on one commit.
@@ -111,7 +114,8 @@ record_flaky() {
     # hiccup) is recorded by its job name, so a job that fails and then
     # passes on re-run is the same flake signal as a test.
     [ -n "$tests" ] || tests=$(jobs_of "$2" | awk -F'\t' '$3 == "failure" { print "job:" $1 }')
-    [ -n "$tests" ] && echo "Failing tests: $(printf '%s\n' "$tests" | head -n 5 | tr '\n' ';' | sed 's/;$//')"
+    tests=$(without_report_job "$tests" "${QUEUE_SUMMARY_CHECK:-CI passed}")
+    [ -n "$tests" ] && echo "Failing tests:$(printf '%s\n' "$tests" | head -n 5 | tr '\n' ';' | sed 's/;$//')"
   else
     tests=$(printf '%s\n' "$rf_log" | awk -F'\t' -v pr="$1" '$2 == pr && $4 == "failed" { print $3 }' | awk '!seen[$0]++')
   fi
@@ -208,10 +212,18 @@ wait_for_run() {
 # proof run on main is never canceled by the queue, and a manual run on
 # main can expect a quiet main.
 wait_quiet_main() {
-  q_start=$(date +%s)
+  q_start=$(date +%s); q_said=""
   while :; do
-    runs=$(gh run list --branch "$base" --limit 10 --json databaseId,headBranch,status,event --jq '.[] | [.databaseId, .headBranch, .status, .event] | @tsv' 2>/dev/null | sed "s/\t$base\t/\tmain\t/")
-    [ "$(main_in_flight "$runs")" = yes ] || return 0
+    runs=$(gh run list --branch "$base" --limit 10 --json databaseId,headBranch,status,event,createdAt --jq '.[] | [.databaseId, .headBranch, .status, .event, .createdAt] | @tsv' 2>/dev/null | sed "s/\t$base\t/\tmain\t/" | tr -d '\r' \
+      | while IFS="$tab" read -r q_id q_br q_st q_ev q_at; do printf '%s\t%s\t%s\t%s\t%s\n' "$q_id" "$q_br" "$q_st" "$q_ev" "$(iso_epoch "$q_at")"; done)
+    q_now=$(date +%s); q_idle=no
+    # Only a queued run needs the runners read.
+    case "$runs" in *"	queued	"*|*"	waiting	"*|*"	requested	"*) q_idle=$(idle_runners) ;; esac
+    q_unassigned=$(main_unassigned "$runs" "$q_now" "$q_idle")
+    if [ -n "$q_unassigned" ] && [ -z "${q_said:-}" ]; then
+      q_said=1; echo "A run on $base has waited $(printf '%s' "$q_unassigned" | head -n 1 | cut -f2) minutes with every runner idle: waiting on GitHub, not on a machine. Not holding the merge for it."
+    fi
+    [ "$(main_in_flight "$runs" "$q_now" "$q_idle")" = yes ] || return 0
     [ $(( $(date +%s) - q_start )) -lt 1200 ] || { echo "A run on $base has been in flight for twenty minutes; merging anyway."; return 0; }
     echo "Holding the merge: a run on $base is in flight."
     sleep 30
