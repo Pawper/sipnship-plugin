@@ -61,3 +61,11 @@ test('the brief carries the sessions, each last line cut, and none when there ar
   assert.strictEqual(b.sessions[0].lastLine.replace('…', '').split(' ').length, 12);
   assert.strictEqual(send.briefBody('Main: ok', { machine: 'desk', sessions: [] }).sessions, undefined);
 });
+
+test('a session that named no issue is matched by the issue in its branch', () => {
+  const quiet = [
+    JSON.stringify({ type: 'user', timestamp: '2026-10-30T22:04:11.000Z', gitBranch: 'issue-214-watering', cwd: '/work/rooftop-garden/worktrees/watering', message: { content: 'Water the beds on a schedule' } }),
+    JSON.stringify({ type: 'assistant', timestamp: '2026-10-30T22:05:00.000Z', message: { model: 'claude-sonnet-5-5', content: [{ type: 'text', text: 'Reading the schedule screen.' }] } }),
+  ].join('\n');
+  assert.deepStrictEqual(sessions.readSession(quiet, 'abc').issues, [214]);
+});

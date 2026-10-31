@@ -67,6 +67,8 @@ function readSession(logText, name) {
   }
   if (!started) return undefined;
   const s = { session: name, started: new Date(started).toISOString() };
+  // An agent that never named its issues in its first message may still have named them in its branch or folder: issue-538.
+  if (!issues.length) issues = [...String((branch || '') + ' ' + (cwd ? path.basename(cwd) : '')).matchAll(/issue[-_/]?(\d{1,6})\b/gi)].map((m) => Number(m[1])).filter((n, i, a) => a.indexOf(n) === i).slice(0, 5);
   if (issues.length) s.issues = issues;
   if (branch) s.branch = branch;
   if (cwd) { s.worktree = { name: path.basename(cwd), path: cwd }; }

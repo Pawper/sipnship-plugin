@@ -83,6 +83,15 @@ The goal lines and what each means:
   `WORKTREE-NAME<TAB>round` (or `next` for a one-off start, `hand` for a terminal) to
   `.scratch/drive/started-with.tsv`. One round runs at a time: propose the next while this one runs, planned
   against the files the running bundles change.
+  The dashboard's Work tab draws a round from a comment on the open issue labeled `drive`, so publish the
+  round whenever you propose it and again when you dispatch it (also when a coordinator is acting as the
+  drive): write the round to `.scratch/drive/round.txt` (one `unit:` line per agent with its issues, `why:`,
+  `files:` and, once its pull request opens, `pr:`; `hold:` lines for work waiting; `status: proposed` or
+  `status: started`; the format is at the top of the script) and run
+  `sh "$CLAUDE_PLUGIN_ROOT/scripts/drive/publish-round.sh" .scratch/drive/round.txt`. With `status: started`
+  it also sets each unit's issues to In progress, so dispatching a unit is what moves its issues; publish
+  again with `pr:` filled in when an agent opens its pull request. Name the issues in the agent's brief
+  or its branch (`issue-538`) so the machine's session report finds the unit.
 - **`hold N TITLE After: RUNNING TITLE`.** The issue touches files a running bundle touches. Do not start it;
   it is shown as waiting after that bundle and is planned again in the next proposal. It needs no approval
   and does nothing.

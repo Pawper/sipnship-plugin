@@ -3010,6 +3010,48 @@ stop: proposal ready for approval" "$(apply_units "$db_round" "$db_held" 1)"
 eq "when everything is held the round says work is in flight" "hold 16	Tint the bed cards by moisture	After: Frost alerts show the night's low
 stop: work is in flight; nothing to propose until it lands" "$(apply_units "$(printf 'dispatch 16\tTint\nstop: proposal ready for approval')" "$(plan_units "$(printf '16\tTint the bed cards by moisture\tsrc/beds/list.ts\n')" "$(cat "$db/running.tsv")")" 2)"
 
+
+section 'drive publishes its rounds'
+pr_dir=$(mktemp -d)
+mkdir -p "$pr_dir/bin"
+# The fake gh finds the drive issue (#99), says issue labels, and logs every call.
+cat > "$pr_dir/bin/gh" <<'FAKE'
+#!/bin/sh
+printf '%s\n' "$*" >> "$PR_DIR/log"
+case "$*" in
+  *labels=drive*) echo 99 ;;
+  *comments*) for a in "$@"; do case "$a" in body=@*) cp "${a#body=@}" "$PR_DIR/comment" ;; esac; done ;;
+  *issues/*/labels\ --jq*) printf 'bug\nstate:ready\n' ;;
+esac
+exit 0
+FAKE
+chmod +x "$pr_dir/bin/gh"
+pr_run() { PR_DIR="$pr_dir" PATH="$pr_dir/bin:$PATH" sh "$root/scripts/drive/publish-round.sh" "$@" 2>&1; }
+pr_started="$fx/drive-round/started.txt"
+eq "a dry run prints the comment with the marker and posts nothing" "0 1" "$(: > "$pr_dir/log"; pr_run --dry-run "$pr_started" > "$pr_dir/dry"; printf '%s ' "$(wc -l < "$pr_dir/log" | tr -d ' ')"; grep -c '^<!-- sipnship-proposal {"status":"started","units":\[{"issues":\[214,226\],"whyTogether":"both change the watering schedule"' "$pr_dir/dry")"
+eq "the comment is plain words above the marker" "Round started: 2 agents at work." "$(sed -n 1p "$pr_dir/dry")"
+eq "a bundle's line names its issues and why" "- #214, #226: both change the watering schedule" "$(sed -n 3p "$pr_dir/dry")"
+eq "a unit with a pull request says so" "- #223 (pull request #531)" "$(sed -n 4p "$pr_dir/dry")"
+eq "a dry run says which issues it would set In progress, never one with a pull request" "(would set In progress: 214,226)" "$(tail -n 1 "$pr_dir/dry")"
+: > "$pr_dir/log"
+pr_out=$(pr_run "$pr_started")
+eq "publishing finds the drive issue and posts the comment there" "1" "$(grep -c '^api -X POST repos/{owner}/{repo}/issues/99/comments -F body=@' "$pr_dir/log")"
+eq "the posted comment is the round's marker" "1" "$(grep -c '<!-- sipnship-proposal {"status":"started"' "$pr_dir/comment")"
+eq "a started round sets each unit's issues In progress, replacing the old state" "api -X DELETE repos/{owner}/{repo}/issues/214/labels/state%3Aready
+api -X POST repos/{owner}/{repo}/issues/214/labels -f labels[]=state:in-progress
+api -X DELETE repos/{owner}/{repo}/issues/226/labels/state%3Aready
+api -X POST repos/{owner}/{repo}/issues/226/labels -f labels[]=state:in-progress" "$(grep -E 'DELETE|labels -f' "$pr_dir/log")"
+eq "an issue whose unit has a pull request is left alone" "0" "$(grep -c 'issues/223/' "$pr_dir/log")"
+eq "the report names the round" "Published the round on #99: 2 agents, started." "$(printf '%s\n' "$pr_out" | sed -n 1p)"
+: > "$pr_dir/log"
+printf 'status: proposed\nunit: 214 226 | why: both change the watering schedule\n' > "$pr_dir/proposed.txt"
+pr_run --issue 12 "$pr_dir/proposed.txt" > /dev/null
+eq "a proposed round posts on the named issue and sets no label" "1 0" "$(grep -c 'issues/12/comments' "$pr_dir/log" | tr '\n' ' ')$(grep -c 'labels -f' "$pr_dir/log")"
+eq "--no-labels leaves the labels alone for a started round" "0" "$(: > "$pr_dir/log"; pr_run --no-labels "$pr_started" >/dev/null; grep -c 'labels -f' "$pr_dir/log")"
+eq "two units sharing a file are refused before anything is posted" "The round was not published: file src/schedule.ts is in two lines; a round keeps its units apart.|0" "$(: > "$pr_dir/log"; pr_run "$fx/drive-round/overlap.txt" | tr '\n' '|' | sed 's/|$//')|$(wc -l < "$pr_dir/log" | tr -d ' ')"
+eq "a line it does not know is refused" "The round was not published: a line this script does not know: garden: beds." "$(printf 'unit: 1\ngarden: beds\n' > "$pr_dir/odd.txt"; pr_run --dry-run "$pr_dir/odd.txt")"
+eq "the skill tells the drive to publish its rounds" "yes" "$(grep -q 'publish-round.sh' "$root/skills/project-drive/SKILL.md" && echo yes)"
+
 section 'temp files stay in the run, and nothing it starts outlives it'
 eq "every block's temp folder is inside the run's own root" "yes" "$(case "$TMPDIR" in */.scratch/tests-tmp/run-*) echo yes ;; *) echo no ;; esac)"
 tt_probe=$(mktemp -d)
