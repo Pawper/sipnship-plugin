@@ -1,0 +1,6 @@
+@@ Watering schedule reads the sun hours (#201)
+src/sun.ts
+specs/030-watering/spec.md
+
+@@ Fix a typo in the readme
+README.md

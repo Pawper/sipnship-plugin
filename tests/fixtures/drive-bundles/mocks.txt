@@ -1,0 +1,2 @@
+beds src/beds/*.ts design/mocks/Beds.html design/mocks/BedsDark.html
+home src/home.ts design/mocks/Home.html @/

@@ -1,0 +1,5 @@
+12	Water the beds on a schedule	src/schedule.ts,specs/030-watering/
+14	Remind me before a frost night	src/reminders.ts,src/schedule.ts
+15	Add a plant photo to each bed	src/photos.ts
+16	Tint the bed cards by moisture	src/beds/list.ts
+17	Name the reminder screen	src/home.ts,src/reminders.ts

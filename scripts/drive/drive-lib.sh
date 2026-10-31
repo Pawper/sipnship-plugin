@@ -62,11 +62,11 @@ propose_round() {
 
 # number_proposal LINES
 # Give each goal a number for a person to answer with: "1. merge-batch 41 42".
-# The defer and stop lines are information, not goals, and stay unnumbered.
+# The defer, hold and stop lines are information, not goals, and stay unnumbered.
 number_proposal() {
   printf '%s\n' "$1" | awk '
     NF == 0 { next }
-    /^(defer|stop:)/ { print; next }
+    /^(defer |hold |stop:)/ { print; next }
     { printf "%d. %s\n", ++n, $0 }'
 }
 
