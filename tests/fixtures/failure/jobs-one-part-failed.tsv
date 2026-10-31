@@ -1,0 +1,5 @@
+101	checks	completed	success	garden-1	
+102	tests (watering)	completed	failure	garden-2	Run the watering part
+103	tests (beds)	completed	cancelled	garden-3	
+105	tests (sensors)	completed	cancelled	garden-1	
+104	app	completed	success	garden-1	

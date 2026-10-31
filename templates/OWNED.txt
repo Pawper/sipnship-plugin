@@ -16,6 +16,10 @@ feature core
 scripts/ci/lib.sh
 scripts/ci/classify.sh
 scripts/ci/test-parts.sh
+scripts/ci/failure-report.sh
+scripts/ci/failure-lib.sh
+scripts/ci/gate.sh
+scripts/ci/gate-lib.sh
 scripts/ci/line-endings.sh
 scripts/ci/spec-check.sh
 scripts/ci/setup-check.sh

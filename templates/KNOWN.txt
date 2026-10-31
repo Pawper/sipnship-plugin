@@ -148,6 +148,7 @@ scripts/ci/deploy-gate.sh 2f4f9d68d4057094a6f8ed81d69ef169a8b3a1e8
 scripts/ci/deploy-gate.sh 3e1bd682d53c0cb5b34996c126099fd4673dbc45
 scripts/ci/deploy-gate.sh 7f973760df9852f6f29b617b3ca554e662cd378b
 scripts/ci/deploy-gate.sh 9cfba0eed147fc42d36e8babbd7af0bba0c016ea
+scripts/ci/deploy-gate.sh c9a10be0420a9f7ed6041544743be04a80d2d998
 scripts/ci/deploy-gate.sh d8ce1c7ba166bc21a7a1fb35d4ae8e6ae5097c84
 scripts/ci/deploy-health.sh 2da3e2f14f6305abf97b13fc3e52c0902a93388b
 scripts/ci/deploy-health.sh 3ae0a191ac1f3c21108344f8133b4234cb3edbf1
@@ -169,6 +170,11 @@ scripts/ci/design-check.sh daee1df873e27cd8ef9eb3baf10d8df3da3ad04e
 scripts/ci/doctor-lib.sh bd826051735cd01e1cd98586d812dd446401ef37
 scripts/ci/doctor-lib.sh f17ef9b2528b34a2df0a9dc0da84a3b9c82a4888
 scripts/ci/drain-late.sh 0f94a6a4fdd2e8f30117cbbff59713b718e53bfc
+scripts/ci/failure-lib.sh b8e82ebafe18a8303dd315f72410a1e6e19c2048
+scripts/ci/failure-report.sh 0cc2380b15156856af9c3a3a695b6eccbc293809
+scripts/ci/gate-lib.sh 94b5a21cac3fea541858e37ded2c80af51eef53f
+scripts/ci/gate.sh 5e160d931ed3e95e7657f9629d10c84e02a407ba
+scripts/ci/gate.sh d923fb458576efe7c408d00513c65bc60cc9fcb4
 scripts/ci/lib.sh 03c38a2b06a071db2523f57540a0bfd3a2859c6a
 scripts/ci/lib.sh 09b4a522ca57989528abddfada64ec50213e6ad1
 scripts/ci/lib.sh 281c2eb4f83ed40b6fa35d9e455bbdc9d8e50d96

@@ -1343,9 +1343,9 @@ eq "--serial waits once for the run its refresh started" "1" "$(grep -c 'serial_
 eq "an unknown mergeable state is read again" "1" "$(grep -c 'while \[ "\$o_mw" = UNKNOWN \]' "$root/templates/scripts/ci/merge-queue.sh")"
 eq "CI may read pull requests" "1" "$(grep -c '^  pull-requests: read' "$root/templates/.github/workflows/ci.yml")"
 ci_job() { awk -v j="  $1:" '$0 == j {f=1; next} /^  [a-z-]*:$/ {f=0} f' "$root/templates/.github/workflows/ci.yml"; }
-ci_stops() { ci_job "$1" | grep -c -e '^      actions: write$' -e "if: failure() && github.event_name == 'pull_request'" -e 'gh run cancel \${{ github.run_id }}'; }
-eq "a failed pull-request job stops the rest of its run" "3 3 3" "$(ci_stops checks) $(ci_stops app) $(ci_stops screens)"
-eq "the full run on main is never stopped" "0" "$(ci_stops full)"
+ci_says() { ci_job "$1" | grep -c -e '^      actions: read$' -e '^        if: failure()$' -e 'run: sh scripts/ci/failure-report.sh job'; }
+eq "a failed job says what failed, and never cancels its run" "3 3 3 0" "$(ci_says checks) $(ci_says app) $(ci_says screens) $(grep -c 'gh run cancel' "$root/templates/.github/workflows/ci.yml")"
+eq "main's full job is never stopped" "0" "$(ci_says full)"
 eq "the spec, design and mock checks read the live body" "3" "$(grep -c 'SPEC_TEXT=$(gh api' "$root/templates/.github/workflows/ci.yml")"
 eq "a body with neither carries nothing" "" "$(carried_refs 'Just a copy fix.')"
 eq "the batch body carries its members' lines" "Carried from the members:
@@ -1947,7 +1947,8 @@ eq "the migration page ships with the plugin" "yes" "$([ -f "$root/CI-MIGRATION.
 
 section 'the CI template is three jobs on a pull request, and the screens job where mocks have routes'
 ciy=$(cat "$root/templates/.github/workflows/ci.yml")
-eq "its jobs" "checks
+eq "its jobs" "gate
+checks
 app
 tests
 screens
@@ -1956,9 +1957,9 @@ full
 report-red
 report-green" "$(workflow_jobs "$ciy")"
 eq "CI passed waits on checks, app, tests and screens" "1" "$(printf '%s\n' "$ciy" | grep -c 'needs: \[checks, app, tests, screens]')"
-eq "one checkout in checks, app, tests, screens and full" "5" "$(printf '%s\n' "$ciy" | grep -c 'uses: actions/checkout@v4')"
-eq "a newer push cancels an older pull request run" "1" "$(printf '%s\n' "$ciy" | grep -c 'cancel-in-progress: true')"
-eq "main pushes are each their own group" "1" "$(printf '%s\n' "$ciy" | grep -c "pull_request.number || github.sha")"
+eq "one checkout in gate, checks, app, tests, screens, CI passed and full" "7" "$(printf '%s\n' "$ciy" | grep -c 'uses: actions/checkout@v4')"
+eq "a newer push cancels an older pull request run, never a gate" "1" "$(printf '%s\n' "$ciy" | grep -c "cancel-in-progress: \${{ github.event_name == 'pull_request' }}")"
+eq "gate runs share one group" "1" "$(printf '%s\n' "$ciy" | grep -c "pull_request.number || 'gate'")"
 eq "every rule script still runs" "8" "$(for f in classify.sh line-endings.sh status/check.sh numbering-check.sh spec-check.sh setup-check.sh shared-check.sh delete-check.sh; do printf '%s\n' "$ciy" | grep -q "$f" && echo x; done | grep -c x)"
 eq "the env check still runs" "1" "$(printf '%s\n' "$ciy" | grep -c 'client-env-check.sh')"
 
@@ -2642,7 +2643,51 @@ eq "main's full run takes every part, with its command" "4 sh scripts/ci/line-en
 eq "a project with no parts lines builds no matrix" '[]' "$(parts_matrix "$(class_parts 'app ci other' "$(grep -v '^!parts' "$pj_fx/classes.txt")")")"
 eq "a name given twice runs once" '["a"]' "$(parts_matrix "$(class_parts 'x y' "$(printf '!parts x a=one\n!parts y a=two')")")"
 eq "the template's classes.txt has no parts, so a new project runs as before" '[]' "$(parts_matrix "$(class_parts other "$(cat "$root/templates/scripts/ci/classes.txt")")")"
-eq "test-parts.sh, the classify step and the tests job are in the template" "1 1 1 1" "$(grep -c 'test-parts.sh matrix' "$root/templates/.github/workflows/ci.yml") $(grep -c 'fromJSON(needs.checks.outputs.parts)' "$root/templates/.github/workflows/ci.yml") $(grep -c 'test-parts.sh all' "$root/templates/.github/workflows/ci.yml") $(grep -cx 'scripts/ci/test-parts.sh' "$root/templates/OWNED.txt")"
+eq "test-parts.sh, the classify step and the tests job are in the template" "2 1 1" "$(grep -c 'test-parts.sh matrix' "$root/templates/.github/workflows/ci.yml") $(grep -c "fromJSON(needs.checks.outputs.parts || needs.gate.outputs.parts || '\[\]')" "$root/templates/.github/workflows/ci.yml") $(grep -cx 'scripts/ci/test-parts.sh' "$root/templates/OWNED.txt")"
+pj_ci="$root/templates/.github/workflows/ci.yml"
+pj_tests=$(awk '$0 == "  tests:" {f=1; next} /^  [a-z-]*:$/ {f=0} f' "$pj_ci")
+pj_full=$(awk '$0 == "  full:" {f=1; next} /^  [a-z-]*:$/ {f=0} f' "$pj_ci")
+pj_gate=$(awk '$0 == "  gate:" {f=1; next} /^  [a-z-]*:$/ {f=0} f' "$pj_ci")
+eq "main's gate takes every part as the same matrix, not one serial job" "1 1 0 0" "$(printf '%s\n' "$pj_gate" | grep -c 'test-parts.sh matrix all') $(printf '%s\n' "$pj_tests" | grep -c "fail-fast: \${{ github.event_name == 'pull_request' }}") $(printf '%s\n' "$pj_tests" | grep -c "^    if: github.event_name == 'pull_request'") $(printf '%s\n' "$pj_full" | grep -c 'test-parts.sh')"
+eq "the gate's parts go to the end, and a red gate opens or adds to the red-main issue" "1 2 1" "$(printf '%s\n' "$pj_tests" | grep -c "CI_FULL_RUN: \${{ github.event_name != 'pull_request' && 'yes' || '' }}") $(grep -c '^    needs: \[full, tests\]' "$pj_ci") $(grep -c 'The gate failed again on' "$pj_ci")"
+eq "main gets no run on push: an hourly schedule and a by-hand run instead" "0 1 1" "$(sed -n '/^on:/,/^[a-z]/p' "$pj_ci" | grep -c '^  push:') $(grep -c "^    - cron: '0 \* \* \* \*'" "$pj_ci") $(grep -c '^  workflow_dispatch:' "$pj_ci")"
+eq "the quiet time lives in one place, read by the gate script" "1 1 0" "$(grep -c 'GATE_QUIET_MINUTES: 60' "$pj_ci") $(grep -c 'GATE_QUIET_MINUTES:-60' "$root/templates/scripts/ci/gate.sh") $(grep -c -e '-lt 60' -e ':-60' -e '"60"' "$root/templates/scripts/ci/gate-lib.sh")"
+eq "no test or app job runs on a push or a schedule but through the gate" "1 1 1" "$(printf '%s\n' "$pj_tests" | grep -c '^    needs: \[gate, checks\]') $(awk '$0 == "  checks:" {f=1; next} /^  [a-z-]*:$/ {f=0} f' "$pj_ci" | grep -c "^    if: github.event_name == 'pull_request'") $(awk '$0 == "  app:" {f=1; next} /^  [a-z-]*:$/ {f=0} f' "$pj_ci" | grep -c '^    needs: checks')"
+eq "the tests job has a plain name, the part in its step" "1 0 1" "$(printf '%s\n' "$pj_tests" | grep -cx '    name: tests') $(printf '%s\n' "$pj_tests" | grep -c '^    name: .*matrix') $(printf '%s\n' "$pj_tests" | grep -c 'name: Run the ${{ matrix.part }} part')"
+
+section 'a failing job says what failed and never cancels the run'
+. "$root/templates/scripts/ci/failure-lib.sh"
+fr_fx="$root/tests/fixtures/failure"
+fr_ci="$root/templates/.github/workflows/ci.yml"
+eq "no job cancels the run" "0 0" "$(grep -c 'gh run cancel' "$fr_ci") $(grep -c 'run cancel\|/cancel' "$root/templates/scripts/ci/failure-report.sh")"
+eq "every job that can fail says what failed, the tests job with its part's log" "4 1" "$(grep -c 'run: sh scripts/ci/failure-report.sh job' "$fr_ci") $(grep -c 'failure-report.sh job "$RUNNER_TEMP/part.log"' "$fr_ci")"
+eq "the report job names the failed job" "1" "$(grep -c 'run: sh scripts/ci/failure-report.sh run' "$fr_ci")"
+eq "the failing job finds itself by its runner" "102" "$(own_job "$(cat "$fr_fx/jobs-running.tsv")" garden-2 | cut -f1)"
+fr_lines=$(tail -n 3 "$fr_fx/part.txt")
+fr_sum=$(failure_summary 'tests (watering)' 'Run the watering part' "$fr_lines")
+eq "its summary names the job, the step and the test's last lines" "1 1 1" "$(printf '%s\n' "$fr_sum" | grep -c '^### tests (watering) failed$') $(printf '%s\n' "$fr_sum" | grep -c '^The step that failed: Run the watering part$') $(printf '%s\n' "$fr_sum" | grep -c 'got:      0 litres')"
+eq "its annotation is one workflow command, the lines escaped" "::error title=tests (watering) failed at Run the watering part::FAIL  the morning round waters the herbs%0A  expected: 2 litres%0A  got:      0 litres (50%25 of the tank)" "$(failure_annotation 'tests (watering)' 'Run the watering part' "$fr_lines")"
+eq "without a log it points at the job log" "1" "$(failure_summary checks 'Fail when STATUS.md is stale' '' | grep -c 'the job log has the details')"
+fr_rep=$(run_report "$(cat "$fr_fx/jobs-one-part-failed.tsv")" "$(printf 'tests (watering)\tFAIL  the morning round waters the herbs%%0A  got:      0 litres')")
+eq "a run where one part fails reports that part failed and the others cancelled" "1 1 1 1 1 0" "$(printf '%s\n' "$fr_rep" | grep -c '^### tests (watering) failed$') $(printf '%s\n' "$fr_rep" | grep -c 'The step that failed: Run the watering part') $(printf '%s\n' "$fr_rep" | grep -c 'waters the herbs%0A  got') $(printf '%s\n' "$fr_rep" | grep -c '^- tests (beds)$') $(printf '%s\n' "$fr_rep" | grep -c '^- tests (sensors)$') $(printf '%s\n' "$fr_rep" | grep -c 'app')"
+eq "a green run reports no failure" "No job failed." "$(run_report "$(printf '101\tchecks\tcompleted\tsuccess\tgarden-1\t')" '')"
+
+section 'main is gated by one full run after a quiet hour'
+. "$root/templates/scripts/ci/gate-lib.sh"
+gt_fx="$root/tests/fixtures/gate"
+gt_now=1793430000
+eq "head unchanged since the last gate: skip" "skip: main has not moved since the last gate" "$(gate_decide c4d2sensors c4d2sensors $((gt_now - 5400)) $gt_now 60 schedule)"
+eq "pushed 20 minutes ago: skip, saying how long it waits" "skip: main moved 20 minutes ago; the gate waits for 60 quiet minutes" "$(gate_decide b7e1garden a3c9beds $((gt_now - 1200)) $gt_now 60 schedule)"
+eq "pushed 90 minutes ago and a new head: run" "run" "$(gate_decide b7e1garden a3c9beds $((gt_now - 5400)) $gt_now 60 schedule)"
+eq "a shorter quiet time is honoured" "run" "$(gate_decide b7e1garden a3c9beds $((gt_now - 1200)) $gt_now 15 schedule)"
+eq "no gate yet and a quiet main: run" "run" "$(gate_decide b7e1garden '' $((gt_now - 5400)) $gt_now 60 schedule)"
+eq "a run by hand always runs" "run" "$(gate_decide c4d2sensors c4d2sensors $gt_now $gt_now 60 workflow_dispatch)"
+eq "the last gate is the newest run whose tests ran, not a skip" "a3c9beds	failure	1793422800" "$(last_gated "$(cat "$gt_fx/runs-red-then-skips.tsv")")"
+eq "a red gate newer than the head's landing holds the deploy" "main's full gate is red on a3c9bed and nothing landed since" "$(gate_holds_deploy "$(last_gated "$(cat "$gt_fx/runs-red-then-skips.tsv")")" 1793419000)"
+eq "a head that landed after the red gate goes on its own green landing run" "" "$(gate_holds_deploy "$(last_gated "$(cat "$gt_fx/runs-red-then-skips.tsv")")" 1793426000)"
+eq "a green gate holds nothing" "" "$(gate_holds_deploy "$(last_gated "$(cat "$gt_fx/runs-green.tsv")")" 1793419000)"
+eq "no gate yet holds nothing" "" "$(gate_holds_deploy '' 1793419000)"
+eq "the deploy gate asks the full gate" "1" "$(grep -c 'gate_holds_deploy "$(sh "$here/gate.sh" last' "$root/templates/scripts/ci/deploy-gate.sh")"
 pj_repo="$root/../scripts/ci/classes.txt"
 if [ -f "$pj_repo" ] && grep -q '^!parts plugin' "$pj_repo"; then
   pj_rc=$(cat "$pj_repo")

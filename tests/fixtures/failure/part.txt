@@ -1,0 +1,4 @@
+PASS  the morning round waters the beds
+FAIL  the morning round waters the herbs
+  expected: 2 litres
+  got:      0 litres (50% of the tank)

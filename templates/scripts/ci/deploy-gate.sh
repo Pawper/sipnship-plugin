@@ -60,6 +60,15 @@ if [ "$mode" = full ]; then
     if [ -n "$g_why" ]; then held_green=$((held_green + 1)); else green=$((green + 1)); fi
   done < "${TMPDIR:-/tmp}/deploy-gate.$$"
   rm -f "${TMPDIR:-/tmp}/deploy-gate.$$"
+  # Main's full gate (gate.sh): a head goes on its own green landing run;
+  # only a red gate on main newer than the head's landing holds it.
+  if [ -f "$here/gate-lib.sh" ]; then
+  . "$here/gate-lib.sh"
+  g_landed=$(gh api "repos/{owner}/{repo}/commits/$base" --jq '.commit.committer.date' 2>/dev/null | tr -d '\r' || true)
+  g_landed=$(date -u -d "$g_landed" +%s 2>/dev/null || date -u -j -f %Y-%m-%dT%H:%M:%SZ "$g_landed" +%s 2>/dev/null || true)
+  g_why=$(gate_holds_deploy "$(sh "$here/gate.sh" last 2>/dev/null)" "$g_landed")
+  if [ -n "$g_why" ]; then echo "deploy: held, $g_why"; exit 1; fi
+  fi
 fi
 now=$(date +%s)
 # The hold is bounded: QUEUE_DEPLOY_HELD_DRAINS (the drains in a row that

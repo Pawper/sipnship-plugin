@@ -1,8 +1,12 @@
 # CI skeleton. Three runner jobs on a pull request: "checks" (every cheap
 # rule, as steps after one checkout), "app" (one install, then the
 # type-check, the tests and the build, only when the change touches the
-# app) and "CI passed". A push to main runs "checks" and the full suite,
-# and opens an issue when it fails. There are no path filters on the
+# app) and "CI passed". Main gets no run per landing: each landing's own
+# green pull-request run, on the merged head, is its record. Once an hour a
+# scheduled run's "gate" job runs every test part of every class, but only
+# when main moved since the last gate and has been quiet for
+# GATE_QUIET_MINUTES, and opens the red-main issue when that fails. There
+# are no path filters on the
 # workflow itself: every update to a PR starts a run, so the merge queue
 # never waits on a run that was skipped.
 #
@@ -23,8 +27,15 @@ name: CI
 
 on:
   pull_request:
-  push:
-    branches: [main]
+  # Main's full gate: hourly, on the same runners as everything else.
+  schedule:
+    - cron: '0 * * * *'
+  # By hand, the gate runs whatever the quiet time.
+  workflow_dispatch:
+
+env:
+  # How long main must go without a landing before the gate runs on it.
+  GATE_QUIET_MINUTES: 60
 
 permissions:
   contents: read
@@ -34,11 +45,11 @@ permissions:
   pull-requests: read
 
 # A new push to a pull request cancels its older run, which would
-# otherwise hold a runner for a commit nobody will merge. Each push to main
-# is its own group: every commit on main gets its full run.
+# otherwise hold a runner for a commit nobody will merge. Gate runs share
+# one group and wait for each other, so a gate is never cut short.
 concurrency:
-  group: ci-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.sha }}
-  cancel-in-progress: true
+  group: ci-${{ github.event_name == 'pull_request' && github.event.pull_request.number || 'gate' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # RUN_SHELL is the shell every step here runs in. On hosted runners it is
 # "bash". On a Windows self-hosted runner it must be Git's bash by its
@@ -51,16 +62,41 @@ defaults:
     shell: RUN_SHELL
 
 jobs:
-  checks:
-    # Every cheap rule, one checkout. Each step names the rule it enforces;
-    # the step that failed is the rule that was broken.
+  gate:
+    # Main's full gate, on a scheduled or by-hand run only: decides in
+    # seconds whether every test part runs (gate.sh, gate-lib.sh). The
+    # last gated head is read from GitHub, never kept in a file.
+    if: github.event_name != 'pull_request'
     runs-on: RUNS_ON
     permissions:
-      # The workflow's own, plus actions: write so a failure can stop the run.
+      contents: read
+      actions: read
+    outputs:
+      parts: ${{ steps.decide.outputs.parts }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: decide
+        name: Decide whether main is due its gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          why=$(sh scripts/ci/gate.sh decide "${{ github.event_name }}")
+          echo "$why"
+          if [ "$why" = run ]; then parts=$(sh scripts/ci/test-parts.sh matrix all); else parts='[]'; fi
+          echo "parts=$parts" >> "$GITHUB_OUTPUT"
+          echo "Test parts: $parts"
+
+  checks:
+    # Every cheap rule, one checkout. Each step names the rule it enforces;
+    # the step that failed is the rule that was broken. Pull requests only.
+    if: github.event_name == 'pull_request'
+    runs-on: RUNS_ON
+    permissions:
+      # The workflow's own, plus actions: read so a failure can name its step.
       contents: read
       issues: write
       pull-requests: read
-      actions: write
+      actions: read
     outputs:
       classes: ${{ steps.classes.outputs.classes }}
       parts: ${{ steps.classes.outputs.parts }}
@@ -88,10 +124,10 @@ jobs:
           echo "parts=$parts" >> "$GITHUB_OUTPUT"
           echo "Test parts: $parts"
       - name: Fail when a text file has CRLF endings
-        # Every PR and every push: mixed endings make every diff a conflict.
+        # Every pull request: mixed endings make every diff a conflict.
         run: sh scripts/ci/line-endings.sh
       - name: Fail when STATUS.md is stale
-        # Every PR and every push: the page must never go stale.
+        # Every pull request: the page must never go stale.
         run: sh status/check.sh
       - name: Fail on a reused number or a running task number
         # Two numbered files with one number, or a task with a running
@@ -162,14 +198,14 @@ jobs:
       # A project with data or docs checks of its own adds them here as
       # steps, with "if: contains(steps.classes.outputs.classes, 'data')"
       # (or 'docs'). Never repeat a step above.
-      - name: Stop the rest of this run when this job fails
-        # A pull request's run is red once one job fails; the jobs still
-        # running would only hold runners. "CI passed" still reports red.
-        # Never on main: the full run always finishes.
-        if: failure() && github.event_name == 'pull_request'
+      - name: Say what failed
+        # A summary and an annotation naming the failed step and its last
+        # lines. Never cancels the run, which would mark this job cancelled
+        # and hide the failure; GitHub has no call to cancel one other job.
+        if: failure()
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh run cancel ${{ github.run_id }} --repo ${{ github.repository }}
+        run: sh scripts/ci/failure-report.sh job
 
   app:
     # One install, then everything that needs it. The production build runs
@@ -181,11 +217,11 @@ jobs:
     if: github.event_name == 'pull_request' && (contains(needs.checks.outputs.classes, 'app') || contains(needs.checks.outputs.classes, 'tests') || contains(needs.checks.outputs.classes, 'other'))
     runs-on: RUNS_ON
     permissions:
-      # The workflow's own, plus actions: write so a failure can stop the run.
+      # The workflow's own, plus actions: read so a failure can name its step.
       contents: read
       issues: write
       pull-requests: read
-      actions: write
+      actions: read
     steps:
       - uses: actions/checkout@v4
       - name: Install once
@@ -200,46 +236,51 @@ jobs:
       - name: The production build
         if: contains(needs.checks.outputs.classes, 'app') || contains(needs.checks.outputs.classes, 'other')
         run: echo "replace with BUILD_COMMAND"
-      - name: Stop the rest of this run when this job fails
-        # A pull request's run is red once one job fails; the jobs still
-        # running would only hold runners. "CI passed" still reports red.
-        # Never on main: the full run always finishes.
-        if: failure() && github.event_name == 'pull_request'
+      - name: Say what failed
+        # A summary and an annotation naming the failed step and its last
+        # lines. Never cancels the run, which would mark this job cancelled
+        # and hide the failure; GitHub has no call to cancel one other job.
+        if: failure()
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh run cancel ${{ github.run_id }} --repo ${{ github.repository }}
+        run: sh scripts/ci/failure-report.sh job
 
   tests:
-    # One entry per test part of the classes the change touched, from the
-    # "!parts" lines of scripts/ci/classes.txt, side by side. The first red
-    # part cancels the rest. Skipped when the change touched no class with
-    # parts, or when classes.txt names none.
-    needs: checks
-    if: github.event_name == 'pull_request' && needs.checks.outputs.parts != '[]' && needs.checks.outputs.parts != ''
+    # One entry per test part, from the "!parts" lines of
+    # scripts/ci/classes.txt, side by side: on a pull request the parts of
+    # the classes the change touched, and the first red part cancels the
+    # rest; in main's gate every part of every class, each to the end.
+    # Skipped when there are no parts. The name is plain, never an
+    # expression: a skipped matrix job has no matrix values to fill one in.
+    needs: [gate, checks]
+    if: ${{ !cancelled() && (needs.checks.outputs.parts || needs.gate.outputs.parts || '[]') != '[]' }}
     strategy:
-      fail-fast: true
+      fail-fast: ${{ github.event_name == 'pull_request' }}
       matrix:
-        part: ${{ fromJSON(needs.checks.outputs.parts) }}
-    name: tests (${{ matrix.part }})
+        part: ${{ fromJSON(needs.checks.outputs.parts || needs.gate.outputs.parts || '[]') }}
+    name: tests
     runs-on: RUNS_ON
     permissions:
-      # The workflow's own, plus actions: write so a failure can stop the run.
+      # The workflow's own, plus actions: read so a failure can name its step.
       contents: read
       issues: write
       pull-requests: read
-      actions: write
+      actions: read
     steps:
       - uses: actions/checkout@v4
-      - name: Run this part
-        run: sh scripts/ci/test-parts.sh run "${{ matrix.part }}"
-      - name: Stop the rest of this run when this job fails
-        # A pull request's run is red once one job fails; the jobs still
-        # running would only hold runners. "CI passed" still reports red.
-        # Never on main: the full run always finishes.
-        if: failure() && github.event_name == 'pull_request'
+      - name: Run the ${{ matrix.part }} part
+        env:
+          # Main's gate goes to the end of each part.
+          CI_FULL_RUN: ${{ github.event_name != 'pull_request' && 'yes' || '' }}
+        run: sh scripts/ci/test-parts.sh run "${{ matrix.part }}" 2>&1 | tee "$RUNNER_TEMP/part.log"
+      - name: Say what failed
+        # A summary and an annotation naming the failed step and its last
+        # lines. Never cancels the run, which would mark this job cancelled
+        # and hide the failure; GitHub has no call to cancel one other job.
+        if: failure()
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh run cancel ${{ github.run_id }} --repo ${{ github.repository }}
+        run: sh scripts/ci/failure-report.sh job "$RUNNER_TEMP/part.log"
 
   screens:
     # Each touched screen beside its mock: only on a pull request that
@@ -255,11 +296,11 @@ jobs:
     if: github.event_name == 'pull_request' && (contains(needs.checks.outputs.classes, 'app') || contains(needs.checks.outputs.classes, 'other'))
     runs-on: RUNS_ON
     permissions:
-      # The workflow's own, plus actions: write so a failure can stop the run.
+      # The workflow's own, plus actions: read so a failure can name its step.
       contents: read
       issues: write
       pull-requests: read
-      actions: write
+      actions: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -301,14 +342,14 @@ jobs:
           id=$(gh api "$api/${{ github.event.pull_request.number }}/comments" --paginate --jq ".[] | select(.body | startswith(\"$marker\")) | .id" | head -n 1)
           if [ -n "$id" ]; then gh api -X PATCH "$api/comments/$id" -F "body=@$OUT/comment.md" >/dev/null
           else gh api "$api/${{ github.event.pull_request.number }}/comments" -F "body=@$OUT/comment.md" >/dev/null; fi
-      - name: Stop the rest of this run when this job fails
-        # A pull request's run is red once one job fails; the jobs still
-        # running would only hold runners. "CI passed" still reports red.
-        # Never on main: the full run always finishes.
-        if: failure() && github.event_name == 'pull_request'
+      - name: Say what failed
+        # A summary and an annotation naming the failed step and its last
+        # lines. Never cancels the run, which would mark this job cancelled
+        # and hide the failure; GitHub has no call to cancel one other job.
+        if: failure()
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh run cancel ${{ github.run_id }} --repo ${{ github.repository }}
+        run: sh scripts/ci/failure-report.sh job
 
   ci-passed:
     # The one check branch protection requires. It reports once for every
@@ -319,8 +360,19 @@ jobs:
     name: CI passed
     needs: [checks, app, tests, screens]
     if: always() && github.event_name == 'pull_request'
+    permissions:
+      # Reads the jobs and the failed ones' annotations for the summary.
+      contents: read
+      actions: read
+      checks: read
     runs-on: RUNS_ON
     steps:
+      - uses: actions/checkout@v4
+      - name: Name the failed job and its lines
+        if: contains(needs.*.result, 'failure')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: sh scripts/ci/failure-report.sh run
       - name: Report once for every job
         env:
           PARTS: ${{ needs.checks.outputs.parts }}
@@ -338,7 +390,8 @@ jobs:
           echo "Every check that ran is green."
 
   full:
-    # The gate on main after every merge. The whole suite, nothing skipped.
+    # Main's gate, beside the "tests" matrix: what is not a test part of
+    # classes.txt runs here, only when the gate decided to run.
     # On a personal account there are no runner groups and so no hosted
     # fallback: a job on self-hosted runners waits while they are offline,
     # and the nightly audit and the session brief say so. An organization can put
@@ -349,46 +402,41 @@ jobs:
     # (a bare "powershell" takes the machine policy, and AllSigned refuses
     # the step; not pwsh, which a Store install hides); never put an
     # expression in "shell:". Run scripts/ci/runner-doctor.sh first.
-    if: github.event_name == 'push'
+    needs: gate
+    if: needs.gate.outputs.parts != '[]' && needs.gate.outputs.parts != ''
     runs-on: RUNS_ON
     steps:
       - uses: actions/checkout@v4
-      - name: Every test part of every class
-        # The "!parts" lines of classes.txt, each to the end; nothing when
-        # there are none.
-        run: sh scripts/ci/test-parts.sh all
       - name: Run everything
         run: echo "replace with the install, the build and the full suite"
 
   report-red:
-    needs: full
-    if: always() && github.event_name == 'push' && needs.full.result == 'failure'
+    needs: [full, tests]
+    if: always() && github.event_name != 'pull_request' && (needs.full.result == 'failure' || needs.tests.result == 'failure')
     runs-on: RUNS_ON
     steps:
-      - name: Open an issue unless one is already open
+      - name: Open the red-main issue, or add this run to the open one
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          # A run superseded by a newer push to main is not a red main; only
-          # the newest commit on main can open the issue.
-          newest=$(gh api "repos/${{ github.repository }}/commits/main" --jq .sha)
-          if [ "$newest" != "${{ github.sha }}" ]; then echo "A newer commit is on main; this run was superseded, not red."; exit 0; fi
-          open=$(gh issue list --label ci-red --state open --json number -q length)
-          if [ "$open" = "0" ]; then
+          run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          open=$(gh api "repos/${{ github.repository }}/issues?labels=ci-red&state=open&per_page=1" --jq '.[0].number // ""')
+          if [ -z "$open" ]; then
             gh issue create \
               --title "main is red" \
               --label "ci-red,$( [ -f scripts/ci/lib.sh ] && . scripts/ci/lib.sh && state_label ready "$(project_label_form)" || echo state:ready )" \
-              --body "The full run on main failed: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}. Fix it before merging anything else."
+              --body "Main's full gate failed on ${{ github.sha }}: $run_url. Fix it before merging anything else."
           else
-            echo "A ci-red issue is already open; not opening another."
+            gh api "repos/${{ github.repository }}/issues/$open/comments" -f body="The gate failed again on ${{ github.sha }}: $run_url." >/dev/null
+            echo "Added this run to the open red-main issue #$open."
           fi
 
   report-green:
     # Main went green again: close the red-main issue with a comment, so it
     # does not outlive its cause and the audit stops mentioning it.
-    needs: full
-    if: always() && github.event_name == 'push' && needs.full.result == 'success'
+    needs: [full, tests]
+    if: always() && github.event_name != 'pull_request' && needs.full.result == 'success' && needs.tests.result == 'success'
     runs-on: RUNS_ON
     steps:
       - name: Close the red-main issue now that main is green
