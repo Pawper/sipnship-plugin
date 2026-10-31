@@ -23,6 +23,11 @@ function usage() {
   sipnship permissions [--root <project>]
   sipnship connect --repo [OWNER/NAME] [--token <token>]
   sipnship disconnect [--repo OWNER/NAME]
+  sipnship land-next N ["reason"]   land this pull request next
+  sipnship hold N ["reason"]        hold it out of the merge queue
+  sipnship release N                release a hold
+  sipnship drop N "reason"          take it out, closing it with the reason
+  sipnship deploy-now ["reason"]    deploy at the queue's next tick
 
 connect sends this repository's session brief to the SipNShip dashboard:
 it shows a code to approve there, then keeps the repository's token in
@@ -84,6 +89,15 @@ async function main() {
     process.exitCode = args.command === 'connect'
       ? await c.connect({ repo: value('--repo'), token: rest.includes('--token') ? (value('--token') ?? '') : undefined })
       : await c.disconnect({ repo: value('--repo') });
+    return;
+  }
+  if (['land-next', 'hold', 'drop', 'release', 'deploy-now'].includes(args.command)) {
+    const rest = process.argv.slice(3);
+    const i = rest.indexOf('--repo');
+    const repo = i >= 0 ? rest[i + 1] : undefined;
+    const plain = rest.filter((a, j) => a !== '--repo' && !(i >= 0 && j === i + 1));
+    const deploy = args.command === 'deploy-now';
+    process.exitCode = await require('./queue-request').request({ kind: args.command, pr: deploy ? undefined : plain[0], reason: (deploy ? plain : plain.slice(1)).join(' '), repo });
     return;
   }
   if (args.command === 'permissions') { process.exitCode = await require('./permissions').run(args.root); return; }
