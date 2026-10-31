@@ -54,7 +54,7 @@ here=$(dirname "$0")
 # The copy holds scripts/ci and the worktree scripts it calls.
 if [ -z "$QUEUE_FROM_COPY" ]; then
   qc=$(mktemp -d 2>/dev/null || echo "${TMPDIR:-/tmp}/queue-$$")
-  mkdir -p "$qc/ci/queue" && { cp "$here"/* "$qc/ci/" 2>/dev/null; cp "$here"/queue/* "$qc/ci/queue/" 2>/dev/null; true; }
+  mkdir -p "$qc/ci/queue" && { for f in "$here"/* "$here"/queue/*; do if [ -f "$f" ]; then case "$f" in "$here"/queue/*) cp "$f" "$qc/ci/queue/" 2>/dev/null || true ;; *) cp "$f" "$qc/ci/" 2>/dev/null || true ;; esac; fi; done; }
   for f in worktrees.sh worktrees-lib.sh; do if [ -f "$here/../$f" ]; then cp "$here/../$f" "$qc/"; fi; done
   QUEUE_FROM_COPY=1; export QUEUE_FROM_COPY
   exec sh "$qc/ci/merge-queue.sh" "$@"

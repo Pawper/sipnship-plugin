@@ -437,6 +437,14 @@ eq "a vitest file is still run by vitest" "vitest" "$(node "$rt" --which "$rtf/v
 eq "an unknown runner is told as unknown" "unknown" "$(node "$rt" --which "$rtf/unknown/a.test.ts" | tr -d '\r')"
 eq "an unknown runner is not run, never red" "3" "$(node "$rt" "$rtf/unknown/a.test.ts" >/dev/null 2>&1; echo $?)"
 eq "the queue reports a file not run here" "1" "$(grep -c 'not run here:' "$mq_all")"
+# The queue copies itself before it runs; a folder inside scripts/ci (its own
+# queue/ folder) must never stop that copy, so --status answers from the copy.
+qc_proj=$(mktemp -d); mkdir -p "$qc_proj/scripts/ci"
+cp -R "$root/templates/scripts/ci/." "$qc_proj/scripts/ci/"
+cp "$root/templates/scripts/worktrees.sh" "$root/templates/scripts/worktrees-lib.sh" "$qc_proj/scripts/"
+qc_out=$(cd "$qc_proj" && env -u QUEUE_FROM_COPY sh scripts/ci/merge-queue.sh --status 2>&1; echo "exit $?")
+eq "the queue starts from its copy though scripts/ci holds a folder" "0" "$(printf '%s\n' "$qc_out" | tail -n 1 | sed 's/^exit //')"
+eq "the queue says something from its copy" "yes" "$(printf '%s\n' "$qc_out" | sed '$d' | grep -q . && echo yes || echo no)"
 
 section 'reading a run'
 . "$root/templates/scripts/ci/run-lib.sh"
