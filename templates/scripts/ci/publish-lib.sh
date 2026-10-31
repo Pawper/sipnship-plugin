@@ -165,7 +165,7 @@ publish_say() {
 # lines; NOW the ISO time of the write.
 publish_json() {
   pj_open=$1; pj_batch=$2; pj_building=$3; pj_clashes=$4; pj_landed=$5; pj_runners=$6; pj_att=$7; pj_main=$8; pj_deploy=$9
-  shift 9; pj_mode=$1; pj_until=$2; pj_checking=$3; pj_say=$4; pj_now=$5
+  shift 9; pj_mode=$1; pj_until=$2; pj_checking=$3; pj_say=$4; pj_now=$5; pj_rush=${6:-}
   printf '{"version":1,"updatedAt":%s,"mode":%s,"pausedUntil":%s,' "$(json_str "$pj_now")" "$(json_str "$pj_mode")" "$( [ -n "$pj_until" ] && json_str "$pj_until" || printf null)"
   printf '"say":{"doing":%s,"waiting":%s,"needs":%s},' "$(json_str "$(printf '%s\n' "$pj_say" | sed -n 1p)")" "$(json_str "$(printf '%s\n' "$pj_say" | sed -n 2p)")" "$(json_str "$(printf '%s\n' "$pj_say" | sed -n 3p)")"
   printf '"main":{"sha":%s,"state":%s},' "$(json_str "$(printf '%s' "$pj_main" | cut -f1)")" "$(json_str "$(printf '%s' "$pj_main" | cut -f2)")"
@@ -192,6 +192,14 @@ publish_json() {
   printf '"landed":[%s],' "$(printf '%s\n' "$pj_landed" | sed '/^$/d' | while IFS="$(printf '\t')" read -r n t how at; do printf '{"number":%s,"title":%s,"how":%s,"at":%s},' "$(json_num "$n")" "$(json_str "$t")" "$(json_str "$how")" "$(json_str "$at")"; done | sed 's/,$//')"
   if [ -n "$pj_runners" ]; then printf '"runners":{"online":%s,"busy":%s,"queued":%s,"longestWaitMinutes":%s},' "$(json_num "$(printf '%s' "$pj_runners" | cut -f1)")" "$(json_num "$(printf '%s' "$pj_runners" | cut -f2)")" "$(json_num "$(printf '%s' "$pj_runners" | cut -f3)")" "$(json_num "$(printf '%s' "$pj_runners" | cut -f4)")"; else printf '"runners":null,'; fi
   printf '"needsAttention":[%s],' "$(printf '%s\n' "$pj_att" | sed '/^$/d' | while IFS="$(printf '\t')" read -r n what why line; do printf '{"number":%s,"what":%s,"why":%s,"line":%s},' "$(json_num "$n")" "$(json_str "$what")" "$(json_str "$why")" "$(json_str "$line")"; done | sed 's/,$//')"
+  # A rush: the list in order, each paused row in the muted role with the
+  # agent's badge (never red), and each machine's row.
+  if [ -n "$pj_rush" ]; then
+    printf '"rush":{"list":[%s],"paused":[%s],"machines":[%s]},' \
+      "$(printf '%s\n' "$pj_rush" | awk -F'\t' '$1 == "rush" { printf "%s%s", c, $2; c = "," }')" \
+      "$(printf '%s\n' "$pj_rush" | awk -F'\t' '$1 == "paused" { printf "%s{\"number\":%s,\"say\":\"Paused for a rush change\",\"role\":\"muted\",\"badge\":\"agent\"}", c, $2; c = "," }')" \
+      "$(printf '%s\n' "$pj_rush" | awk -F'\t' '$1 == "machine"' | while IFS="$(printf '\t')" read -r _ mn ms msay; do printf '{"name":%s,"state":%s,"say":%s},' "$(json_str "$mn")" "$(json_str "$ms")" "$( [ -n "$msay" ] && json_str "$msay" || printf null)"; done | sed 's/,$//')"
+  else printf '"rush":null,'; fi
   printf '"deploy":%s}\n' "$( [ -n "$pj_deploy" ] && json_str "$pj_deploy" || printf null)"
 }
 

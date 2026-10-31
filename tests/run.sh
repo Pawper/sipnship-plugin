@@ -1167,7 +1167,7 @@ eq "a batch body starts with the queue's marker" "<!-- merge-queue:batch -->" "$
 eq "a batch is known by its marker" "yes" "$(is_batch_body "$(batch_pr_body "$(printf '41\tA\n')")")"
 eq "and by the sentence older batches had" "yes" "$(is_batch_body 'One integration run for the pull requests below, merged in this order')"
 eq "a branch named batch-something is not a batch" "" "$(is_batch_body 'Carry escape lines into batch bodies. Closes #483')"
-eq "the queue finds batches by body, not branch" "0 2" "$(grep -c 'startswith("batch-")' "$root/templates/scripts/ci/merge-queue.sh") $(grep -c 'contains("<!-- merge-queue:batch -->")' "$root/templates/scripts/ci/merge-queue.sh")"
+eq "the queue finds batches by body, not branch (the rush keep list too)" "0 3" "$(grep -c 'startswith("batch-")' "$root/templates/scripts/ci/merge-queue.sh") $(grep -c 'contains("<!-- merge-queue:batch -->")' "$root/templates/scripts/ci/merge-queue.sh")"
 eq "each run's batch branch is its own" "batch-2026-10-15-041200" "$(batch_branch_name 2026-10-15 1 041200)"
 eq "and the second that minute" "batch-2026-10-15-041200-2" "$(batch_branch_name 2026-10-15 2 041200)"
 eq "a hold label holds" "held by its label" "$(held_reason "$(printf 'bug\nqueue:hold')" '')"
@@ -1203,7 +1203,7 @@ eq "land next: beside a batch whose classes it does not share, at once" "serial-
 eq "land next: sharing the batch's classes, first after it" "after-batch" "$(land_next_step green "" yes yes)"
 eq "the drain reads requests at each round's start" "1" "$(grep -c 'requests_tick drain' "$root/templates/scripts/ci/merge-queue.sh")"
 eq "a batch's run reads them every two minutes" "1" "$(grep -c 'then requests_tick batch; fi' "$root/templates/scripts/ci/merge-queue.sh")"
-eq "land next runs the serial path, nothing else" "1" "$(grep -c 'QUEUE_IN_REQUEST=1 sh "\$0" --serial' "$root/templates/scripts/ci/merge-queue.sh")"
+eq "land next runs the serial path, nothing else (a proven chain one too)" "2" "$(grep -c 'QUEUE_IN_REQUEST=1 sh "\$0" --serial' "$root/templates/scripts/ci/merge-queue.sh")"
 eq "a take-out goes through the close path with its reason" "1" "$(grep -c 'worktrees.sh" close "\$rq_pr" "Taken out of the queue at the request of \$rq_by: \$rq_why"' "$root/templates/scripts/ci/merge-queue.sh")"
 eq "a request never merges through the API itself" "0" "$(sed -n '/^requests_tick()/,/^}/p' "$root/templates/scripts/ci/merge-queue.sh" | grep -c '/merge')"
 eq "pause for two hours" "7200" "$(( $(pause_until 0 2h) ))"
@@ -1237,6 +1237,41 @@ eq "an older failed run and a newer queued one: no re-run" "wait" "$(rerun_choic
 eq "a head whose only run was cancelled gets one re-run" "rerun 801" "$(rerun_choice "$(cat "$qs_dir/runs-cancelled-once.tsv")" ccc333 "")"
 eq "a second cancel on the same head gets none" "twice" "$(rerun_choice "$(cat "$qs_dir/runs-cancelled-once.tsv")" ccc333 " ccc333")"
 eq "the drain re-runs through rerun_choice" "1" "$(grep -c 'choice=\$(rerun_choice' "$qs_mq")"
+# A rush: land-next reserves the machines (fixtures/queue-rush).
+qr_dir="$root/tests/fixtures/queue-rush"
+qr_rush=$(rush_order "$(cat "$qr_dir/requests-two-rush.tsv")" "")
+eq "two rush requests keep the order asked, each once" "48 52" "$(printf '%s' "$qr_rush" | tr '\n' ' ' | sed 's/ $//')"
+eq "an answered request leaves the rush list" "52" "$(rush_order "$(cat "$qr_dir/requests-two-rush.tsv")" "901
+904")"
+eq "the pick cancels only other pull requests' runs" "701	51	aaa111
+702	53	bbb222" "$(rush_cancel_pick "$(cat "$qr_dir/runs-busy.tsv")" main "48 52 60 61")"
+qr_pick=$(rush_cancel_pick "$(cat "$qr_dir/runs-busy.tsv")" main "48 52 60 61" | cut -f1 | tr '\n' ' ')
+eq "never the rush one's own run" "" "$(case " $qr_pick" in *" 703 "*) echo cancelled ;; esac)"
+eq "never a batch's run" "" "$(case " $qr_pick" in *" 704 "*) echo cancelled ;; esac)"
+eq "never a run on main, nor one with no pull request" "" "$(case " $qr_pick" in *" 705 "*|*" 706 "*) echo cancelled ;; esac)"
+eq "never a rush test head's run" "" "$(case " $qr_pick" in *" 707 "*) echo cancelled ;; esac)"
+eq "never a run already finished" "" "$(case " $qr_pick" in *" 708 "*) echo cancelled ;; esac)"
+qr_rows=$(runner_rows "$(cat "$qr_dir/runners.tsv")" "$(cat "$qr_dir/jobs-one-cancelled.tsv")" "701" 52)
+eq "a cancelled run's step still on a machine: finishing, not free" "garden-1	finishing	finishing a cancelled run" "$(printf '%s\n' "$qr_rows" | sed -n 1p)"
+eq "a machine with a live job is busy" "garden-2	busy	" "$(printf '%s\n' "$qr_rows" | sed -n 2p)"
+eq "a machine with no job is reserved while the rush one's jobs wait" "garden-3	reserved	Reserved for #52" "$(printf '%s\n' "$qr_rows" | sed -n 3p)"
+eq "an offline machine is offline" "garden-4	offline	" "$(printf '%s\n' "$qr_rows" | sed -n 4p)"
+eq "free only when GitHub lists no job on it" "1" "$(runners_free "$qr_rows")"
+eq "with no rush waiting an empty machine is free" "garden-3	free	" "$(runner_rows "$(cat "$qr_dir/runners.tsv")" "$(cat "$qr_dir/jobs-one-cancelled.tsv")" "701" "" | sed -n 3p)"
+eq "the chain: the first on main, the second behind it" "$(printf '48	
+52	48')" "$(rush_chain "$qr_rush")"
+eq "the second's test head is main plus the first plus it" "rush-52-on-48" "$(rush_head_name 52 48)"
+eq "behind one not landed it waits on its test head" "chain" "$(rush_step green "" 48 "" "")"
+eq "once those ahead land, a green test head of the same tree merges it" "proven" "$(rush_step pending "" "" green yes)"
+eq "a test head of another tree is not proof: its own checks decide" "wait" "$(rush_step pending "" "" green "")"
+eq "a red rush one is never merged" "red" "$(rush_step red "" "" green yes)"
+eq "the one ahead went red: tested without it on its own green checks" "serial-now" "$(rush_step green "" "" "" "")"
+eq "after the merge, every paused one re-runs once, oldest first" "51 53" "$(rush_reruns "$(cat "$qr_dir/paused.tsv")" | tr '\n' ' ' | sed 's/ $//')"
+eq "the re-runs keep the newest-run-on-current-head rule" "1" "$(sed -n '/^rush_resume()/,/^}/p' "$qs_mq" | grep -c 'rr_pick=\$(rerun_choice "\$ru_runs" "\$ru_sha" "")')"
+eq "a rush is read at the very tick, before the other requests" "1" "$(grep -c '^  rush_tick "\$rt_rush"$' "$qs_mq")"
+eq "a proven one merges with no further run" "1" "$(grep -c 'QUEUE_CHAIN_PROVEN:-}" = yes ]; then nr=no' "$qs_mq")"
+eq "the paused row is muted with the agent's badge, never red" '"paused":[{"number":51,"say":"Paused for a rush change","role":"muted","badge":"agent"}]' "$(. "$root/templates/scripts/ci/publish-lib.sh"; publish_json "" "" "" "" "" "" "" "" "" draining "" "" "" 2026-10-30T21:00:00Z "$(printf 'rush\t48\npaused\t51\nmachine\tgarden-3\treserved\tReserved for #48')" | grep -o '"paused":\[[^]]*\]')"
+eq "the machine row says Reserved" '"machines":[{"name":"garden-3","state":"reserved","say":"Reserved for #48"}]' "$(. "$root/templates/scripts/ci/publish-lib.sh"; publish_json "" "" "" "" "" "" "" "" "" draining "" "" "" 2026-10-30T21:00:00Z "$(printf 'rush\t48\nmachine\tgarden-3\treserved\tReserved for #48')" | grep -o '"machines":\[[^]]*\]')"
 # The stop line names the reason, and the Queue tab says it while idle.
 qs_why=$(cat "$qs_dir/batch-why.txt")
 eq "the stop line names the reason" "The queue stopped at 3:29 AM: the batch folder could not be made." "$(drain_stop_line '3:29 AM' "$qs_why")"
@@ -1264,7 +1299,7 @@ eq "a member that changes dependencies is installed for" "1" "$(grep -c 'package
 eq "the project's install command can be named" "1" "$(grep -c 'QUEUE_INSTALL_COMMAND:-npm ci' "$root/templates/scripts/ci/merge-queue.sh")"
 eq "a lagging pull ref falls back to the branch" "1" "$(grep -c 'fetch -q origin "+refs/heads/$fph_branch:refs/queue/pr-$1"' "$root/templates/scripts/ci/merge-queue.sh")"
 eq "and is said as lagging, never 'try again'" "0" "$(grep -c 'try again' "$root/templates/scripts/ci/merge-queue.sh")"
-eq "the gate and the batch use the same fetch" "3" "$(grep -c 'fetch_pr_head "' "$root/templates/scripts/ci/merge-queue.sh")"
+eq "the gate and the batch use the same fetch, and the rush test head too" "4" "$(grep -c 'fetch_pr_head "' "$root/templates/scripts/ci/merge-queue.sh")"
 # A loop whose last command is "[ test ] && cmd" returns 1 when the test is
 # false; inside $(...) under set -e that ends the script without a word.
 # It did, three times (worktrees.sh close, --serial, the hold scan).

@@ -57,15 +57,25 @@ if [ -n "$open_file" ] && [ -f "$open_file" ]; then rows=$(cat "$open_file"); el
 fi
 titles=$(gh api "repos/{owner}/{repo}/pulls?state=open&per_page=100" --jq '.[] | "\(.number)\t\(.title)\t\([.labels[].name] | join(","))\t\((.body // "") | gsub("[\r\n]+"; " | "))"' 2>/dev/null | tr -d '\r')
 batch_pr=""; batch_members=""
+# A rush (merge-queue.sh's rush_tick): the list, the paused, the machines.
+rush_list=$(tr -d '\r' < "$flaky_dir/rush.list" 2>/dev/null | tr '\n' ' ' | sed 's/ *$//')
+rush_paused_pr() { awk -F'\t' -v n="$1" '$1 == n { f = 1 } END { exit !f }' "$flaky_dir/rush.paused" 2>/dev/null; }
+rush_tsv=""
+if [ -n "$rush_list" ]; then
+  rush_tsv=$(for rl in $rush_list; do printf 'rush\t%s\n' "$rl"; done
+    awk -F'\t' 'NF >= 2 && !seen[$1]++ { printf "paused\t%s\n", $1 }' "$flaky_dir/rush.paused" 2>/dev/null
+    awk -F'\t' 'NF >= 2 { printf "machine\t%s\t%s\t%s\n", $1, $2, $3 }' "$flaky_dir/rush.machines" 2>/dev/null)
+fi
 open_tsv=$(printf '%s\n' "$rows" | sed '/^$/d' | while IFS="$tab" read -r n d mw roll b; do
   [ -n "$n" ] && [ "$b" = "$base" ] || continue
   t=$(printf '%s\n' "$titles" | awk -F'\t' -v n="$n" '$1 == n { print $2; exit }')
   labels=$(printf '%s\n' "$titles" | awk -F'\t' -v n="$n" '$1 == n { print $3; exit }')
   body=$(printf '%s\n' "$titles" | awk -F'\t' -v n="$n" '$1 == n { print $4; exit }')
-  case "$body" in *"<!-- merge-queue:batch -->"*|"One integration run for the pull requests below"*) continue ;; esac
+  case "$body" in *"<!-- merge-queue:batch -->"*|*"<!-- merge-queue:rush -->"*|"One integration run for the pull requests below"*) continue ;; esac
   held=$(held_reason "$(printf '%s' "$labels" | tr ',' '\n')" "$(printf '%s' "$body" | sed 's/ | /\
 /g')")
   if [ "$d" = true ]; then s=draft; say="a draft, not queued"
+  elif [ -n "$rush_list" ] && rush_paused_pr "$n"; then s=paused; say=$RUSH_PAUSED_SAY
   elif [ -n "$held" ]; then s=held; say="held on purpose ($held); it waits until the hold is removed"
   elif [ "$mw" = CONFLICTING ]; then s=conflicts-with-main; say="conflicts with main; its owner merges main in and fixes it before the queue takes it"
   else
@@ -157,7 +167,7 @@ deploy_line=""; [ -f .claude/deploy.json ] && [ -f "$here/deploy-gate.sh" ] && d
 stopped_line=""; [ "$mode" = idle ] && stopped_line=$(head -n 1 "$flaky_dir/stopped" 2>/dev/null | tr -d '\r')
 say=$(publish_say "$open_tsv" "$batch_tsv" "$building" "$clashes_tsv" "$attention_tsv" "$runners_tsv" "$deploy_line" "$mode" "$paused_until" "$stopped_line")
 now_iso=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-json=$(publish_json "$open_tsv" "$batch_tsv" "$building" "$clashes_tsv" "$landed_tsv" "$runners_tsv" "$attention_tsv" "$(printf '%s\t%s' "$main_sha" "$main_state")" "$deploy_line" "$mode" "$paused_until" "$checking" "$say" "$now_iso")
+json=$(publish_json "$open_tsv" "$batch_tsv" "$building" "$clashes_tsv" "$landed_tsv" "$runners_tsv" "$attention_tsv" "$(printf '%s\t%s' "$main_sha" "$main_state")" "$deploy_line" "$mode" "$paused_until" "$checking" "$say" "$now_iso" "$rush_tsv")
 
 # 5. Only a change worth a write: the time stamp and the two numbers that
 # tick with time (how long a queued run has waited, a batch's minutes left)
