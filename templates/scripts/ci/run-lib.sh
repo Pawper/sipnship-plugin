@@ -118,9 +118,14 @@ flaky_offenders() {
 
 # main_in_flight RUNS
 # RUNS is one run per line: "id<TAB>branch<TAB>status<TAB>event". Print
-# "yes" when a run on main is queued or in progress, "no" otherwise.
+# "yes" when a push run on main is queued or in progress, "no" otherwise.
+# Only a push run is a proof run the queue must not race. The queue's own
+# drain (workflow_run, schedule, dispatch) and housekeeping runs (issues,
+# label and board syncs) also run on main; counting them made a drain wait
+# on itself. A line without an event is counted, as before.
 main_in_flight() {
   printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' '
+    NF >= 4 && $4 != "push" { next }
     NF >= 3 && $2 == "main" && ($3 == "queued" || $3 == "in_progress" || $3 == "waiting" || $3 == "requested") { f = 1 }
     END { print f ? "yes" : "no" }'
 }

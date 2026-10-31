@@ -568,6 +568,9 @@ flog2=$(flaky_log_add "$flog2" 2026-10-29 52 'console.test.js' passed)
 eq "failures add up across pull requests, a second pass adds none" "3	console.test.js	51,52" "$(flaky_offenders "$flog2" 2)"
 eq "main in flight" "yes" "$(main_in_flight "$(printf '1\tmain\tin_progress\tpush\n2\tfeature\tqueued\tpull_request\n')")"
 eq "main quiet" "no" "$(main_in_flight "$(printf '1\tmain\tcompleted\tpush\n2\tfeature\tin_progress\tpull_request\n')")"
+eq "the queue's own drain on main never holds a merge" "no" "$(main_in_flight "$(printf '1\tmain\tin_progress\tworkflow_run\n2\tmain\tqueued\tschedule\n3\tmain\tin_progress\tworkflow_dispatch\n')")"
+eq "a housekeeping run on main never holds a merge" "no" "$(main_in_flight "$(printf '1\tmain\tin_progress\tissues\n2\tmain\tqueued\tpull_request_target\n')")"
+eq "a push run on main still holds it" "yes" "$(main_in_flight "$(printf '1\tmain\tin_progress\tissues\n2\tmain\tin_progress\tpush\n')")"
 
 section 'runner doctor'
 . "$root/templates/scripts/ci/doctor-lib.sh"
