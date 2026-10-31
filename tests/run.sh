@@ -1801,6 +1801,12 @@ eq "runs-on from a project workflow" "[self-hosted, windows]" "$(ci_runs_on 'job
   b:
     runs-on: ubuntu-latest')"
 eq "a RUNS_ON placeholder is not a value" "" "$(ci_runs_on '    runs-on: RUNS_ON')"
+# A project's own workflows never keep a placeholder: a job left at
+# runs-on: RUNS_ON is never picked up by any runner (main's gate sat
+# queued all night once).
+if [ -d "$root/../.github/workflows" ]; then
+  eq "this repository's workflows carry no unfilled RUNS_ON or RUN_SHELL" "" "$(grep -nE '^[[:space:]]*(runs-on|shell): (RUNS_ON|RUN_SHELL)[[:space:]]*$' "$root"/../.github/workflows/*.yml 2>/dev/null)"
+fi
 eq "an expression is never copied as a runner" "[self-hosted, windows]" "$(ci_runs_on '    runs-on: ${{ fromJSON(needs.plan.outputs.runner) }}
     runs-on: [self-hosted, windows]')"
 owned_txt='feature core
