@@ -76,20 +76,16 @@ block_limit() {
     END { if (!found) print 60 }'
 }
 
-# block_end: print the block that just ended and its seconds, and fail it
-# when it took longer than its limit, so a slow block is red before it is
-# a habit.
+# block_end: print the block that just ended and its seconds, and warn
+# when it took longer than its limit. It never fails the run: a check
+# passes or fails on whether the work is right, and time is a metric.
 block_end() {
   [ -n "$block" ] && [ -n "$block_start" ] || return 0
   be_s=$(( $(date +%s) - block_start ))
   be_l=$(block_limit "$block" "$(cat "$root/tests/block-limits.txt" 2>/dev/null)")
   printf 'time  %s: %ss (limit %ss)\n' "$block" "$be_s" "$be_l"
-  if [ "$be_s" -gt $((be_l * 2)) ]; then
-    fail=$((fail + 1))
-    printf 'FAIL  the block "%s" took %ss, over twice its limit of %ss\n' "$block" "$be_s" "$be_l"
-    block_failed "$(printf 'FAIL  the block "%s" took %ss, over twice its limit of %ss' "$block" "$be_s" "$be_l")"
-  elif [ "$be_s" -gt "$be_l" ]; then
-    printf 'WARN  the block "%s" took %ss, over its limit of %ss (a loaded machine; it fails only over twice the limit)\n' "$block" "$be_s" "$be_l"
+  if [ "$be_s" -gt "$be_l" ]; then
+    printf 'WARN  the block "%s" took %ss, over its limit of %ss (it passes; time is watched on Cost, never gated)\n' "$block" "$be_s" "$be_l"
     [ -n "$GITHUB_ACTIONS" ] && printf '::warning title=A slow test block::"%s" took %ss, over its limit of %ss\n' "$block" "$be_s" "$be_l"
   fi
   block_start=

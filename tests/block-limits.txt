@@ -1,9 +1,9 @@
 # The seconds a block of tests/run.sh may take, when it honestly needs
 # more than the 60 every other block gets. One line each: SECONDS, then
 # the block's name exactly as its section line gives it. A block over its
-# limit prints a warning (on CI an annotation too) and passes, since the
-# parts share one machine and load alone slows a block; only a block over
-# twice its limit fails.
+# limit prints a warning (on CI an annotation too) and always passes: a
+# check never fails on how long it took. A limit only says when a block is
+# worth a look; slowdowns are watched on the Cost tab.
 # template refresh and its second half: about 17 runs of the sync and of
 # the known-hashes script, each 8 to 15 s of process starts on Windows;
 # measured 68 s and 71 s on 2026-10-30 (one block of 171 to 202 s before
