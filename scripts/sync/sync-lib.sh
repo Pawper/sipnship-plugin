@@ -148,19 +148,29 @@ filled_text() {
 # "shell:") and no other: a comment that names the placeholders stays as
 # written, so unfill_text gives the template back. A filled comment once
 # made every freshly synced workflow fail to match any released version,
-# and the sync called it the project's own.
+# and the sync called it the project's own. One awk for the whole text,
+# the same fill as fill_placeholder's: a process per line made the sync
+# take minutes on Windows, where starting a process is slow.
 fill_lines() {
-  fl_out=""
-  while IFS= read -r fl_line || [ -n "$fl_line" ]; do
-    case "$fl_line" in
-      *runs-on:*|*shell:*) fl_line=$(fill_placeholder "$fl_line" "$2" "$3") ;;
-    esac
-    fl_out="$fl_out$fl_line
-"
-  done <<FLEOF
+  FL_NAME=$2 FL_VALUE=$3 awk '
+    function word(c) { return c ~ /[A-Za-z0-9_]/ }
+    BEGIN { name = ENVIRON["FL_NAME"]; val = ENVIRON["FL_VALUE"]; n = length(name) }
+    {
+      line = $0
+      if (index(line, "runs-on:") || index(line, "shell:")) {
+        out = ""
+        while (n > 0 && (i = index(line, name)) > 0) {
+          before = (i > 1) ? substr(line, i - 1, 1) : ""; after = substr(line, i + n, 1)
+          if (word(before) || word(after)) { out = out substr(line, 1, i + n - 1) }
+          else { out = out substr(line, 1, i - 1) val }
+          line = substr(line, i + n)
+        }
+        line = out line
+      }
+      print line
+    }' <<FLEOF
 $1
 FLEOF
-  printf '%s' "$fl_out"
 }
 
 # fill_placeholder TEXT NAME VALUE
@@ -345,6 +355,65 @@ loaded_scripts() {
       s = $0; sub(/^[ \t]*\.[ \t]+/, "", s); sub(/[ \t;].*$/, "", s); sub(/\.+$/, "", s)
       if (!(s in seen)) { seen[s] = 1; print s }
     }'
+}
+
+# template_deps TPL PATH...
+# For each PATH (relative to the templates folder TPL) that is a workflow
+# or a .sh script there, one line "PATH<TAB>DEPS": a workflow's
+# sourced_scripts, a script's loaded_scripts then its here_scripts, space
+# separated, the same as those three give. One awk for every file: a
+# process per file made the sync take minutes on Windows.
+template_deps() {
+  td_tpl=$1; shift
+  td_files=""
+  for td_p in "$@"; do
+    case "$td_p" in .github/workflows/*.yml|*.sh) if [ -f "$td_tpl/$td_p" ]; then td_files="$td_files $td_p"; fi ;; esac
+  done
+  [ -n "$td_files" ] || return 0
+  (cd "$td_tpl" && awk '
+    function flush(   i, out) {
+      if (cur == "") return
+      out = ""
+      if (cur ~ /\.yml$/) { for (i = 1; i <= ns; i++) if (!(so[i] in guarded)) out = out (out == "" ? "" : " ") so[i] }
+      else {
+        for (i = 1; i <= nl; i++) out = out (out == "" ? "" : " ") lo[i]
+        for (i = 1; i <= nh; i++) out = out (out == "" ? "" : " ") ho[i]
+      }
+      printf "%s\t%s\n", cur, out
+    }
+    FNR == 1 {
+      flush(); cur = FILENAME; ns = nl = nh = 0
+      split("", guarded); split("", sseen); split("", lseen); split("", hseen)
+      dir = cur; if (dir ~ /\//) sub(/\/[^\/]*$/, "", dir); else dir = "."
+    }
+    {
+      line0 = $0; gsub(/\r/, "", line0)
+      if (cur ~ /\.yml$/) {
+        line = line0
+        while (match(line, /-f[ \t]+scripts\/[A-Za-z0-9_.\/-]+/)) {
+          g = substr(line, RSTART, RLENGTH); sub(/^-f[ \t]+/, "", g); guarded[g] = 1
+          line = substr(line, RSTART + RLENGTH)
+        }
+        line = line0
+        while (match(line, /(^|[ \t;&|(])(\.|sh)[ \t]+scripts\/[A-Za-z0-9_.\/-]+/)) {
+          s = substr(line, RSTART, RLENGTH); sub(/^.*(\.|sh)[ \t]+/, "", s); sub(/\.+$/, "", s)
+          if (!(s in sseen)) { sseen[s] = 1; so[++ns] = s }
+          line = substr(line, RSTART + RLENGTH)
+        }
+      } else {
+        if (line0 ~ /^[ \t]*\.[ \t]+scripts\//) {
+          s = line0; sub(/^[ \t]*\.[ \t]+/, "", s); sub(/[ \t;].*$/, "", s); sub(/\.+$/, "", s)
+          if (!(s in lseen)) { lseen[s] = 1; lo[++nl] = s }
+        }
+        line = line0
+        while (match(line, /\$here\/[A-Za-z0-9_.-]+/)) {
+          s = substr(line, RSTART + 6, RLENGTH - 6); sub(/\.+$/, "", s)
+          if (!(s in hseen)) { hseen[s] = 1; ho[++nh] = dir "/" s }
+          line = substr(line, RSTART + RLENGTH)
+        }
+      }
+    }
+    END { flush() }' $td_files)
 }
 
 # new_template_files ALL LISTED

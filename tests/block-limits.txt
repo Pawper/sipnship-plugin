@@ -1,0 +1,8 @@
+# The seconds a block of tests/run.sh may take, when it honestly needs
+# more than the 60 every other block gets. One line each: SECONDS, then
+# the block's name exactly as its section line gives it.
+# template refresh: about 17 runs of the sync, each 15 to 28 s of process
+# starts on Windows; measured 331 s alone and 510 s in the shell part on
+# 2026-10-30. The next cost to cut: fewer sync runs, or a sync with fewer
+# processes.
+540 template refresh

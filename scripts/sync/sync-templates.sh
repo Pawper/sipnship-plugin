@@ -110,8 +110,26 @@ done
 adopted=$(adopted_features "$features" "$present")
 # A file the project already has is always refreshed (within --only); a
 # missing one is added only for a feature in use or named with --only.
+# Each path's feature, looked up in the shell: a process per path made the
+# sync take minutes on Windows, where starting a process is slow.
+feature_map="
+$(printf '%s\n' "$features" | awk -F'\t' 'NF >= 2 { printf "%s\t%s\n", $2, $1 }')
+"
+# feature_in PATH: set fi_f to PATH's feature, or empty.
+feature_in() {
+  case "$feature_map" in
+    *"
+$1	"*) fi_f=${feature_map#*"
+$1	"}; fi_f=${fi_f%%"
+"*} ;;
+    *) fi_f="" ;;
+  esac
+}
+# dir_of PATH: set do_d to PATH's folder, as dirname says it, without a
+# process.
+dir_of() { case "$1" in */*) do_d=${1%/*} ;; *) do_d=. ;; esac; }
 in_scope() {
-  is_f=$(feature_of "$features" "$1")
+  feature_in "$1"; is_f=$fi_f
   if [ -n "$only" ]; then case " $only " in *" $is_f "*) return 0 ;; *) return 1 ;; esac; fi
   [ -f "$1" ] && return 0
   case " $adopted " in *" $is_f "*) return 0 ;; *) return 1 ;; esac
@@ -126,7 +144,7 @@ $p
 "*) echo "  project:  $p (listed in .claude/project-owned.txt; never compared or written)"; continue ;; esac
   case " $own " in *" $p "*) echo "  own:      $p is this project's own file (it matches no SipNShip version); never compared or replaced, --force included"; continue ;; esac
   if ! in_scope "$p"; then
-    [ -f "$p" ] || unadopted="$unadopted $(feature_of "$features" "$p")"
+    [ -f "$p" ] || unadopted="$unadopted $is_f"
     continue
   fi
   if [ ! -f "$p" ]; then missing="$missing $p"; continue; fi
@@ -145,7 +163,7 @@ if [ -z "$only" ]; then
   nf_listed=$(printf '%s\n%s\n' "$(owned_paths "$owned")" "$(default_paths "$owned")")
   for p in $(new_template_files "$nf_all" "$nf_listed"); do
     [ -f "$p" ] && continue
-    [ -d "$(dirname "$p")" ] || continue
+    dir_of "$p"; [ -d "$do_d" ] || continue
     case "
 $project_owned
 " in *"
@@ -235,6 +253,10 @@ fi
 # had the workflow refused on --apply.
 owned_list=" $(owned_paths "$owned" | tr '\n' ' ') "
 dep_todo="$(printf '%s' "$present" | tr '\n' ' ') $missing"
+# Every template's scripts, read once.
+dep_map="
+$(template_deps "$tpl" $owned_list)
+"
 while [ -n "$(printf '%s' "$dep_todo" | tr -d ' ')" ]; do
   dep_next=""
   for p in $dep_todo; do
@@ -244,9 +266,11 @@ $project_owned
 " in *"
 $p
 "*) continue ;; esac
-    case "$p" in
-      .github/workflows/*.yml) deps=$(sourced_scripts "$(cat "$tpl/$p")") ;;
-      *.sh) deps=$(printf '%s\n%s\n' "$(loaded_scripts "$(cat "$tpl/$p")")" "$(here_scripts "$(cat "$tpl/$p")" "$(dirname "$p")")") ;;
+    case "$dep_map" in
+      *"
+$p	"*) deps=${dep_map#*"
+$p	"}; deps=${deps%%"
+"*} ;;
       *) continue ;;
     esac
     for d in $deps; do
@@ -293,7 +317,7 @@ refusal_of() {
 refused=""
 for p in $changed $missing; do
   if [ "$force" = no ]; then case " $edited " in *" $p "*) continue ;; esac; fi
-  why=$(refusal_of "$p")
+  case "$p" in .github/workflows/*.yml) why=$(refusal_of "$p") ;; *) why="" ;; esac
   if [ -n "$why" ]; then refused="$refused $p"; fi
 done
 echo "Plugin $version. Plugin-owned files here: $current current, $(printf '%s' "$changed" | wc -w | tr -d ' ') older or edited, $(printf '%s' "$missing" | wc -w | tr -d ' ') missing."
@@ -309,11 +333,16 @@ for p in $missing; do echo "  missing:  $p"; done
 for p in $newfiles; do echo "  new:      $p (a template file OWNED.txt does not list; added with --apply)"; done
 for p in $refused; do echo "  refused:  $p $(refusal_of "$p")"; done
 if [ -n "$unadopted" ] && [ -z "$only" ]; then
-  for f in $(printf '%s\n' $unadopted | awk '!seen[$0]++'); do
-    n=$(printf '%s\n' "$features" | awk -F'\t' -v f="$f" '$1 == f' | wc -l | tr -d ' ')
-    anchor=$(printf '%s\n' "$features" | awk -F'\t' -v f="$f" '$1 == f { print $2; exit }')
-    echo "  not used: the $f feature ($n files; its main file $anchor is not here). The project may have its own tools for it, so its missing files are not added. To add it: $self --apply --only $f"
-  done
+  # One awk for every feature: its file count and its anchor.
+  printf '%s\n' "$features" | UA_LIST="$unadopted" UA_SELF="$self" awk -F'\t' '
+    NF >= 2 { n[$1]++; if (!($1 in anchor)) anchor[$1] = $2 }
+    END {
+      c = split(ENVIRON["UA_LIST"], u, " ")
+      for (i = 1; i <= c; i++) {
+        f = u[i]; if (f == "" || (f in said)) continue; said[f] = 1
+        printf "  not used: the %s feature (%d files; its main file %s is not here). The project may have its own tools for it, so its missing files are not added. To add it: %s --apply --only %s\n", f, n[f], anchor[f], ENVIRON["UA_SELF"], f
+      }
+    }'
 fi
 [ -z "$only" ] || echo "Only the $only feature(s)."
 for p in $defaults; do echo "  new config, would be added with its defaults: $p"; done
@@ -439,7 +468,7 @@ esac
 # A workflow is built in memory, filled with the project's runner and shell
 # (read above), and written only when nothing is left unfilled and every
 # script it runs is here or written now; otherwise it is refused and said.
-written=""
+written=""; w_exec=""
 if [ -n "$remove" ]; then for r in $remove; do git rm -q -- "$r"; echo "  removed:  $r"; done; fi
 for p in $carry; do
   c_text=$(carry_steps "$(filled_text "$(cat "$tpl/$p")" "$runs_on" "$run_shell")" "$(cat "$p")")
@@ -456,16 +485,16 @@ for p in $changed $missing $defaults $newfiles; do
     .github/workflows/*.yml)
       case " $refused " in *" $p "*) continue ;; esac
       w_text=$(filled_text "$(cat "$tpl/$p")" "$runs_on" "$run_shell")
-      mkdir -p "$(dirname "$p")"
+      dir_of "$p"; [ -d "$do_d" ] || mkdir -p "$do_d"
       printf '%s\n' "$w_text" > "$p"
       if [ -n "$runs_on" ] && grep -qw 'RUNS_ON' "$tpl/$p"; then echo "  filled:   RUNS_ON in $p from ci.yml ($runs_on)"; fi
       if [ -n "$run_shell" ] && grep -qw 'RUN_SHELL' "$tpl/$p"; then echo "  filled:   RUN_SHELL in $p from ci.yml"; fi
       needs=$(workflow_needs "$w_text")
       [ -n "$needs" ] && echo "  needs:    $p reads $needs; set them in the repository before its first run" ;;
     *)
-      mkdir -p "$(dirname "$p")"
+      dir_of "$p"; [ -d "$do_d" ] || mkdir -p "$do_d"
       cp "$tpl/$p" "$p"
-      case "$p" in *.sh) chmod +x "$p" 2>/dev/null || true ;; esac
+      case "$p" in *.sh) w_exec="$w_exec $p" ;; esac
       if [ "$p" = .claude/numbering.txt ]; then
         . "$tpl/scripts/ci/numbering-lib.sh"
         g=$(migration_glob_guess "$(git ls-files 2>/dev/null)")
@@ -477,6 +506,7 @@ for p in $changed $missing $defaults $newfiles; do
   esac
   written="$written $p"
 done
+[ -z "$w_exec" ] || chmod +x $w_exec 2>/dev/null || true
 [ -n "$(printf '%s' "$written$remove" | tr -d ' ')" ] || { echo "Nothing written: every differing file was edited here or refused above."; git checkout -q -; exit 0; }
 # Scripts must stay LF: a repository that checks out CRLF breaks every
 # shell script it copies. Pin the types the sync writes, once.

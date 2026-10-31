@@ -1805,7 +1805,7 @@ printf 'jobs:\n  checks:\n    runs-on: [self-hosted, windows]\n    defaults:\n  
 # The retired hosted Runner watch: a plugin copy goes with --apply, since
 # in a private repository whose hosted minutes are used up it failed at
 # every schedule.
-git -C "$root" show 2b7b360:plugin/templates/.github/workflows/runner-watch.yml > "$ss_d/.github/workflows/runner-watch.yml"
+cp "$root/tests/fixtures/sync/runner-watch-retired.yml" "$ss_d/.github/workflows/runner-watch.yml"
 git -C "$ss_d" add -A; git -C "$ss_d" commit -q -m start
 ss_dry=$(cd "$ss_d" && sh "$root/scripts/sync/sync-templates.sh" 2>&1)
 eq "the retired runner watch is named to go" "1" "$(printf '%s\n' "$ss_dry" | grep -c 'watch:    .github/workflows/runner-watch.yml goes')"
@@ -2661,11 +2661,20 @@ pj_out=$(PARTS_LIB="$root/tests/parts-lib.sh" FAIL_FAST=yes sh "$pj_fx/suite.sh"
 eq "with --fail-fast the run stops after the first failing block, naming it" "1 2 0 rc 1" "$(printf '%s\n' "$pj_out" | grep -c 'Stopped at the first failing block: watering schedule') $(printf '%s\n' "$pj_out" | grep -c '^FAIL  the morning round waters the herbs$') $(printf '%s\n' "$pj_out" | grep -c 'the queue drains') $(printf '%s\n' "$pj_out" | tail -n 1)"
 pj_out=$(PARTS_LIB="$root/tests/parts-lib.sh" sh "$pj_fx/suite.sh"; echo "rc $?")
 eq "without it every block runs" "1 0 rc 1" "$(printf '%s\n' "$pj_out" | grep -c 'the queue drains') $(printf '%s\n' "$pj_out" | grep -c 'Stopped at') $(printf '%s\n' "$pj_out" | tail -n 1)"
+pj_lim='# seconds, then the block
+90 watering schedule
+
+120 the queue drains'
+eq "a block the limits file names gets its limit" "90" "$(block_limit 'watering schedule' "$pj_lim")"
+eq "any other block gets 60 seconds" "60" "$(block_limit 'garden beds' "$pj_lim")"
+eq "a block over its limit fails, naming its time" "1 1" "$(block='garden beds'; block_start=$(( $(date +%s) - 61 )); fail=0; block_fails=; pj_o=$(block_end; echo "fail=$fail"); printf '%s\n' "$pj_o" | grep -c '^FAIL  the block "garden beds" took 6[0-9]s, over its limit of 60s$' | tr '\n' ' '; printf '%s\n' "$pj_o" | grep -c '^fail=1$')"
+eq "a block within its limit prints its time and passes" "1 0" "$(block='garden beds'; block_start=$(date +%s); fail=0; pj_o=$(block_end; echo "fail=$fail"); printf '%s\n' "$pj_o" | grep -c '^time  garden beds: [01]s (limit 60s)$' | tr '\n' ' '; printf '%s\n' "$pj_o" | grep -c '^FAIL')"
 eq "an unknown part is refused" "2" "$(RUN_PART= sh "$root/tests/run.sh" --part garden >/dev/null 2>&1; echo $?)"
 pj_out=$(RUN_PART= CI_FULL_RUN=yes sh "$root/tests/run.sh" --fail-fast --part nothing-here 2>&1; echo "rc $?")
 eq "main's full run still refuses an unknown part" "rc 2" "$(printf '%s\n' "$pj_out" | tail -n 1)"
 
 # --- end of blocks: the summary, kept in every part.
+block_end
 stop_if_red
 printf '\n%s passed, %s failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
