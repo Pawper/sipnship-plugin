@@ -75,6 +75,7 @@ shell-3 deploys: keeping the host's build CPU down
 shell-3 drive skill scheduling
 shell-3 drive release goal
 shell-3 drive bundles issues by the files they touch
+shell-3 drive publishes its rounds
 shell-3 hook counterparts
 shell-3 the delete check
 shell-3 workspace install
