@@ -135,7 +135,7 @@ jobs:
 
   drain-windows:
     if: ${{ (vars.QUEUE_RUNS_ON == '' || contains(vars.QUEUE_RUNS_ON, 'windows')) && (github.event_name != 'workflow_run' || (github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion == 'success')) }}
-    runs-on: ${{ vars.QUEUE_RUNS_ON || 'windows' }}
+    runs-on: [self-hosted, "${{ vars.QUEUE_RUNS_ON || 'windows' }}"]
     timeout-minutes: 40
     defaults:
       run:
