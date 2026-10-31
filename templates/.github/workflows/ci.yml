@@ -214,7 +214,7 @@ jobs:
     # tests and the type-check once passed on a client bug only the build
     # would show.
     needs: checks
-    if: github.event_name == 'pull_request' && (contains(needs.checks.outputs.classes, 'app') || contains(needs.checks.outputs.classes, 'tests') || contains(needs.checks.outputs.classes, 'other'))
+    if: github.event_name == 'pull_request' && (contains(needs.checks.outputs.classes, 'app') || contains(needs.checks.outputs.classes, 'core') || contains(needs.checks.outputs.classes, 'deps') || contains(needs.checks.outputs.classes, 'tests') || contains(needs.checks.outputs.classes, 'other'))
     runs-on: RUNS_ON
     permissions:
       # The workflow's own, plus actions: read so a failure can name its step.
@@ -234,7 +234,7 @@ jobs:
         # "pytest --splits 4 --group ${{ matrix.shard }}" or "vitest run --shard=N/4".
         run: echo "replace with the app tests"
       - name: The production build
-        if: contains(needs.checks.outputs.classes, 'app') || contains(needs.checks.outputs.classes, 'other')
+        if: contains(needs.checks.outputs.classes, 'app') || contains(needs.checks.outputs.classes, 'core') || contains(needs.checks.outputs.classes, 'deps') || contains(needs.checks.outputs.classes, 'other')
         run: echo "replace with BUILD_COMMAND"
       - name: Say what failed
         # A summary and an annotation naming the failed step and its last
@@ -270,6 +270,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Run the ${{ matrix.part }} part
         env:
+          # The Mote's private module, for a part that installs the packages.
+          GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
           # Main's gate goes to the end of each part.
           CI_FULL_RUN: ${{ github.event_name != 'pull_request' && 'yes' || '' }}
           # The job's own temp folder, so what a test leaves is the job's to

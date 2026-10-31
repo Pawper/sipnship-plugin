@@ -2919,11 +2919,21 @@ eq "the tests job has a plain name, the part in its step" "1 0 1" "$(printf '%s\
 pj_repo="$root/../scripts/ci/classes.txt"
 if [ -f "$pj_repo" ] && grep -q '^!parts plugin' "$pj_repo"; then
   pj_rc=$(cat "$pj_repo")
-  for pj_case in web-only:'[]' plugin:'["shell-1","shell-2","shell-3","shell-4","queue","console"]' ci:'["shell-1","shell-2","shell-3","shell-4","queue","console"]' unclassified:'["shell-1","shell-2","shell-3","shell-4","queue","console"]'; do
+  for pj_case in web-only:'[]' plugin:'["shell-1","shell-2","shell-3","shell-4","queue","console"]' ci:'["shell-1","shell-2","shell-3","shell-4","queue","console"]' unclassified:'["shell-1","shell-2","shell-3","shell-4","queue","console","service-types","service-tests","core-types","core-tests"]'; do
     pj_name=${pj_case%%:*}
     eq "this repository's suite for a $pj_name change" "${pj_case#*:}" "$(parts_matrix "$(class_parts "$(classify_paths "$(cat "$pj_fx/paths-$pj_name.txt")" "$pj_rc")" "$pj_rc")")"
   done
   eq "each of this repository's parts stops at the first red" "6" "$(class_parts plugin "$pj_rc" | grep -c 'run.sh --fail-fast --part')"
+  pj_repo_matrix() { parts_matrix "$(class_parts "$(classify_paths "$(cat "$pj_fx/paths-$1.txt")" "$pj_rc")" "$pj_rc")"; }
+  eq "a service change is the service class and runs only the service's two parts" 'service ["service-types","service-tests"]' "$(classify_paths "$(cat "$pj_fx/paths-service.txt")" "$pj_rc") $(pj_repo_matrix service)"
+  eq "a core change is the core class and runs core's and the service's parts, since the service imports core" 'core ["service-types","service-tests","core-types","core-tests"]' "$(classify_paths "$(cat "$pj_fx/paths-core.txt")" "$pj_rc") $(pj_repo_matrix core)"
+  eq "a change to the lock file runs the service and core parts too" '["service-types","service-tests","core-types","core-tests"]' "$(pj_repo_matrix deps)"
+  eq "a web-only change runs neither the service's nor core's parts" '[]' "$(pj_repo_matrix web-only)"
+  eq "a plugin-only change runs neither the service's nor core's parts" "0" "$(pj_repo_matrix plugin | grep -c -e service -e core)"
+  eq "an unclassified path runs the service and core parts with the rest" "4" "$(pj_repo_matrix unclassified | tr ',' '\n' | grep -c -e service -e core)"
+  eq "each service and core part installs the packages first, then runs its own check" "4 2 2" "$(class_parts all "$pj_rc" | grep -c 'install-packages.sh && ') $(class_parts all "$pj_rc" | grep -c 'tsc --noEmit -p packages/') $(class_parts all "$pj_rc" | grep -c 'vitest run packages/')"
+  pj_ci_repo="$root/../.github/workflows/ci.yml"
+  eq "a core change also runs the web job, and the tests job carries the Mote's token" "1 1" "$(grep -c "^    if: github.event_name == 'pull_request' && (.*classes, 'core')" "$pj_ci_repo") $(awk '$0 == "  tests:" {f=1; next} /^  [a-z-]*:$/ {f=0} f' "$pj_ci_repo" | grep -c 'GH_PACKAGES_TOKEN')"
 fi
 eq "a web-only change is app and docs" "app docs" "$(classify_paths "$(cat "$pj_fx/paths-web-only.txt")" "$pj_classes" | tr ' ' '\n' | sort | tr '\n' ' ' | sed 's/ $//')"
 pj_blocks=$(suite_blocks < "$root/tests/run.sh")
