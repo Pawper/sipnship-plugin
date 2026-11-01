@@ -126,6 +126,22 @@ if [ -n "$css_gen" ] && [ -f "$css_gen" ]; then
   fi
 fi
 
+# 2c. the rule "sizes by name": no new multiple of a general token in a stylesheet
+step "sizes by name: multiples of a general token added to stylesheets"
+mults=$(token_multiples "$ui_diff")
+if [ -n "$mults" ]; then
+  why=$(design_escape "${SPEC_TEXT:-${PR_TEXT:-}}")
+  if [ -n "$why" ]; then
+    echo "Sizes made as a multiple of a general token, allowed by the pull request: Design: $why"
+    printf '%s\n' "$mults" | sed 's/^/  /'
+  else
+    echo "Rule sizes-by-name: a stylesheet names a size by its token, never as a multiple of a general token (a calc on var(--space-...)), so a second screen that draws the same part shares it. These lines add one:" >&2
+    printf '%s\n' "$mults" | sed 's/^/  /' >&2
+    echo "Add the size to design/tokens.json as parts.<part>.<property> with a one-line \"\$description\" (or a spacing name when it is general, such as spacing.tight), run node scripts/design/generate.mjs and use its var(--...); or say why it must stay with a line \"Design: <reason>\" in the pull request body." >&2
+    fail=1
+  fi
+fi
+
 # 2b. words added to UI files as literals, only where design/copy/ exists
 if [ -d design/copy ]; then
   step "words added to UI files as literals (scripts/ci/copy-allow.txt)"

@@ -67,6 +67,46 @@ design_literals() {
     }'
 }
 
+# token_multiples DIFF [GENERAL]
+# The rule "sizes by name". DIFF is a unified diff with zero context over
+# UI files. Print each added stylesheet (.css) line that makes a new size
+# as a multiple of a general token, a calc() that multiplies or divides
+# var(--space-...), var(--radius-...) or var(--icon-...) by a number, as
+# "path:line: [the calc] text". GENERAL is the alternation of general
+# token prefixes (default: space|radius|icon). A repeated part's size is a
+# token of its own (parts.<part>.<property>), so a second screen that
+# draws the part shares it instead of copying the sum. Not counted: a calc
+# with a share of the page in it (%, vw, vh: the size depends on the page,
+# not on the part), a plain negation (* -1), a multiple of a part's own
+# token, a sum of tokens, comments, and files that are not stylesheets.
+token_multiples() {
+  printf '%s\n' "$1" | tr -d '\r' | awk -v gen="${2:-space|radius|icon}" '
+    BEGIN {
+      tok = "var\\([[:space:]]*--(" gen ")-[A-Za-z0-9_-]+[[:space:]]*\\)"; num = "-?[0-9]*\\.?[0-9]+"
+      after = tok "[[:space:]]*[*/][[:space:]]*" num; before = num "[[:space:]]*\\*[[:space:]]*" tok
+      negA = tok "[[:space:]]*\\*[[:space:]]*-1([^0-9.]|$)"; negB = "(^|[^0-9.])-1[[:space:]]*\\*[[:space:]]*" tok
+    }
+    /^\+\+\+ / { f = $0; sub(/^\+\+\+ b\//, "", f); sub(/^\+\+\+ /, "", f); next }
+    /^@@/ { n = $0; sub(/^@@ -[0-9,]+ \+/, "", n); sub(/[ ,].*/, "", n); line = n + 0; next }
+    /^\+/ {
+      t = substr($0, 2); cur = line; line++
+      if (f !~ /\.css$/) next
+      s = t; gsub(/\/\*([^*]|\*+[^*\/])*\*+\//, "", s)
+      if (s ~ /^[[:space:]]*(\/\*|\*)/) next
+      hit = ""
+      while ((i = index(s, "calc(")) > 0) {
+        rest = substr(s, i); depth = 0; e = 0
+        for (k = 1; k <= length(rest); k++) { c = substr(rest, k, 1); if (c == "(") depth++; else if (c == ")") { depth--; if (depth == 0) { e = k; break } } }
+        if (!e) break
+        x = substr(rest, 1, e); s = substr(rest, e + 1)
+        if (x ~ /[0-9.](%|vw|vh|vmin|vmax|dvh|svh|lvh|dvw|svw|lvw)([^a-zA-Z]|$)/) continue
+        y = x; gsub(negA, "N", y); gsub(negB, "N", y)
+        if (y ~ after || y ~ before) hit = hit ", " x
+      }
+      if (hit != "") printf "%s:%d: [%s] %s\n", f, cur, substr(hit, 3), t
+    }'
+}
+
 # css_var_names TEXT
 # The custom property names TEXT defines ("--name:"), one per line, sorted.
 css_var_names() {

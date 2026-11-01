@@ -184,6 +184,7 @@ scripts/ci/design-check.sh a122c16afa6dd186240cce8d358bbd49ce1a0357
 scripts/ci/design-check.sh a316c78e4a7844d1e9647461dc608cabfa61a0a0
 scripts/ci/design-check.sh b70e04f496274d93a88a7f050f59a4300fbd551e
 scripts/ci/design-check.sh daee1df873e27cd8ef9eb3baf10d8df3da3ad04e
+scripts/ci/design-check.sh bbe0da135d1beacd7a79725e3b3ff3a8b7da53e6
 scripts/ci/doctor-lib.sh bd826051735cd01e1cd98586d812dd446401ef37
 scripts/ci/doctor-lib.sh f17ef9b2528b34a2df0a9dc0da84a3b9c82a4888
 scripts/ci/drain-late.sh 0f94a6a4fdd2e8f30117cbbff59713b718e53bfc
@@ -418,9 +419,11 @@ scripts/design/design-lib.sh ab8a8968f8d4a97c87dc3e3c30e781c8c864a1de
 scripts/design/design-lib.sh b166269ebd00c58deb10a562643c88fa6c63fc3e
 scripts/design/design-lib.sh bdd965ea7ce80d4387ef521da3db09071b3eb974
 scripts/design/design-lib.sh fb76c118b40534699f68e864e1ab1e4eda68d95c
+scripts/design/design-lib.sh d6cb3e3f50b4b17d4b48cd99853c7a0d13c7d3f5
 scripts/design/generate.mjs 1921b97d3d68b1a4ddd438a1fe8754a45e4df100
 scripts/design/generate.mjs 56a13f0096680f08251a1f49acb9ae5f7a548d27
 scripts/design/generate.mjs 9ebe87bfb605aa30ba233b51cfe565a9dd987cbe
+scripts/design/generate.mjs 782c85a6c0371101b0380c3beb32c21ef5745440
 scripts/design/screens.sh 1ce20f0609e0e14bd8429f502fc5d174de8c65f3
 scripts/design/screens.sh be00b709813befcc978e4ec99a8deaf61a660fdb
 scripts/env-lib.sh 49eeef28da7ff2c9d5286f68764249df9bb6f3df

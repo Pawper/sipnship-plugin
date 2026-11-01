@@ -10,6 +10,15 @@
 // Type roles come out as named styles on each platform: a CSS class
 // .type-<role> with its variables, a TypeScript ROLES entry, a Kotlin
 // DesignType.<Role>, a Swift Design.Type.<role>. A screen says the role.
+// A token in a map (radii, spacing, iconSizes, a block, a part) is a bare
+// value or { "$value": V, "$description": "what it is for" }; a value
+// "{group.key}" names another token, so a part can say it is the gutter
+// and an old name can stay as an alias. Parts are the repeated pieces of a
+// screen, parts.<part>.<property>: CSS --parts-<part>-<property>,
+// TypeScript PARTS.<part>.<property>, Kotlin DesignParts.<Part>.<Property>,
+// Swift Design.Parts.<Part>.<property>. Every description comes out in
+// TypeScript's DESCRIPTIONS, by the token's name (its path in tokens.json);
+// "requireDescriptions": true makes a token without one an error.
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -33,8 +42,55 @@ const accent = (key) => (tokens.accents || []).find((a) => a.key === key);
 const family = (key) => (tokens.type.families || []).find((f) => f.key === key);
 const ground = tokens.ground || [], accents = tokens.accents || [], gradients = tokens.gradients || [];
 const families = tokens.type.families || [], roles = tokens.type.roles || [];
-const radii = tokens.radii || {}, spacing = tokens.spacing || {}, iconSizes = tokens.iconSizes || {};
-const blocks = Object.fromEntries(Object.entries(tokens.blocks || {}).filter(([k]) => !k.startsWith("_")));
+// A map's tokens, without its "_comment" or "$description" keys.
+const entries = (obj) => Object.entries(obj || {}).filter(([k]) => !k.startsWith("_") && !k.startsWith("$"));
+const isToken = (v) => v !== null && typeof v === "object" && !Array.isArray(v) && "$value" in v;
+const rawOf = (v) => (isToken(v) ? v.$value : v);
+const refOf = (v) => { const r = rawOf(v); const m = typeof r === "string" && /^\{([A-Za-z0-9_.]+)\}$/.exec(r); return m ? m[1] : null; };
+const blockSrc = Object.fromEntries(entries(tokens.blocks));
+const partSrc = Object.fromEntries(entries(tokens.parts));
+// A token by its name: radii.card, spacing.gutter, parts.row.height, or a block's site.gutter (blocks.site.gutter too).
+function lookup(name) {
+  const [g, ...rest] = name.split(".");
+  const deep = g === "blocks" || g === "parts";
+  const [map, key] = g === "blocks" ? [blockSrc[rest[0]], rest[1]] : g === "parts" ? [partSrc[rest[0]], rest[1]] : g in blockSrc ? [blockSrc[g], rest[0]] : [tokens[g], rest[0]];
+  const v = map && key !== undefined && !key.startsWith("$") && !key.startsWith("_") ? map[key] : undefined;
+  if (v === undefined || rest.length !== (deep ? 2 : 1)) throw new Error(`design/tokens.json: "{${name}}" names no token.`);
+  return v;
+}
+// A token's value with every reference followed.
+function valueOf(v, seen = []) {
+  const ref = refOf(v);
+  if (!ref) return rawOf(v);
+  if (seen.includes(ref)) throw new Error(`design/tokens.json: "{${ref}}" refers to itself through ${seen.join(", ")}.`);
+  return valueOf(lookup(ref), [...seen, ref]);
+}
+// A token's CSS custom property name, by its tokens.json name.
+function cssName(name) {
+  const [g, ...rest] = name.split(".");
+  if (g === "radii") return `--radius-${kebab(rest[0])}`;
+  if (g === "spacing") return `--space-${kebab(rest[0])}`;
+  if (g === "iconSizes") return `--icon-${kebab(rest[0])}`;
+  if (g === "parts" || g === "blocks") return `--${g === "parts" ? "parts-" : ""}${kebab(rest[0])}-${kebab(rest[1])}`;
+  return `--${kebab(g)}-${kebab(rest[0])}`;
+}
+// A token's CSS value: a number in px, a reference as the other token's var(), a string as written.
+const cssOf = (v) => { const ref = refOf(v); if (ref) { valueOf(v); return `var(${cssName(ref)})`; } const r = rawOf(v); return typeof r === "number" ? r + "px" : r; };
+const resolved = (obj) => Object.fromEntries(entries(obj).map(([k, v]) => [k, valueOf(v)]));
+const radii = resolved(tokens.radii), spacing = resolved(tokens.spacing), iconSizes = resolved(tokens.iconSizes);
+const blocks = Object.fromEntries(Object.entries(blockSrc).map(([b, vals]) => [b, resolved(vals)]));
+const parts = Object.fromEntries(Object.entries(partSrc).map(([p, vals]) => [p, resolved(vals)]));
+// Every token's description by its name, and the names that have none.
+const described = [], undescribed = [];
+const note = (name, v) => { if (v && typeof v === "object" && typeof v.$description === "string" && v.$description.trim()) described.push([name, v.$description.trim()]); else undescribed.push(name); };
+ground.forEach((c) => note(`ground.${c.key}`, c));
+accents.forEach((a) => note(`accents.${a.key}`, a));
+gradients.forEach((g) => note(`gradients.${g.key}`, g));
+families.forEach((f) => note(`type.families.${f.key}`, f));
+roles.forEach((r) => note(`type.roles.${r.key}`, r));
+for (const g of ["radii", "spacing", "iconSizes"]) entries(tokens[g]).forEach(([k, v]) => note(`${g}.${k}`, v));
+Object.entries(blockSrc).forEach(([b, vals]) => entries(vals).forEach(([k, v]) => note(`blocks.${b}.${k}`, v)));
+Object.entries(partSrc).forEach(([p, vals]) => { note(`parts.${p}`, vals); entries(vals).forEach(([k, v]) => note(`parts.${p}.${k}`, v)); });
 const colors = Object.fromEntries([...ground.map((c) => [c.key, c.hex]), ...accents.flatMap((a) => a.stops.map((s, i) => [`${a.key}-${i + 1}`, s]))]);
 const gradientCss = (g) => `linear-gradient(${g.direction}, ${accent(g.accent).stops.map((s, i) => `${s} ${g.offsets[i]}%`).join(", ")})`;
 
@@ -58,6 +114,10 @@ export const SPACING: Readonly<Record<string, number>> = ${j(spacing)};
 export const ICON_SIZES: Readonly<Record<string, number>> = ${j(iconSizes)};
 /** Per-feature design values, one object per block. */
 export const BLOCKS = ${j(blocks)} as const;
+/** The repeated parts of a screen (a row, a pill, a hover card), one object per part: a screen that draws the part names these. */
+export const PARTS = ${j(parts)} as const;
+/** What each token is for, by its name in design/tokens.json (spacing.gutter, parts.row.height). */
+export const DESCRIPTIONS: Readonly<Record<string, string>> = ${j(Object.fromEntries(described))};
 export const ICONS: readonly DesignIcon[] = ${j(icons.icons)};
 export const ICON_KEYS: readonly string[] = ${j(icons.icons.map((i) => i.key))};
 `;
@@ -77,10 +137,10 @@ ${accents.flatMap((a) => a.stops.map((s, i) => `  --${a.key}-${i + 1}: ${s.toLow
 ${gradients.map((g) => `  --gradient-${g.key}: linear-gradient(${g.direction}, ${g.offsets.map((o, i) => `var(--${g.accent}-${i + 1}) ${o}%`).join(", ")});`).join("\n")}
 ${families.map((f) => `  --font-${f.key}: "${f.name}", ${f.fallback};`).join("\n")}
 ${roles.flatMap((r) => [`  --type-${r.key}-family: var(--font-${r.family});`, `  --type-${r.key}-size: ${r.size}px;`, `  --type-${r.key}-weight: ${r.weight};`, `  --type-${r.key}-leading: ${r.lineHeight};`, `  --type-${r.key}-spacing: ${r.letterSpacing ?? 0}em;`]).join("\n")}
-${Object.entries(radii).map(([k, v]) => `  --radius-${kebab(k)}: ${v}px;`).join("\n")}
-${Object.entries(spacing).map(([k, v]) => `  --space-${kebab(k)}: ${v}px;`).join("\n")}
-${Object.entries(iconSizes).map(([k, v]) => `  --icon-${kebab(k)}: ${v}px;`).join("\n")}
-${Object.entries(blocks).flatMap(([b, vals]) => Object.entries(vals).map(([k, v]) => `  --${kebab(b)}-${kebab(k)}: ${typeof v === "number" ? v + "px" : v};`)).join("\n")}
+${entries(tokens.radii).map(([k, v]) => `  --radius-${kebab(k)}: ${cssOf(v)};`).join("\n")}
+${entries(tokens.spacing).map(([k, v]) => `  --space-${kebab(k)}: ${cssOf(v)};`).join("\n")}
+${entries(tokens.iconSizes).map(([k, v]) => `  --icon-${kebab(k)}: ${cssOf(v)};`).join("\n")}
+${Object.entries(blockSrc).flatMap(([b, vals]) => entries(vals).map(([k, v]) => `  --${kebab(b)}-${kebab(k)}: ${cssOf(v)};`)).join("\n")}${Object.keys(partSrc).length ? "\n" + Object.entries(partSrc).flatMap(([p, vals]) => entries(vals).map(([k, v]) => `  --parts-${kebab(p)}-${kebab(k)}: ${cssOf(v)};`)).join("\n") : ""}
 }
 ${roles.map((r) => `.type-${r.key} { font-family: var(--type-${r.key}-family); font-size: var(--type-${r.key}-size); font-weight: var(--type-${r.key}-weight); line-height: var(--type-${r.key}-leading); letter-spacing: var(--type-${r.key}-spacing);${r.uppercase ? " text-transform: uppercase;" : ""} }`).join("\n")}
 `;
@@ -126,7 +186,12 @@ ${Object.entries(iconSizes).map(([k, v]) => `    const val ${cap(k)}: Int = ${v}
 object DesignBlocks {
 ${Object.entries(blocks).map(([b, vals]) => `    object ${cap(b)} {\n${Object.entries(vals).map(([k, v]) => `        ${typeof v === "number" ? `const val ${cap(k)}: ${Number.isInteger(v) ? "Int" : "Double"} = ${v}` : `const val ${cap(k)}: String = ${ktStr(v)}`}`).join("\n")}\n    }`).join("\n")}
 }
-
+${Object.keys(parts).length ? `
+/** The repeated parts of a screen, one object per part. */
+object DesignParts {
+${Object.entries(parts).map(([p, vals]) => `    object ${cap(p)} {\n${Object.entries(vals).map(([k, v]) => `        ${typeof v === "number" ? `const val ${cap(k)}: ${Number.isInteger(v) ? "Int" : "Double"} = ${v}` : `const val ${cap(k)}: String = ${ktStr(v)}`}`).join("\n")}\n    }`).join("\n")}
+}
+` : ""}
 /** Font files in design/fonts, by family key. */
 val FONT_FILES: Map<String, String> = mapOf(
 ${families.filter((f) => f.file).map((f) => `    ${ktStr(f.key)} to ${ktStr(f.file)},`).join("\n")}
@@ -171,7 +236,10 @@ ${Object.entries(iconSizes).map(([k, v]) => `        public static let ${k}: Dou
     }
     public enum Blocks {
 ${Object.entries(blocks).map(([b, vals]) => `        public enum ${cap(b)} {\n${Object.entries(vals).map(([k, v]) => `            public static let ${k}${typeof v === "number" ? `: Double = ${dbl(v)}` : ` = ${swStr(v)}`}`).join("\n")}\n        }`).join("\n")}
-    }
+    }${Object.keys(parts).length ? `
+    public enum Parts {
+${Object.entries(parts).map(([p, vals]) => `        public enum ${cap(p)} {\n${Object.entries(vals).map(([k, v]) => `            public static let ${k}${typeof v === "number" ? `: Double = ${dbl(v)}` : ` = ${swStr(v)}`}`).join("\n")}\n        }`).join("\n")}
+    }` : ""}
     public static let fontFiles: [String: String] = [${families.filter((f) => f.file).map((f) => `${swStr(f.key)}: ${swStr(f.file)}`).join(", ") || ":"}]
     public static let icons: [Icon] = [
 ${icons.icons.map((i) => `        Icon(key: ${swStr(i.key)}, name: ${swStr(i.name)}, group: ${swStr(i.group || "interface")}, size: ${dbl(i.size)}, strokeWidth: ${dbl(i.strokeWidth)}, parts: [${i.parts.map((p) => `IconPart(path: ${swStr(p.path)}, filled: ${!!p.filled}, strokeWidth: ${p.strokeWidth !== undefined ? dbl(p.strokeWidth) : "nil"}, opacity: ${p.opacity !== undefined ? dbl(p.opacity) : "nil"})`).join(", ")}]),`).join("\n")}
@@ -257,6 +325,10 @@ if (existsSync(copyDir)) {
   if (out.copySwift) targets.push([typeof out.copySwift === "string" ? out.copySwift : out.copySwift.path, copySwift]);
 }
 const check = process.argv.includes("--check");
+if (tokens.requireDescriptions && undescribed.length) {
+  console.error(`design/tokens.json asks every token for a "$description" (one line: what it is for); these have none:\n${undescribed.map((n) => "  " + n).join("\n")}`);
+  process.exit(1);
+}
 if (!targets.length) {
   // A project with no app yet names no outputs; the check has nothing to compare.
   if (check) { console.log("design/tokens.json names no outputs yet; nothing to check."); process.exit(0); }

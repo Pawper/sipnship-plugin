@@ -2293,6 +2293,14 @@ eq "the names a generated file defines" "--nightLine
 eq "a hyphenated name the generated file spells otherwise is named, once per line" "src/a.css:2: --night-line
 src/a.css:3: --gone" "$(css_var_gaps "$(printf -- '--- a/src/a.css\n+++ b/src/a.css\n@@ -1,0 +2,2 @@\n+.x { border: 1px solid var(--night-line); color: var(--nightLine); outline-color: var(--night-line); }\n+.y { color: var( --gone, var(--page)); }')" "$(printf -- '--nightLine\n--page\n')")"
 eq "every name defined, nothing said" "" "$(css_var_gaps "$(printf -- '--- a/src/a.css\n+++ b/src/a.css\n@@ -0,0 +1 @@\n+.x { width: calc(var(--share) * 1%%); }')" "--share")"
+tmdiff=$(printf -- '--- a/src/garden.css\n+++ b/src/garden.css\n@@ -4,0 +5,4 @@\n+.bed { gap: calc(var(--space-stack-gap) / 2); padding: 0 calc(0.75 * var(--space-gutter)); }\n+.row { border-radius: calc(var(--radius-card) * 2); margin: var(--space-tight); }\n+.pot { gap: var(--parts-row-gap); }\n+.tray { top: calc(var(--space-stack-gap) / -2); }')
+eq "rule sizes-by-name: a multiple of a general token in a stylesheet is named, each calc, with its line" "src/garden.css:5: [calc(var(--space-stack-gap) / 2), calc(0.75 * var(--space-gutter))] .bed { gap: calc(var(--space-stack-gap) / 2); padding: 0 calc(0.75 * var(--space-gutter)); }
+src/garden.css:6: [calc(var(--radius-card) * 2)] .row { border-radius: calc(var(--radius-card) * 2); margin: var(--space-tight); }
+src/garden.css:8: [calc(var(--space-stack-gap) / -2)] .tray { top: calc(var(--space-stack-gap) / -2); }" "$(token_multiples "$tmdiff")"
+tmok=$(printf -- '--- a/src/garden.css\n+++ b/src/garden.css\n@@ -0,0 +1,7 @@\n+.a { width: calc(100vw - var(--space-gutter) * 2); max-width: min(calc(100%% - var(--space-gutter) / 2), 30rem); }\n+.b { left: calc(var(--space-gutter) * -1); right: calc(-1 * var(--space-gutter)); }\n+.c { font-size: calc(var(--type-small-size) * 0.8); height: calc(var(--parts-row-dot) / 2); }\n+.d { left: calc(var(--rail) - var(--space-stack-gap)); }\n+/* was calc(var(--space-gutter) * 2) */\n+.e { gap: var(--space-tight); } /* not calc(var(--space-gutter) * 2) */\n+.f { gap: calc(var(--space-gutter-wide) * 1); }\n--- a/src/garden.ts\n+++ b/src/garden.ts\n@@ -0,0 +1 @@\n+const css = "gap: calc(var(--space-gutter) * 2)";')
+eq "and not a share of the page, a negation, a type or part token, a sum, a comment, nor a file that is not a stylesheet" "src/garden.css:7: [calc(var(--space-gutter-wide) * 1)] .f { gap: calc(var(--space-gutter-wide) * 1); }" "$(token_multiples "$tmok")"
+eq "a removed line is never the change's" "" "$(token_multiples "$(printf -- '--- a/src/garden.css\n+++ b/src/garden.css\n@@ -3 +2,0 @@\n-.bed { gap: calc(var(--space-stack-gap) / 2); }')")"
+eq "the general prefixes are the caller's to name" "src/g.css:1: [calc(var(--gap-base) * 3)] .x { gap: calc(var(--gap-base) * 3); }" "$(token_multiples "$(printf -- '--- a/src/g.css\n+++ b/src/g.css\n@@ -0,0 +1 @@\n+.x { gap: calc(var(--gap-base) * 3); }')" 'gap')"
 eq "the escape line gives its reason" "a canvas pixel buffer" "$(design_escape "$(printf 'Fix the chime.\n  Design: a canvas pixel buffer\n')")"
 eq "no escape, no reason" "" "$(design_escape 'Fix the chime.')"
 eq "roles a web file references, in any spelling" "title
@@ -2359,6 +2367,16 @@ const fs=require('fs');const p='design/tokens.json';const t=JSON.parse(fs.readFi
   eq "and --check passes when they are current" "0" "$(cd "$gdir" && node scripts/design/generate.mjs --check >/dev/null 2>&1; echo $?)"
   eq "a type role is a CSS class, a Kotlin value and a Swift constant" "3" "$(cd "$gdir" && { grep -c '^\.type-body {' src/app/design.generated.css; grep -c 'val Body = DesignRole' android/Design.kt; grep -c 'static let body = Role' ios/Design.swift; } | paste -sd+ - | bc 2>/dev/null || echo 3)"
   eq "a hand edit to a generated file fails --check" "1" "$(cd "$gdir" && printf '\n// by hand\n' >> src/lib/design.generated.ts && node scripts/design/generate.mjs --check >/dev/null 2>&1; echo $?)"
+  # parts, references and descriptions: a seed row in the sample garden app
+  (cd "$gdir" && node -e "
+const fs=require('fs');const p='design/tokens.json';const t=JSON.parse(fs.readFileSync(p));
+t.spacing.tight={'\$value':6,'\$description':'Half a stack gap.'};t.spacing.oldRowGap={'\$value':'{parts.seedRow.gap}','\$description':'Old name of parts.seedRow.gap.'};
+t.parts={seedRow:{'\$description':'A seed packet in the shed list.',height:{'\$value':'{spacing.hitTarget}','\$description':'A row tall enough to tap.'},gap:{'\$value':6,'\$description':'Mark to words.'},fit:{'\$value':'min(100%, 20rem)','\$description':'As wide as the list.'}}};
+fs.writeFileSync(p,JSON.stringify(t))" && node scripts/design/generate.mjs >/dev/null)
+  eq "a part is a CSS property, a reference its token's var(), an alias the part's" "4" "$(cd "$gdir" && grep -cxF -e '  --parts-seed-row-height: var(--space-hit-target);' -e '  --parts-seed-row-gap: 6px;' -e '  --parts-seed-row-fit: min(100%, 20rem);' -e '  --space-old-row-gap: var(--parts-seed-row-gap);' src/app/design.generated.css)"
+  eq "TypeScript, Kotlin and Swift carry the part with its references followed, and the descriptions by name" "1 1 1 1 1" "$(cd "$gdir" && printf '%s %s %s %s %s' "$(grep -c '"seedRow":{"height":44,"gap":6,"fit":"min(100%, 20rem)"}' src/lib/design.generated.ts)" "$(grep -c '"parts.seedRow.height":"A row tall enough to tap."' src/lib/design.generated.ts)" "$(grep -c 'const val Height: Int = 44' android/Design.kt)" "$(grep -c 'public enum SeedRow' ios/Design.swift)" "$(grep -c '"oldRowGap":6' src/lib/design.generated.ts)")"
+  eq "a reference to no token stops the generator, naming it" "1" "$(cd "$gdir" && node -e "const fs=require('fs');const t=JSON.parse(fs.readFileSync('design/tokens.json'));t.parts.seedRow.gap={'\$value':'{spacing.nowhere}'};fs.writeFileSync('design/tokens.json',JSON.stringify(t))" && node scripts/design/generate.mjs 2>&1 | grep -c '{spacing.nowhere}. names no token')"
+  eq "requireDescriptions names each token without one" "1 1" "$(cd "$gdir" && node -e "const fs=require('fs');const t=JSON.parse(fs.readFileSync('design/tokens.json'));t.parts.seedRow.gap={'\$value':6};t.requireDescriptions=true;fs.writeFileSync('design/tokens.json',JSON.stringify(t))" && out=$(node scripts/design/generate.mjs --check 2>&1; echo "rc $?"); printf '%s %s' "$(printf '%s\n' "$out" | grep -c '^rc 1$')" "$(printf '%s\n' "$out" | grep -cx '  parts.seedRow.gap')")"
 else
   printf 'skip  node is not installed, so the design generator did not run\n'
 fi
@@ -2472,7 +2490,7 @@ if command -v node >/dev/null 2>&1; then
     cp "$root/templates/scripts/design/design-lib.sh" scripts/design/
     printf '{"outputs": {"css": "src/design.generated.css"}}\n' > design/tokens.json
     printf 'src/**/*.css\n' > scripts/ci/design-ui.txt
-    printf ':root { --color-ink: #111; }\n' > src/design.generated.css
+    printf ':root { --color-ink: #111; --space-gutter: 20px; --parts-bed-gap: 10px; }\n' > src/design.generated.css
     printf '.a { color: var(--color-ink); }\n' > src/styles/a.css
     printf '.b { --handle-line: var(--color-ink); }\n' > src/top.css
     printf ':root { --hidden-name: 1; }\n' > src/node_modules/x/dep.css
@@ -2483,10 +2501,18 @@ if command -v node >/dev/null 2>&1; then
     sh scripts/ci/design-check.sh start HEAD >/dev/null 2>&1; echo $?
     git checkout -q -b hidden start && printf '.a { border-color: var(--hidden-name); }\n' >> src/styles/a.css && git commit -qam hidden
     sh scripts/ci/design-check.sh start HEAD >/dev/null 2>&1; echo $?
+    git checkout -q -b multiple start && printf '.a { gap: calc(var(--space-gutter) / 2); }\n' >> src/styles/a.css && git commit -qam multiple
+    sh scripts/ci/design-check.sh start HEAD 2>&1 | grep -c 'Rule sizes-by-name'
+    SPEC_TEXT="$(printf 'T\nDesign: the bed spacing is still being tried')" sh scripts/ci/design-check.sh start HEAD >/dev/null 2>&1; echo $?
+    git checkout -q -b named start && printf '.a { gap: var(--parts-bed-gap); }\n' >> src/styles/a.css && git commit -qam named
+    sh scripts/ci/design-check.sh start HEAD >/dev/null 2>&1; echo $?
   ) > "$tn.out" 2>&1
   eq "a custom property a stylesheet defines in its top folder is defined" "0" "$(sed -n 1p "$tn.out")"
   eq "a name nothing defines still fails" "1" "$(sed -n 2p "$tn.out")"
   eq "a name only a dependency defines still fails" "1" "$(sed -n 3p "$tn.out")"
+  eq "the check fails a new multiple of a general token, naming the rule sizes-by-name" "1" "$(sed -n 4p "$tn.out")"
+  eq "a Design: line lets it through" "0" "$(sed -n 5p "$tn.out")"
+  eq "the part's own token by name passes" "0" "$(sed -n 6p "$tn.out")"
 else
   printf 'skip  node is not installed, so the design check did not run\n'
 fi
