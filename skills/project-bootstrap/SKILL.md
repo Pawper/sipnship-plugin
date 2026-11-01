@@ -112,6 +112,11 @@ first hour:
   field, matching labels, and a hook that refuses an issue without one.
 - **A scheduled audit that speaks only when something is wrong**: open issues with no State, issues left stale by
   a merged PR, a red main run; one comment on a tracking issue, nothing when clean.
+- **A repository setting, where only a setting can hold the rule.** A hook stops a forced push or a branch
+  deletion in a session; an agent without hooks, or a push from another machine, is stopped only by GitHub. Ask
+  the owner to add a branch ruleset: Settings, Rules, Rulesets, New branch ruleset; Enforcement Active; bypass
+  Repository admin; target all branches; only Restrict deletions and Block force pushes. Check it took with
+  `gh api repos/OWNER/REPO/rules/branches/main`, which lists `deletion` and `non_fast_forward` once it is on.
 - **A watcher on anything long-running** (a merge queue, an upload, a build), re-armed until it ends.
 - **A brief at session start** that prints the live state, main, open PRs, the queue, what is in progress, the
   last handoff, what waits on the owner, so an agent starts from facts rather than from notes about the past.

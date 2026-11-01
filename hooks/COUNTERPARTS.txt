@@ -1,8 +1,8 @@
 # Every rule hook and what holds the same rule on the pull request.
-# hook | counterpart (path under plugin/templates/, "session-only", or "none yet #N") | reason
+# hook | counterpart (path under plugin/templates/, "session-only", "repository-setting", or "none yet #N") | reason
 # A path must exist. "none yet" needs the number of the issue that tracks the gap.
 block-delete | scripts/ci/delete-check.sh | the check fails a pull request that deletes a tracked file unless its body has a Deletes: line
-block-force-push | none yet #106 | a forced push is a repository setting, no check names it yet
+block-force-push | repository-setting | a branch ruleset on all branches with Block force pushes and Restrict deletions, set by the owner (the bootstrap skill, section 3)
 block-full-test-sweep | .github/workflows/ci.yml | the full suite runs only on main, per-file on a pull request
 block-generated-page | .github/workflows/ci.yml | CI fails when a generated page is stale
 block-loose-ends | .github/workflows/audit.yml | the nightly audit reports branches left after their pull request ended

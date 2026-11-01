@@ -2710,7 +2710,7 @@ while IFS='|' read -r cp_n cp_c cp_r; do
   case "$cp_n" in '#'*|'') continue ;; esac
   cp_n=$(printf '%s' "$cp_n" | sed 's/ *$//'); cp_c=$(printf '%s' "$cp_c" | sed 's/^ *//; s/ *$//')
   case "$cp_c" in
-    session-only) ok=1 ;;
+    session-only|repository-setting) ok=1 ;;
     "none yet #"[0-9]*) ok=1 ;;
     "none yet"*) ok=0 ;;
     *) if [ -f "$root/templates/$cp_c" ]; then ok=1; else ok=0; fi ;;
