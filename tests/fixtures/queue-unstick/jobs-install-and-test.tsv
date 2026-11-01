@@ -1,0 +1,4 @@
+checks	success
+app	failure	Install packages	EPERM: operation not permitted
+tests (watering)	failure	Run the watering part	FAIL the morning round waters the herbs
+CI passed	failure	Report

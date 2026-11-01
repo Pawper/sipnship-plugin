@@ -207,3 +207,115 @@ remote_drain_reason() {
     }'
 }
 
+# Unsticking, at a drain's end (scripts/ci/QUEUE.md, "Unsticking"). A pull
+# request that fell behind main, clashed with it, or went red for a cause
+# outside its code once sat until a person noticed: three in one evening,
+# one red twice from an install collision, one whose CI never started.
+
+# unstick_candidates LIST BASE
+# LIST is the drain's rows, "NUMBER<TAB>DRAFT<TAB>MERGEABLE<TAB>ROLLUP<TAB>
+# BASE_BRANCH". Print, in number order, the pull requests the drain's end
+# may unstick: not a draft, aimed at BASE, and conflicting, or with checks
+# red, cancelled or none at all. Green and running ones are not stuck.
+unstick_candidates() {
+  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v base="$2" '
+    NF >= 5 && $2 == "false" && $5 == base && (toupper($3) == "CONFLICTING" || $4 == "red" || $4 == "cancelled" || $4 == "none") { print $1 }' | sort -n
+}
+
+# unstick_busy LIST BASE
+# "yes" when a pull request aimed at BASE is still running CI, "no"
+# otherwise. While one runs, the drain's end starts no CI of its own, so
+# two re-merges never run at once; it may still comment on a clash.
+unstick_busy() {
+  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v base="$2" '
+    NF >= 5 && $2 == "false" && $5 == base && $4 == "pending" { b = 1 } END { print b ? "yes" : "no" }'
+}
+
+# unstick_mark KIND SHA: the hidden line the queue leaves in its comment,
+# so it never does the same thing twice to the same head commit.
+unstick_mark() {
+  printf '<!-- merge-queue:unstick %s %s -->\n' "$1" "$2"
+}
+
+# unstick_marks COMMENTS
+# COMMENTS is a pull request's comment bodies. Print "KIND SHA" for each
+# mark unstick_mark left in them, one per line.
+unstick_marks() {
+  printf '%s\n' "$1" | tr -d '\r' | sed -n 's/.*<!-- merge-queue:unstick \([a-z]*\) \([0-9a-fA-F]*\) -->.*/\1 \2/p'
+}
+
+# outside_cause JOBS [SUMMARY]
+# JOBS is one job of a pull request's newest CI run per line: "name<TAB>
+# conclusion<TAB>the step that failed<TAB>text", where text is the job's
+# annotations and the error lines of its log. Print, in a few words, the
+# cause outside the code when every job that did not pass stopped for one:
+# an install step that hit a Windows file lock (EPERM, EBUSY), a runner
+# lost or shut down mid-run, a network error, a set-up step, or a job
+# cancelled with no step of its own failed. Print nothing when any job
+# failed in the code, when the lockfile is out of date (that is the
+# change's own), or when no job failed. The summary job (SUMMARY, default
+# "CI passed") fails whenever another does, so it is not read.
+outside_cause() {
+  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v sum="${2:-CI passed}" '
+    NF == 0 || $1 == sum { next }
+    {
+      c = tolower($2); s = tolower($3); t = tolower($4)
+      if (c == "" || c == "success" || c == "skipped" || c == "neutral") next
+      n++
+      w = ""
+      if (t ~ /outdated_lockfile|lockfile (is )?(out of date|not up to date)/) { code = 1; next }
+      if ((c == "cancelled" || c == "canceled") && s == "") w = "a cancelled run"
+      else if (t ~ /lost communication|shutdown signal|runner .*(went offline|was lost)|operation was canceled/) w = "a runner lost mid-run"
+      else if (s ~ /install|set ?up|setup|cache/ && t ~ /eperm|ebusy/) { w = (t ~ /eperm/) ? "an install error (EPERM)" : "an install error (EBUSY)" }
+      else if (t ~ /econnreset|etimedout|eai_again|socket hang up|err_pnpm_fetch|enotfound/) w = "a network error"
+      else if (s ~ /^(set up job|checkout|run actions\/checkout|post )/) w = "a runner set-up step"
+      if (w == "") { code = 1; next }
+      if (why == "") why = w
+    }
+    END { if (n > 0 && !code) print why }'
+}
+
+# unstick_action ROW MARKS BUSY
+# ROW is one stuck pull request's facts: "MERGEABLE<TAB>ROLLUP<TAB>HEAD<TAB>
+# BEHIND<TAB>MERGES<TAB>CAUSE<TAB>RUN". MERGEABLE is the drain's word
+# (CONFLICTING, MERGEABLE, UNKNOWN); ROLLUP its checks (red, cancelled,
+# none, pending, green); HEAD its head commit; BEHIND how many commits main
+# is ahead of it; MERGES yes when main merges into it cleanly here, no for
+# a real conflict; CAUSE what outside_cause said of a red run, empty for
+# the code; RUN the newest CI run on HEAD: none, busy or done. MARKS is
+# unstick_marks of its comments; BUSY is unstick_busy. Print one word:
+#   clash   a real conflict, not yet commented on for HEAD: ask its agent
+#   update  behind main, or shown as a clash but merging cleanly: merge
+#           main in through GitHub's update-branch, and CI runs by itself
+#   rerun   red outside the code, cancelled, or no checks with a run to
+#           re-run, not yet re-run by the drain's end for HEAD
+#   cannot  no checks, no run on HEAD and up to date: nothing to re-run,
+#           and a pull request's CI starts only on a push to it
+# or nothing: running, green, red in its code (its agent's turn), already
+# done for HEAD, or BUSY while it would start CI.
+unstick_action() {
+  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v marks="$(printf '%s' "$2" | tr '\n' '|')" -v busy="$3" '
+    NR == 1 {
+      mw = toupper($1); roll = $2; head = $3; behind = $4 + 0; merges = $5; cause = $6; run = $7
+      done = "|" marks "|"
+      if (merges == "no") { if (index(done, "|clash " head "|") == 0) print "clash"; exit }
+      if (busy == "yes") exit
+      if (mw == "CONFLICTING") { print "update"; exit }
+      if (roll == "red" && cause == "") exit
+      if (roll != "red" && roll != "cancelled" && roll != "none") exit
+      if (behind > 0) { print "update"; exit }
+      if (run == "busy") exit
+      if (index(done, "|rerun " head "|") > 0) exit
+      if (run == "none" || run == "") { print "cannot"; exit }
+      print "rerun"
+    }'
+}
+
+# unstick_rerun_note CAUSE HEAD
+# The comment the drain's end leaves when it starts CI again on a pull
+# request, ending with the mark that keeps it to once per head commit.
+unstick_rerun_note() {
+  printf 'The merge queue started CI again on this commit: its last run stopped for %s, not for anything in the change. It does this once per commit; if the run stops again, its agent looks at the cause.\n\n' "${1:-a cause outside the code}"
+  unstick_mark rerun "$2"
+}
+

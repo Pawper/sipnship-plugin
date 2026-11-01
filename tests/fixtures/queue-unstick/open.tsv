@@ -1,0 +1,7 @@
+61	false	MERGEABLE	green	main
+62	false	CONFLICTING	green	main
+63	false	MERGEABLE	red	main
+64	false	MERGEABLE	none	main
+65	true	MERGEABLE	red	main
+66	false	MERGEABLE	cancelled	main
+67	false	MERGEABLE	red	release

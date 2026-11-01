@@ -1195,6 +1195,46 @@ eq "three green: batch now" "no" "$(drain_hold 3 4)"
 eq "nothing running: merge" "no" "$(drain_hold 1 0)"
 eq "nothing green: nothing to hold" "no" "$(drain_hold 0 2)"
 
+section 'unsticking a pull request at a drain'"'"'s end'
+. "$root/templates/scripts/ci/batch-lib.sh"
+us_fx="$root/tests/fixtures/queue-unstick"
+us_open=$(cat "$us_fx/open.tsv")
+eq "stuck: a clash, red, no checks, cancelled; never green, a draft or another base" "62 63 64 66" "$(unstick_candidates "$us_open" main | tr '\n' ' ' | sed 's/ $//')"
+eq "nothing running: CI may start" "no" "$(unstick_busy "$us_open" main)"
+eq "one running: no CI of its own" "yes" "$(unstick_busy "$(printf '%s\n71\tfalse\tMERGEABLE\tpending\tmain' "$us_open")" main)"
+eq "a draft running does not count" "no" "$(unstick_busy "$(printf '72\ttrue\tMERGEABLE\tpending\tmain')" main)"
+eq "the marks are read from the comments" "clash aaa111
+rerun bbb222" "$(unstick_marks "$(cat "$us_fx/comments-marked.txt")")"
+eq "a mark is read back as written" "rerun ccc333" "$(unstick_marks "$(unstick_mark rerun ccc333)")"
+eq "an install that hit a file lock is outside the code" "an install error (EPERM)" "$(outside_cause "$(cat "$us_fx/jobs-install-eperm.tsv")")"
+eq "a runner lost mid-run is outside the code" "a runner lost mid-run" "$(outside_cause "$(cat "$us_fx/jobs-runner-lost.tsv")")"
+eq "a job cancelled with no step failed is outside the code" "a cancelled run" "$(outside_cause "$(cat "$us_fx/jobs-cancelled.tsv")")"
+eq "a failed test beside an install error is the code's" "" "$(outside_cause "$(cat "$us_fx/jobs-install-and-test.tsv")")"
+eq "an out-of-date lockfile is the change's own, EPERM or not" "" "$(outside_cause "$(cat "$us_fx/jobs-lockfile.tsv")")"
+eq "the summary job alone failing names no cause" "" "$(outside_cause "$(printf 'CI passed\tfailure\tReport\tEPERM')")"
+eq "no job failed, no cause" "" "$(outside_cause "$(printf 'checks\tsuccess\t\t')")"
+us_marks=$(unstick_marks "$(cat "$us_fx/comments-marked.txt")")
+us_row() { printf '%s\t%s\t%s\t%s\t%s\t%s\t%s' "$@"; }
+eq "a real clash asks its agent" "clash" "$(unstick_action "$(us_row CONFLICTING green fff999 3 no '' done)" "$us_marks" no)"
+eq "once per head: a marked clash is left" "" "$(unstick_action "$(us_row CONFLICTING green aaa111 3 no '' done)" "$us_marks" no)"
+eq "a clash is asked about even while CI runs elsewhere" "clash" "$(unstick_action "$(us_row CONFLICTING red fff999 3 no '' done)" "" yes)"
+eq "shown as a clash but merging cleanly: main is merged in" "update" "$(unstick_action "$(us_row CONFLICTING green fff999 2 yes '' done)" "" no)"
+eq "behind main with no checks: main is merged in" "update" "$(unstick_action "$(us_row MERGEABLE none fff999 4 yes '' none)" "" no)"
+eq "behind main and red outside the code: main is merged in, a fresh run" "update" "$(unstick_action "$(us_row MERGEABLE red fff999 1 yes 'an install error (EPERM)' done)" "" no)"
+eq "while another runs, nothing that starts CI" "" "$(unstick_action "$(us_row MERGEABLE none fff999 4 yes '' none)" "" yes)"
+eq "red in its code is its agent's turn, behind or not" "" "$(unstick_action "$(us_row MERGEABLE red fff999 5 yes '' done)" "" no)"
+eq "red outside the code, up to date: CI again" "rerun" "$(unstick_action "$(us_row MERGEABLE red fff999 0 yes 'an install error (EPERM)' done)" "" no)"
+eq "once per head: a marked re-run is left" "" "$(unstick_action "$(us_row MERGEABLE red bbb222 0 yes 'a runner lost mid-run' done)" "$us_marks" no)"
+eq "cancelled, up to date: CI again" "rerun" "$(unstick_action "$(us_row MERGEABLE cancelled fff999 0 yes 'a cancelled run' done)" "" no)"
+eq "a run still going is waited on" "" "$(unstick_action "$(us_row MERGEABLE none fff999 0 yes '' busy)" "" no)"
+eq "no run at all and up to date: said, nothing to re-run" "cannot" "$(unstick_action "$(us_row MERGEABLE none fff999 0 yes '' none)" "" no)"
+eq "green is not stuck" "" "$(unstick_action "$(us_row MERGEABLE green fff999 6 yes '' done)" "" no)"
+eq "the re-run comment carries its cause and its mark" "1 rerun fff999" "$(unstick_rerun_note 'an install error (EPERM)' fff999 | grep -c 'stopped for an install error (EPERM)') $(unstick_marks "$(unstick_rerun_note x fff999)")"
+eq "the drain's end unsticks once, after its deploy" "1 1" "$(grep -c '^  unstick_one$' "$mq_all") $(sed -n '/deploy_if_due "\$d_begin"/,/unstick_one/p' "$mq_all" | grep -c '^  unstick_one$')"
+eq "every action returns, so one pull request a drain's end" "3" "$(sed -n '/^unstick_one()/,/^}/p' "$mq_all" | grep -c 'return 0 ;;')"
+eq "merging main in reuses GitHub's update-branch" "1" "$(sed -n '/^unstick_one()/,/^}/p' "$mq_all" | grep -c 'pulls/\$us_pr/update-branch')"
+eq "a clash with main is marked in its comment" "1" "$(sed -n '/^notify_conflict()/,/^}/p' "$mq_all" | grep -c 'unstick_mark clash')"
+
 section 'check-runs and mergeable_state through REST'
 eq "no check runs is none" "none" "$(rest_rollup '')"
 eq "all success is green" "green" "$(rest_rollup 'success
@@ -1380,7 +1420,7 @@ eq "a member that changes dependencies is installed for" "1" "$(grep -c 'package
 eq "the project's install command can be named" "1" "$(grep -c 'QUEUE_INSTALL_COMMAND:-npm ci' "$mq_all")"
 eq "a lagging pull ref falls back to the branch" "1" "$(grep -c 'fetch -q origin "+refs/heads/$fph_branch:refs/queue/pr-$1"' "$mq_all")"
 eq "and is said as lagging, never 'try again'" "0" "$(grep -c 'try again' "$mq_all")"
-eq "the gate and the batch use the same fetch, and the rush test head too" "4" "$(grep -c 'fetch_pr_head "' "$mq_all")"
+eq "the gate and the batch use the same fetch, and the rush test head and the drain's end too" "5" "$(grep -c 'fetch_pr_head "' "$mq_all")"
 # A loop whose last command is "[ test ] && cmd" returns 1 when the test is
 # false; inside $(...) under set -e that ends the script without a word.
 # It did, three times (worktrees.sh close, --serial, the hold scan).

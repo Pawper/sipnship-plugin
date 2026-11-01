@@ -12,6 +12,7 @@ queue reading a run
 queue the queue on the service road (spec 006)
 queue merging only through the queue
 queue drain
+queue unsticking a pull request at a drain's end
 queue check-runs and mergeable_state through REST
 queue batches and the drain, sharing pull requests
 queue a batch anchored on the earliest pull request

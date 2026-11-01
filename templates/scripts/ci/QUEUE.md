@@ -24,6 +24,17 @@ That is the command for "merge what is ready", so no agent writes its own loop. 
 
 The drain holds a serial merge while other pull requests are still running CI. One green pull request merged alone moves main under every one of them, they are updated and sent back round CI, and the batch that should have followed has nothing. So with one or two green and others pending, the drain waits two minutes at a time until they finish, then batches; the hold is bounded by `QUEUE_DRAIN_MINUTES`.
 
+## Unsticking, at a drain's end
+
+A pull request that fell behind main, clashed with it, or went red for a reason that was not its code once sat until a person noticed. So every drain, the scheduled one included, ends by taking one stuck open pull request, in number order, and doing one thing for it; one, never two, so CI never runs two re-merges at once, and nothing that starts CI while another pull request's CI is still running:
+
+- **Behind main, or shown as a clash but merging cleanly** (git merges main into it without a conflict): it calls GitHub's update-branch, the same call a serial merge makes, and CI runs on the new commit by itself. A red pull request is updated only when its red came from outside its code.
+- **A real conflict:** one comment on the pull request naming the conflicting files and asking its agent to merge main in, and the `state:blocked` label. The comment carries a hidden mark with the head commit, so no drain, on this machine or a runner, comments twice on the same head.
+- **Red only from outside its code, or cancelled:** it re-runs the failed jobs of the newest run on the head, once per head commit, and says why in a comment that carries the same kind of mark. Outside the code means every job that failed stopped on an install step that hit a Windows file lock (EPERM, EBUSY), a runner lost or shut down mid-run, a network error, a set-up step, or was cancelled with none of its own steps failed. An out-of-date lockfile is the change's own, EPERM or not, and a failed test beside any of these makes it the code's.
+- **No checks at all on its head:** a run there is re-run once. With no run at all and nothing to merge in, the drain says so and does nothing: CI's pull-request jobs start only on a push to the pull request (its manual trigger runs main's gate instead), and the queue never pushes an empty commit.
+
+A red pull request whose failure is in its code is its agent's turn, and is left alone. Held pull requests, an open batch's members, and everything while a rush change lands are left alone too. The rules are pure functions in `queue/rules-drain.sh` (`unstick_candidates`, `unstick_busy`, `outside_cause`, `unstick_action`), tested with fixtures; `QUEUE_UNSTICK=off` turns the step off.
+
 ## The queue on a timer
 
 A drain started with `/loop` runs only while that session is open; close the app and six green pull requests sit until morning. Two ways to keep it going without a session:

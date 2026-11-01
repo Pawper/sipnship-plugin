@@ -114,7 +114,16 @@ notify_conflict() {
   nc_sha=$(pr_field "$1" 2)
   nc_seen="$flaky_dir/noticed"
   grep -qx "$1 $nc_sha" "$nc_seen" 2>/dev/null && return 0
-  gh_write api -X POST "repos/{owner}/{repo}/issues/$1/comments" -f body="$(conflict_notice "$2" "$3" "${4:-}")" >/dev/null 2>&1 || return 0
+  # A clash with main is marked in the comment itself, so a drain on
+  # another machine (the scheduled one) never comments twice on one head.
+  nc_mark=""
+  if [ "$3" = main ] && [ -n "$nc_sha" ]; then
+    if unstick_marks "$(gh api "repos/{owner}/{repo}/issues/$1/comments?per_page=100" --jq '.[].body' 2>/dev/null)" | grep -qx "clash $nc_sha"; then
+      echo "$1 $nc_sha" >> "$nc_seen"; return 0
+    fi
+    nc_mark=$(printf '\n%s' "$(unstick_mark clash "$nc_sha")")
+  fi
+  gh_write api -X POST "repos/{owner}/{repo}/issues/$1/comments" -f body="$(conflict_notice "$2" "$3" "${4:-}")$nc_mark" >/dev/null 2>&1 || return 0
   nc_cur=$(gh api "repos/{owner}/{repo}/issues/$1/labels" --jq '.[].name' 2>/dev/null || true)
   nc_label=$(state_label blocked "$(project_label_form)")
   state_labels_json "$nc_cur" "$nc_label" | gh_write api -X PUT "repos/{owner}/{repo}/issues/$1/labels" --input - >/dev/null 2>&1 || true
@@ -133,5 +142,95 @@ ready_others() {
       [ "$(mergeable_word "$(pr_field "$r_num" 5)")" != CONFLICTING ] || continue
       printf '%s ' "$r_num"
     done
+}
+
+# run_jobs_text RUN_ID: one line per job of a CI run for outside_cause,
+# "name<TAB>conclusion<TAB>failed step<TAB>annotations and error lines";
+# the annotations and the log are read only for a job that did not pass.
+run_jobs_text() {
+  gh api "repos/{owner}/{repo}/actions/runs/$1/jobs?per_page=100" --jq '.jobs[] | [.name, (.conclusion // ""), ([.steps[]? | select(.conclusion == "failure") | .name][0] // ""), (.id | tostring)] | @tsv' 2>/dev/null | tr -d '\r' \
+  | while IFS="$tab" read -r rj_name rj_conc rj_step rj_id; do
+    [ -n "$rj_name" ] || continue
+    rj_text=""
+    case "$rj_conc" in
+      success|skipped|neutral|'') ;;
+      *)
+        if [ "$rj_name" != "${QUEUE_SUMMARY_CHECK:-CI passed}" ]; then
+          rj_text="$(gh api "repos/{owner}/{repo}/check-runs/$rj_id/annotations" --jq '[.[].message] | join("; ")' 2>/dev/null) $(gh api "repos/{owner}/{repo}/actions/jobs/$rj_id/logs" 2>/dev/null | grep -iE 'error|eperm|ebusy|econnreset|etimedout|lost communication|shutdown signal|lockfile' | head -n 12)"
+        fi ;;
+    esac
+    printf '%s\t%s\t%s\t%s\n' "$rj_name" "$rj_conc" "$rj_step" "$(printf '%s' "$rj_text" | tr '\t\r\n' '   ' | cut -c1-2000)"
+  done
+}
+
+# unstick_one: at a drain's end, unstick one open pull request, never two,
+# so CI never runs two re-merges at once (scripts/ci/QUEUE.md,
+# "Unsticking"). The rules are unstick_candidates, unstick_busy,
+# outside_cause and unstick_action; this reads the facts and acts on the
+# first pull request, in number order, the rules give an action. Held
+# pull requests and an open batch's members are left alone, and so is
+# everything while a rush change lands. QUEUE_UNSTICK=off turns it off.
+unstick_one() {
+  [ "${QUEUE_UNSTICK:-on}" != off ] || return 0
+  [ -z "$(tr -d ' \r\n' < "$flaky_dir/rush.list" 2>/dev/null)" ] || return 0
+  rm -f "$flaky_dir/pr-"*.tsv 2>/dev/null
+  us_listed=$(gh api "repos/{owner}/{repo}/pulls?state=open&per_page=100" --jq '.[] | [.number, (.draft | tostring), .head.sha, .base.ref] | @tsv' 2>"$gh_err") || { say "Unsticking: the open pull requests could not be listed; nothing done."; return 0; }
+  us_listed=$(drop_members "$us_listed" "${held:-} ${members:-}")
+  us_open=$(printf '%s\n' "$us_listed" | tr -d '\r' | while IFS="$tab" read -r us_n us_d us_sha us_b; do
+    [ -n "$us_n" ] && [ "$us_d" = false ] && [ "$us_b" = "$base" ] || continue
+    printf '%s\t%s\t%s\t%s\t%s\n' "$us_n" "$us_d" "$(mergeable_word "$(pr_field "$us_n" 5)")" "$(pr_rollup "$us_sha")" "$us_b"
+  done)
+  us_busy=$(unstick_busy "$us_open" "$base")
+  git fetch -q origin "+refs/heads/$base:refs/remotes/origin/$base" 2>/dev/null || { say "Unsticking: $base could not be fetched; nothing done."; return 0; }
+  for us_pr in $(unstick_candidates "$us_open" "$base"); do
+    us_row=$(printf '%s\n' "$us_open" | awk -F'\t' -v n="$us_pr" '$1 == n { print; exit }')
+    us_mw=$(printf '%s' "$us_row" | cut -f3); us_roll=$(printf '%s' "$us_row" | cut -f4)
+    us_head=$(fetch_pr_head "$us_pr") || continue
+    us_behind=$(git rev-list --count "$us_head..origin/$base" 2>/dev/null || echo 0)
+    us_merges=yes; us_files=""
+    us_mt=$(git merge-tree --write-tree --name-only "origin/$base" "$us_head" 2>/dev/null) && us_rc=0 || us_rc=$?
+    case $us_rc in
+      0) ;;
+      1) us_merges=no; us_files=$(printf '%s\n' "$us_mt" | sed -n '2,$p' | sed '/^$/,$d') ;;
+      *) continue ;;
+    esac
+    us_runs=$(gh api "repos/{owner}/{repo}/actions/workflows/${QUEUE_CI_WORKFLOW:-ci.yml}/runs?head_sha=$us_head&per_page=10" --jq '.workflow_runs[] | [(.id | tostring), .status] | @tsv' 2>/dev/null | tr -d '\r')
+    us_run=none; us_rid=""
+    if [ -n "$us_runs" ]; then
+      us_run=done; us_rid=$(printf '%s\n' "$us_runs" | head -n 1 | cut -f1)
+      printf '%s\n' "$us_runs" | awk -F'\t' '$2 != "completed" { b = 1 } END { exit !b }' && us_run=busy
+    fi
+    us_cause=""
+    if [ "$us_roll" = red ] && [ "$us_run" = done ]; then us_cause=$(outside_cause "$(run_jobs_text "$us_rid")" "${QUEUE_SUMMARY_CHECK:-CI passed}"); fi
+    [ "$us_roll" = cancelled ] && us_cause=${us_cause:-a cancelled run}
+    us_marks=$(unstick_marks "$(gh api "repos/{owner}/{repo}/issues/$us_pr/comments?per_page=100" --jq '.[].body' 2>/dev/null)")
+    us_act=$(unstick_action "$(printf '%s\t%s\t%s\t%s\t%s\t%s\t%s' "$us_mw" "$us_roll" "$us_head" "$us_behind" "$us_merges" "$us_cause" "$us_run")" "$us_marks" "$us_busy")
+    case "$us_act" in
+      clash)
+        say "Unsticking: #$us_pr conflicts with $base for real; asking its agent to merge $base in."
+        notify_conflict "$us_pr" "$us_files" main
+        return 0 ;;
+      update)
+        if gh_write api -X PUT "repos/{owner}/{repo}/pulls/$us_pr/update-branch" >/dev/null 2>"$gh_err"; then
+          say "Unsticking: #$us_pr $( [ "$us_mw" = CONFLICTING ] && echo "showed a clash with $base that merges cleanly" || echo "was $us_behind commit(s) behind $base" ); merged $base into it, and CI runs on the new commit."
+          sync_worktree "$(pr_field "$us_pr" 1)"
+        else
+          rate_stop
+          say "Unsticking: GitHub refused to merge $base into #$us_pr: $(head -n 1 "$gh_err" 2>/dev/null | tr -d '\r')"
+        fi
+        return 0 ;;
+      rerun)
+        if gh_write api -X POST "repos/{owner}/{repo}/actions/runs/$us_rid/rerun-failed-jobs" >/dev/null 2>&1 || gh_write api -X POST "repos/{owner}/{repo}/actions/runs/$us_rid/rerun" >/dev/null 2>&1; then
+          gh_write api -X POST "repos/{owner}/{repo}/issues/$us_pr/comments" -f body="$(unstick_rerun_note "${us_cause:-no checks on its head commit}" "$us_head")" >/dev/null 2>&1 || true
+          say "Unsticking: #$us_pr stopped for ${us_cause:-no checks on its head commit}, not its code; started its CI again, once for this commit."
+        else
+          say "Unsticking: GitHub refused to re-run CI on #$us_pr."
+        fi
+        return 0 ;;
+      cannot)
+        say "Unsticking: #$us_pr has no CI run on its head commit and is up to date with $base, so there is nothing to re-run; a pull request's CI starts on a push to it, so its agent pushes." ;;
+    esac
+  done
+  return 0
 }
 

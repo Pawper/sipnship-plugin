@@ -417,6 +417,11 @@ if [ "$mode" = drain ]; then
   fi
   say "drain rounds done"
   deploy_if_due "$d_begin"
+  # One stuck pull request a drain's end, never two: merge main into one
+  # that fell behind or clashes but merges cleanly, ask a real clash's
+  # agent once, or start CI again once on one red outside its code.
+  queue_step="unsticking one pull request"
+  unstick_one
   # Re-read each one before calling it a failure: a pull request red
   # earlier in the drain may be green, or only cancelled, by now.
   still=""

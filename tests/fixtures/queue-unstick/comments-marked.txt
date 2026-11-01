@@ -1,0 +1,9 @@
+The merge queue could not take this pull request: it conflicts with main in:
+
+- `src/beds/watering.ts`
+
+<!-- merge-queue:unstick clash aaa111 -->
+Nice work on the frost alert.
+The merge queue started CI again on this commit.
+
+<!-- merge-queue:unstick rerun bbb222 -->
