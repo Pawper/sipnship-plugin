@@ -648,6 +648,13 @@ jobs:
 eq "the smoke check skips when hosted minutes are gone" "1" "$(grep -c "if: vars.HOSTED_MINUTES != 'gone' && " "$root/templates/.github/workflows/smoke.yml")"
 eq "the audit reads the quota annotation" "1" "$(grep -c 'quota=\$(quota_gone' "$root/templates/.github/workflows/audit.yml")"
 eq "the audit says when a run sits queued" "1" "$(grep -c 'stuck=\$(stuck_runs' "$root/templates/.github/workflows/audit.yml")"
+# A workflow that names any permission gets none it leaves out, so in a private repository
+# its checkout finds no repository unless it asks for contents: read.
+blind=""
+for wf in "$root"/templates/.github/workflows/*.yml; do
+  grep -q '^permissions:' "$wf" && grep -q 'actions/checkout@' "$wf" && ! grep -q '^  contents: \(read\|write\)' "$wf" && blind="$blind $(basename "$wf")"
+done
+eq "every template workflow that checks out may read the repository" "" "$blind"
 eq "a queued run is one brief line" "Queued: CI on main has waited 14 minutes for a runner, and 1 more; start the runners (scripts/ci/RUNNERS.md)." "$(stuck_line "$(stuck_runs "$(printf '1\tCI\tmain\tqueued\t1060\n2\tAudit\tmain\tqueued\t1200\n')" 1900 10)")"
 eq "nothing queued, no line" "" "$(stuck_line '')"
 eq "the brief names a run queued over ten minutes" "1" "$(grep -c 'stuck_line "$(stuck_runs' "$root/hooks/scripts/session-brief.sh")"
