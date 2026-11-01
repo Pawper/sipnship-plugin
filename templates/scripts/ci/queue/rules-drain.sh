@@ -319,6 +319,76 @@ unstick_rerun_note() {
   unstick_mark rerun "$2"
 }
 
+# Held steps, recorded not remembered (scripts/ci/QUEUE.md, "Held steps").
+# An agent that means to act after another pull request lands once kept the
+# step in its head: a merge of main waited an hour past the landing it was
+# waiting for, with the runners idle and nothing saying so. Now the wait is
+# a comment on its pull request (scripts/ci/wait-for.sh) with a hidden mark
+# the drain's end reads.
+
+# after_mark AFTER STEP SESSION WORDS: the hidden line. STEP is merge-main
+# (the queue merges main in itself once AFTER lands) or wake (its session
+# does the step); SESSION is "-" when none was named; WORDS is the step in
+# plain words. A line break in WORDS is a space.
+after_mark() {
+  printf '<!-- merge-queue:after %s %s %s | %s -->\n' "$1" "$(after_step "$2")" "${3:--}" "$(printf '%s' "$4" | tr '\r\n|' '   ' | sed 's/--*>/ /g; s/  */ /g; s/^ //; s/ $//')"
+}
+
+# after_step WORD: merge-main for "merge-main" or "merge main in", wake for anything else.
+after_step() {
+  case "$(printf '%s' "$1" | tr 'A-Z' 'a-z')" in merge-main|"merge main"|"merge main in") echo merge-main ;; *) echo wake ;; esac
+}
+
+# after_done_mark AFTER: the line that marks every wait on AFTER done.
+after_done_mark() {
+  printf '<!-- merge-queue:after-done %s -->\n' "$1"
+}
+
+# after_marks COMMENTS
+# COMMENTS is a pull request's comment bodies. Print one line per wait not
+# yet marked done: "AFTER<TAB>STEP<TAB>SESSION<TAB>WORDS", the newest wait
+# on each AFTER only.
+after_marks() {
+  printf '%s\n' "$1" | tr -d '\r' | awk '
+    match($0, /<!-- merge-queue:after-done [0-9]+ -->/) { s = substr($0, RSTART, RLENGTH); split(s, w, " "); done[w[3]] = 1 }
+    match($0, /<!-- merge-queue:after [0-9]+ [a-z-]+ [^ ]+ \| .* -->/) {
+      s = substr($0, RSTART + 23, RLENGTH - 27); n = split(s, w, " ")
+      words = s; sub(/^[^|]*\| ?/, "", words)
+      if (!(w[1] in seen)) order[++k] = w[1]
+      seen[w[1]] = 1; step[w[1]] = w[2]; ses[w[1]] = w[3]; say[w[1]] = words
+    }
+    END { for (i = 1; i <= k; i++) { a = order[i]; if (!(a in done)) printf "%s\t%s\t%s\t%s\n", a, step[a], ses[a], say[a] } }'
+}
+
+# after_action STEP LANDED BUSY: what the drain's end does for one wait.
+# LANDED is yes when AFTER has merged; BUSY is unstick_busy. Print merge
+# (merge main in through update-branch), wake (name the session in the
+# report and mark it done), or nothing: not landed yet, or a merge of main
+# while another pull request's CI runs, so two re-merges never run at once.
+after_action() {
+  [ "$2" = yes ] || return 0
+  if [ "$1" = merge-main ]; then [ "$3" = yes ] || echo merge; else echo wake; fi
+}
+
+# after_wake_line PR AFTER SESSION WORDS: the drain report's line that wakes
+# the session holding PR, which the session brief repeats.
+after_wake_line() {
+  if [ -n "$3" ] && [ "$3" != - ]; then w_who="session $3"; else w_who="its agent"; fi
+  printf 'Wake: #%s waited for #%s, which has landed; %s takes the step now: %s\n' "$1" "$2" "$w_who" "${4:-the step it recorded}"
+}
+
+# after_note KIND AFTER WORDS: the comment the drain's end leaves when a
+# wait is due, ending with the mark that closes it. KIND is merged (it
+# merged main in) or wake.
+after_note() {
+  if [ "$1" = merged ]; then
+    printf '#%s landed, so the merge queue merged main into this pull request, the step recorded here. CI runs on the new commit by itself.\n\n' "$2"
+  else
+    printf '#%s landed. The step recorded here is due now: %s\n\n' "$2" "${3:-the step it named}"
+  fi
+  after_done_mark "$2"
+}
+
 # rule_check_step NAME: "yes" when a failed CI step is a rule check on the
 # change or its pull request (the CI template names each "Fail when ...", or
 # runs one of the check scripts) or the report after a failure, never a

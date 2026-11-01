@@ -420,8 +420,13 @@ if [ "$mode" = drain ]; then
   # One stuck pull request a drain's end, never two: merge main into one
   # that fell behind or clashes but merges cleanly, ask a real clash's
   # agent once, or start CI again once on one red outside its code.
+  # First the steps agents held until another pull request landed: merge
+  # main in where that was the step, or name the waiting session. A merge
+  # here is this drain's end's one re-merge, so nothing is unstuck after it.
+  queue_step="taking held steps"
+  held_steps
   queue_step="unsticking one pull request"
-  unstick_one
+  [ "$held_merged" = yes ] || unstick_one
   # Re-read each one before calling it a failure: a pull request red
   # earlier in the drain may be green, or only cancelled, by now.
   still=""

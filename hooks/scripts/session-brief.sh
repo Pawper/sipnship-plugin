@@ -155,6 +155,9 @@ if has queue && [ -n "$queue_glob" ]; then
     now=$(date +%s)
     if [ "$(log_is_recent "$newest_m" "$now")" = yes ]; then
       add "Queue: ran in the last two hours. Last line: $(tail -n 1 "$newest" 2>/dev/null)"
+      # A step an agent held until another pull request landed is due: the drain named its session.
+      wake=$(brief_wake_lines "$(cat "$newest" 2>/dev/null)")
+      [ -z "$wake" ] || add "$wake"
     else
       add "Queue: no run in the last two hours."
     fi

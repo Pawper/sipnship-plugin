@@ -154,9 +154,26 @@ main_checked=$(gate_checked_at "$main_gate")
 # A red main names its failing tests (at most five), joined by the unit separator so the tab-separated main field holds them.
 main_failing=""
 [ "$main_state" = red ] && main_failing=$(sh "$here/gate.sh" failing 2>/dev/null | tr -d '\r' | head -n 5 | tr '\n' '\037')
-landed_src=$(gh api "repos/{owner}/{repo}/commits?sha=$base&per_page=40" --jq '.[] | "\(.commit.message | split("\n")[0])\t\(.commit.committer.date)"' 2>/dev/null | tr -d '\r')
-[ -n "$landed_src" ] || landed_src=$(git log "origin/$base" -n 40 --format='%s%x09%cI' 2>/dev/null)
-landed_tsv=$(printf '%s\n' "$landed_src" | awk -F'\t' '{ if (match($1, /\(#[0-9]+\)/)) { n = substr($1, RSTART + 2, RLENGTH - 3); how = ($1 ~ /\[batch/ || $1 ~ /^batch PR/ || $1 ~ /merged into main/) ? "batch" : "serial"; t = $1; sub(/ \(#[0-9]+\).*$/, "", t); if (!(n in seen)) { seen[n] = 1; printf "%s\t%s\t%s\t%s\n", n, t, how, $2; c++ } } if (c >= 10) exit }')
+landed_src=$(gh api "repos/{owner}/{repo}/commits?sha=$base&per_page=40" --jq '.[] | "\(.commit.message | split("\n")[0])\t\(.commit.committer.date)\t\(.sha)"' 2>/dev/null | tr -d '\r')
+[ -n "$landed_src" ] || landed_src=$(git log "origin/$base" -n 40 --format='%s%x09%cI%x09%H' 2>/dev/null)
+landed_tsv=$(printf '%s\n' "$landed_src" | awk -F'\t' '{ if (match($1, /\(#[0-9]+\)/)) { n = substr($1, RSTART + 2, RLENGTH - 3); how = ($1 ~ /\[batch/ || $1 ~ /^batch PR/ || $1 ~ /merged into main/) ? "batch" : "serial"; t = $1; sub(/ \(#[0-9]+\).*$/, "", t); if (!(n in seen)) { seen[n] = 1; printf "%s\t%s\t%s\t%s\t%s\n", n, t, how, $2, $3; c++ } } if (c >= 10) exit }')
+# Whether each landing ships anything, by the deploy gate's own rule over its
+# commit against its first parent: a deploy card lists one that ships nothing
+# apart (spec 005). Each commit is asked once, and kept in ships.tsv; one
+# not at hand here is left unsaid.
+landed_tsv=$(printf '%s\n' "$landed_tsv" | sed '/^$/d' | while IFS= read -r l; do
+  ls_sha=$(printf '%s' "$l" | cut -f5); ls_ships=""
+  if [ -n "$ls_sha" ] && [ -f .claude/deploy.json ] && [ -f "$here/deploy-gate.sh" ]; then
+    ls_ships=$(awk -F'\t' -v s="$ls_sha" '$1 == s { print $2; exit }' "$flaky_dir/ships.tsv" 2>/dev/null)
+    if [ -z "$ls_ships" ] && git cat-file -e "$ls_sha^{commit}" 2>/dev/null; then
+      case "$(sh "$here/deploy-gate.sh" --ships "$ls_sha^1" "$ls_sha" 2>/dev/null)" in build) ls_ships=yes ;; skip) ls_ships=no ;; esac
+      [ -z "$ls_ships" ] || printf '%s\t%s\n' "$ls_sha" "$ls_ships" >> "$flaky_dir/ships.tsv" 2>/dev/null || true
+    fi
+  fi
+  printf '%s\t%s\n' "$(printf '%s' "$l" | cut -f1-4)" "$ls_ships"
+done)
+# The steps agents held until another pull request lands, as the drain's end last read them.
+waits_tsv=$(awk -F'\t' 'NF >= 3' "$flaky_dir/after.tsv" 2>/dev/null)
 runners_tsv=""
 rr=$(gh api "repos/{owner}/{repo}/actions/runners" --jq '"\([.runners[] | select(.status == "online")] | length)\t\([.runners[] | select(.busy)] | length)"' 2>/dev/null | tr -d '\r')
 if [ -n "$rr" ]; then
@@ -179,7 +196,7 @@ deploy_line=""; [ -f .claude/deploy.json ] && [ -f "$here/deploy-gate.sh" ] && d
 stopped_line=""; [ "$mode" = idle ] && stopped_line=$(head -n 1 "$flaky_dir/stopped" 2>/dev/null | tr -d '\r')
 say=$(publish_say "$open_tsv" "$batch_tsv" "$building" "$clashes_tsv" "$attention_tsv" "$runners_tsv" "$deploy_line" "$mode" "$paused_until" "$stopped_line")
 now_iso=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-json=$(publish_json "$open_tsv" "$batch_tsv" "$building" "$clashes_tsv" "$landed_tsv" "$runners_tsv" "$attention_tsv" "$(printf '%s\t%s\t%s\t%s\t%s' "$main_sha" "$main_state" "$main_checked" "$main_waiting" "$main_failing")" "$deploy_line" "$mode" "$paused_until" "$checking" "$say" "$now_iso" "$rush_tsv")
+json=$(publish_json "$open_tsv" "$batch_tsv" "$building" "$clashes_tsv" "$landed_tsv" "$runners_tsv" "$attention_tsv" "$(printf '%s\t%s\t%s\t%s\t%s' "$main_sha" "$main_state" "$main_checked" "$main_waiting" "$main_failing")" "$deploy_line" "$mode" "$paused_until" "$checking" "$say" "$now_iso" "$rush_tsv" "$waits_tsv")
 
 # 5. Only a change worth a write: the time stamp and the two numbers that
 # tick with time (how long a queued run has waited, a batch's minutes left)

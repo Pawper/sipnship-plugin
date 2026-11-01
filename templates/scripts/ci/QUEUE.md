@@ -35,6 +35,19 @@ A pull request that fell behind main, clashed with it, or went red for a reason 
 
 A red pull request whose failure is in its code is its agent's turn, and is left alone. Held pull requests, an open batch's members, and everything while a rush change lands are left alone too. The rules are pure functions in `queue/rules-drain.sh` (`unstick_candidates`, `unstick_busy`, `outside_cause`, `unstick_action`), tested with fixtures; `QUEUE_UNSTICK=off` turns the step off.
 
+## Held steps, recorded not remembered
+
+An agent that means to act after another pull request lands records the wait on its own pull request, instead of keeping it in mind:
+
+    sh scripts/ci/wait-for.sh PR AFTER [merge-main|"the step in words"] [SESSION]
+
+It posts one comment with a hidden `merge-queue:after` mark and adds the `queue:after` label. Before unsticking, each drain's end reads the marks on the labelled pull requests. When AFTER has landed:
+
+- **merge-main** (the default): the queue merges main into the pull request through update-branch, as unsticking does, and comments that it did. That is the drain's end's one re-merge, so nothing is unstuck after it, and it waits a drain while another pull request's CI is running.
+- **any other step:** the drain's report says `Wake: #PR waited for #AFTER, which has landed; session NAME takes the step now: ...`, the session brief repeats that line, and a comment on the pull request says the step is due.
+
+Either way the comment ends with a mark that closes the wait, and the label goes when nothing waits on the pull request any more. The waits still open go into the published state (`waits`), so the dashboard shows "Waiting for an agent" with what each waits for. The rules are `after_mark`, `after_marks`, `after_action` and `after_wake_line` in `queue/rules-drain.sh`; `QUEUE_HELD_STEPS=off` turns the step off.
+
 ## The queue on a timer
 
 A drain started with `/loop` runs only while that session is open; close the app and six green pull requests sit until morning. Two ways to keep it going without a session:

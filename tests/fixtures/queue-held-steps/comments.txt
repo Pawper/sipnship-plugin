@@ -1,0 +1,9 @@
+Waiting for #176 (Frost dates for each bed) to land, then: merge main in. When it lands, the merge queue merges main into this pull request by itself.
+
+<!-- merge-queue:after 176 merge-main garden-4 | merge main in -->
+Waiting for #177 (Empty beds show a planting hint) to land, then: push the watering fix.
+<!-- merge-queue:after 177 wake - | push the watering fix -->
+An ordinary review comment about the reminders.
+#175 landed. The step recorded here is due now: rename the beds
+<!-- merge-queue:after 175 wake garden-2 | rename the beds -->
+<!-- merge-queue:after-done 175 -->

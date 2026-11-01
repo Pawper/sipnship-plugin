@@ -68,6 +68,7 @@ scripts/ci/QUEUE.md
 scripts/ci/deploy-gate.sh
 scripts/ci/publish-lib.sh
 scripts/ci/publish-state.sh
+scripts/ci/wait-for.sh
 default scripts/ci/generated-paths.txt
 default scripts/ci/spec-roots.txt
 scripts/pr-checks.sh

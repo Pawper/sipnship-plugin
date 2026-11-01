@@ -159,6 +159,14 @@ worktree_summary() {
     }'
 }
 
+# brief_wake_lines LOG
+# LOG is the newest queue log. Print its "Wake: ..." lines (a step an agent
+# held until another pull request landed is now due, scripts/ci/QUEUE.md,
+# "Held steps"), the time stamp dropped, once each, the last three.
+brief_wake_lines() {
+  printf '%s\n' "$1" | tr -d '\r' | sed -n 's/^\([0-9][0-9]:[0-9][0-9] \)\{0,1\}\(Wake: .*\)$/\2/p' | awk '!seen[$0]++' | tail -n 3
+}
+
 # log_is_recent MTIME NOW [WINDOW]
 # MTIME and NOW are epoch seconds; WINDOW defaults to two hours. Print
 # "yes" when the log was written inside the window, "no" otherwise.

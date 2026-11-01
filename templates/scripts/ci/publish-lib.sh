@@ -160,12 +160,12 @@ publish_say() {
   printf '%s\n%s\n%s\n' "$s1" "$s2" "$s3"
 }
 
-# publish_json OPEN BATCH BUILDING CLASHES LANDED RUNNERS ATTENTION MAIN DEPLOY MODE PAUSED_UNTIL CHECKING SAY NOW
+# publish_json OPEN BATCH BUILDING CLASHES LANDED RUNNERS ATTENTION MAIN DEPLOY MODE PAUSED_UNTIL CHECKING SAY NOW [RUSH] [WAITS]
 # The state as one JSON object (version 1). SAY is publish_say's three
 # lines; NOW the ISO time of the write.
 publish_json() {
   pj_open=$1; pj_batch=$2; pj_building=$3; pj_clashes=$4; pj_landed=$5; pj_runners=$6; pj_att=$7; pj_main=$8; pj_deploy=$9
-  shift 9; pj_mode=$1; pj_until=$2; pj_checking=$3; pj_say=$4; pj_now=$5; pj_rush=${6:-}
+  shift 9; pj_mode=$1; pj_until=$2; pj_checking=$3; pj_say=$4; pj_now=$5; pj_rush=${6:-}; pj_waits=${7:-}
   printf '{"version":1,"updatedAt":%s,"mode":%s,"pausedUntil":%s,' "$(json_str "$pj_now")" "$(json_str "$pj_mode")" "$( [ -n "$pj_until" ] && json_str "$pj_until" || printf null)"
   printf '"say":{"doing":%s,"waiting":%s,"needs":%s},' "$(json_str "$(printf '%s\n' "$pj_say" | sed -n 1p)")" "$(json_str "$(printf '%s\n' "$pj_say" | sed -n 2p)")" "$(json_str "$(printf '%s\n' "$pj_say" | sed -n 3p)")"
   pj_checked=$(printf '%s' "$pj_main" | cut -s -f3); pj_mwait=$(printf '%s' "$pj_main" | cut -s -f4)
@@ -193,7 +193,12 @@ publish_json() {
     rounds=$(printf '%s' "$l" | cut -s -f7); since=$(printf '%s' "$l" | cut -s -f8)
     fn=$(printf '%s\n' $f | sed '/^$/d' | wc -l | tr -d ' ')
     printf '{"leftOut":%s,"with":%s,"withTitle":%s,"files":[%s],"file":%s,"fileCount":%s,"why":%s,"told":%s,"rounds":%s,"since":%s},' "$(json_num "$a")" "$( [ "$b" = main ] && json_str main || json_num "$b")" "$( [ -n "$bt" ] && json_str "$bt" || printf null)" "$(for x in $f; do json_str "$x"; printf ','; done | sed 's/,$//')" "$( [ "$fn" -gt 0 ] && json_str "$(printf '%s\n' $f | head -n 1)" || printf null)" "$fn" "$( [ -n "$why" ] && json_str "$why" || printf null)" "$( [ "$told" = yes ] && printf true || printf false)" "$(json_num "$rounds")" "$( [ -n "$since" ] && json_str "$since" || printf null)"; done | sed 's/,$//')"
-  printf '"landed":[%s],' "$(printf '%s\n' "$pj_landed" | sed '/^$/d' | while IFS="$(printf '\t')" read -r n t how at; do printf '{"number":%s,"title":%s,"how":%s,"at":%s},' "$(json_num "$n")" "$(json_str "$t")" "$(json_str "$how")" "$(json_str "$at")"; done | sed 's/,$//')"
+  # A landing's fifth field, when known: yes when something in it ships, no when the deploy gate's rule finds nothing that does.
+  printf '"landed":[%s],' "$(printf '%s\n' "$pj_landed" | sed '/^$/d' | while IFS="$(printf '\t')" read -r n t how at ships; do printf '{"number":%s,"title":%s,"how":%s,"at":%s%s},' "$(json_num "$n")" "$(json_str "$t")" "$(json_str "$how")" "$(json_str "$at")" "$(case "$ships" in yes) printf ',"ships":true' ;; no) printf ',"ships":false' ;; esac)"; done | sed 's/,$//')"
+  # Steps held until another pull request lands: "pr<TAB>after<TAB>step<TAB>session<TAB>words" (held_steps' after.tsv).
+  printf '"waits":[%s],' "$(printf '%s\n' "$pj_waits" | sed '/^$/d' | while IFS= read -r l; do
+    w_n=$(printf '%s' "$l" | cut -f1); w_a=$(printf '%s' "$l" | cut -f2); w_s=$(printf '%s' "$l" | cut -f3); w_ses=$(printf '%s' "$l" | cut -f4); w_w=$(printf '%s' "$l" | cut -f5)
+    printf '{"number":%s,"after":%s,"step":%s,"session":%s,"words":%s},' "$(json_num "$w_n")" "$(json_num "$w_a")" "$(json_str "$w_s")" "$( [ -n "$w_ses" ] && [ "$w_ses" != - ] && json_str "$w_ses" || printf null)" "$(json_str "$w_w")"; done | sed 's/,$//')"
   if [ -n "$pj_runners" ]; then printf '"runners":{"online":%s,"busy":%s,"queued":%s,"longestWaitMinutes":%s},' "$(json_num "$(printf '%s' "$pj_runners" | cut -f1)")" "$(json_num "$(printf '%s' "$pj_runners" | cut -f2)")" "$(json_num "$(printf '%s' "$pj_runners" | cut -f3)")" "$(json_num "$(printf '%s' "$pj_runners" | cut -f4)")"; else printf '"runners":null,'; fi
   printf '"needsAttention":[%s],' "$(printf '%s\n' "$pj_att" | sed '/^$/d' | while IFS="$(printf '\t')" read -r n what why line; do printf '{"number":%s,"what":%s,"why":%s,"line":%s},' "$(json_num "$n")" "$(json_str "$what")" "$(json_str "$why")" "$(json_str "$line")"; done | sed 's/,$//')"
   # A rush: the list in order, each paused row in the muted role with the
