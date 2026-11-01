@@ -12,6 +12,11 @@
 # repository root from its own location, so it works from any directory.
 # Running it twice with the same version changes nothing the second time.
 #
+# Nobody tags the release. When the merge queue lands the pull request that
+# carries the bump, it pushes the tag plugin-v<version> on that merge
+# commit (tag_releases in scripts/ci/queue/deploy.sh), and the release
+# workflow on that tag publishes the plugin.
+#
 # --no-known  skip regenerating KNOWN.txt (the tests use this).
 set -e
 
@@ -61,4 +66,4 @@ fi
 
 echo "Version is $version. Two commands are left:"
 echo "  1. the suite:   (cd plugin && sh tests/run.sh)"
-echo "  2. the release: split and push the plugin as usual"
+echo "  2. the release: open the pull request; when the queue lands it, it tags plugin-v$version and the release workflow publishes"

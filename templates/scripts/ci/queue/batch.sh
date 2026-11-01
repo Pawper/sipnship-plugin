@@ -247,6 +247,14 @@ if [ -n "$pairs" ]; then
   done
   prs=$group
 fi
+# How many rounds in a row each change left out has missed, and since
+# when, kept across drains in the queue's own record (clash-rounds) and
+# added to its clash line for the published state (spec 001). A round that
+# leaves a change in ends its count.
+cr_rec=$(clash_rounds "$(cat "$flaky_dir/clash-rounds" 2>/dev/null)" "$(cut -f1 "$flaky_dir/clashes" 2>/dev/null | tr '\n' ' ')" "$(date -u +%Y-%m-%dT%H:%M:%SZ)")
+printf '%s\n' "$cr_rec" | sed '/^$/d' > "$flaky_dir/clash-rounds" 2>/dev/null || true
+cr_lines=$(clash_with_rounds "$(cat "$flaky_dir/clashes" 2>/dev/null)" "$cr_rec")
+[ -z "$cr_lines" ] || printf '%s\n' "$cr_lines" > "$flaky_dir/clashes" 2>/dev/null || true
 # The console shows the batch being built here, which takes minutes a
 # pull request on a slow machine and once looked like a stalled queue:
 # "building MERGED TOTAL CURRENT MEMBER...", cleared when the loop ends.

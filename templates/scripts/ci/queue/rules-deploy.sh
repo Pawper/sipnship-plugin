@@ -21,6 +21,31 @@ release_workflows() {
   printf '%s' "$1" | tr -d '\r\n' | sed -n 's/.*"releases"[ \t]*:[ \t]*\[\([^]]*\)\].*/\1/p' | tr ',' '\n' | sed 's/[" \t]//g; /^$/d'
 }
 
+# package_version PACKAGE_JSON: the "version" a package.json holds, or nothing.
+package_version() {
+  printf '%s' "$1" | tr -d '\r' | sed -n 's/^[ \t]*"version"[ \t]*:[ \t]*"\([^"]*\)".*/\1/p' | head -n 1
+}
+
+# release_tag BEFORE AFTER PREFIX: the tag a landing pushes when it moves
+# the version of the package whose release workflow runs on PREFIX tags:
+# PREFIX plus AFTER's version when it differs from BEFORE's; nothing when
+# it is the same or AFTER has none. BEFORE and AFTER are the package.json
+# texts on the merge commit's first parent and on the merge commit. A
+# release once waited half a day on a person to push the tag by hand.
+release_tag() {
+  rt_new=$(package_version "$2")
+  [ -n "$rt_new" ] || return 0
+  [ "$rt_new" = "$(package_version "$1")" ] && return 0
+  printf '%s%s\n' "$3" "$rt_new"
+}
+
+# release_tag_wanted WORKFLOWS PREFIX: "yes" when a workflow's text (all
+# of .github/workflows, joined) runs on a pushed tag PREFIX*, so a project
+# without such a release never gets a tag it does not use.
+release_tag_wanted() {
+  if printf '%s\n' "$1" | grep -F -- "$2*" >/dev/null 2>&1; then echo yes; else echo no; fi
+}
+
 # queue_status LOCK_REASON LAST_LINE
 # One line for --status: "running: a --drain started 12 minute(s) ago is
 # still running (pid 4242); last line: ..." or "idle; last line: ...".

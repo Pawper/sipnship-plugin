@@ -164,3 +164,33 @@ batch_line() {
     printf '#%s %s\n' "$1" "$2"
   fi
 }
+
+# clash_rounds RECORD LEFT_OUT NOW: the queue's record of changes left out
+# for a clash, "number\trounds\tsince" per line, after one more round. A
+# change left out again keeps its first time and counts one more round; one
+# left out for the first time starts at 1 with NOW; one not left out this
+# round leaves the record, since its rounds count only in a row. LEFT_OUT is
+# the numbers left out this round, space separated; NOW an ISO time, UTC.
+clash_rounds() {
+  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v left=" $2 " -v now="$3" '
+    NF >= 3 && $1 != "" { r[$1] = $2 + 0; s[$1] = $3 }
+    END {
+      n = split(left, l, " ")
+      for (i = 1; i <= n; i++) {
+        p = l[i]; if (p == "" || (p in done)) continue; done[p] = 1
+        if (p in r) printf "%s\t%d\t%s\n", p, r[p] + 1, s[p]
+        else printf "%s\t1\t%s\n", p, now
+      }
+    }'
+}
+
+# clash_with_rounds CLASHES RECORD: each line of the clashes file
+# ("leftOut\twith\ttitle\tfiles\twhy") with its rounds and since from the
+# record added as the sixth and seventh fields; a line the record does not
+# name is left as it is.
+clash_with_rounds() {
+  printf '%s\n' "$1" | tr -d '\r' | CWR_REC=$(printf '%s' "$2" | tr -d '\r') awk -F'\t' '
+    BEGIN { n = split(ENVIRON["CWR_REC"], lines, "\n"); for (i = 1; i <= n; i++) { split(lines[i], f, "\t"); if (f[1] != "") { r[f[1]] = f[2]; s[f[1]] = f[3] } } }
+    NF == 0 { next }
+    { line = $1 "\t" $2 "\t" $3 "\t" $4 "\t" $5; if ($1 in r) line = line "\t" r[$1] "\t" s[$1]; print line }'
+}

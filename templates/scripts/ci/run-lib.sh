@@ -107,6 +107,8 @@ flaky_log_add() {
 
 # flaky_offenders LOG [THRESHOLD]
 # A flake is a failure of a test that then passed on the same pull request.
+# A pass recorded "cleared" (the head or the body changed, or only a rule
+# check failed: retry_is_flake) ends the failures before it without a flake.
 # Every such failure counts, on one pull request or across several, so a
 # test that failed twice before passing on one pull request is two flakes.
 # Print each test with at least THRESHOLD (default 2) flakes:
@@ -116,6 +118,7 @@ flaky_offenders() {
     NF >= 4 {
       k = $3 SUBSEP $2
       if ($4 == "failed") failed[k]++
+      else if ($4 == "cleared") failed[k] = 0
       else if ($4 == "passed" && failed[k] > 0) {
         n[$3] += failed[k]; failed[k] = 0
         if (!(k in counted)) { counted[k] = 1; prs[$3] = (prs[$3] == "") ? $2 : prs[$3] "," $2 }

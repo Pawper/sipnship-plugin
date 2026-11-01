@@ -125,11 +125,12 @@ case "$now_line" in
   checking\ *) checking=${now_line#checking } ;;
   building\ *) building=${now_line#building } ;;
 esac
-# The clashes file: "leftOut\twith\twith's title\tfiles\twhy" per line (an
-# older queue wrote "leftOut with"). Fields are cut, never read with a
-# tab IFS: read collapses empty tab fields, and a clash once published
-# its told flag where the file's name belongs.
-clashes_tsv=$(tr -d '\r' < "$flaky_dir/clashes" 2>/dev/null | awk -F'\t' 'NF >= 2 { printf "%s\t%s\t%s\t%s\t%s\tyes\n", $1, $2, $3, $4, $5; next } { split($0, a, " "); if (a[2] != "") printf "%s\t%s\t\t\t\tyes\n", a[1], a[2] }')
+# The clashes file: "leftOut\twith\twith's title\tfiles\twhy\trounds\tsince"
+# per line, the last two from the queue's record of rounds missed in a row
+# (an older queue wrote "leftOut with", or no rounds). Fields are cut, never
+# read with a tab IFS: read collapses empty tab fields, and a clash once
+# published its told flag where the file's name belongs.
+clashes_tsv=$(tr -d '\r' < "$flaky_dir/clashes" 2>/dev/null | awk -F'\t' 'NF >= 2 { printf "%s\t%s\t%s\t%s\t%s\tyes\t%s\t%s\n", $1, $2, $3, $4, $5, $6, $7; next } { split($0, a, " "); if (a[2] != "") printf "%s\t%s\t\t\t\tyes\t\t\n", a[1], a[2] }')
 attention_tsv=$(awk -F'\t' 'NF >= 2' "$flaky_dir/attention.tsv" 2>/dev/null)
 paused_until=""
 if [ "$mode" = idle ]; then

@@ -493,6 +493,51 @@ eq "the JSON block is read back out of the body" "yes" "$(published_json "$po_bo
 eq "the queue publishes as it drains and at its end" "2" "$(grep -c 'publish_now draining\|publish_now idle' "$mq_all")"
 eq "the drain workflow may write issues" "1" "$(grep -c '^  issues: write' "$root/templates/.github/workflows/queue-drain.yml")"
 eq "the queue label exists" "1" "$(grep -c 'mk "queue"' "$root/templates/scripts/labels.sh")"
+# Rounds missed in a row and since when, kept in the queue's record (fixtures/clash-rounds).
+. "$root/templates/scripts/ci/batch-lib.sh"
+cr_dir="$root/tests/fixtures/clash-rounds"
+eq "a change left out the first time starts at one round, now" "252	1	2026-10-31T09:00:00Z" "$(clash_rounds "$(cat "$cr_dir/none.record")" "252" 2026-10-31T09:00:00Z)"
+eq "a change left out again counts one more round and keeps its first time; one left in leaves the record" "252	3	2026-10-30T18:00:00Z" "$(clash_rounds "$(cat "$cr_dir/two-rounds.record")" "252" 2026-10-31T09:00:00Z)"
+eq "a round that leaves nothing out empties the record" "" "$(clash_rounds "$(cat "$cr_dir/two-rounds.record")" "" 2026-10-31T09:00:00Z)"
+eq "a clash line gains its rounds and since from the record" "252	249	Water the beds on a schedule	src/lib/dates.ts	conflicts with #249	2	2026-10-30T18:00:00Z" "$(clash_with_rounds "$(printf '252\t249\tWater the beds on a schedule\tsrc/lib/dates.ts\tconflicts with #249')" "$(cat "$cr_dir/two-rounds.record")")"
+eq "a clash line the record does not name is left as it is" "270	main			conflicts with main" "$(clash_with_rounds "$(printf '270\tmain\t\t\tconflicts with main')" "$(cat "$cr_dir/two-rounds.record")")"
+cr_cl=$(awk -F'\t' 'NF >= 2 { printf "%s\t%s\t%s\t%s\t%s\tyes\t%s\t%s\n", $1, $2, $3, $4, $5, $6, $7 }' "$cr_dir/clashes")
+eq "the published clash carries its rounds and since" "3|2026-10-30T18:00:00Z|1" "$(bm_json "" "$cr_cl" | bm_q '[j.clashes[0].rounds, j.clashes[0].since, j.version].join("|")')"
+eq "a clash without rounds publishes nulls" "null|null" "$(bm_json "" "$bm_cl" | bm_q '[String(j.clashes[0].rounds), String(j.clashes[0].since)].join("|")')"
+eq "the batch keeps the rounds record and publishes it with the clash" "2" "$(grep -c 'clash_rounds \|clash_with_rounds ' "$root/templates/scripts/ci/queue/batch.sh")"
+eq "publish-state reads the rounds and since from the clashes file" "1" "$(grep -c '\$5, \$6, \$7; next' "$root/templates/scripts/ci/publish-state.sh")"
+# A landing that moves the plugin's version is tagged, so its release starts.
+rt_before='{
+  "name": "garden-plugin",
+  "version": "0.32.0",
+  "dependencies": { "x": { "version": "9.9.9" } }
+}'
+rt_after=$(printf '%s' "$rt_before" | sed 's/"0.32.0"/"0.33.0"/')
+eq "a version moved by the merge is tagged with the prefix" "plugin-v0.33.0" "$(release_tag "$rt_before" "$rt_after" plugin-v)"
+eq "a merge that leaves the version is not tagged" "" "$(release_tag "$rt_before" "$rt_before" plugin-v)"
+eq "a package that first appears is tagged" "plugin-v0.33.0" "$(release_tag "" "$rt_after" plugin-v)"
+eq "a merge that removes the package is not tagged" "" "$(release_tag "$rt_before" "" plugin-v)"
+eq "a workflow on such tags wants them" "yes" "$(release_tag_wanted "on:
+  push:
+    tags: ['plugin-v*']" plugin-v)"
+eq "a project without such a workflow gets no tag" "no" "$(release_tag_wanted "on:
+  push:
+    branches: [main]" plugin-v)"
+eq "every landing's deploy step tags first, with the queue's write token" "2" "$(grep -c 'tag_releases "\$1" "\$d_end"\|gh_write api -X POST "repos/{owner}/{repo}/git/refs"' "$root/templates/scripts/ci/queue/deploy.sh")"
+# A retry is a flake only on the same head and body, with a test step failed.
+eq "a rule check step is not a test" "yes" "$(rule_check_step 'Fail when a screen changes and its mock does not')"
+eq "a test step is a test" "no" "$(rule_check_step 'Run the shell-1 part')"
+eq "same head, same body, a test failed: a flake" "yes" "$(retry_is_flake "$(printf 'abc\tb1\tRun the shell-1 part')" abc b1)"
+eq "a rule check on the body passed after the body was edited: not a flake" "no" "$(retry_is_flake "$(printf 'abc\tb1\tFail when a screen changes and its mock does not')" abc b2)"
+eq "only rule checks failed, nothing changed: not a flake" "no" "$(retry_is_flake "$(printf 'abc\tb1\tFail when a file is deleted without a stated reason;Say what failed')" abc b1)"
+eq "a new head commit fixed it: not a flake" "no" "$(retry_is_flake "$(printf 'abc\tb1\tRun the shell-1 part')" def b1)"
+eq "no record of the failure: not a flake" "no" "$(retry_is_flake "" abc b1)"
+eq "unread steps on the same head and body count as a test" "yes" "$(retry_is_flake "$(printf 'abc\tb1\t')" abc b1)"
+rf_cl=$(flaky_log_add '' 2026-10-31 412 'job:checks' failed)
+rf_cl=$(flaky_log_add "$rf_cl" 2026-10-31 412 'job:checks' cleared)
+rf_cl=$(flaky_log_add "$rf_cl" 2026-10-31 412 'job:checks' passed)
+eq "a cleared pass ends the failures before it without a flake" "" "$(flaky_offenders "$rf_cl" 1)"
+eq "a pass is recorded cleared when retry_is_flake says no" "1" "$(grep -c 'rf_result=cleared' "$root/templates/scripts/ci/queue/runs.sh")"
 
 section 'the queue on the service road (spec 006)'
 sv_waits="$(printf '1000\t-\tci / unit\t3\t3\t4\n1100\t-\tci / app\t1\t3\t2\n10\t-\told job\t1\t1\t9')"

@@ -319,3 +319,37 @@ unstick_rerun_note() {
   unstick_mark rerun "$2"
 }
 
+# rule_check_step NAME: "yes" when a failed CI step is a rule check on the
+# change or its pull request (the CI template names each "Fail when ...", or
+# runs one of the check scripts) or the report after a failure, never a
+# test; "no" otherwise.
+rule_check_step() {
+  case "$1" in
+    "Fail when"*|"Say what failed"*|"Name the failed job"*) echo yes ;;
+    *mock-check*|*delete-check*|*spec-check*|*setup-check*|*shared-check*|*design-check*|*numbering-check*|*line-endings*|*private-names*) echo yes ;;
+    *) echo no ;;
+  esac
+}
+
+# retry_is_flake FAILED NOW_HEAD NOW_BODY: "yes" when a run that failed
+# and then passed is a flake. FAILED is the failure's context, "head\tbody
+# hash\tfailed steps" (the steps joined by ";", empty when unread). A flake
+# needs the same head commit, the same pull request body, and a failed step
+# that is a test: a rule check on the body that passed once the body was
+# edited (a missing Mock: line, a deletion without a Deletes: line) is not
+# an unreliable test, and was once filed as one. Unknown steps count as a
+# test, so a failing test named from the log is still caught.
+retry_is_flake() {
+  rf_h=$(printf '%s' "$1" | cut -f1); rf_b=$(printf '%s' "$1" | cut -s -f2); rf_s=$(printf '%s' "$1" | cut -s -f3)
+  if [ -z "$rf_h" ] || [ "$rf_h" != "$2" ] || [ "$rf_b" != "$3" ]; then echo no; return 0; fi
+  [ -n "$rf_s" ] || { echo yes; return 0; }
+  rf_old=$IFS; IFS=';'
+  for rf_step in $rf_s; do
+    IFS=$rf_old
+    [ -n "$rf_step" ] || continue
+    if [ "$(rule_check_step "$rf_step")" = no ]; then echo yes; return 0; fi
+  done
+  IFS=$rf_old
+  echo no
+}
+

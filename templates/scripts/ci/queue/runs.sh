@@ -108,6 +108,17 @@ diagnose() {
 record_flaky() {
   rf_log=""; [ -f "$flaky_dir/flaky.tsv" ] && rf_log=$(cat "$flaky_dir/flaky.tsv")
   rf_day=$(date +%Y-%m-%d)
+  # The pull request's head and body now, to tell a flake from a fix: a
+  # rule check on the body passes once the body is edited, with no push.
+  rf_pr=$(gh api "repos/{owner}/{repo}/pulls/$1" --jq '.head.sha + "\n" + (.body // "")' 2>/dev/null | tr -d '\r')
+  rf_head=$(printf '%s\n' "$rf_pr" | sed -n 1p)
+  rf_body=$(printf '%s\n' "$rf_pr" | sed 1d | git hash-object --stdin 2>/dev/null)
+  rf_result=$3
+  if [ "$3" = failed ]; then
+    rf_steps=$(gh api "repos/{owner}/{repo}/actions/runs/$2/jobs?per_page=100" --jq '.jobs[] | select(.conclusion == "failure") | .steps[]? | select(.conclusion == "failure") | .name' 2>/dev/null | tr -d '\r' | tr '\n;' '; ' | sed 's/;$//')
+    rf_ctx=$(grep -v "^$1	" "$flaky_dir/flaky-context.tsv" 2>/dev/null)
+    printf '%s\n%s\t%s\t%s\t%s\n' "$rf_ctx" "$1" "$rf_head" "$rf_body" "$rf_steps" | sed '/^$/d' > "$flaky_dir/flaky-context.tsv"
+  fi
   if [ "$3" = failed ]; then
     tests=$(failed_tests_from_log "$(gh run view "$2" --log-failed 2>/dev/null)")
     # A class job that failed with no test named (a lost log, a runner
@@ -118,10 +129,12 @@ record_flaky() {
     [ -n "$tests" ] && echo "Failing tests:$(printf '%s\n' "$tests" | head -n 5 | tr '\n' ';' | sed 's/;$//')"
   else
     tests=$(printf '%s\n' "$rf_log" | awk -F'\t' -v pr="$1" '$2 == pr && $4 == "failed" { print $3 }' | awk '!seen[$0]++')
+    # Passed after a push, a body edit, or a rule check alone: a fix, not a flake.
+    if [ -n "$tests" ] && [ "$(retry_is_flake "$(awk -F'\t' -v pr="$1" '$1 == pr { l = $2 "\t" $3 "\t" $4 } END { print l }' "$flaky_dir/flaky-context.tsv" 2>/dev/null)" "$rf_head" "$rf_body")" = no ]; then rf_result=cleared; fi
   fi
   for t in $(printf '%s\n' "$tests" | tr ' ' '\001'); do
     t=$(printf '%s' "$t" | tr '\001' ' ')
-    rf_log=$(flaky_log_add "$rf_log" "$rf_day" "$1" "$t" "$3")
+    rf_log=$(flaky_log_add "$rf_log" "$rf_day" "$1" "$t" "$rf_result")
   done
   printf '%s\n' "$rf_log" > "$flaky_dir/flaky.tsv"
   # A test that flaked twice gets an issue, once.
