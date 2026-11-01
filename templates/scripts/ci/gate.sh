@@ -4,6 +4,9 @@
 #       prints "run" or "skip: <why>"; GATE_QUIET_MINUTES is the quiet time
 #   sh scripts/ci/gate.sh last            the last gate that ran its tests:
 #       "head-sha<TAB>conclusion<TAB>created-epoch", or nothing
+#   sh scripts/ci/gate.sh failing         the last gate's failing tests, when it
+#       failed: "part: test" per line, at most five, read from the failed
+#       jobs' annotations; nothing when it passed or named none
 # The last gated head is read from GitHub, never kept in a file: the
 # newest completed scheduled runs of ci.yml, and of those the first whose
 # tests job ran. Needs GH_TOKEN; REST only.
@@ -16,16 +19,25 @@ runs_tsv() {
     --jq '.workflow_runs[] | [.id, .head_sha, (.conclusion // ""), .created_at] | @tsv' 2>/dev/null | tr -d '\r' \
     | while IFS="	" read -r id sha conc at; do
         ran=$(gh api "repos/{owner}/{repo}/actions/runs/$id/jobs?per_page=100" --jq '[.jobs[] | select(.name | startswith("tests")) | select(.conclusion != "skipped")] | if length > 0 then "yes" else "no" end' 2>/dev/null | tr -d '\r')
-        printf '%s\t%s\t%s\t%s\n' "$sha" "$conc" "$(to_epoch "$at")" "${ran:-no}"
+        printf '%s\t%s\t%s\t%s\t%s\n' "$sha" "$conc" "$(to_epoch "$at")" "${ran:-no}" "$id"
         if [ "$ran" = yes ]; then [ "$conc" = cancelled ] || break; fi
       done
 }
 case "$1" in
   last) last_gated "$(runs_tsv)" ;;
+  failing)
+    runs=$(runs_tsv)
+    [ "$(last_gated "$runs" | cut -f2)" = failure ] || exit 0
+    run=$(last_gated_run "$runs")
+    [ -n "$run" ] || exit 0
+    lines=$(gh api "repos/{owner}/{repo}/actions/runs/$run/jobs?per_page=100" --jq '.jobs[] | select(.name | startswith("tests")) | select(.conclusion == "failure") | [.id, .name] | @tsv' 2>/dev/null | tr -d '\r' | while IFS="	" read -r jid jname; do
+      gh api "repos/{owner}/{repo}/check-runs/$jid/annotations" --jq '.[] | select((.title // "") | test(" failed at ")) | .message' 2>/dev/null | awk -v n="$jname" '{ print n "	" $0 }'
+    done)
+    gate_failing_tests "$lines" 5 ;;
   decide)
     head=$(gh api "repos/{owner}/{repo}/commits/main" --jq '.sha + "\t" + .commit.committer.date' 2>/dev/null | tr -d '\r')
     [ -n "$head" ] || { echo "skip: main cannot be read"; exit 0; }
     gated=$(last_gated "$(runs_tsv)")
     gate_decide "${head%%	*}" "$(printf '%s' "$gated" | cut -f1)" "$(to_epoch "${head#*	}")" "$(date +%s)" "${GATE_QUIET_MINUTES:-60}" "${2:-}" ;;
-  *) echo "usage: gate.sh decide [EVENT] | last" >&2; exit 2 ;;
+  *) echo "usage: gate.sh decide [EVENT] | last | failing" >&2; exit 2 ;;
 esac

@@ -67,3 +67,36 @@ main_waiting_said() {
   [ -n "$mw" ] || return 0
   echo "A run on main has waited $mw minutes with every runner idle: waiting on GitHub, not on a machine."
 }
+
+# gate_failing_tests LINES [MAX]
+# The names of the tests a failed gate run lists, for the dashboard's red
+# Main card. LINES is "job-name<TAB>line" per line, read from the failed
+# jobs' annotations (failure-report.sh writes each job's last lines there).
+# Prints "part: test" per failing test, at most MAX (default 5), unique. The
+# part is the matrix part in the job's parentheses ("tests (shell-1)" is
+# shell-1), else the whole job name. A runner line is "FAIL  file > test",
+# "FAIL  test", "x test", "FAILED path::test" or "--- FAIL: TestX"; the file
+# before " > " is left off, so a person reads the test's own words.
+gate_failing_tests() {
+  printf '%s\n' "$1" | tr -d '\r' | sed 's/\x1b\[[0-9;]*m//g' | awk -F '\t' -v max="${2:-5}" '
+    NF >= 2 {
+      job = $1; line = $2
+      part = job
+      if (match(job, /\([^)]*\)/)) part = substr(job, RSTART + 1, RLENGTH - 2)
+      t = ""
+      if (line ~ /^[ ]*(FAIL|✗|×|✖)[ ]+/) { t = line; sub(/^[ ]*(FAIL|✗|×|✖)[ ]+/, "", t); sub(/[ ]+[0-9]+ ?ms.*$/, "", t) }
+      else if (line ~ /^[ ]*FAILED[ ]+[^ ]+::/) { t = line; sub(/^[ ]*FAILED[ ]+/, "", t); sub(/^[^:]*::/, "", t) }
+      else if (line ~ /^--- FAIL: /) { t = line; sub(/^--- FAIL: /, "", t); sub(/ .*$/, "", t) }
+      if (t == "") next
+      n = split(t, segs, " > "); if (n > 1) t = segs[n]
+      sub(/^[ ]+/, "", t); sub(/[ ]+$/, "", t)
+      key = part ": " t
+      if (t != "" && !(key in seen) && count < max) { seen[key] = 1; count++; print key }
+    }'
+}
+
+# last_gated_run RUNS: the run id of the newest gate that ran its tests, from
+# the same lines as last_gated with the run id as a fifth field.
+last_gated_run() {
+  printf '%s\n' "$1" | awk -F '\t' '$4 == "yes" && ($2 == "success" || $2 == "failure") { print $5; exit }'
+}

@@ -1,0 +1,9 @@
+tests (shell-1)	FAIL  the morning round waters the herbs
+tests (shell-1)	  got:      0 litres
+tests (core)	 FAIL  packages/core/test/beds.test.ts > renders the planting calendar 12ms
+tests (core)	× dates in the gardener zone
+tests (core)	FAIL  packages/core/test/beds.test.ts > renders the planting calendar
+tests (queue)	--- FAIL: TestWateringReminders (0.01s)
+tests (queue)	FAILED tests/test_beds.py::test_sprouts
+tests (web)	FAIL  the harvest chart loads
+tests (web)	FAIL  empty beds show a hint

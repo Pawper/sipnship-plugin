@@ -150,6 +150,9 @@ main_sha=$(gh api "repos/{owner}/{repo}/commits/$base" --jq '.sha[0:7]' 2>/dev/n
 main_gate=$(sh "$here/gate.sh" last 2>/dev/null | tr -d '\r')
 main_state=$(gate_main_state "$main_gate")
 main_checked=$(gate_checked_at "$main_gate")
+# A red main names its failing tests (at most five), joined by the unit separator so the tab-separated main field holds them.
+main_failing=""
+[ "$main_state" = red ] && main_failing=$(sh "$here/gate.sh" failing 2>/dev/null | tr -d '\r' | head -n 5 | tr '\n' '\037')
 landed_src=$(gh api "repos/{owner}/{repo}/commits?sha=$base&per_page=40" --jq '.[] | "\(.commit.message | split("\n")[0])\t\(.commit.committer.date)"' 2>/dev/null | tr -d '\r')
 [ -n "$landed_src" ] || landed_src=$(git log "origin/$base" -n 40 --format='%s%x09%cI' 2>/dev/null)
 landed_tsv=$(printf '%s\n' "$landed_src" | awk -F'\t' '{ if (match($1, /\(#[0-9]+\)/)) { n = substr($1, RSTART + 2, RLENGTH - 3); how = ($1 ~ /\[batch/ || $1 ~ /^batch PR/ || $1 ~ /merged into main/) ? "batch" : "serial"; t = $1; sub(/ \(#[0-9]+\).*$/, "", t); if (!(n in seen)) { seen[n] = 1; printf "%s\t%s\t%s\t%s\n", n, t, how, $2; c++ } } if (c >= 10) exit }')
@@ -175,7 +178,7 @@ deploy_line=""; [ -f .claude/deploy.json ] && [ -f "$here/deploy-gate.sh" ] && d
 stopped_line=""; [ "$mode" = idle ] && stopped_line=$(head -n 1 "$flaky_dir/stopped" 2>/dev/null | tr -d '\r')
 say=$(publish_say "$open_tsv" "$batch_tsv" "$building" "$clashes_tsv" "$attention_tsv" "$runners_tsv" "$deploy_line" "$mode" "$paused_until" "$stopped_line")
 now_iso=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-json=$(publish_json "$open_tsv" "$batch_tsv" "$building" "$clashes_tsv" "$landed_tsv" "$runners_tsv" "$attention_tsv" "$(printf '%s\t%s\t%s\t%s' "$main_sha" "$main_state" "$main_checked" "$main_waiting")" "$deploy_line" "$mode" "$paused_until" "$checking" "$say" "$now_iso" "$rush_tsv")
+json=$(publish_json "$open_tsv" "$batch_tsv" "$building" "$clashes_tsv" "$landed_tsv" "$runners_tsv" "$attention_tsv" "$(printf '%s\t%s\t%s\t%s\t%s' "$main_sha" "$main_state" "$main_checked" "$main_waiting" "$main_failing")" "$deploy_line" "$mode" "$paused_until" "$checking" "$say" "$now_iso" "$rush_tsv")
 
 # 5. Only a change worth a write: the time stamp and the two numbers that
 # tick with time (how long a queued run has waited, a batch's minutes left)
