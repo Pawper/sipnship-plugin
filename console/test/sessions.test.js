@@ -126,6 +126,8 @@ test('an agent a session started is sampled from the subagents folder, with its 
   const sub = path.join(home, sessions.logFolder(main), 'parent-session', 'subagents');
   fs.mkdirSync(sub, { recursive: true });
   fs.copyFileSync(path.join(fxDir, 'subagent-session.jsonl'), path.join(sub, 'agent-a1b2c3d4e5f6a7b8c.jsonl'));
+  // A copy keeps the fixture's old time, and a log older than two hours is skipped; this agent is running now.
+  fs.utimesSync(path.join(sub, 'agent-a1b2c3d4e5f6a7b8c.jsonl'), new Date(), new Date());
   fs.writeFileSync(path.join(sub, 'agent-a1b2c3d4e5f6a7b8c.meta.json'), JSON.stringify({ worktreeBranch: 'worktree-agent-a1b2c3d4e5f6a7b8c' }));
   const got = sessions.readSessions({ root, logsDir: home, worktrees: [main] });
   assert.strictEqual(got.length, 1);
