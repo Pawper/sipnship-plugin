@@ -3347,6 +3347,42 @@ eq "two units sharing a file are refused before anything is posted" "The round w
 eq "a line it does not know is refused" "The round was not published: a line this script does not know: garden: beds." "$(printf 'unit: 1\ngarden: beds\n' > "$pr_dir/odd.txt"; pr_run --dry-run "$pr_dir/odd.txt")"
 eq "the skill tells the drive to publish its rounds" "yes" "$(grep -q 'publish-round.sh' "$root/skills/project-drive/SKILL.md" && echo yes)"
 
+section 'drive reads Auto Drive'
+. "$root/scripts/drive/drive-lib.sh"
+eq "the drive issue with drive:auto is on" "on 99" "$(auto_drive_state "$(printf '99\tdrive,drive:auto')")"
+eq "the drive issue without it is off" "off 99" "$(auto_drive_state "$(printf '99\tdrive,state:ready')")"
+eq "a label that only starts the same is not it" "off 99" "$(auto_drive_state "$(printf '99\tdrive,drive:automatic')")"
+eq "no drive issue is none" "none" "$(auto_drive_state "")"
+eq "the plan says what on means" "auto drive: on (issue 99); approval is standing, so pursue the proposal once the current round has landed" "$(auto_line 'on 99')"
+eq "the plan says what off means" "auto drive: off (issue 99); post the proposal on the drive issue and wait for a reply" "$(auto_line 'off 99')"
+ad_dir=$(mktemp -d)
+mkdir -p "$ad_dir/bin"
+# The fake gh: the drive issue (#99) with the labels AD_LABELS names, one
+# proposal from the drive, a reply when AD_REPLY is set; every call logged.
+cat > "$ad_dir/bin/gh" <<'FAKE'
+#!/bin/sh
+printf '%s\n' "$*" >> "$AD_DIR/log"
+case "$*" in
+  "auth status") exit 0 ;;
+  *labels=drive*) printf '99\t%s\n' "$AD_LABELS" ;;
+  "api user --jq .login") echo maya-drive ;;
+  *issues/99/comments*)
+    printf '2026-10-31T07:40:00Z\tmaya-drive\tProposal for Friday\\n1. dispatch 214 Watering schedule skips the first bed\\n2. dispatch 223 Seed packets\\nstop: proposal ready for approval\n'
+    [ -n "$AD_REPLY" ] && printf '2026-10-31T08:00:00Z\tmaya\t%s\n' "$AD_REPLY" ;;
+esac
+exit 0
+FAKE
+chmod +x "$ad_dir/bin/gh"
+ad_run() { : > "$ad_dir/log"; AD_DIR="$ad_dir" AD_LABELS="$1" AD_REPLY="$2" PATH="$ad_dir/bin:$PATH" sh "$root/scripts/drive/approval.sh" 2>&1; }
+eq "label on: the proposal is approved whole with no reply, by Auto Drive" "dispatch 214 Watering schedule skips the first bed
+dispatch 223 Seed packets
+approved by Auto Drive" "$(ad_run 'drive,drive:auto' '')"
+eq "label on reads the label with the one call that finds the drive issue" "1" "$(grep -c 'labels=drive' "$ad_dir/log")"
+eq "label off and no reply: it waits, as before" "nothing: the latest proposal on issue 99 has no reply yet" "$(ad_run 'drive' '')"
+eq "label off and a reply: the reply's picks" "dispatch 223 Seed packets
+approved by maya" "$(ad_run 'drive' '2')"
+eq "the skill names Auto Drive's label" "yes" "$(grep -q 'drive:auto' "$root/skills/project-drive/SKILL.md" && echo yes)"
+
 section 'temp files stay in the run, and nothing it starts outlives it'
 eq "every block's temp folder is inside the run's own root" "yes" "$(case "$TMPDIR" in */.scratch/tests-tmp/run-*) echo yes ;; *) echo no ;; esac)"
 tt_probe=$(mktemp -d)

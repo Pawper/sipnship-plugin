@@ -170,6 +170,9 @@ if [ -n "$extra" ]; then
   round=$(printf '%s\n%s\n' "$extra" "$round" | awk '/^stop: (nothing to propose|everything left waits|work is in flight)/ { print "stop: proposal ready for approval"; next } { print }')
 fi
 number_proposal "$round"
+# Auto Drive, from the drive issue's label drive:auto: one REST call. On is a
+# standing approval; off, the proposal is posted and waits for a reply.
+auto_line "$(auto_drive_state "$(gh api "$AUTO_DRIVE_QUERY" --jq "$AUTO_DRIVE_JQ" 2>/dev/null)")"
 
 # A pending pull request: say when to look again. One REST call for recent runs.
 pend_pr=$(printf '%s\n' "$snapshot" | awk -F'\t' '$1 == "pr" && $4 == "pending" { print $2; exit }')
