@@ -32,6 +32,7 @@ shell-2 full_sweep_reason
 shell-2 generated_page_reason
 shell-2 state_label_reason
 shell-2 session brief
+shell-2 the session brief inside its start limit
 shell-2 runner doctor
 shell-2 board digest
 shell-2 clean endings (hook library)

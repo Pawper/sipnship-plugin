@@ -9,9 +9,19 @@
 # memory folder and the line limit. Every call fails soft: a missing or
 # signed-out tool makes its section say "(unavailable)" and the hook still
 # exits 0. Nothing here prints a token, a secret or an environment value.
+#
+# It has 20 seconds and must finish well inside them, or nothing is printed
+# and nothing is sent. Every process costs time on a busy Windows machine,
+# so each section is a slot: a function run in the background into its own
+# file, all side by side, each network read bounded, and the brief is the
+# slots' files in order once all have ended. The lines that can only be had
+# slowly (deploy health, broken workflows, stale mocks, hotspots, the
+# drive's proposal) are read by session-brief-slow.sh, detached, into a
+# cache the next start prints with its age.
 here=$(dirname "$0")
 . "$here/lib.sh"
 . "$here/session-brief-lib.sh"
+. "$here/session-brief-fast.sh"
 
 input=$(cat)
 source=$(json_field "$input" source)
@@ -50,320 +60,109 @@ run_bounded() {
   if command -v timeout >/dev/null 2>&1; then timeout "$rb_s" "$@"; else "$@"; fi
 }
 
-out="Session brief. Reply from this first. For where each issue and pull request really stands, from bodies and comments, run /project-status: readers summarize only what changed and you keep one line per item. Never run one network call per branch, worktree or issue yourself.
-"
-add() { out="$out$1
-"; }
-
-# The plugin's real path. $CLAUDE_PLUGIN_ROOT is set for hooks but empty in
-# an agent's Bash tool, so a command written with it fails as typed; every
-# plugin command an agent runs uses this path instead.
-add "Plugin: $(cd "$here/../.." && pwd). In the Bash tool \$CLAUDE_PLUGIN_ROOT is empty; use this path for the plugin's scripts."
-
-# Today, in the owner's local time. The hook runs on the owner's machine,
-# so a plain date is local; gh output and runner logs are UTC, and an
-# agent that dates things from them writes tomorrow's date all evening.
-add "$(today_line "$(date '+%A %Y-%m-%d, %H:%M %Z')" "$timezone")"
-
-# The API budget, one line, in a project with a GitHub remote. Reading
-# rate_limit is free, and the reading is cached a minute in .scratch for
-# the require-gh-budget hook and scripts/gh-budget.sh.
-case "$(git remote get-url origin 2>/dev/null)" in
-  *github.com*) if command -v gh >/dev/null 2>&1; then
-    rl=$(run_bounded 5 sh -c '. "$1/lib.sh"; budget_read "$2"' sh "$here" "$(pwd)" 2>/dev/null || true)
-    rl_line=$(budget_line "$rl" "$(date +%s)")
-    [ -n "$rl_line" ] && add "Budget: $rl_line"
-  fi ;;
-esac
-
+# What every slot may read, found once.
 have_git=no
 if command -v git >/dev/null 2>&1 && git rev-parse --git-dir >/dev/null 2>&1; then have_git=yes; fi
-
-# Main
-if has main; then
-  if [ "$have_git" = yes ]; then
-    log=$(git log --oneline -5 2>/dev/null)
-    dirty=$(git status --porcelain 2>/dev/null | head -n 1)
-    add "Main:"
-    [ -n "$log" ] && add "$log"
-    if [ -n "$dirty" ]; then add "The working tree has uncommitted changes."; else add "The working tree is clean."; fi
-  else
-    add "Main: (unavailable)"
-  fi
-fi
-
-# The board, in one call.
-facts=""
-if has prs || has inprogress || has owner || has proposal; then
-  facts=$(run_bounded 10 sh "$here/board-now.sh" 2>/dev/null) || facts=""
-fi
-
-if has prs; then
-  if [ -n "$facts" ]; then
-    lines=$(pr_brief_lines "$facts" 10)
-    if [ -n "$lines" ]; then add "Open pull requests:"; add "$lines"; fi
-  else
-    add "Open pull requests: (unavailable)"
-  fi
-fi
-
-if has inprogress || has owner; then
-  if [ -n "$facts" ]; then
-    summary=$(issues_summary "$facts")
-    [ -n "$summary" ] && add "$summary"
-  else
-    add "Issues: (unavailable)"
-  fi
-fi
-
-# The allow rules are the person's to add; say so before the first deploy.
-if has owner; then
-  perm=$(permissions_line .claude/settings.json)
-  [ -n "$perm" ] && add "$perm"
-fi
-
-# Where things really stand: the saved digest, compared by last-updated
-# time with the facts just read. Local, no network. The lines come from
-# summaries readers wrote from bodies and comments.
-if has inprogress && [ -n "$facts" ] && [ -f "$here/../../scripts/board/board-lib.sh" ]; then
-  . "$here/../../scripts/board/board-lib.sh"
-  saved=""; [ -f .scratch/board/digest.tsv ] && saved=$(cat .scratch/board/digest.tsv)
-  fresh=$(digest_freshness "$facts" "$saved")
-  cur=${fresh%%	*}; tot=${fresh##*	}
-  if [ "${tot:-0}" -gt 0 ]; then
-    if [ -n "$saved" ]; then
-      standing=$(digest_brief_lines "$facts" "$saved" 8)
-      if [ -n "$standing" ]; then add "Where things stand (from the digest):"; add "$standing"; fi
-    fi
-    if [ "$cur" != "$tot" ]; then
-      add "Status digest: $cur of $tot open items have a current summary; $((tot - cur)) changed since. Run /project-status to refresh."
-    else
-      add "Status digest: all $tot open items are current."
-    fi
-  fi
-fi
-
-# Queue
-if has queue && [ -n "$queue_glob" ]; then
-  newest=""; newest_m=0
-  for f in $queue_glob; do
-    [ -f "$f" ] || continue
-    m=$(stat -c %Y "$f" 2>/dev/null || stat -f %m "$f" 2>/dev/null || echo 0)
-    if [ "$m" -gt "$newest_m" ]; then newest_m=$m; newest=$f; fi
-  done
-  if [ -n "$newest" ]; then
-    now=$(date +%s)
-    if [ "$(log_is_recent "$newest_m" "$now")" = yes ]; then
-      add "Queue: ran in the last two hours. Last line: $(tail -n 1 "$newest" 2>/dev/null)"
-      # A step an agent held until another pull request landed is due: the drain named its session.
-      wake=$(brief_wake_lines "$(cat "$newest" 2>/dev/null)")
-      [ -z "$wake" ] || add "$wake"
-    else
-      add "Queue: no run in the last two hours."
-    fi
-  fi
-fi
-
-# Runners, only when the workflows use self-hosted ones and none is online:
-# then CI and the queue wait on a machine, not on tests. One bounded REST
-# call, made only in such a project.
-if grep -qs 'self-hosted' .github/workflows/*.yml 2>/dev/null && command -v gh >/dev/null 2>&1; then
-  rr=$(run_bounded 5 gh api 'repos/{owner}/{repo}/actions/runners' --jq '.runners[] | [.name, .status, (.busy | tostring)] | @tsv' 2>/dev/null | tr -d '\r' || true)
-  # Judged from the registered runners ($rr, read once for this run) and
-  # this machine's cores; the repository holds no count.
-  rr_cores=$(nproc 2>/dev/null || echo "${NUMBER_OF_PROCESSORS:-0}")
-  rr_line=$(brief_runner_line "$rr" "${rr_cores:-0}")
-  [ -n "$rr_line" ] && add "Runners: $rr_line"
-  rr_key=$(brief_runner_key_line "$(cat .claude/runners.json 2>/dev/null)")
-  [ -n "$rr_key" ] && add "Runners: $rr_key"
-  # The runner check leaves a "scan exclusions" line on the audit issue.
-  rs_num=$(run_bounded 5 gh api 'repos/{owner}/{repo}/issues?labels=audit&state=open&per_page=1' --jq '.[0].number' 2>/dev/null || true)
-  if [ -n "$rs_num" ]; then
-    rs_line=$(brief_scan_line "$(run_bounded 5 gh api "repos/{owner}/{repo}/issues/$rs_num/comments?per_page=100" --jq '.[].body' 2>/dev/null || true)")
-    [ -n "$rs_line" ] && add "Runners: $rs_line"
-  fi
-  # What the runner watch on this machine last found, if it is running.
-  rw_key=$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null | tr '/' '-')
-  rw_state="${SIPNSHIP_HOME:-$HOME/.sipnship}/runner-watch/$rw_key.state"
-  if [ -n "$rw_key" ] && [ -s "$rw_state" ]; then
-    add "Runner watch: $(sed 's/^[^|]*|//' "$rw_state" | head -n 2 | paste -sd';' - | sed 's/;/; /g')."
-  fi
-fi
-# Waits for a runner this week, from the queue's own log, and the machine
-# line when its runners exceed one per two cores. Local files only, no
-# network call; each says nothing when there is nothing to say.
-wl_file=.scratch/queue/waits.tsv
-if [ ! -f "$wl_file" ]; then
-  wl_common=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)
-  [ -n "$wl_common" ] && wl_file="$(dirname "$wl_common")/.scratch/queue/waits.tsv"
-fi
-if [ -f "$wl_file" ]; then
-  wl=$(waits_line "$(tail -n 500 "$wl_file" 2>/dev/null)" "$(date +%s)")
-  [ -n "$wl" ] && add "Runners: $wl"
-fi
+have_gh=no
+command -v gh >/dev/null 2>&1 && have_gh=yes
+origin_url=$(git remote get-url origin 2>/dev/null | tr -d '\r')
+# owner/repo from a GitHub remote, or nothing.
+gh_repo=$(printf '%s' "$origin_url" | sed -n 's#.*github\.com[:/]\([^/]*\)/\([^/]*\)$#\1/\2#p' | sed 's/\.git$//')
+has_workflows=no
+[ -d .github/workflows ] && [ -f scripts/ci/run-lib.sh ] && [ "$have_gh" = yes ] && has_workflows=yes
 ml_file="${SIPNSHIP_HOME:-$HOME/.sipnship}/runner-watch/machine.tsv"
-if [ -f "$ml_file" ]; then
-  ml=$(machine_brief_line "$(head -n 1 "$ml_file" 2>/dev/null)")
-  [ -n "$ml" ] && add "Runner machine: $ml."
-fi
-# Hosted minutes, in a private repository: a job on a hosted runner bills
-# at least a minute, the allowance is per account, and one project once
-# spent it all on housekeeping runs. Say what would run hosted and about
-# how much, from the workflows' own schedules; nothing when none would.
-if [ -d .github/workflows ] && [ -f scripts/ci/run-lib.sh ] && command -v gh >/dev/null 2>&1; then
-  hm_private=$(run_bounded 5 gh api 'repos/{owner}/{repo}' --jq .private 2>/dev/null || echo "")
-  if [ "$hm_private" = true ]; then
-    . scripts/ci/run-lib.sh
-  fi
-  if [ "$hm_private" = true ] && command -v hosted_jobs >/dev/null 2>&1; then
-    hm_rows=""
-    for hm_f in .github/workflows/*.yml; do
-      [ -f "$hm_f" ] || continue
-      hm_row=$(hosted_jobs "$hm_f" "$(cat "$hm_f")")
-      [ -n "$hm_row" ] && hm_rows="$hm_rows$hm_row
-"
-    done
-    hm_line=$(hosted_estimate "$hm_rows")
-    [ -n "$hm_line" ] && add "$(printf '%s' "$hm_line" | sed 's/^hosted Actions: /Hosted Actions: /'). Move them onto this project's runners (scripts/ci/RUNNERS.md), or set QUEUE_RUNS_ON on purpose."
-  fi
-fi
 
-# A run queued over ten minutes: usually no runner is picking it up. This
-# is the half of the old hosted Runner watch that a session can say; the
-# nightly audit says the rest. One bounded REST call.
-if [ -d .github/workflows ] && [ -f scripts/ci/run-lib.sh ] && command -v gh >/dev/null 2>&1; then
-  command -v stuck_runs >/dev/null 2>&1 || . scripts/ci/run-lib.sh
-  sq_runs=$(run_bounded 5 gh api 'repos/{owner}/{repo}/actions/runs?status=queued&per_page=20' \
-    --jq '.workflow_runs[] | [.id, .name, .head_branch, .status, (.created_at | fromdate)] | @tsv' 2>/dev/null || true)
-  sq=$(stuck_line "$(stuck_runs "$sq_runs" "$(date +%s)" 10)")
-  [ -n "$sq" ] && add "$sq"
-fi
+# The slow lines' cache, one per repository (its worktrees share it), kept
+# with the machine's own SipNShip files, never in the project.
+sb_common=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null | tr -d '\r')
+case "$sb_common" in */.git) sb_common=${sb_common%/.git} ;; '') sb_common=$(pwd -W 2>/dev/null || pwd) ;; esac
+sb_cache="${SIPNSHIP_HOME:-$HOME/.sipnship}/brief-cache/$(project_slug "$sb_common")"
+sb_stamp=""
+[ -f "$sb_cache/stamp" ] && read -r sb_stamp < "$sb_cache/stamp"
+sb_now=$(date +%s)
+sb_age=$(cache_age "$sb_stamp" "$sb_now")
+# cached NAME: the cached text, or nothing.
+cached() {
+  [ -s "$sb_cache/$1" ] || return 0
+  cat "$sb_cache/$1"
+}
 
-# Deploys, only when the project's deploy path is not keeping up. One
-# bounded git ls-remote for the recorded production commit; nothing when
-# the project has no .claude/deploy.json.
-if [ -f .claude/deploy.json ] && [ -f scripts/ci/deploy-health.sh ]; then
-  dl=$(run_bounded 6 sh scripts/ci/deploy-health.sh 2>/dev/null || true)
-  [ -n "$dl" ] && add "$dl"
-fi
-# The deploy state in one line: the queue deploys after a landing only
-# when the interval has passed and no other pull request is green. --last
-# reads the last Deploy run only, one REST call, no pull request scan.
-if [ -f .claude/deploy.json ] && [ -f scripts/ci/deploy-gate.sh ] && command -v gh >/dev/null 2>&1; then
-  dg=$(run_bounded 6 sh scripts/ci/deploy-gate.sh --last 2>/dev/null || true)
-  [ -n "$dg" ] && add "Deploy: ${dg#deploy: }"
-fi
+# The slots' folder. slot NAME FUNCTION runs the function in the background
+# with its lines going to the file NAME; the brief joins the files in name
+# order, so a slot's name is its place.
+pf=$(mktemp -d 2>/dev/null) || { pf="${TMPDIR:-/tmp}/session-brief-$$"; mkdir -p "$pf" || exit 0; }
+slot() { ("$2" > "$pf/$1" 2>/dev/null) </dev/null & }
+add() { printf '%s\n' "$1"; }
 
-# Leftover work and worktrees: local git only, one call each.
-if has leftover && [ "$have_git" = yes ]; then
-  default=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || echo main)
-  refs=$(git for-each-ref --format="%(refname:short)%09%(ahead-behind:$default)" refs/heads 2>/dev/null) || refs=""
-  left=$(leftover_summary "$refs" 5)
-  [ -n "$left" ] && add "$left"
-  porcelain=$(git worktree list --porcelain 2>/dev/null)
-  wt=$(worktree_summary "$porcelain")
-  [ -n "$wt" ] && add "$wt"
-  # The local half of the audit: worktrees with no open pull request and no
-  # recent commit, and detached ones. Local git plus the facts already read.
-  if [ -n "$wt" ]; then
-    . "$here/worktree-lib.sh"
-    pairs=$(printf '%s\n' "$porcelain" | tr -d '\r' | awk '
-      /^worktree / { if (n > 1) print path "\t" branch; n++; path = substr($0, 10); branch = "" }
-      /^branch / { branch = substr($0, 8); sub(/^refs\/heads\//, "", branch) }
-      END { if (n > 1) print path "\t" branch }')
-    heads=$(printf '%s\n' "$facts" | awk -F'\t' '$1 == "pr" { print $6 }')
-    dates=$(git for-each-ref --format='%(refname:short)%09%(committerdate:unix)' refs/heads 2>/dev/null)
-    sd=$(stale_worktrees "$pairs" "$heads" "$dates" "$(date +%s)" 3)
-    stale=${sd%%	*}; detached=${sd##*	}
-    if [ "${stale:-0}" -gt 0 ] || [ "${detached:-0}" -gt 0 ]; then
-      add "Of those, $stale have no open pull request and no commit in 3 days, and $detached are detached. Name them with: sh scripts/worktrees.sh audit"
-    fi
-  fi
-fi
+. "$here/session-brief-network.sh"
+. "$here/session-brief-local.sh"
 
-# Template drift: the project's copies of the plugin's scripts against the
-# installed plugin. Local file comparisons only. A project that never
-# refreshes them runs an old merge queue while the plugin has moved on.
-if has leftover && [ -f "$here/../../templates/OWNED.txt" ] && [ -f "$here/../../scripts/sync/sync-lib.sh" ] && [ -d scripts/ci ]; then
-  . "$here/../../scripts/sync/sync-lib.sh"
-  t_old=0; t_missing=0
-  for p in $(owned_paths "$(cat "$here/../../templates/OWNED.txt")"); do
-    if [ ! -f "$p" ]; then t_missing=$((t_missing + 1))
-    elif [ "$(same_text "$(cat "$p")" "$(cat "$here/../../templates/$p")")" = no ]; then t_old=$((t_old + 1)); fi
-  done
-  if [ $((t_old + t_missing)) -gt 0 ]; then
-    add "Templates: $t_old of the plugin's scripts here differ from the installed plugin and $t_missing are missing, counting features this project does not use. See which with: sh \"$(cd "$here/../.." && pwd)/scripts/sync/sync-templates.sh\""
-  fi
-fi
+# Every slot starts now; the board and the network reads first.
+slot s04 s_board
+slot s02 s_budget
+slot s06 s_runners
+slot s08 s_hosted
+slot s09 s_stuck
+slot s10 s_deploy
+slot s15 s_workflows
+slot s03 s_main
+slot s05 s_queue
+slot s07 s_waits
+slot s13 s_leftover
+slot s14 s_drift
+slot s16 s_screens
+slot s17 s_handoff
+slot s18 s_plan
+slot s19 s_unreleased
 
-# A workflow that passed before its last change on main and has failed
-# every run since, which a template sync can cause. One REST call.
-if has leftover && [ -f scripts/ci/workflow-breaks.sh ] && [ "$have_git" = yes ] && command -v gh >/dev/null 2>&1; then
-  wb=$(run_bounded 6 sh scripts/ci/workflow-breaks.sh 2>/dev/null | head -n 4 | paste -sd';' - | sed 's/;/; /g')
-  [ -z "$wb" ] || add "Workflows: $wb. Open its last run; if the change was a template sync, say so on the plugin's issue."
-fi
+# The lines every brief starts with, while the slots run.
+head_text="Session brief. Reply from this first. For where each issue and pull request really stands, from bodies and comments, run /project-status: readers summarize only what changed and you keep one line per item. Never run one network call per branch, worktree or issue yourself.
+Plugin: $(cd "$here/../.." && pwd). In the Bash tool \$CLAUDE_PLUGIN_ROOT is empty; use this path for the plugin's scripts.
+$(today_line "$(date '+%A %Y-%m-%d, %H:%M %Z')" "$timezone")"
+# The plugin's real path, above: $CLAUDE_PLUGIN_ROOT is set for hooks but
+# empty in an agent's Bash tool, so a command written with it fails as
+# typed; every plugin command an agent runs uses this path instead. Today,
+# in the owner's local time: the hook runs on the owner's machine, so a
+# plain date is local; gh output and runner logs are UTC, and an agent that
+# dates things from them writes tomorrow's date all evening.
 
-# The scheduled queue drain fired late or skipped by GitHub. One REST call.
-if has leftover && [ -f scripts/ci/drain-late.sh ] && [ -f .github/workflows/queue-drain.yml ] && command -v gh >/dev/null 2>&1; then
-  dl=$(run_bounded 6 sh scripts/ci/drain-late.sh 2>/dev/null | head -n 1)
-  [ -z "$dl" ] || add "$dl"
-fi
+wait
+body=$(cat "$pf"/s* 2>/dev/null)
+facts=$(cat "$pf/facts" 2>/dev/null)
+# The folder this hook made above, and nothing else.
+[ -n "$pf" ] && [ -d "$pf" ] && [ ! -L "$pf" ] && rm -rf "$pf"
 
-. "$here/session-brief-screens.sh"
-. "$here/session-brief-hotspots.sh"
-
-# Last handoff
-if has handoff && [ -n "$memory_dir" ] && [ -d "$memory_dir" ]; then
-  listing=$(for f in "$memory_dir"/handoff-*; do
-    [ -f "$f" ] || continue
-    m=$(stat -c %Y "$f" 2>/dev/null || stat -f %m "$f" 2>/dev/null || echo 0)
-    printf '%s\t%s\n' "$m" "$f"
-  done)
-  pick=$(newest_handoff "$listing")
-  if [ -n "$pick" ]; then
-    add "Last handoff ($(basename "$pick")):"
-    add "$(handoff_head "$(cat "$pick")" 2)"
-  fi
-fi
-
-# Proposed next, when the project runs the drive. Read-only: nothing here
-# acts, and the line says so. The plan reuses the facts already fetched.
-if has proposal && [ -f .claude/project-drive.json ] && [ -f "$here/../../scripts/drive/plan.sh" ]; then
-  if [ -n "$facts" ]; then
-    ff=$(mktemp)
-    printf '%s\n' "$facts" > "$ff"
-    plan=$(run_bounded 5 sh "$here/../../scripts/drive/plan.sh" --fast --facts "$ff" 2>/dev/null) || plan=""
-    goals=$(printf '%s\n' "$plan" | grep -E '^[0-9]+\. ' || true)
-    if [ -n "$goals" ]; then
-      add "Proposed next (nothing runs until you approve; /project-drive asks):"
-      add "$(trim_section "$goals" 8)"
-    elif [ -n "$plan" ]; then
-      add "Proposed next: $(printf '%s\n' "$plan" | grep '^stop:' | head -n 1 | sed 's/^stop: //')"
-    else
-      add "Proposed next: (unavailable)"
-    fi
-  else
-    add "Proposed next: (unavailable)"
-  fi
-fi
-
-# Unreleased plugin work, only when there is some.
-if [ -f plugin/.claude-plugin/plugin.json ] && [ -f "$here/../../scripts/drive/drive-lib.sh" ]; then
-  . "$here/../../scripts/drive/drive-lib.sh"
-  unrel=$(plugin_unreleased_count)
-  case "$unrel" in ''|0|*[!0-9]*) ;; *) add "Plugin: $unrel unreleased commit(s) on main since the last version bump." ;; esac
-fi
-
-brief=$(trim_section "$(printf '%s' "$out")" "$max_lines")
+[ -z "$body" ] || head_text="$head_text
+$body"
+brief=$(trim_section "$head_text" "$max_lines")
 printf '%s\n' "$brief"
+
+# The slow lines are read again in the background when the cache is over
+# five minutes old and no read is running, from the board just read. The
+# read is detached: its output goes nowhere, so this hook never waits on it.
+sb_running=no
+if [ -d "$sb_cache/lock" ]; then
+  sb_lock_m=$(stat -c %Y "$sb_cache/lock" 2>/dev/null || stat -f %m "$sb_cache/lock" 2>/dev/null || echo 0)
+  # A lock over five minutes old is a read that died; the next read takes it.
+  [ "$(cache_due "$sb_lock_m" "$sb_now")" = yes ] || sb_running=yes
+fi
+if [ "$(cache_due "$sb_stamp" "$sb_now")" = yes ] && [ "$sb_running" = no ] && [ "${SIPNSHIP_BRIEF_REFRESH:-yes}" != no ] && mkdir -p "$sb_cache" 2>/dev/null; then
+  [ -z "$facts" ] || printf '%s\n' "$facts" > "$sb_cache/facts.tsv"
+  if command -v nohup >/dev/null 2>&1; then
+    (nohup sh "$here/session-brief-slow.sh" "$sb_cache" </dev/null >/dev/null 2>&1 &)
+  else
+    (sh "$here/session-brief-slow.sh" "$sb_cache" </dev/null >/dev/null 2>&1 &)
+  fi
+fi
 
 # The brief reaches the SipNShip dashboard, only when this machine holds a
 # token for this repository (npx sipnship connect --repo). One request,
-# three seconds at most, after the block above is printed. A failed send
-# says one plain line once per session; nothing is read back.
+# five seconds at most, after the block above is printed. Nothing slow is
+# ahead of it: the slow lines come from the cache. A failed send says one
+# plain line once per session; nothing is read back.
 sn_home="${SIPNSHIP_HOME:-$HOME/.sipnship}"
 if [ -f "$sn_home/tokens.json" ] && command -v node >/dev/null 2>&1; then
-  sn_repo=$(git remote get-url origin 2>/dev/null | tr -d '\r' | sed -n 's#.*github\.com[:/]\([^/]*\)/\([^/]*\)$#\1/\2#p' | sed 's/\.git$//')
+  sn_repo=$gh_repo
   if [ -n "$sn_repo" ]; then
     sn_said=$(printf '%s' "$brief" | run_bounded 5 node "$here/../../console/brief-send.js" --session "$(json_field "$input" session_id)" --repo "$sn_repo" --machine-file "$ml_file" 2>/dev/null | head -n 1)
     [ -n "$sn_said" ] && printf '%s\n' "$sn_said"

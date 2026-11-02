@@ -17,6 +17,7 @@ root=${RUN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}
 . "$root/templates/scripts/ci/batch-lib.sh"
 . "$root/templates/scripts/ci/run-lib.sh"
 . "$root/hooks/scripts/session-brief-lib.sh"
+. "$root/hooks/scripts/session-brief-fast.sh"
 
 fail_fast=no
 part=
@@ -328,6 +329,7 @@ eq "one line without a reason" "#12 merged into the batch" "$(batch_line 12 'mer
 
 section 'session brief'
 . "$root/hooks/scripts/session-brief-lib.sh"
+. "$root/hooks/scripts/session-brief-fast.sh"
 fx="$root/tests/fixtures"
 eq "json_number reads a number" "40" "$(json_number '{"maxLines": 40, "x": "y"}' maxLines)"
 eq "json_number missing key" "" "$(json_number '{"x": 1}' maxLines)"
@@ -430,6 +432,75 @@ porcelain=$(cat "$fx/worktrees.porcelain")
 eq "worktrees counted with their folders, the agent runtime's apart" "Worktrees: 2 besides the main checkout, in 1 folder, and 2 made by Claude Code for dispatched agents in .claude/worktrees." "$(worktree_summary "$porcelain")"
 eq "only the main checkout, nothing said" "" "$(worktree_summary 'worktree /repo
 branch refs/heads/main')"
+eq "a cached line read under a minute ago" "as of just now" "$(cache_age 1000 1030)"
+eq "a cached line minutes old" "as of 12 min ago" "$(cache_age 1000 1720)"
+eq "a cached line hours old" "as of 3 h ago" "$(cache_age 0 10800)"
+eq "a cached line days old" "as of 3 days ago" "$(cache_age 0 259200)"
+eq "no stamp, no age" "" "$(cache_age '' 1000)"
+eq "no stamp, a read is due" "yes" "$(cache_due '' 1000)"
+eq "a stamp under five minutes old is not due" "no" "$(cache_due 1000 1100)"
+eq "a stamp five minutes old is due" "yes" "$(cache_due 1000 1300)"
+eq "the age goes after a line's label" "Deploys (as of 4 min ago): main has changes waiting 90 minutes." "$(with_age 'Deploys: main has changes waiting 90 minutes.' 'as of 4 min ago')"
+eq "a line with no label takes the age at its end" "the watering screen is late (as of 4 min ago)" "$(with_age 'the watering screen is late' 'as of 4 min ago')"
+eq "no cached text, nothing" "" "$(with_age '' 'as of 4 min ago')"
+od_dir=$(mktemp -d)
+mkdir -p "$od_dir/t/scripts/ci" "$od_dir/p/scripts/ci"
+printf 'a\nb\n' > "$od_dir/t/scripts/ci/same.sh"; printf 'a\r\nb\r\n\n' > "$od_dir/p/scripts/ci/same.sh"
+printf 'old\n' > "$od_dir/t/scripts/ci/moved.sh"; printf 'new\n' > "$od_dir/p/scripts/ci/moved.sh"
+printf 'x\n' > "$od_dir/t/scripts/ci/gone.sh"
+eq "template drift in one pass: a Windows checkout is the same, a change is old, an absent file is missing" "1	1" "$(cd "$od_dir/p" && owned_drift "$(printf 'scripts/ci/same.sh\nscripts/ci/moved.sh\nscripts/ci/gone.sh\n')" "$od_dir/t")"
+
+section 'the session brief inside its start limit'
+# The start hook has 20 seconds. On a busy Windows machine it once took 45
+# to 90 and was cancelled at every start, so agents got no brief and the
+# dashboard heard nothing. Against a fixture of the rooftop-garden app, with
+# a gh that is installed but signed out, it finishes inside 15 seconds; its
+# slow lines come from the cache the background read fills, with their age.
+sb_fx=$(mktemp -d)
+sb_home="$sb_fx/home"; sb_repo="$sb_fx/rooftop-garden"; sb_bin="$sb_fx/bin"
+mkdir -p "$sb_home" "$sb_bin" "$sb_repo/.claude" "$sb_repo/scripts/ci" "$sb_repo/logs" "$sb_fx/memory"
+printf '#!/bin/sh\nexit 1\n' > "$sb_bin/gh"; chmod +x "$sb_bin/gh"
+(
+  cd "$sb_repo" && git init -q -b main && git config user.email t@t && git config user.name t && git config core.autocrlf false
+  printf '{ "timezone": "America/Los_Angeles", "queueLogGlob": "logs/merge-queue-*.log", "memoryDir": "%s", "maxLines": 80 }\n' "$sb_fx/memory" > .claude/session-brief.json
+  printf '{ "path": "scheduled" }\n' > .claude/deploy.json
+  printf '{}\n' > .claude/project-drive.json
+  # The slow steps: a deploy check with something to say, and a workflow
+  # check that would hold the start for half a minute if the hook ran it.
+  printf '#!/bin/sh\necho "Deploys: main has changes waiting 90 minutes that are not in production (the interval is 60); check the Deploy workflow and the runner."\n' > scripts/ci/deploy-health.sh
+  printf '#!/bin/sh\nexec sleep 30\n' > scripts/ci/workflow-breaks.sh
+  cp "$root/templates/scripts/ci/lib.sh" scripts/ci/lib.sh
+  printf 'changed\n' > scripts/ci/batch-lib.sh
+  printf '10:02 round 1: nothing green\n10:03 queue done\n' > logs/merge-queue-1.log
+  printf 'The watering schedule screen waits on review.\nNext: land it, then the seed catalog.\n' > "$sb_fx/memory/handoff-2026-11-02.md"
+  for i in 1 2 3; do printf '%s\n' "$i" >> garden.txt; git add -A; git commit -qm "Plant row $i"; done
+) >/dev/null 2>&1
+sb_run() {
+  printf '{"source":"startup","session_id":"garden-1","cwd":"%s"}' "$sb_repo" | \
+    PATH="$sb_bin:$PATH" SIPNSHIP_HOME="$sb_home" SIPNSHIP_BRIEF_REFRESH=no CLAUDE_PROJECT_DIR="$sb_repo" bounded 60 sh "$root/hooks/scripts/session-brief.sh" 2>&1
+}
+sb_t0=$(date +%s); sb_out=$(sb_run); sb_t1=$(date +%s)
+sb_took=$((sb_t1 - sb_t0))
+eq "the brief finishes inside 15 seconds" "inside" "$([ "$sb_took" -le 15 ] && echo inside || echo "took $sb_took s")"
+eq "it names the last commit" "1" "$(printf '%s\n' "$sb_out" | grep -c ' Plant row 3$')"
+eq "it names the queue's last line" "Queue: ran in the last two hours. Last line: 10:03 queue done" "$(printf '%s\n' "$sb_out" | grep '^Queue: ')"
+eq "it names the last handoff" "Last handoff (handoff-2026-11-02.md):" "$(printf '%s\n' "$sb_out" | grep '^Last handoff')"
+eq "it counts the templates that differ, in one pass" "1" "$(printf '%s\n' "$sb_out" | grep -c "^Templates: 3 of the plugin's scripts here differ")"
+eq "a signed-out gh leaves the board unavailable" "Open pull requests: (unavailable)" "$(printf '%s\n' "$sb_out" | grep '^Open pull requests')"
+eq "before any background read, the proposal says it is coming" "Proposed next: (being read in the background; the next session start shows it)" "$(printf '%s\n' "$sb_out" | grep '^Proposed next')"
+eq "before any background read, no deploy line" "0" "$(printf '%s\n' "$sb_out" | grep -c '^Deploys')"
+# The background read, run here in the foreground with a short bound.
+sb_common=$(git -C "$sb_repo" rev-parse --path-format=absolute --git-common-dir | tr -d '\r')
+sb_cache="$sb_home/brief-cache/$(project_slug "${sb_common%/.git}")"
+(cd "$sb_repo" && PATH="$sb_bin:$PATH" SIPNSHIP_HOME="$sb_home" SIPNSHIP_BRIEF_SLOW_BOUND=3 bounded 60 sh "$root/hooks/scripts/session-brief-slow.sh" "$sb_cache") >/dev/null 2>&1
+eq "the background read stamps its cache and lets go of its lock" "yes no" "$([ -s "$sb_cache/stamp" ] && echo yes || echo no) $([ -d "$sb_cache/lock" ] && echo yes || echo no)"
+eq "a step past its bound leaves its line empty" "" "$(cat "$sb_cache/workflow-breaks" 2>/dev/null)"
+sb_t0=$(date +%s); sb_out=$(sb_run); sb_t1=$(date +%s)
+sb_took=$((sb_t1 - sb_t0))
+eq "with the cache, still inside 15 seconds" "inside" "$([ "$sb_took" -le 15 ] && echo inside || echo "took $sb_took s")"
+eq "the cached deploy line says how old it is" "Deploys (as of just now): main has changes waiting 90 minutes that are not in production (the interval is 60); check the Deploy workflow and the runner." "$(printf '%s\n' "$sb_out" | grep '^Deploys')"
+eq "with no board read, the proposal is unavailable" "Proposed next: (unavailable)" "$(printf '%s\n' "$sb_out" | grep '^Proposed next')"
+eq "the hook starts the background read detached, never waiting on it" "1" "$(grep -c 'nohup sh "$here/session-brief-slow.sh" "$sb_cache" </dev/null >/dev/null 2>&1 &' "$root/hooks/scripts/session-brief.sh")"
 
 section 'the queue runs a test file with its own runner'
 rt="$root/templates/scripts/ci/run-test-file.mjs"; rtf="$fx/test-runner"
@@ -657,7 +728,7 @@ done
 eq "every template workflow that checks out may read the repository" "" "$blind"
 eq "a queued run is one brief line" "Queued: CI on main has waited 14 minutes for a runner, and 1 more; start the runners (scripts/ci/RUNNERS.md)." "$(stuck_line "$(stuck_runs "$(printf '1\tCI\tmain\tqueued\t1060\n2\tAudit\tmain\tqueued\t1200\n')" 1900 10)")"
 eq "nothing queued, no line" "" "$(stuck_line '')"
-eq "the brief names a run queued over ten minutes" "1" "$(grep -c 'stuck_line "$(stuck_runs' "$root/hooks/scripts/session-brief.sh")"
+eq "the brief names a run queued over ten minutes" "1" "$(grep -c 'stuck_line "$(stuck_runs' "$root/hooks/scripts/session-brief-network.sh")"
 eq "green run" "green" "$(run_verdict "$(printf 'build\tcompleted\tsuccess\t1000\t\ntest\tcompleted\tskipped\t1000\t\n')" 2000)"
 eq "pending run" "pending" "$(run_verdict "$(printf 'build\tin_progress\t\t1000\t\n')" 2000)"
 eq "failed run names the job" "failed: test, lint" "$(run_verdict "$(printf 'build\tcompleted\tsuccess\t1\t\ntest\tcompleted\tfailure\t1\t\nlint\tcompleted\tfailure\t1\t\n')" 2000)"
@@ -1120,13 +1191,13 @@ eq "one that failed before too is not" "" "$(workflow_breaks "$(printf '.github/
 eq "nor one with no run since" "" "$(workflow_breaks "$(printf '.github/workflows/audit.yml\tsuccess\t900\n')" "$wb_changes")"
 eq "nor one with a pass since" "" "$(workflow_breaks "$(printf '.github/workflows/audit.yml\tsuccess\t3000\n.github/workflows/audit.yml\tfailure\t2000\n.github/workflows/audit.yml\tsuccess\t900\n')" "$wb_changes")"
 eq "a cancelled run since is not a failure" "" "$(workflow_breaks "$(printf '.github/workflows/audit.yml\tcancelled\t2000\n.github/workflows/audit.yml\tsuccess\t900\n')" "$wb_changes")"
-eq "the brief and the audit both run workflow-breaks.sh" "1 1" "$(grep -c 'sh scripts/ci/workflow-breaks.sh' "$root/hooks/scripts/session-brief.sh") $(grep -c 'sh scripts/ci/workflow-breaks.sh' "$root/templates/.github/workflows/audit.yml")"
+eq "the brief and the audit both run workflow-breaks.sh" "1 1" "$(grep -c 'sh scripts/ci/workflow-breaks.sh' "$root/hooks/scripts/session-brief-slow.sh") $(grep -c 'sh scripts/ci/workflow-breaks.sh' "$root/templates/.github/workflows/audit.yml")"
 section 'drain_late'
 eq "a drain last run 6 h ago on a 2 h schedule is late" "Queue drain: last ran 6 h ago, scheduled every 2 h; GitHub is firing it late. A green pull request waits until then or until a session runs sh scripts/ci/merge-queue.sh --drain." "$(drain_late 1000 $((1000 + 21600)) 2)"
 eq "one 3 h ago is not" "" "$(drain_late 1000 $((1000 + 10800)) 2)"
 eq "exactly twice the interval is not" "" "$(drain_late 1000 $((1000 + 14400)) 2)"
 eq "no last run says nothing" "" "$(drain_late "" 99999 2)"
-eq "the brief and the audit both run drain-late.sh" "1 1" "$(grep -c 'sh scripts/ci/drain-late.sh' "$root/hooks/scripts/session-brief.sh") $(grep -c 'sh scripts/ci/drain-late.sh' "$root/templates/.github/workflows/audit.yml")"
+eq "the brief and the audit both run drain-late.sh" "1 1" "$(grep -c 'sh scripts/ci/drain-late.sh' "$root/hooks/scripts/session-brief-network.sh") $(grep -c 'sh scripts/ci/drain-late.sh' "$root/templates/.github/workflows/audit.yml")"
 
 section 'audit helpers'
 eq "issues without a state label" "12
@@ -2459,7 +2530,7 @@ eq "a declared unmocked file passes" "0" "$(sed -n 5p "$mk.out")"
 eq "the stale count names only the screen past stale-after" "home: 3 commits" "$(sed -n '6,$p' "$mk.out")"
 eq "the CI template runs the mock check where mocks.txt exists" "1" "$(grep -c "hashFiles('scripts/ci/mocks.txt') != ''" "$root/templates/.github/workflows/ci.yml")"
 eq "the template mocks.txt has no live lines" "" "$(mock_lines "$(cat "$root/templates/scripts/ci/mocks.txt")")"
-eq "the brief has a stale-mock line" "1" "$(grep -c 'mock-check.sh" --stale' "$root/hooks/scripts/session-brief-screens.sh")"
+eq "the brief has a stale-mock line" "1" "$(grep -c 'mock-check.sh" --stale' "$root/hooks/scripts/session-brief-slow.sh")"
 
 section 'copy from the mocks'
 . "$root/templates/scripts/design/design-lib.sh"
@@ -2820,7 +2891,7 @@ eq "no commits since the release counts zero" "0" "$(cat "$rel_dir/c0")"
 eq "counts only commits touching plugin since the version change" "2" "$(cat "$rel_dir/c2")"
 eq "a version bump resets the count" "0" "$(cat "$rel_dir/c3")"
 eq "no plugin version file prints nothing" "" "$(cat "$rel_dir/cn")"
-eq "session brief names the unreleased count" "1" "$(grep -q 'unreleased commit' "$root/hooks/scripts/session-brief.sh" && echo 1 || echo 0)"
+eq "session brief names the unreleased count" "1" "$(grep -q 'unreleased commit' "$root/hooks/scripts/session-brief-local.sh" && echo 1 || echo 0)"
 eq "drive skill names the release goal" "1" "$(grep -q 'release X.Y.Z' "$root/skills/project-drive/SKILL.md" && echo 1 || echo 0)"
 eq "plan script adds the release goal" "1" "$(grep -q 'release_goal' "$root/scripts/drive/plan.sh" && echo 1 || echo 0)"
 
@@ -3000,7 +3071,7 @@ eq "a later present line clears the brief" "" "$(brief_scan_line "$(scan_warning
 eq "no comments, no scan line" "" "$(brief_scan_line "")"
 eq "add-runner adds the exclusions and never removes one" "2 0" "$(grep -c 'Add-MpPreference -ExclusionPath' "$root/templates/scripts/ci/add-runner.ps1") $(grep -c 'Remove-MpPreference' "$root/templates/scripts/ci/add-runner.ps1")"
 eq "the brief names an old runners key once" "1|" "$(brief_runner_key_line '{ "runners": 3 }' | grep -c 'no longer read')|$(brief_runner_key_line '{}')"
-eq "the brief reads no count from the file" "0" "$(grep -c 'runner_count' "$root/hooks/scripts/session-brief.sh")"
+eq "the brief reads no count from the file" "0" "$(cat "$root"/hooks/scripts/session-brief*.sh | grep -c 'runner_count')"
 eq "the queue logs its waits" "1" "$(grep -c 'waits_append .scratch/queue/waits.tsv' "$mq_all")"
 rt_jobs="checks	1000	1100
 checks	2000	2300
@@ -3014,7 +3085,7 @@ eq "a job never seen alone has no quiet time and is left out" "0" "$(runner_timi
 eq "a bad line is dropped" "" "$(runner_timings 'x	abc	5')"
 eq "the watch writes the timings beside the machine file" "1" "$(grep -c 'timings.tsv' "$root/templates/scripts/ci/runner-watch.sh")"
 eq "the watch prints the machine line" "1" "$(grep -c 'echo "machine line: $mline"' "$root/templates/scripts/ci/runner-watch.sh")"
-eq "the brief reads the waits log and the machine file" "1 1" "$(grep -c 'waits_line "$(tail -n 500' "$root/hooks/scripts/session-brief.sh") $(grep -c 'machine_brief_line "$(head -n 1' "$root/hooks/scripts/session-brief.sh")"
+eq "the brief reads the waits log and the machine file" "1 1" "$(grep -c 'waits_line "$(tail -n 500' "$root/hooks/scripts/session-brief-local.sh") $(grep -c 'machine_brief_line "$(head -n 1' "$root/hooks/scripts/session-brief-local.sh")"
 mv "$wl_dir" "$wl_dir.done" 2>/dev/null || true
 
 section 'a failing job says what failed and never cancels the run'
