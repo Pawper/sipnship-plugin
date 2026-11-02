@@ -20,8 +20,10 @@ if has screens && [ -f scripts/ci/mocks.txt ] && [ -f "$here/../../templates/scr
 fi
 
 # Screens whose mock has fallen behind their UI by more than the
-# stale-after commits in scripts/ci/mocks.txt (20 by default). Local git only.
+# stale-after commits in scripts/ci/mocks.txt (20 by default). Local git
+# only, but slow: session-brief-slow.sh reads it in the background, and the
+# brief prints the last reading with its age.
 if has screens && [ -f scripts/ci/mocks.txt ] && [ "$have_git" = yes ] && [ -f "$here/../../templates/scripts/ci/mock-check.sh" ]; then
-  sm=$(run_bounded 6 sh "$here/../../templates/scripts/ci/mock-check.sh" --stale 2>/dev/null | head -n 6 | paste -sd';' - | sed 's/;/; /g')
-  [ -z "$sm" ] || add "Mocks behind their screens: $sm. Update the mock in design/mocks/, or say in the next pull request why it still holds."
+  sm=$(cached mock-stale)
+  [ -z "$sm" ] || add "Mocks behind their screens ($sb_age): $sm. Update the mock in design/mocks/, or say in the next pull request why it still holds."
 fi
