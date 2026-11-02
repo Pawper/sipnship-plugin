@@ -425,4 +425,4 @@ ok    ci on main reruns
 
 ## License, privacy and terms
 
-MIT. See `LICENSE`. The plugin collects nothing and has no service behind it; `PRIVACY.md` says what it reads and where that goes, and `TERMS.md` says in plain words what the license means in practice. Questions and problems go to the issue tracker.
+MIT. See `LICENSE`. The plugin collects nothing until you connect a machine to the SipNShip dashboard, which is optional; `PRIVACY.md` says what it reads, what is sent once you connect, where that goes and how to turn it off, and `TERMS.md` says in plain words what the license means in practice. Questions and problems go to the issue tracker.
