@@ -10,6 +10,11 @@
             "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/session-brief.sh\"",
             "timeout": 20,
             "statusMessage": "Reading the project's live state"
+          },
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/session-sample.sh\"",
+            "timeout": 10
           }
         ]
       }

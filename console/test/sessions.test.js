@@ -117,3 +117,30 @@ test('the kind of work comes from the drive note, only when it is one of the kno
   assert.strictEqual(got[0].category, undefined);
   assert.ok(sessions.CATEGORIES.includes('releasing-plugin'));
 });
+
+test('an agent a session started is sampled from the subagents folder, with its own issue and branch', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'sns-agent-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sns-agent-root-'));
+  const main = '/work/rooftop-garden';
+  // The runtime files an agent's log under the session that started it, in that session's folder.
+  const sub = path.join(home, sessions.logFolder(main), 'parent-session', 'subagents');
+  fs.mkdirSync(sub, { recursive: true });
+  fs.copyFileSync(path.join(fxDir, 'subagent-session.jsonl'), path.join(sub, 'agent-a1b2c3d4e5f6a7b8c.jsonl'));
+  fs.writeFileSync(path.join(sub, 'agent-a1b2c3d4e5f6a7b8c.meta.json'), JSON.stringify({ worktreeBranch: 'worktree-agent-a1b2c3d4e5f6a7b8c' }));
+  const got = sessions.readSessions({ root, logsDir: home, worktrees: [main] });
+  assert.strictEqual(got.length, 1);
+  assert.strictEqual(got[0].session, 'agent-a1b2c3d4e5f6a7b8c');
+  // Its issue is the one its pull request closes, not the other pull request it was told about.
+  assert.deepStrictEqual(got[0].issues, [12]);
+  assert.strictEqual(got[0].branch, 'worktree-agent-a1b2c3d4e5f6a7b8c', 'the branch it was given, not its parent session\'s');
+  assert.strictEqual(got[0].worktree.name, 'agent-a1b2c3d4e5f6a7b8c');
+  assert.strictEqual(got[0].lastLine, 'Reading the reminder screen first.');
+});
+
+test('a first message names its own issue before the others it mentions', () => {
+  const first = (text) => sessions.readSession(JSON.stringify({ type: 'user', timestamp: '2026-11-02T18:00:00.000Z', message: { content: text } }), 'x').issues;
+  assert.deepStrictEqual(first('Task: issue #31. Also read #8, the answer to it.'), [31]);
+  assert.deepStrictEqual(first('Your issue: #31 (read it). Its sibling is #30.'), [31]);
+  assert.deepStrictEqual(first('Work #8 and #31 together. Body: "Closes #31", "Refs #8".'), [31, 8]);
+  assert.deepStrictEqual(first('Work issues #12 and #14 together.'), [12, 14]);
+});

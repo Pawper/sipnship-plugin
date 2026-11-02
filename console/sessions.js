@@ -37,15 +37,30 @@ function lastLine(text) {
   return words.slice(0, WORDS_MAX).join(' ') + (words.length > WORDS_MAX ? '…' : '');
 }
 
-/** Issue numbers named as #N in a text, first few, in order. */
-function issuesIn(text) {
+/** Numbers matched by a pattern's first group, first few, in order, each once. */
+function numbersBy(text, re) {
   const seen = [];
-  for (const m of String(text || '').matchAll(/#(\d{1,6})\b/g)) {
+  for (const m of String(text || '').matchAll(re)) {
     const n = Number(m[1]);
     if (!seen.includes(n)) seen.push(n);
     if (seen.length >= 5) break;
   }
   return seen;
+}
+
+/**
+ * The issues a first message gives its session. A task often names other
+ * issues beside its own ("another pull request (#9) also touches it"), so the
+ * issues its pull request is to close come first ("Closes #12"), then the
+ * ones it calls its issue ("Task: issue #12", "Your issue: #12"), and only
+ * when it says neither, every #N it names.
+ */
+function issuesIn(text) {
+  const closes = numbersBy(text, /\b(?:closes|fixes|resolves|refs)\s+#(\d{1,6})\b/gi);
+  if (closes.length) return closes;
+  const own = numbersBy(text, /\bissue:?\s+#(\d{1,6})\b/gi);
+  if (own.length) return own;
+  return numbersBy(text, /#(\d{1,6})\b/g);
 }
 
 /**
@@ -143,22 +158,58 @@ function startedWith(root, name) {
  * first, for the repository at root. logsDir is the runtime's log folder
  * (default ~/.claude/projects); worktrees may be given for tests.
  */
+/**
+ * The logs to read in one worktree's log folder: its sessions' own, and the
+ * agents each session started. The runtime keeps an agent's log under the
+ * session that started it, in <session>/subagents/agent-<id>.jsonl, with a
+ * <id>.meta.json beside it naming the worktree and branch it was given.
+ */
+function logsIn(folder) {
+  let entries;
+  try { entries = fs.readdirSync(folder, { withFileTypes: true }); } catch { return []; }
+  const out = [];
+  for (const e of entries) {
+    if (e.isFile() && e.name.endsWith('.jsonl')) out.push({ file: path.join(folder, e.name), name: e.name.replace(/\.jsonl$/, '') });
+    if (!e.isDirectory()) continue;
+    const sub = path.join(folder, e.name, 'subagents');
+    let agents;
+    try { agents = fs.readdirSync(sub).filter((f) => f.endsWith('.jsonl')); } catch { continue; }
+    for (const f of agents) out.push({ file: path.join(sub, f), name: f.replace(/\.jsonl$/, ''), meta: path.join(sub, f.replace(/\.jsonl$/, '.meta.json')) });
+  }
+  return out;
+}
+
+/** An agent's meta file: the branch it was given, when the runtime wrote one. */
+function agentBranch(metaFile) {
+  if (!metaFile) return undefined;
+  try {
+    const m = JSON.parse(fs.readFileSync(metaFile, 'utf8'));
+    return m && typeof m.worktreeBranch === 'string' && m.worktreeBranch ? m.worktreeBranch : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function readSessions({ root, logsDir, worktrees, localModels, now = Date.now() } = {}) {
   const dir = logsDir || path.join(os.homedir(), '.claude', 'projects');
   const trees = worktrees || worktreesOf(root);
   const out = [];
+  const seen = new Set();
   for (const tree of trees) {
     const folder = path.join(dir, logFolder(tree));
-    let files;
-    try { files = fs.readdirSync(folder).filter((f) => f.endsWith('.jsonl')); } catch { continue; }
-    for (const f of files) {
+    if (seen.has(folder)) continue;
+    seen.add(folder);
+    for (const log of logsIn(folder)) {
       let st;
-      try { st = fs.statSync(path.join(folder, f)); } catch { continue; }
+      try { st = fs.statSync(log.file); } catch { continue; }
       if (now - st.mtimeMs > RECENT_MS) continue;
       let text;
-      try { text = fs.readFileSync(path.join(folder, f), 'utf8'); } catch { continue; }
-      const s = readSession(text, f.replace(/\.jsonl$/, ''), { localModels });
+      try { text = fs.readFileSync(log.file, 'utf8'); } catch { continue; }
+      const s = readSession(text, log.name, { localModels });
       if (!s) continue;
+      // An agent's log carries the branch its parent session was on; the branch it was given is in its meta file.
+      const given = agentBranch(log.meta);
+      if (given) s.branch = given;
       if (!s.worktree) s.worktree = { name: path.basename(tree), path: tree };
       const note = startedWith(root, s.worktree.name);
       if (note.how) s.startedWith = note.how;
