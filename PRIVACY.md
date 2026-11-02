@@ -26,6 +26,8 @@ Nothing here is sent until you run `npx sipnship connect --repo` on a machine an
 - the machine's name and the time it was sent;
 - the brief's own cards, as sentences: how many pull requests are open or waiting, which checks failed, what landed, with the names of branches, checks and workflows;
 - the runner watch's latest sample: cores, runners, how many are busy, how long jobs waited and ran, and the load and memory figures the watch read;
+- the names of the runners on this machine (a runner's name is lowercase letters, numbers and dashes, so "Remove one" can pick from them), and one word from the runner check, "present" or "missing", for whether the antivirus is told to skip the runner folders;
+- one flag saying this plugin reports what agents did after a rule stopped them;
 - the lines of your manual's "Steps for the owner" list, as written;
 - a sample of the agent sessions on that machine in the last two hours: when each started, the model's name, the branch and worktree folder name, the issue numbers its first message names, the first twelve words of its last message, and the token counts the agent runtime reported, with the kind of work when the drive noted one;
 - the models you declared as local in your services file, by name;

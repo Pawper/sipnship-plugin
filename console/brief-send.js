@@ -128,6 +128,8 @@ function briefBody(text, opts = {}) {
   }
   const body = { version: 1, sentAt: (opts.now || new Date()).toISOString(), machine: opts.machine || os.hostname(), cards: out };
   if (opts.runners) body.runners = opts.runners;
+  // This plugin reports what agents did after a rule stopped them (spec 013); the Rules tab says "older" without it.
+  body.reports = true;
   // The kinds of request this machine's listener carries out, only while the listener is on and running (spec 012).
   if (opts.can && opts.can.length) body.can = opts.can;
   if (opts.ownerSteps && opts.ownerSteps.length) body.ownerSteps = opts.ownerSteps;
@@ -138,14 +140,30 @@ function briefBody(text, opts = {}) {
 }
 
 /** The runner watch's machine file (epoch, cores, runners, busy, line) as the sample the brief carries. */
-function runnerSample(row, timingsText) {
+function runnerSample(row, timingsText, extra = {}) {
   const f = String(row || '').replace(/\r/g, '').split('\n')[0].split('\t');
   const n = (v) => (/^\d+$/.test(v || '') ? Number(v) : undefined);
   if (f.length < 4 || n(f[1]) === undefined || n(f[2]) === undefined) return undefined;
   const at = n(f[0]) ? new Date(n(f[0]) * 1000).toISOString() : undefined;
   const measures = measuresOf(f.slice(5));
   const timings = timingsOf(timingsText);
-  return { cores: n(f[1]), runners: n(f[2]), busy: Math.min(n(f[3]) || 0, n(f[2])), ...(at ? { at } : {}), ...(measures ? { measures } : {}), ...(timings.length ? { timings } : {}) };
+  const names = runnerNames(extra.namesText);
+  const antivirus = /^\s*(present|missing)\s*$/.exec(String(extra.antivirusText || ''));
+  return { cores: n(f[1]), runners: n(f[2]), busy: Math.min(n(f[3]) || 0, n(f[2])), ...(at ? { at } : {}), ...(measures ? { measures } : {}), ...(timings.length ? { timings } : {}), ...(names.length ? { names } : {}), ...(antivirus ? { antivirus: antivirus[1] } : {}) };
+}
+
+/**
+ * The runner watch's names file (one runner a line) as runners.names: only a
+ * line that is a runner's name (lowercase letters, numbers and dashes), each
+ * once, at most 20. Anything else is dropped, so no path or text rides along.
+ */
+function runnerNames(text) {
+  const out = [];
+  for (const raw of String(text || '').replace(/\r/g, '').split('\n')) {
+    const name = raw.trim();
+    if (/^[a-z][a-z0-9-]{1,30}[a-z0-9]$/.test(name) && !out.includes(name)) out.push(name);
+  }
+  return out.slice(0, 20);
 }
 
 /**
@@ -306,7 +324,8 @@ async function main() {
   if (machineFile) {
     let timingsText = '';
     try { timingsText = fs.readFileSync(path.join(path.dirname(machineFile), 'timings.tsv'), 'utf8'); } catch { /* no timings yet */ }
-    try { runners = runnerSample(fs.readFileSync(machineFile, 'utf8'), timingsText); } catch { /* no sample */ }
+    const sibling = (file) => { try { return fs.readFileSync(path.join(path.dirname(machineFile), file), 'utf8'); } catch { return ''; } };
+    try { runners = runnerSample(fs.readFileSync(machineFile, 'utf8'), timingsText, { namesText: sibling('names.tsv'), antivirusText: sibling('antivirus.txt') }); } catch { /* no sample */ }
   }
   let agents;
   let local = [];
@@ -318,4 +337,4 @@ async function main() {
 
 if (require.main === module) main().catch(() => {}).finally(() => { process.exitCode = 0; });
 
-module.exports = { post, briefBody, runnerSample, timingsOf,ownerSteps, measuresOf, fit, failureLine, sendBrief, base, SEND_MAX_BYTES, TIMEOUT_MS };
+module.exports = { post, briefBody, runnerSample, runnerNames, timingsOf,ownerSteps, measuresOf, fit, failureLine, sendBrief, base, SEND_MAX_BYTES, TIMEOUT_MS };

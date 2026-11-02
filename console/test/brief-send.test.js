@@ -211,3 +211,23 @@ test('the sample hook mode reads no input and exits 0 with nothing kept yet', ()
   const out = execFileSync(process.execPath, [path.join(__dirname, '..', 'brief-send.js'), '--sample', '--session', 'z', '--repo', 'acme/shop'], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...env }, encoding: 'utf8', timeout: 10000 });
   assert.match(out, /^Could not reach SipNShip/);
 });
+
+test('the watch\'s names file becomes runners.names: runner names only, each once, nothing else', () => {
+  const t = '1761754320\t8\t5\t2\t8 cores, 5 runners';
+  const names = 'garden-1\ngarden-2\r\ngarden-1\nC:\\actions-runner-garden\nNot A Name\nx\n';
+  assert.deepStrictEqual(send.runnerSample(t, '', { namesText: names }).names, ['garden-1', 'garden-2']);
+  assert.strictEqual('names' in send.runnerSample(t, '', { namesText: '' }), false);
+  assert.strictEqual('names' in send.runnerSample(t), false);
+});
+
+test('the scan check\'s one word rides as runners.antivirus, and anything else is left out', () => {
+  const t = '1761754320\t8\t5\t2\t8 cores, 5 runners';
+  assert.strictEqual(send.runnerSample(t, '', { antivirusText: 'present\n' }).antivirus, 'present');
+  assert.strictEqual(send.runnerSample(t, '', { antivirusText: 'missing' }).antivirus, 'missing');
+  assert.strictEqual('antivirus' in send.runnerSample(t, '', { antivirusText: 'Exclusions: C:\\Users\\maya' }), false);
+  assert.strictEqual('antivirus' in send.runnerSample(t, '', { antivirusText: '' }), false);
+});
+
+test('the brief says this plugin reports what agents did after a rule stopped them', () => {
+  assert.strictEqual(send.briefBody('Main: abc\n', { now }).reports, true);
+});
