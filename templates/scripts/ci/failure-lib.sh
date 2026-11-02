@@ -24,14 +24,16 @@ failure_annotation() {
 
 # The report job's summary: each failed job with its step and lines, then
 # the jobs cancelled because of it. LINES holds "job-name<TAB>message" lines
-# read back from the failed jobs' annotations.
+# read back from the failed jobs' annotations. A job cancelled with a step
+# of its own failed is a failed job: the checks job cancels its own run
+# after a failed check, which marks it cancelled.
 run_report() {
   printf '%s\n' "$1" | awk -F '\t' -v lines="$2" '
     BEGIN { n = split(lines, L, "\n")
             for (i = 1; i <= n; i++) { t = index(L[i], "\t"); if (t) { k = substr(L[i], 1, t - 1); msg[k] = msg[k] substr(L[i], t + 1) "\n" } } }
-    $4 == "failure" { f++
+    $4 == "failure" || ($4 == "cancelled" && $6 != "") { f++
       out = out sprintf("### %s failed\n\nThe step that failed: %s\n\n", $2, ($6 == "" ? "unknown" : $6))
-      if (msg[$2] != "") out = out "```\n" msg[$2] "```\n\n" }
+      if (msg[$2] != "") out = out "```\n" msg[$2] "```\n\n"; next }
     $4 == "cancelled" { c = c "- " $2 "\n" }
     END { if (!f) { print "No job failed."; exit }
           printf "%s", out

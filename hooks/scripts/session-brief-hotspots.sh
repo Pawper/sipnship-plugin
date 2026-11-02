@@ -1,6 +1,8 @@
-# Sourced by session-brief.sh: the files over their size limit, the files
-# several open pull requests edit, and the CI jobs over their time limit
-# (scripts/ci/hotspots.txt). Local git and files only.
+# Sourced by session-brief-slow.sh, in the background: the files over their
+# size limit, the files several open pull requests edit, and the CI jobs over
+# their time limit (scripts/ci/hotspots.txt). Local git and files only, but a
+# git diff per open pull request, so too slow for the start hook itself; the
+# brief prints the cached line with its age.
 if has leftover && [ -f scripts/ci/hotspots.txt ] && [ -f scripts/ci/hotspots-lib.sh ] && [ "$have_git" = yes ]; then
   . scripts/ci/hotspots-lib.sh
   hs_spec=$(cat scripts/ci/hotspots.txt)
