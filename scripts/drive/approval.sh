@@ -7,6 +7,12 @@
 # proposal written by someone other than the proposer, whose first line is
 # "all", "none", a list of numbers, or "all but" a list of numbers.
 #
+# Auto Drive: when the drive issue carries the label drive:auto, approval is
+# standing. The latest proposal is approved whole, with no reply needed, and
+# the last line says "approved by Auto Drive". Without the label, the
+# proposal waits for a reply as above. The issue and its labels come from
+# one REST call.
+#
 # Usage, from the project root: sh "$CLAUDE_PLUGIN_ROOT/scripts/drive/approval.sh"
 # Prints: the approved goal lines, one per line, then "approved by NAME"; or
 # one line saying why there is nothing: no drive issue, no proposal, no
@@ -19,8 +25,10 @@ if ! command -v gh >/dev/null 2>&1 || ! gh auth status >/dev/null 2>&1; then
   exit 0
 fi
 
-issue=$(gh api "repos/{owner}/{repo}/issues?labels=drive&state=open&per_page=1" --jq '.[0].number' 2>/dev/null)
-[ -n "$issue" ] || { echo "nothing: no open issue labeled drive"; exit 0; }
+auto=$(auto_drive_state "$(gh api "$AUTO_DRIVE_QUERY" --jq "$AUTO_DRIVE_JQ" 2>/dev/null)")
+[ "$auto" != none ] || { echo "nothing: no open issue labeled drive"; exit 0; }
+issue=${auto#* }
+auto=${auto%% *}
 
 me=$(gh api user --jq .login 2>/dev/null)
 tab=$(printf '\t')
@@ -39,19 +47,25 @@ state=$(printf '%s\n' "$comments" | awk -F'\t' -v me="$me" '
   }
   END {
     if (proposal == "") { print "noproposal"; exit }
-    if (reply == "") { print "noreply"; exit }
-    print "reply\t" by "\t" reply
+    if (reply == "") print "noreply"
+    else print "reply\t" by "\t" reply
     print proposal
   }')
 
 case "$state" in
   noproposal) echo "nothing: no proposal on issue $issue yet"; exit 0 ;;
-  noreply) echo "nothing: the latest proposal on issue $issue has no reply yet"; exit 0 ;;
 esac
 head1=$(printf '%s\n' "$state" | head -n 1)
-reply_by=$(printf '%s' "$head1" | cut -f2)
-reply=$(printf '%s' "$head1" | cut -f3)
 proposal=$(printf '%s\n' "$state" | tail -n +2)
+if [ "$auto" = on ]; then
+  # Standing approval: the whole proposal, whatever any reply said.
+  reply=all; reply_by="Auto Drive"
+elif [ "$head1" = noreply ]; then
+  echo "nothing: the latest proposal on issue $issue has no reply yet"; exit 0
+else
+  reply_by=$(printf '%s' "$head1" | cut -f2)
+  reply=$(printf '%s' "$head1" | cut -f3)
+fi
 
 approved=$(approved_goals "$proposal" "$reply")
 if [ -z "$approved" ]; then

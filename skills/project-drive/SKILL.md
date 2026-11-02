@@ -43,6 +43,13 @@ It prints the approved goals and who approved them, or one line saying why there
 no proposal, no reply yet, or a reply that approved nothing. This step is cheap on purpose: a timed wake that
 finds nothing approved should cost a few calls and end.
 
+**Auto Drive.** The drive issue may carry the label `drive:auto`, which the builder sets with the Auto Drive
+switch on the dashboard or by hand on GitHub. Both scripts read it with the one REST call that finds the drive
+issue; the plan's last line says which it is. With the label on, approval is standing: `approval.sh` approves
+the latest proposal whole, ending "approved by Auto Drive", so the round starts the next round as soon as the
+current one has landed (its last pull request merged), with no reply. "Start this round" on the dashboard
+still starts it at once. With the label off, post the proposal and wait for a reply, as below.
+
 ## b. Propose, or pursue
 
 **When nothing is approved and the proposal has goals:** put the proposal to a person and stop.
