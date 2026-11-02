@@ -1572,6 +1572,32 @@ GHEOF
 gate_out=$(cd "$gh_stub_d" && PATH="$gh_stub_d:$PATH" sh "$root/templates/scripts/ci/deploy-gate.sh" 2>&1 | head -1)
 eq "a held pull request with no labels is not waited for" "deploy: due" "$(printf '%s' "$gate_out" | cut -c1-11)"
 eq "the gate writes an empty labels column as a dash" "1" "$(grep -c 'if . == "" then "-"' "$root/templates/scripts/ci/deploy-gate.sh")"
+# The deploy interval: the repository variable first (an app's Deploy
+# timing setting mirrors it there), then .claude/deploy.json, then 60.
+eq "the variable wins over the file" "60" "$(. "$root/templates/scripts/ci/deploy-lib.sh"; deploy_interval 60 '{ "intervalMinutes": 0 }')"
+eq "a zero variable wins too" "0" "$(. "$root/templates/scripts/ci/deploy-lib.sh"; deploy_interval 0 '{ "intervalMinutes": 60 }')"
+eq "no variable reads the file" "0" "$(. "$root/templates/scripts/ci/deploy-lib.sh"; deploy_interval '' '{ "intervalMinutes": 0 }')"
+eq "a variable that is not a number reads the file" "15" "$(. "$root/templates/scripts/ci/deploy-lib.sh"; deploy_interval 'soon' '{ "intervalMinutes": 15 }')"
+eq "neither gives an hour" "60" "$(. "$root/templates/scripts/ci/deploy-lib.sh"; deploy_interval '' '{}')"
+gv_d=$(mktemp -d); mkdir -p "$gv_d/.claude"
+printf '{ "intervalMinutes": 0 }\n' > "$gv_d/.claude/deploy.json"
+gv_at=$(date -u -d "@$(( $(date +%s) - 600 ))" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$(( $(date +%s) - 600 ))" +%Y-%m-%dT%H:%M:%SZ)
+cat > "$gv_d/gh" <<GHEOF
+#!/bin/sh
+case "\$2" in
+  *actions/variables/DEPLOY_INTERVAL_MINUTES) echo 60 ;;
+  *deploy.yml/runs*) echo $gv_at ;;
+esac
+GHEOF
+chmod +x "$gv_d/gh"
+gv_out=$(cd "$gv_d" && unset DEPLOY_INTERVAL_MINUTES; PATH="$gv_d:$PATH" sh "$root/templates/scripts/ci/deploy-gate.sh" --last 2>&1 | head -1)
+eq "from a session the gate reads the variable before the file" "deploy: held, last deploy 10 minutes ago, interval 60" "$gv_out"
+gv_out=$(cd "$gv_d" && DEPLOY_INTERVAL_MINUTES=60 PATH="$gv_d:$PATH" sh "$root/templates/scripts/ci/deploy-gate.sh" --last 2>&1 | head -1)
+eq "in a workflow the variable comes in the environment" "deploy: held, last deploy 10 minutes ago, interval 60" "$gv_out"
+gv_out=$(cd "$gv_d" && DEPLOY_INTERVAL_MINUTES= PATH="$gv_d:$PATH" sh "$root/templates/scripts/ci/deploy-gate.sh" --last 2>&1 | head -1)
+eq "a workflow with no variable falls back to the file" "deploy: due; last deploy 10 min ago (interval 0)" "$gv_out"
+eq "the Deploy workflow reads the variable first" "1 1" "$(grep -c 'DEPLOY_INTERVAL_MINUTES: \${{ vars.DEPLOY_INTERVAL_MINUTES }}' "$root/templates/.github/workflows/deploy.yml") $(grep -c 'deploy_interval "\$DEPLOY_INTERVAL_MINUTES" "\$cfg"' "$root/templates/.github/workflows/deploy.yml")"
+eq "and the drain passes it to the queue" "1" "$(grep -c 'DEPLOY_INTERVAL_MINUTES: \${{ vars.DEPLOY_INTERVAL_MINUTES }}' "$root/templates/.github/workflows/queue-drain.yml")"
 eq "the state line with no deploy yet" "deploy: due; none recorded (interval 60)" "$(deploy_state 0 '' 5000 60)"
 eq "a run that is re-running is pending, whatever its old checks say" "1" "$(grep -c 'its run is \$run_status (a new attempt)' "$mq_all")"
 eq "--serial by hand waits for checks already running" "1" "$(grep -c 'its checks are still running; waiting for them' "$mq_all")"

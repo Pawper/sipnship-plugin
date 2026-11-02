@@ -82,12 +82,15 @@ jobs:
           HAS_TOKEN: ${{ secrets.VERCEL_TOKEN != '' }}
           HAS_CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
           FORCED: ${{ github.event_name == 'workflow_dispatch' }}
+          # The interval the app keeps (0 or 60), empty when there is none;
+          # then intervalMinutes in .claude/deploy.json.
+          DEPLOY_INTERVAL_MINUTES: ${{ vars.DEPLOY_INTERVAL_MINUTES }}
         run: |
           . scripts/ci/deploy-lib.sh
           cfg=$(cat .claude/deploy.json 2>/dev/null || true)
           app=$(json_string "$cfg" appRoot); app=${app:-.}
           extra=$(json_words "$cfg" neverShips)
-          interval=$(json_number "$cfg" intervalMinutes); interval=${interval:-60}
+          interval=$(deploy_interval "$DEPLOY_INTERVAL_MINUTES" "$cfg")
           path=${DEPLOY_PATH:-$(json_string "$cfg" path)}; path=${path:-vercel}
           target=$(json_string "$cfg" target); target=${target:-vercel}
           sha=$(git rev-parse HEAD)

@@ -124,6 +124,7 @@ jobs:
           QUEUE_MERGE_TOKEN: ${{ secrets.QUEUE_TOKEN }}
           GH_REPO: ${{ github.repository }}
           QUEUE_DRAIN_MINUTES: ${{ vars.QUEUE_DRAIN_MINUTES || '25' }}
+          DEPLOY_INTERVAL_MINUTES: ${{ vars.DEPLOY_INTERVAL_MINUTES }}
         run: |
           if [ -z "$QUEUE_MERGE_TOKEN" ]; then
             echo "QUEUE_TOKEN is not set; a merge by the default token would not start the full run on main. See the comment at the top of this workflow."
