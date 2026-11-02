@@ -189,3 +189,25 @@ test('the hook script exits 0 and prints the line when the service is down', asy
   const out = execFileSync(process.execPath, [path.join(__dirname, '..', 'brief-send.js'), '--session', 'z', '--repo', 'acme/shop'], { input: fixture, env: { ...process.env, ...env }, encoding: 'utf8' });
   assert.match(out, /^Could not reach SipNShip/);
 });
+
+test('the sample sent on its own carries the last brief block again, with the sessions now', async () => {
+  const f = await fake([{ status: 204 }, { status: 204 }]);
+  try {
+    const env = envWith(f.url);
+    const agent = { session: 'agent-a1', started: '2026-10-29T16:00:00.000Z', issues: [12], worktree: { name: 'agent-a1', path: '/work/rooftop-garden/.claude/worktrees/agent-a1' } };
+    await send.sendBrief({ text: fixture, session: 's1', repo: 'acme/shop', env, now });
+    const line = await send.sendBrief({ session: 's2', repo: 'acme/shop', env, now: new Date(now.getTime() + 60000), sessions: [agent], sampleOnly: true });
+    assert.strictEqual(line, '');
+    assert.strictEqual(f.seen.length, 2);
+    const [full, sample] = f.seen.map((s) => JSON.parse(s.body));
+    assert.deepStrictEqual(sample.cards, full.cards, 'the block is the one last sent, not emptied');
+    assert.deepStrictEqual(sample.sessions.map((s) => s.issues), [[12]]);
+  } finally { f.server.close(); }
+});
+
+test('the sample hook mode reads no input and exits 0 with nothing kept yet', () => {
+  const { execFileSync } = require('child_process');
+  const env = envWith('http://127.0.0.1:9');
+  const out = execFileSync(process.execPath, [path.join(__dirname, '..', 'brief-send.js'), '--sample', '--session', 'z', '--repo', 'acme/shop'], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...env }, encoding: 'utf8', timeout: 10000 });
+  assert.match(out, /^Could not reach SipNShip/);
+});

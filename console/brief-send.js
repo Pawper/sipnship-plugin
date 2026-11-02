@@ -13,6 +13,12 @@
 // on the reply. Prints at most one line, and always exits 0.
 //   node brief-send.js --repo OWNER/NAME --answer ID --say "..."   keeps an answer
 //   node brief-send.js --repo OWNER/NAME --questions               lists what waits
+//   node brief-send.js --repo OWNER/NAME --sample --session ID     sends the session sample now
+//
+// --sample runs as its own start hook, beside the brief's: the brief reads
+// the whole project and can outlast its hook's time, and the session sample
+// must not wait on it. It sends the last brief block this machine sent for
+// the repository (kept beside the token file) with a fresh session sample.
 
 const fs = require('fs');
 const os = require('os');
@@ -230,10 +236,29 @@ function remember(env, repoId, m) {
   } catch { /* never stops the session */ }
 }
 
-/** Send the brief; returns the line to print ('' for none). */
-async function sendBrief({ text, session = '', repo, env = process.env, now = new Date(), runners, sessions: agents, ownerSteps: steps, localModels }) {
+/** The last brief block this machine sent for a repository, so a sample sent on its own carries it again. */
+function blockFile(env, repoId) {
+  return path.join(tokens.home(env), 'brief-send', `${repoId}.txt`);
+}
+function lastBlock(env, repoId) {
+  try { return fs.readFileSync(blockFile(env, repoId), 'utf8'); } catch { return ''; }
+}
+function keepBlock(env, repoId, text) {
+  try {
+    fs.mkdirSync(path.dirname(blockFile(env, repoId)), { recursive: true });
+    fs.writeFileSync(blockFile(env, repoId), text);
+  } catch { /* never stops the session */ }
+}
+
+/**
+ * Send the brief; returns the line to print ('' for none). With sampleOnly,
+ * the block is the last one kept and the send is about the session sample.
+ */
+async function sendBrief({ text, session = '', repo, env = process.env, now = new Date(), runners, sessions: agents, ownerSteps: steps, localModels, sampleOnly = false }) {
   const entry = tokens.find(repo, env);
   if (!entry || !tokens.looksLikeToken(entry.token)) return '';
+  if (sampleOnly) text = lastBlock(env, entry.repoId);
+  else if (String(text || '').trim()) keepBlock(env, entry.repoId, text);
   const mem = recall(env, entry.repoId);
   const same = mem.session && mem.session === session;
   // Refused once this session: nothing more is sent until the next one.
@@ -266,7 +291,8 @@ async function main() {
     process.stdout.write(questions.answer(env, entry.repoId, arg('--answer'), arg('--say')) ? 'Kept. It goes to the dashboard with the next brief.\n' : 'No question with that id is waiting, or the answer was empty.\n');
     return;
   }
-  const text = fs.readFileSync(0, 'utf8');
+  const sampleOnly = argv.includes('--sample');
+  const text = sampleOnly ? '' : fs.readFileSync(0, 'utf8');
   let runners;
   const machineFile = arg('--machine-file');
   if (machineFile) {
@@ -278,7 +304,7 @@ async function main() {
   let local = [];
   try { local = require('./config').localModels(require('./config').loadConfig(process.cwd())); } catch { /* no services file */ }
   try { agents = sessions.readSessions({ root: process.cwd(), localModels: local.map((m) => m.model) }); } catch { /* no sample */ }
-  const line = await sendBrief({ text, session: arg('--session') || '', repo: arg('--repo'), runners, sessions: agents, ownerSteps: ownerSteps(process.cwd()), localModels: local });
+  const line = await sendBrief({ text, session: arg('--session') || '', repo: arg('--repo'), runners, sessions: agents, ownerSteps: ownerSteps(process.cwd()), localModels: local, sampleOnly });
   if (line) process.stdout.write(line + '\n');
 }
 
