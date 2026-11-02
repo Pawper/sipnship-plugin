@@ -7,15 +7,19 @@
 // One request, three seconds at most, only when this machine holds a token
 // for the repository. Names and the brief's own sentences only: the last
 // handoff (a file's contents) and the plugin's own path are never sent. The
-// reply's status is the only thing read, and only to say a failure once per
-// session; nothing the plugin does depends on it. Prints at most one line,
-// and always exits 0.
+// reply's status says a failure once per session; a reply with a body carries
+// the builder's questions for the working agent (questions.js), and an
+// agent's answer goes up with the next brief. Nothing the plugin does depends
+// on the reply. Prints at most one line, and always exits 0.
+//   node brief-send.js --repo OWNER/NAME --answer ID --say "..."   keeps an answer
+//   node brief-send.js --repo OWNER/NAME --questions               lists what waits
 
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const tokens = require('./tokens');
 const sessions = require('./sessions');
+const questions = require('./questions');
 
 const SEND_MAX_BYTES = 64 * 1024;
 const TIMEOUT_MS = 3000;
@@ -27,7 +31,7 @@ function base(env = process.env) {
 }
 
 /** One bounded POST; the outcome by status alone: ok, not_connected, too_large, rate_limited or unreachable. */
-async function post(url, token, body, timeoutMs = TIMEOUT_MS) {
+async function post(url, token, body, timeoutMs = TIMEOUT_MS, onReply) {
   let res;
   try {
     res = await fetch(url, {
@@ -39,7 +43,8 @@ async function post(url, token, body, timeoutMs = TIMEOUT_MS) {
   } catch {
     return 'unreachable';
   }
-  try { await res.body?.cancel(); } catch { /* the reply is never read */ }
+  // A reply with a body (200) may carry the builder's questions; anything else is not read.
+  if (onReply && res.status === 200) { try { onReply(await res.json()); } catch { /* an unreadable reply says nothing */ } } else { try { await res.body?.cancel(); } catch { /* not read */ } }
   if (res.status >= 200 && res.status < 300) return 'ok';
   if (res.status === 401) return 'not_connected';
   if (res.status === 413) return 'too_large';
@@ -118,6 +123,7 @@ function briefBody(text, opts = {}) {
   if (opts.runners) body.runners = opts.runners;
   if (opts.ownerSteps && opts.ownerSteps.length) body.ownerSteps = opts.ownerSteps;
   if (opts.localModels && opts.localModels.length) body.localModels = opts.localModels.map((m) => ({ model: m.model, tiers: m.tiers || [] }));
+  if (opts.answers && opts.answers.length) body.answers = opts.answers;
   if (opts.sessions && opts.sessions.length) body.sessions = opts.sessions.map((s) => (s.lastLine ? { ...s, lastLine: sessions.lastLine(s.lastLine) } : s));
   return body;
 }
@@ -232,11 +238,15 @@ async function sendBrief({ text, session = '', repo, env = process.env, now = ne
   const same = mem.session && mem.session === session;
   // Refused once this session: nothing more is sent until the next one.
   if (same && mem.said === 'not_connected') return '';
-  const body = fit(briefBody(text, { now, machine: entry.machine, runners, sessions: agents, ownerSteps: steps, localModels }));
-  const outcome = body === undefined ? 'too_large' : await post(`${base(env)}/v1/repos/${entry.repoId}/brief`, entry.token, body);
+  const answers = questions.pendingAnswers(env, entry.repoId);
+  const body = fit(briefBody(text, { now, machine: entry.machine, runners, sessions: agents, ownerSteps: steps, localModels, answers }));
+  let reply;
+  const outcome = body === undefined ? 'too_large' : await post(`${base(env)}/v1/repos/${entry.repoId}/brief`, entry.token, body, TIMEOUT_MS, (r) => { reply = r; });
   if (outcome === 'ok') {
     remember(env, entry.repoId, { session, said: same ? mem.said : '', lastOk: now.getTime() });
-    return '';
+    questions.clearAnswers(env, entry.repoId, answers);
+    questions.receive(env, entry.repoId, reply && reply.questions, agents, now.getTime());
+    return questions.lineFor(env, entry.repoId, session, repo, __filename);
   }
   if (outcome === 'rate_limited') return '';
   if (same && mem.said) return '';
@@ -247,6 +257,15 @@ async function sendBrief({ text, session = '', repo, env = process.env, now = ne
 async function main() {
   const argv = process.argv.slice(2);
   const arg = (name) => { const i = argv.indexOf(name); return i >= 0 ? argv[i + 1] : undefined; };
+  const env = process.env;
+  const entry = arg('--repo') ? tokens.find(arg('--repo'), env) : undefined;
+  // The agent's side of a question: its answer waits for the next brief; or the list of what waits for this session.
+  if (argv.includes('--answer') || argv.includes('--questions')) {
+    if (!entry) { process.stdout.write('No SipNShip connection is set up for this repository on this machine.\n'); return; }
+    if (argv.includes('--questions')) { for (const l of questions.listFor(env, entry.repoId, arg('--session') || '', arg('--repo'), __filename)) process.stdout.write(l + '\n'); return; }
+    process.stdout.write(questions.answer(env, entry.repoId, arg('--answer'), arg('--say')) ? 'Kept. It goes to the dashboard with the next brief.\n' : 'No question with that id is waiting, or the answer was empty.\n');
+    return;
+  }
   const text = fs.readFileSync(0, 'utf8');
   let runners;
   const machineFile = arg('--machine-file');
