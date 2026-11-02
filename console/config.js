@@ -64,6 +64,10 @@ function normalize(config) {
   const out = Object.assign({ project: 'This project', todo: [], systems: [], app: [], faq: {}, numbers: null }, config);
   out.systems = out.systems.map((sys) => ({
     id: sys.id,
+    kind: sys.kind || 'service',
+    model: sys.model || '',
+    endpoint: sys.endpoint || '',
+    tiers: sys.tiers || [],
     name: sys.name,
     vendor: sys.vendor || '',
     does: sys.does || '',
@@ -286,7 +290,14 @@ function buildView(config, options) {
   };
 }
 
+// The local models this machine declares: services-file entries of kind local-model, each naming
+// the model, the endpoint on the machine and the tiers of task it takes.
+function localModels(config) {
+  return (config.systems || []).filter((s) => s.kind === 'local-model' && s.model).map((s) => ({ model: s.model, endpoint: s.endpoint || '', tiers: s.tiers || [] }));
+}
+
 module.exports = {
+  localModels,
   CONFIG_PATH,
   DEFAULT_REQUIRED_FAQ,
   requiredFaq,

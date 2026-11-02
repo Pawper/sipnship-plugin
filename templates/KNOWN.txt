@@ -201,6 +201,8 @@ scripts/ci/gate-lib.sh cd1564df09265d9de0244332bca1f5ec9d159844
 scripts/ci/gate.sh 5128b4a120d78dc9e8c749175dda29307520d06a
 scripts/ci/gate.sh 5e160d931ed3e95e7657f9629d10c84e02a407ba
 scripts/ci/gate.sh d923fb458576efe7c408d00513c65bc60cc9fcb4
+scripts/ci/hotspots-check.sh 22aa834cdfc90ad8525c5145629e3340dca547b9
+scripts/ci/hotspots-lib.sh 2a6a2017b45fb37b20e2bda6829a69790691eb5c
 scripts/ci/lib.sh 03c38a2b06a071db2523f57540a0bfd3a2859c6a
 scripts/ci/lib.sh 09b4a522ca57989528abddfada64ec50213e6ad1
 scripts/ci/lib.sh 281c2eb4f83ed40b6fa35d9e455bbdc9d8e50d96
@@ -266,6 +268,7 @@ scripts/ci/merge-queue.sh 620b31f5127624b816e694ee26947d9191b75e90
 scripts/ci/merge-queue.sh 63da7dd7615669969d175cad71674f5bf4f1d898
 scripts/ci/merge-queue.sh 6ad2f243659cef7b34c719a86fa543e18da9a3fa
 scripts/ci/merge-queue.sh 6b409a179b1ec80c514cea249ecb815f41164f65
+scripts/ci/merge-queue.sh 6c11a7dc71db330c0ce3c041027bc96e1c93ed7d
 scripts/ci/merge-queue.sh 75982cca10db352c56c61fc1e1d02196a99fbbd6
 scripts/ci/merge-queue.sh 78c9d0df946cdc9446db76024c5b5657db272264
 scripts/ci/merge-queue.sh 7a9f854da87791b7c0bc2b15ec49bb7194f2c123
@@ -342,7 +345,10 @@ scripts/ci/queue/choose.sh 07685d9f7e7578b472bc5d3d6b4c20b9646b0a60
 scripts/ci/queue/choose.sh 64e01a00fbcd8724c0bef2e66fbb3ec44c52f6c3
 scripts/ci/queue/choose.sh fc2f6acd63830bf715a048dbfb2e5f5353b751c3
 scripts/ci/queue/deploy.sh 2fba418eed08e229c70c6fd8f9890c09c1ce35c5
+scripts/ci/queue/deploy.sh 352f46c5fa76482713ce4bf65e419f6d8f1c3d9b
 scripts/ci/queue/deploy.sh 61a5fd4b46195f2a32e81964e165a358843f8566
+scripts/ci/queue/overlaps.sh 08515e29a12df47f524644e926f75dc156a6ea9e
+scripts/ci/queue/overlaps.sh 7530b0c2b389cce044b4bee47f5308cd3dbd65e8
 scripts/ci/queue/requests.sh 36d19effc79fd0c312240f066051de5130131387
 scripts/ci/queue/rules-batch.sh 535aa494031d3291ad4ea46a64bac00194903088
 scripts/ci/queue/rules-batch.sh a31d3fe468610454c7b888568b5d54e9db65575f

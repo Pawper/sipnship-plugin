@@ -69,3 +69,51 @@ test('a session that named no issue is matched by the issue in its branch', () =
   ].join('\n');
   assert.deepStrictEqual(sessions.readSession(quiet, 'abc').issues, [214]);
 });
+
+const fxDir = path.join(__dirname, '..', '..', 'tests', 'fixtures', 'sessions');
+const read = (f, opts) => sessions.readSession(fs.readFileSync(path.join(fxDir, f), 'utf8'), 'x', opts);
+
+test('a session carries tokens in, cached and out beside the total', () => {
+  const s = read('watering-session.jsonl');
+  assert.strictEqual(s.tokensIn + s.tokensCached + s.tokensOut, s.tokens);
+  const c = read('compost-local-session.jsonl');
+  assert.deepStrictEqual([c.tokensIn, c.tokensCached, c.tokensOut], [800 + 100 + 500, 8500, 350]);
+  assert.strictEqual(c.tokensIn + c.tokensCached + c.tokensOut, c.tokens);
+});
+
+test('a model the machine declared is a local model: prefixed, with a spend of 0', () => {
+  const s = read('compost-local-session.jsonl', { localModels: ['qwen3'] });
+  assert.strictEqual(s.model, 'local/qwen3');
+  assert.strictEqual(s.spend, 0);
+  const plain = read('compost-local-session.jsonl');
+  assert.strictEqual(plain.model, 'qwen3');
+  assert.strictEqual(plain.spend, undefined);
+});
+
+test('an id already prefixed ollama/, lmstudio/ or local/ stays and costs nothing', () => {
+  const s = read('compost-prefixed-session.jsonl');
+  assert.strictEqual(s.model, 'ollama/qwen3:8b');
+  assert.strictEqual(s.spend, 0);
+  assert.strictEqual(sessions.modelId('lmstudio/qwen3'), 'lmstudio/qwen3');
+  assert.strictEqual(sessions.modelId('claude-sonnet-5-5', ['qwen3']), 'claude-sonnet-5-5');
+  assert.strictEqual(read('watering-session.jsonl').spend, undefined, 'a frontier model spend is not guessed');
+});
+
+test('the kind of work comes from the drive note, only when it is one of the known kinds', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sns-kind-'));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'sns-kind-home-'));
+  const tree = '/work/rooftop-garden/worktrees/watering';
+  const folder = path.join(home, sessions.logFolder(tree));
+  fs.mkdirSync(folder, { recursive: true });
+  fs.writeFileSync(path.join(folder, 'abc.jsonl'), log);
+  fs.mkdirSync(path.join(root, '.scratch', 'drive'), { recursive: true });
+  const note = path.join(root, '.scratch', 'drive', 'started-with.tsv');
+  fs.writeFileSync(note, 'watering\tround\tfixing-check\n');
+  let got = sessions.readSessions({ root, logsDir: home, worktrees: [tree] });
+  assert.strictEqual(got[0].category, 'fixing-check');
+  assert.strictEqual(got[0].startedWith, 'round');
+  fs.writeFileSync(note, 'watering\tround\tgardening\n');
+  got = sessions.readSessions({ root, logsDir: home, worktrees: [tree] });
+  assert.strictEqual(got[0].category, undefined);
+  assert.ok(sessions.CATEGORIES.includes('releasing-plugin'));
+});

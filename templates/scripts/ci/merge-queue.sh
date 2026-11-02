@@ -388,7 +388,7 @@ if [ "$mode" = drain ]; then
     fi
     last_look=""
     queue_step="drain round $round: merging"
-    say "round $round: $n green pull request(s): $(printf '%s' "$pick" | tr '\n' ' ')"
+    say_round_pick "$round" "$n" "$pick"
     QUEUE_IN_DRAIN=1; export QUEUE_IN_DRAIN
     : > "$flaky_dir/untried" 2>/dev/null || true
     : > "$flaky_dir/batch.why" 2>/dev/null || true

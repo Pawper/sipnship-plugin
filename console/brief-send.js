@@ -117,6 +117,7 @@ function briefBody(text, opts = {}) {
   const body = { version: 1, sentAt: (opts.now || new Date()).toISOString(), machine: opts.machine || os.hostname(), cards: out };
   if (opts.runners) body.runners = opts.runners;
   if (opts.ownerSteps && opts.ownerSteps.length) body.ownerSteps = opts.ownerSteps;
+  if (opts.localModels && opts.localModels.length) body.localModels = opts.localModels.map((m) => ({ model: m.model, tiers: m.tiers || [] }));
   if (opts.sessions && opts.sessions.length) body.sessions = opts.sessions.map((s) => (s.lastLine ? { ...s, lastLine: sessions.lastLine(s.lastLine) } : s));
   return body;
 }
@@ -224,14 +225,14 @@ function remember(env, repoId, m) {
 }
 
 /** Send the brief; returns the line to print ('' for none). */
-async function sendBrief({ text, session = '', repo, env = process.env, now = new Date(), runners, sessions: agents, ownerSteps: steps }) {
+async function sendBrief({ text, session = '', repo, env = process.env, now = new Date(), runners, sessions: agents, ownerSteps: steps, localModels }) {
   const entry = tokens.find(repo, env);
   if (!entry || !tokens.looksLikeToken(entry.token)) return '';
   const mem = recall(env, entry.repoId);
   const same = mem.session && mem.session === session;
   // Refused once this session: nothing more is sent until the next one.
   if (same && mem.said === 'not_connected') return '';
-  const body = fit(briefBody(text, { now, machine: entry.machine, runners, sessions: agents, ownerSteps: steps }));
+  const body = fit(briefBody(text, { now, machine: entry.machine, runners, sessions: agents, ownerSteps: steps, localModels }));
   const outcome = body === undefined ? 'too_large' : await post(`${base(env)}/v1/repos/${entry.repoId}/brief`, entry.token, body);
   if (outcome === 'ok') {
     remember(env, entry.repoId, { session, said: same ? mem.said : '', lastOk: now.getTime() });
@@ -255,8 +256,10 @@ async function main() {
     try { runners = runnerSample(fs.readFileSync(machineFile, 'utf8'), timingsText); } catch { /* no sample */ }
   }
   let agents;
-  try { agents = sessions.readSessions({ root: process.cwd() }); } catch { /* no sample */ }
-  const line = await sendBrief({ text, session: arg('--session') || '', repo: arg('--repo'), runners, sessions: agents, ownerSteps: ownerSteps(process.cwd()) });
+  let local = [];
+  try { local = require('./config').localModels(require('./config').loadConfig(process.cwd())); } catch { /* no services file */ }
+  try { agents = sessions.readSessions({ root: process.cwd(), localModels: local.map((m) => m.model) }); } catch { /* no sample */ }
+  const line = await sendBrief({ text, session: arg('--session') || '', repo: arg('--repo'), runners, sessions: agents, ownerSteps: ownerSteps(process.cwd()), localModels: local });
   if (line) process.stdout.write(line + '\n');
 }
 

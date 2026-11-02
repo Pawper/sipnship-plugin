@@ -1,6 +1,7 @@
 #!/bin/sh
 # After a landing: whether anything that ships changed, the release
 # workflows, and the deploy. Sourced by scripts/ci/merge-queue.sh; functions only.
+[ -f "$here/queue/overlaps.sh" ] && . "$here/queue/overlaps.sh"
 
 # ships_since FROM TO: "skip" when nothing that ships changed between the
 # two commits, by the Deploy workflow's own rule. The one ask every deploy

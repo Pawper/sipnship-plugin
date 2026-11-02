@@ -237,3 +237,17 @@ test("a taken port: this project's console is reused, another's is named and pas
     mine.server.close();
   }
 });
+
+test('a services entry of kind local-model names the model and its tiers; the brief carries them', () => {
+  const cfg2 = config.normalize({ systems: [
+    { id: 'garden-3-model', name: 'Local model', kind: 'local-model', model: 'qwen3', endpoint: 'http://localhost:11434', tiers: ['doc fix', 'rename'] },
+    { id: 'hosting', name: 'Hosting' },
+  ] });
+  assert.deepStrictEqual(config.localModels(cfg2), [{ model: 'qwen3', endpoint: 'http://localhost:11434', tiers: ['doc fix', 'rename'] }]);
+  assert.strictEqual(cfg2.systems[1].kind, 'service');
+  const send = require('../brief-send');
+  const body = send.briefBody('Main: ok', { machine: 'garden-3', localModels: config.localModels(cfg2) });
+  assert.deepStrictEqual(body.localModels, [{ model: 'qwen3', tiers: ['doc fix', 'rename'] }]);
+  assert.strictEqual(JSON.stringify(body).includes('11434'), false, 'the endpoint stays on the machine');
+  assert.strictEqual(send.briefBody('Main: ok', { machine: 'garden-3' }).localModels, undefined);
+});

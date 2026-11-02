@@ -2459,7 +2459,7 @@ eq "a declared unmocked file passes" "0" "$(sed -n 5p "$mk.out")"
 eq "the stale count names only the screen past stale-after" "home: 3 commits" "$(sed -n '6,$p' "$mk.out")"
 eq "the CI template runs the mock check where mocks.txt exists" "1" "$(grep -c "hashFiles('scripts/ci/mocks.txt') != ''" "$root/templates/.github/workflows/ci.yml")"
 eq "the template mocks.txt has no live lines" "" "$(mock_lines "$(cat "$root/templates/scripts/ci/mocks.txt")")"
-eq "the brief has a stale-mock line" "1" "$(grep -c 'mock-check.sh" --stale' "$root/hooks/scripts/session-brief.sh")"
+eq "the brief has a stale-mock line" "1" "$(grep -c 'mock-check.sh" --stale' "$root/hooks/scripts/session-brief-screens.sh")"
 
 section 'copy from the mocks'
 . "$root/templates/scripts/design/design-lib.sh"
@@ -2627,7 +2627,7 @@ ciy_s="$root/templates/.github/workflows/ci.yml"
 eq "the CI template has a screens job after checks" "1" "$(awk '/^  screens:$/{j=1} j && /needs: checks/{n++; j=0} END{print n+0}' "$ciy_s")"
 eq "it uploads the images, writes the summary, and edits one comment" "1 1 1 1" "$(grep -c 'actions/upload-artifact@v4' "$ciy_s") $(grep -c 'GITHUB_STEP_SUMMARY' "$ciy_s") $(grep -c "marker='<!-- screens: side by side -->'" "$ciy_s") $(grep -c 'gh api -X PATCH' "$ciy_s")"
 eq "CI passed waits on the screens job" "1" "$(grep -c 'needs: \[checks, app, tests, screens\]' "$ciy_s")"
-eq "the brief names screens not compared with their mock" "1" "$(grep -c 'compare --mock NAME' "$root/hooks/scripts/session-brief.sh")"
+eq "the brief names screens not compared with their mock" "1" "$(grep -c 'compare --mock NAME' "$root/hooks/scripts/session-brief-screens.sh")"
 
 section 'runner watch'
 runs=$(printf '11\tCI\tfeature\tqueued\t1000\n12\tCI\tmain\tqueued\t1500\n13\tCI\tother\tin_progress\t100\n14\tCI\tx\tqueued\t1900\n')
@@ -3262,6 +3262,104 @@ eq "kernel memory under the limit says nothing" "" "$(kernel_pool_warning 107374
 eq "shells older than a day are counted and the oldest named" "1" "$(old_shells_warning "$(printf '11\t30\tsh.exe\n12\t2\tsh.exe\n13\t52\tbash.exe\n')" 24 | grep -c "has 2 shell processes running for more than 24 hours.*13 (bash.exe, 52 hours), 11 (sh.exe, 30 hours)")"
 eq "no shell older than a day says nothing" "" "$(old_shells_warning "$(printf '12\t2\tsh.exe\n')" 24)"
 eq "the audit runs the machine check and the CI tests step sets the job's temp folder" "2 1" "$(grep -c 'machine-upkeep.sh' "$root/templates/.github/workflows/audit.yml" | tr '\n' ' ')$(grep -c 'TMPDIR: ${{ runner.temp }}' "$root/templates/.github/workflows/ci.yml")"
+
+section 'hotspots: size limits, overlaps and job time'
+. "$root/templates/scripts/ci/hotspots-lib.sh"
+hot='# Maya rooftop-garden app
+exempt */test/* *.test.* *.generated.*
+limit 100 src/bigscreens/*.ts
+limit 40 *.ts
+limit 30 *.css
+shrink src/garden-beds.ts
+warn-at 80
+job default 3
+job checks 5'
+eq "a source file takes the default limit" "40" "$(hotspot_limit src/watering.ts "$hot")"
+eq "a per-path line above the defaults wins" "100" "$(hotspot_limit src/bigscreens/beds.ts "$hot")"
+eq "a stylesheet has its own limit" "30" "$(hotspot_limit src/beds.css "$hot")"
+eq "a test file is not measured" "" "$(hotspot_limit src/test/watering.ts "$hot")"
+eq "a markdown file is not measured" "" "$(hotspot_limit docs/beds.md "$hot")"
+eq "a file under its limit says nothing" "" "$(hotspot_verdict src/watering.ts "$hot" 10 20)"
+eq "a file over its limit that grows fails" "fail" "$(hotspot_verdict src/watering.ts "$hot" 45 50 | cut -f1)"
+eq "the failure says split before you add" "1" "$(hotspot_verdict src/watering.ts "$hot" 45 50 | grep -c 'Split before you add')"
+eq "a new file over the limit fails" "fail" "$(hotspot_verdict src/new-beds.ts "$hot" 0 60 | cut -f1)"
+eq "a file over its limit that shrinks passes (and is told to be listed)" "warn" "$(hotspot_verdict src/watering.ts "$hot" 60 50 | cut -f1)"
+eq "a listed file may shrink without a word" "" "$(hotspot_verdict src/garden-beds.ts "$hot" 90 80)"
+eq "a listed file may stay as it is" "" "$(hotspot_verdict src/garden-beds.ts "$hot" 90 90)"
+eq "a listed file may not grow" "fail" "$(hotspot_verdict src/garden-beds.ts "$hot" 90 91 | cut -f1)"
+eq "a listed file back under its limit is told to leave the list" "1" "$(hotspot_verdict src/garden-beds.ts "$hot" 90 30 | grep -c 'Take it off the shrink-only list')"
+eq "80 percent of the limit warns" "warn" "$(hotspot_verdict src/watering.ts "$hot" 30 32 | cut -f1)"
+eq "79 percent of the limit does not" "" "$(hotspot_verdict src/watering.ts "$hot" 30 31)"
+eq "the limit itself is not over" "warn" "$(hotspot_verdict src/watering.ts "$hot" 40 40 | cut -f1)"
+eq "an overlap is named in the row's words" "Overlaps #348 and #362 in garden-beds.ts" "$(hotspot_overlap_say src/garden-beds.ts '348 362')"
+eq "three overlaps are joined with commas" "#1, #2 and #3" "$(hotspot_join '1 2 3')"
+others="$(printf '348\tsrc/garden-beds.ts\n362\tsrc/garden-beds.ts\n362\tsrc/watering.ts\n370\tsrc/beds.css\n348\tsrc/garden-beds.ts')"
+mine="$(printf 'src/garden-beds.ts\nsrc/watering.ts\nsrc/compost.ts')"
+eq "a file two other pull requests edit is named with both" "src/garden-beds.ts	348 362" "$(hotspot_overlap_rows "$mine" "$others" 2)"
+eq "the queue's threshold of one names every shared file" "src/garden-beds.ts	348 362
+src/watering.ts	362" "$(hotspot_overlap_rows "$mine" "$others" 1)"
+eq "no other pull request means no overlap" "" "$(hotspot_overlap_rows "$mine" '' 1)"
+eq "the scan names a file over its limit and one near it" "over	src/watering.ts
+near	src/compost.ts" "$(hotspot_scan "$hot" "$(printf '50\tsrc/watering.ts\n33\tsrc/compost.ts\n20\tsrc/small.ts\n500\tsrc/test/big.ts\n900\tdocs/x.md')")"
+eq "a job takes its own limit, else the default, else three" "5 3 3" "$(hotspot_job_limit checks "$hot") $(hotspot_job_limit app "$hot") $(hotspot_job_limit app '')"
+tm="$(printf 'checks\t100\t420\t0\t1\nchecks\t200\t480\t0\t1\napp\t100\t170\t0\t1\ntests\t100\t400\t0\t0\n')"
+eq "a job's usual time is its average" "checks	450
+app	170
+tests	400" "$(hotspot_job_averages "$tm")"
+eq "a job over its limit is named: long, split it" "checks takes about 8 minutes (limit 5): long, split it
+tests takes about 7 minutes (limit 3): long, split it" "$(hotspot_jobs_over "$(hotspot_job_averages "$tm")" "$hot")"
+eq "the brief line names over, near, busy and long" "Hotspots: Over the size limit (may shrink, not grow): src/watering.ts. Near it, split before the next change: src/compost.ts. Edited by several open pull requests: src/garden-beds.ts (3 open pull requests). CI jobs over their time limit: tests takes about 7 minutes (limit 3): long, split it." "$(hotspot_brief_line 'src/watering.ts' 'src/compost.ts' "$(printf 'src/garden-beds.ts\t3')" 'tests takes about 7 minutes (limit 3): long, split it')"
+eq "the brief line is silent when nothing is flagged" "" "$(hotspot_brief_line '' '' '' '')"
+eq "many files over the limit are counted, the biggest named" "Hotspots: Over the size limit (may shrink, not grow): 4 files, the biggest a.ts, b.ts, c.ts." "$(hotspot_brief_line 'a.ts
+b.ts
+c.ts
+d.ts' '' '' '')"
+
+# The check on a real change, in a small repository of Maya's rooftop-garden app.
+hk=$(mktemp -d)
+(
+  cd "$hk" && git init -q -b main && git config user.email t@t && git config user.name t && git config core.autocrlf false
+  mkdir -p scripts/ci src
+  cp "$root/templates/scripts/ci/hotspots-lib.sh" "$root/templates/scripts/ci/hotspots-check.sh" scripts/ci/
+  printf 'limit 40 *.ts\nshrink src/garden-beds.ts\nwarn-at 80\n' > scripts/ci/hotspots.txt
+  seq 1 60 | sed 's/^/const bed = /' > src/garden-beds.ts
+  seq 1 10 | sed 's/^/const water = /' > src/watering.ts
+  git add -A && git commit -q -m base
+  git branch base
+  seq 1 70 | sed 's/^/const bed = /' > src/garden-beds.ts
+  git add -A && git commit -q -m grow
+  git branch grow
+  git checkout -q base && git checkout -q -b shrink
+  seq 1 50 | sed 's/^/const bed = /' > src/garden-beds.ts
+  seq 1 45 | sed 's/^/const water = /' > src/watering.ts
+  git add -A && git commit -q -m shrink-one-grow-other
+  git checkout -q base && git checkout -q -b fine
+  seq 1 33 | sed 's/^/const water = /' > src/watering.ts
+  printf 'a\tb\n' > /dev/null
+  git add -A && git commit -q -m near
+) >/dev/null 2>&1
+hc() { (cd "$hk" && HOTSPOTS_OTHERS="$3" sh scripts/ci/hotspots-check.sh "$1" "$2" 2>&1; echo "rc=$?"); }
+eq "a listed file that grows fails the check" "1" "$(hc base grow | grep -c 'rc=1')"
+eq "and says split before you add" "1" "$(hc base grow | grep -c 'src/garden-beds.ts has 70 lines, over the limit of 40.*Split before you add')"
+eq "a change that adds a new file over the limit fails" "1" "$(hc base shrink | grep -c 'src/watering.ts has 45 lines')"
+eq "a listed file that shrinks passes by itself" "rc=0" "$(cd "$hk" && git checkout -q base && git checkout -q -b onlyshrink && seq 1 50 | sed 's/^/const bed = /' > src/garden-beds.ts && git add -A && git commit -q -m s && sh scripts/ci/hotspots-check.sh base onlyshrink >/dev/null 2>&1; echo "rc=$?")"
+eq "a file at 80 percent passes with a warning" "1 1" "$(hc base fine | grep -c 'rc=0') $(hc base fine | grep -c '::warning::src/watering.ts has 33 of its 40 lines')"
+printf '348\tsrc/watering.ts\n362\tsrc/watering.ts\n' > "$hk/others.tsv"
+eq "an overlap with two other pull requests warns and names them" "1" "$(hc base fine "$hk/others.tsv" | grep -c '::warning::Overlaps #348 and #362 in watering.ts')"
+eq "no hotspots file means the check passes" "1" "$(cd "$hk" && mv scripts/ci/hotspots.txt scripts/ci/hotspots.off && sh scripts/ci/hotspots-check.sh base grow 2>&1 | grep -c 'passed (no hotspots.txt)'; mv scripts/ci/hotspots.off scripts/ci/hotspots.txt)"
+
+# The queue says an overlap in the row's words.
+here_before=$here; here="$root/templates/scripts/ci"
+. "$root/templates/scripts/ci/queue/overlaps.sh"
+queue_open_files() { printf '14\tsrc/watering.ts\n15\tsrc/watering.ts\n12\tsrc/watering.ts\n12\tsrc/beds.css\n'; }
+eq "the queue names the pull requests a picked one overlaps" "  #12 Overlaps #14 and #15 in watering.ts" "$(queue_overlap_lines 12)"
+eq "a picked pull request alone on its files says nothing" "" "$(queue_overlap_lines 99)"
+say() { printf '%s\n' "$1"; }
+eq "the drain's round line keeps its words and adds the overlaps" "round 3: 1 green pull request(s): 12
+  #12 Overlaps #14 and #15 in watering.ts" "$(say_round_pick 3 1 12)"
+eq "the CI template runs the check on pull requests" "1" "$(grep -c 'hotspots-check.sh' "$root/templates/.github/workflows/ci.yml")"
+eq "the plugin's default list ships and holds no shrink line" "0" "$(grep -c '^shrink ' "$root/templates/scripts/ci/hotspots.txt")"
+here=$here_before
 
 # --- end of blocks: the summary, kept in every part.
 eq "no process started by this suite is still running" "" "$(spawned_alive)"

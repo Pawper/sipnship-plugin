@@ -1,0 +1,15 @@
+# Size limits for source files: a file is one unit of change, small enough
+# that two agents rarely need it at once. Read by scripts/ci/hotspots-check.sh,
+# the session brief and the merge queue. First match wins, so exemptions and
+# per-path limits go above the defaults.
+#   exempt GLOB...        not measured
+#   limit LINES GLOB...   the most lines a matching file may have
+#   shrink PATH           already over its limit: may shrink, may not grow
+#   warn-at PERCENT       flag a file at this share of its limit
+#   job NAME MINUTES      the usual time a CI job may take
+#   shrink-job NAME       a job already over, with its split issue filed
+exempt */node_modules/* */test/* */tests/* *.test.* *.spec.* *.d.ts *.min.js *.generated.* */generated/*
+limit 400 *.ts *.tsx *.js *.mjs *.cjs *.py *.go *.rs *.swift *.kt
+limit 300 *.css *.scss *.sh
+warn-at 80
+job default 3

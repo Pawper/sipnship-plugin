@@ -158,6 +158,15 @@ jobs:
         # Passes when the list of shared paths is empty.
         if: github.event_name == 'pull_request'
         run: sh scripts/ci/shared-check.sh "$BASE" "${{ github.sha }}"
+      - name: Fail when a change grows a source file past its size limit
+        # scripts/ci/hotspots.txt: a file over its limit may shrink but not
+        # grow ("split before you add"). Warns, as a comment, at 80% of the
+        # limit and when two or more other open pull requests edit a file
+        # this one edits.
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: sh scripts/ci/hotspots-check.sh "$BASE" "${{ github.sha }}" "${{ github.event.pull_request.number }}"
       - name: Fail when a file is deleted without a stated reason
         # Never delete; move aside. A pull request that must delete says why
         # in its body: "Deletes: <reason>".

@@ -24,6 +24,8 @@ scripts/ci/line-endings.sh
 scripts/ci/spec-check.sh
 scripts/ci/setup-check.sh
 scripts/ci/shared-check.sh
+scripts/ci/hotspots-check.sh
+scripts/ci/hotspots-lib.sh
 scripts/ci/delete-check.sh
 scripts/ci/numbering-check.sh
 scripts/ci/numbering-lib.sh
@@ -42,6 +44,7 @@ default .claude/numbering.txt
 default scripts/ci/classes.txt
 default scripts/ci/setup-paths.txt
 default scripts/ci/shared-paths.txt
+default scripts/ci/hotspots.txt
 default scripts/ci/task-files.txt
 feature queue
 scripts/ci/merge-queue.sh
@@ -56,6 +59,7 @@ scripts/ci/queue/choose.sh
 scripts/ci/queue/serial.sh
 scripts/ci/queue/batch.sh
 scripts/ci/queue/deploy.sh
+scripts/ci/queue/overlaps.sh
 scripts/ci/queue/rules-batch.sh
 scripts/ci/queue/rules-drain.sh
 scripts/ci/queue/rules-serial.sh
