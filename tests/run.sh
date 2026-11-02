@@ -904,7 +904,9 @@ eq "nothing to propose stops" "stop: nothing to propose" "$(propose_round 'queue
 eq "only owner waits stops with the reason" "stop: everything left waits on a person" "$(propose_round 'issue	30	Logo	waiting-on-owner	no' 2 4)"
 eq "work in flight stops with the reason" "stop: work is in flight; nothing to propose until it lands" "$(propose_round 'pr	48	Running	pending	mergeable	app
 issue	20	Billing	in-progress	no' 2 4)"
-eq "a conflicting green PR is not proposed for merge" "stop: work is in flight; nothing to propose until it lands" "$(propose_round 'pr	49	Old	green	conflicting	app' 2 4)"
+eq "a conflicting green PR is not merged; main is merged into it" "merge-main 49	Old
+stop: proposal ready for approval" "$(propose_round 'pr	49	Old	green	conflicting	app' 2 4)"
+eq "a conflicting PR the queue holds waits" "stop: work is in flight; nothing to propose until it lands" "$(propose_round 'pr	49	Old	green	conflicting	app	0	yes' 2 4)"
 eq "proposal numbered, defer and stop unnumbered" "$(cat "$fx/drive-proposal.txt")" "$(number_proposal "$(propose_round "$snap" 2 4)")"
 numbered=$(cat "$fx/drive-proposal.txt")
 eq "approve a list" "merge-batch 41 42 45 46
@@ -3269,6 +3271,80 @@ eq "label off and no reply: it waits, as before" "nothing: the latest proposal o
 eq "label off and a reply: the reply's picks" "dispatch 223 Seed packets
 approved by maya" "$(ad_run 'drive' '2')"
 eq "the skill names Auto Drive's label" "yes" "$(grep -q 'drive:auto' "$root/skills/project-drive/SKILL.md" && echo yes)"
+eq "Start this round approves the whole proposal at once, Auto Drive off" "dispatch 214 Watering schedule skips the first bed
+dispatch 223 Seed packets
+approved by maya, with Start this round" "$(ad_run 'drive' 'Queue request: start-round by maya')"
+
+section 'drive runs rounds of units'
+. "$root/scripts/drive/drive-lib.sh"
+. "$root/scripts/drive/bundle-lib.sh"
+. "$root/scripts/drive/round-lib.sh"
+rd_defaults=$(drive_settings '{}')
+eq "every round key has its default" "2||2|||" "$(for k in unitsPerRound dispatchModel setAsideAfterReds summaryAt healthCommand healthAbove; do printf '%s|' "$(setting "$rd_defaults" $k)"; done | sed 's/|$//')"
+rd_cfg='{"unitsPerRound": 5, "dispatchModel": "sonnet", "setAsideAfterReds": 3, "summaryAt": "07:00", "healthNote": {"command": "echo 9.5", "name": "free disk (GB)", "above": 8}}'
+rd_set=$(drive_settings "$rd_cfg")
+eq "a project's choices are read" "5|sonnet|3|07:00|echo 9.5|free disk (GB)|8" "$(for k in unitsPerRound dispatchModel setAsideAfterReds summaryAt healthCommand healthName healthAbove; do printf '%s|' "$(setting "$rd_set" $k)"; done | sed 's/|$//')"
+eq "the template's example config names every round key" "yes" "$(t=$(cat "$root/templates/.claude/project-drive.json"); for k in unitsPerRound dispatchModel setAsideAfterReds summaryAt healthNote; do printf '%s' "$t" | grep -q "\"$k\"" || { echo "no $k"; exit; }; done; echo yes)"
+eq "the skill documents every round key" "yes" "$(for k in unitsPerRound dispatchModel setAsideAfterReds summaryAt healthNote; do grep -q "\`$k\`" "$root/skills/project-drive/SKILL.md" || { echo "no $k"; exit; }; done; echo yes)"
+rd_units=$(printf 'unit\t15\tPhotos\t\tsrc/photos.ts\nunit\t12 14\tWater | Frost\tboth change src/schedule.ts\tsrc/schedule.ts\nunit\t16\tTint\t\tsrc/tint.ts\n')
+eq "bundles rank before loose issues" "dispatch 12 14	Water | Frost	Why together: both change src/schedule.ts
+dispatch 15	Photos
+defer 1 unit(s): no free runner this round
+stop: proposal ready for approval" "$(apply_units "$(printf 'dispatch 15\tPhotos\nstop: proposal ready for approval')" "$rd_units" 2)"
+eq "plugin and CI issues go in one bundle, even with no file in common" "unit	31 32	Hook fix | Queue fix	both are plugin or CI work, which shares one test suite	plugin/hooks/a.sh,scripts/ci/b.sh" "$(plan_units "$(printf '31\tHook fix\tplugin/hooks/a.sh\n32\tQueue fix\tscripts/ci/b.sh\n')" "" | sed -n 1p)"
+eq "plugin work waits on a running plugin unit" "hold	33	Brief fix	After: Hook fix" "$(plan_units "$(printf '33\tBrief fix\tplugin/brief.sh\n')" "$(printf 'Hook fix\tplugin/hooks/a.sh\n')")"
+rd_snap=$(printf 'pr\t51\tBeds page\tgreen\tmergeable\tapp\npr\t52\tFrost alert\tpending\tmergeable\tapp\npr\t53\tSeed list\tred\tmergeable\tapp\npr\t54\tWatering copy\tgreen\tmergeable\tapp\nissue\t9\tReady thing\tready\tno\n')
+rd_rest=$(printf '51\tclean\t0\tno\n52\tdirty\t0\tno\n53\tunstable\t2\tno\n54\tdirty\t0\tyes\n')
+rd_over=$(overlay_rest "$rd_snap" "$rd_rest")
+eq "REST's mergeable_state: dirty conflicts, and reds and holds are added" "pr	52	Frost alert	pending	conflicting	app	0	no
+pr	54	Watering copy	green	conflicting	app	0	yes" "$(printf '%s\n' "$rd_over" | grep -E '^pr	5[24]	')"
+eq "a pull request that conflicts with main is brought up to date; a held one waits" "1 0" "$(p=$(propose_round "$rd_over" 2 4 2); printf '%s ' "$(printf '%s\n' "$p" | grep -c '^merge-main 52	Frost alert$')"; printf '%s\n' "$p" | grep -c 'merge-main 54')"
+eq "red twice is set aside, not fixed again" "set-aside 53	Seed list	(red 2 times)" "$(propose_round "$rd_over" 2 4 2 | grep '53')"
+eq "under the limit it is fixed" "fix-pr 53	Seed list" "$(propose_round "$rd_over" 2 4 3 | grep '53')"
+eq "a limit of 0 never sets aside" "fix-pr 53	Seed list" "$(propose_round "$rd_over" 2 4 0 | grep '53')"
+eq "a re-run of one commit counts once" "2" "$(red_count "$(printf 'aaa\naaa\nbbb\n')")"
+eq "a hold label holds" "yes" "$(held_by 'bug,queue:hold' '')"
+eq "a Queue: hold line holds" "yes" "$(held_by 'bug' 'Queue: hold')"
+eq "nothing else holds" "no" "$(held_by 'bug,holding-pattern' 'We hold the line')"
+eq "green minutes: since the branch's newest finished run" "20" "$(green_minutes "$(printf 'completed\t0\t1000\tci.yml\tpull_request\tbeds\ncompleted\t0\t1300\tci.yml\tpull_request\tbeds\ncompleted\t0\t2000\tci.yml\tpull_request\tother\n')" beds 2500)"
+rd_round=$(printf 'merge-batch 41 42 45\nfix-pr 47\tBroken\nstop: proposal ready for approval\n')
+eq "green work under 15 minutes: the queue lands it" "landing 41 42 45: green; the queue lands them, and a drain is proposed if they sit 15 minutes" "$(landing_goals "$rd_round" "$(printf '41\t3\n42\t9\n')" 15 | grep '^landing')"
+eq "green work sat 15 minutes: one drain" "drain 41 42 45	(green for 16 minutes; one drain lands them)" "$(landing_goals "$rd_round" "$(printf '41\t16\n42\t9\n')" 15 | grep '^drain')"
+eq "only landing left: work is in flight" "landing 41: green; the queue lands them, and a drain is proposed if they sit 15 minutes
+stop: work is in flight; nothing to propose until it lands" "$(landing_goals "$(printf 'merge 41\nstop: proposal ready for approval\n')" "$(printf '41\t2\n')" 15)"
+eq "a landing line is not numbered" "landing 41: green" "$(number_proposal 'landing 41: green')"
+eq "summary due at its time" "yes" "$(summary_due 07:05 07:00 no)"
+eq "not before it" "no" "$(summary_due 06:59 07:00 no)"
+eq "not twice a day" "no" "$(summary_due 09:00 07:00 yes)"
+eq "no time set, no summary" "no" "$(summary_due 09:00 '' no)"
+eq "the health note recommends, never pauses" "health: free disk (GB) is 9.5, over 8; a restart is recommended, and work goes on" "$(health_line 'free disk (GB)' 9.5 8)"
+eq "under the line it is fine" "health: free disk (GB) is 3, fine" "$(health_line 'free disk (GB)' 3 8)"
+eq "a figure it cannot read still lets work go on" "health: free disk (GB) could not be read; work goes on" "$(health_line 'free disk (GB)' 'error' 8)"
+eq "comment pages: the newest two" "4 5" "$(comment_pages 431)"
+eq "comment pages: one page" "1" "$(comment_pages 12)"
+rd_comments=$(printf '2026-11-01T10:00:00Z\tmaya-drive\tRound started.\\n<!-- sipnship-proposal {"status":"started","units":[{"issues":[214,226],"areas":[]},{"issues":[223],"areas":[],"pr":531}],"held":[{"issues":[212],"waitsOn":[214],"areas":[]}]} -->\n2026-11-01T10:05:00Z\tmaya-drive\tProposed next round.\\n<!-- sipnship-proposal {"units":[{"issues":[240],"areas":[]}],"held":[]} -->\n')
+eq "the running round is the latest started one's issues still in progress" "226 223" "$(running_round "$rd_comments" "$(printf '226\n223\n212\n240\n')")"
+eq "a landed round is not running" "" "$(running_round "$rd_comments" "$(printf '212\n240\n')")"
+eq "while a round runs, its next round's dispatches wait and the rest goes ahead" "merge 41
+held: 1 dispatch goal(s) wait for the running round (#226, #223) to land" "$(hold_dispatch "$(printf 'merge 41\ndispatch 240\tSeed packets\n')" '226 223')"
+eq "a Start this round request names who pressed it" "maya" "$(start_request 'Queue request: start-round by maya')"
+eq "the button's form with #0 is the same" "maya" "$(start_request 'Queue request: start-round #0 by maya')"
+eq "anything else is not a start" "" "$(start_request 'please start-round by maya')"
+eq "Auto Drive on with a round running: the dispatches wait" "nothing: 1 dispatch goal(s) wait for the running round (#214) to land" "$(cat > "$ad_dir/bin/gh" <<'FAKE'
+#!/bin/sh
+case "$*" in
+  "auth status") exit 0 ;;
+  *labels=drive*) printf '99\tdrive,drive:auto\t2\n' ;;
+  "api user --jq .login") echo maya-drive ;;
+  *labels=state:in-progress*) echo 214 ;;
+  *issues/99/comments*)
+    printf '2026-10-31T07:30:00Z\tmaya-drive\tRound started.\\n<!-- sipnship-proposal {"status":"started","units":[{"issues":[214],"areas":[]}],"held":[]} -->\n'
+    printf '2026-10-31T07:40:00Z\tmaya-drive\tProposal for Friday\\n1. dispatch 223 Seed packets\\nstop: proposal ready for approval\n' ;;
+esac
+exit 0
+FAKE
+ad_run 'unused' '')"
+eq "the skill keeps every open pull request moving" "yes" "$(grep -q 'merge-main N' "$root/skills/project-drive/SKILL.md" && grep -q 'merge-main' "$root/scripts/drive/drive-lib.sh" && echo yes)"
 
 section 'temp files stay in the run, and nothing it starts outlives it'
 eq "every block's temp folder is inside the run's own root" "yes" "$(case "$TMPDIR" in */.scratch/tests-tmp/run-*) echo yes ;; *) echo no ;; esac)"

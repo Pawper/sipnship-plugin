@@ -123,8 +123,11 @@ plan_units() {
       return ""
     }
     function find(i) { while (par[i] != i) i = par[i]; return i }
-    $1 == "G" && $2 != "" { n++; num[n] = $2; title[n] = $3; files[n] = $4; par[n] = n }
-    $1 == "R" && $2 != "" { r++; rtitle[r] = $2; rfiles[r] = $3 }
+    # Plugin and CI work shares one test suite, so it always goes together:
+    # any path under plugin/, scripts/ci/ or .github/ also carries "@tooling".
+    function tooling(f) { return (("," f) ~ /,(plugin|scripts\/ci|\.github)\//) ? f ",@tooling" : f }
+    $1 == "G" && $2 != "" { n++; num[n] = $2; title[n] = $3; files[n] = tooling($4); par[n] = n }
+    $1 == "R" && $2 != "" { r++; rtitle[r] = $2; rfiles[r] = tooling($3) }
     END {
       for (i = 1; i <= n; i++) {
         held[i] = ""
@@ -152,10 +155,11 @@ plan_units() {
         if (cnt[g] > 1) {
           s = why[g]; sub(/\/$/, "", s)
           w = (cnt[g] == 2 ? "both" : "all " cnt[g]) " change " s
+          if (s == "@tooling") w = (cnt[g] == 2 ? "both are" : "all " cnt[g] " are") " plugin or CI work, which shares one test suite"
         }
         m = split(merged[g], mf, ","); out = ""
         delete used
-        for (q = 1; q <= m; q++) if (mf[q] != "" && !(mf[q] in used)) { used[mf[q]] = 1; out = out (out == "" ? "" : ",") mf[q] }
+        for (q = 1; q <= m; q++) if (mf[q] != "" && mf[q] != "@tooling" && !(mf[q] in used)) { used[mf[q]] = 1; out = out (out == "" ? "" : ",") mf[q] }
         printf "unit\t%s\t%s\t%s\t%s\n", members[g], titles[g], w, out
       }
       for (i = 1; i <= n; i++) if (held[i] != "") printf "hold\t%s\t%s\tAfter: %s\n", num[i], title[i], held[i]
@@ -178,13 +182,18 @@ units_disjoint() {
 
 # apply_units ROUND UNITS SLOTS
 # Swap the "dispatch N TITLE" goals of a propose_round result for the
-# units: one goal per unit, at most SLOTS of them (the rest deferred), and
+# units: one goal per unit, bundles ranked before loose issues (more issues
+# first), at most SLOTS of them (the rest deferred), and
 # one "hold" line per issue that waits on running work. A bundle reads
 # "dispatch 12 14<TAB>Title | Title<TAB>Why together: both change ...".
 apply_units() {
   printf '%s\n' "$1" | awk -v slots="${3:-2}" -v units="$2" '
     BEGIN {
-      n = split(units, ul, "\n")
+      n = split(units, raw, "\n")
+      # Bundles first: units carrying more issues rank ahead, in plan order
+      # among equals, so a round fills with bundles before loose issues.
+      for (i = 1; i <= n; i++) { ul[i] = raw[i]; split(raw[i], f, "\t"); w[i] = (f[1] == "unit") ? split(f[2], tmp, " ") : 0 }
+      for (i = 2; i <= n; i++) { v = ul[i]; c = w[i]; j = i - 1; while (j > 0 && w[j] < c) { ul[j + 1] = ul[j]; w[j + 1] = w[j]; j-- } ul[j + 1] = v; w[j + 1] = c }
       for (i = 1; i <= n; i++) {
         split(ul[i], f, "\t")
         if (f[1] == "unit") {
