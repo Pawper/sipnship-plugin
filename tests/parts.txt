@@ -32,6 +32,7 @@ shell-2 full_sweep_reason
 shell-2 generated_page_reason
 shell-2 state_label_reason
 shell-2 session brief
+shell-2 the session brief inside its start limit
 shell-2 runner doctor
 shell-2 board digest
 shell-2 clean endings (hook library)
@@ -85,7 +86,7 @@ shell-3 workspace install
 shell-3 a draft tokens file seeded from the mocks
 shell-3 deploy targets
 shell-3 test parts: only for the classes touched, side by side, stopping at the first red
-shell-2 a failing job says what failed and never cancels the run
+shell-2 a failing job says what failed, and a failed check cancels the run
 shell-2 main is gated by one full run after a quiet hour
 shell-2 temp files stay in the run, and nothing it starts outlives it
 shell-4 hotspots: size limits, overlaps and job time

@@ -72,6 +72,37 @@ online_runners() {
   [ -n "$or_n" ] && echo "$or_n" || echo unknown
 }
 
+# runner_labels_keep: at each drain's start, where ci.yml keeps a runner
+# (vars.CI_KEEP_RUNNER), every online runner but one carries the pr label
+# and CI_KEEP_RUNNER is on; no write when they are already so. A token that
+# cannot manage runners turns it off, so pull requests take any runner,
+# and runner-labels says why for the published state.
+runner_labels_keep() {
+  grep -q 'vars.CI_KEEP_RUNNER' .github/workflows/ci.yml 2>/dev/null || return 0
+  rk_var=$(gh_write api "repos/{owner}/{repo}/actions/variables/CI_KEEP_RUNNER" --jq .value 2>/dev/null | tr -d '\r') || rk_var=""
+  rk_ok=yes; : > "$flaky_dir/runner-labels" 2>/dev/null || true
+  rk_list=$(gh_write api "repos/{owner}/{repo}/actions/runners?per_page=100" --jq '.runners[] | [.id, .name, .status, ([.labels[].name] | join(","))] | @tsv' 2>/dev/null) || rk_ok=no
+  rk_list=$(printf '%s' "$rk_list" | tr -d '\r')
+  # No runner registered: nothing to keep, and nothing to say.
+  [ "$rk_ok" = no ] || [ -n "$rk_list" ] || return 0
+  if [ "$rk_ok" = yes ]; then
+    rk_plan=$(runner_label_plan "$rk_list")
+    while IFS="$tab" read -r rk_do rk_id rk_name; do
+      [ -n "$rk_do" ] || continue
+      if [ "$rk_do" = add ]; then gh_write api -X POST "repos/{owner}/{repo}/actions/runners/$rk_id/labels" -f "labels[]=$KEEP_LABEL" >/dev/null 2>&1 || rk_ok=no
+      else gh_write api -X DELETE "repos/{owner}/{repo}/actions/runners/$rk_id/labels/$KEEP_LABEL" >/dev/null 2>&1 || rk_ok=no; fi
+      [ "$rk_ok" = no ] || say "runners: $([ "$rk_do" = add ] && echo "gave $rk_name the $KEEP_LABEL label for pull requests" || echo "kept $rk_name for the batch and main")."
+    done <<RKPLAN
+$rk_plan
+RKPLAN
+  fi
+  rk_set=$(keep_runner_var "$rk_ok" "$rk_var")
+  if [ -n "$rk_set" ] && ! set_repo_var CI_KEEP_RUNNER "$rk_set"; then rk_set="$rk_set (could not set it)"; fi
+  [ -z "$rk_set" ] || say "runners: CI_KEEP_RUNNER is $rk_set."
+  [ "$rk_ok" = yes ] || printf 'cannot\t%s\n' "The queue's token cannot manage this repository's runners, so no runner is kept for the batch and main and pull requests take any runner; give the token Administration: write to keep one." > "$flaky_dir/runner-labels"
+  return 0
+}
+
 idle_runners() { gh api 'repos/{owner}/{repo}/actions/runners' --jq '[.runners[] | select(.status == "online" and .busy == false)] | length' 2>/dev/null || echo 0; }
 
 github_status() { # one line when GitHub says Actions is degraded, else nothing

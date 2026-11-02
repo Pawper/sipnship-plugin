@@ -39,6 +39,7 @@ jobs:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
           ADMIN_TOKEN: ${{ secrets.RUNNER_WATCH_TOKEN }}
+          KEEP_RUNNER: ${{ vars.CI_KEEP_RUNNER }}
         shell: RUN_SHELL
         run: |
           . scripts/ci/lib.sh
@@ -133,6 +134,19 @@ jobs:
               problems=$(runner_problems "$(GH_TOKEN="$ADMIN_TOKEN" gh api "repos/$GH_REPO/actions/runners" \
                 --jq '.runners[] | [.name, .status, (.busy | tostring)] | @tsv' 2>/dev/null || true)")
               [ -n "$problems" ] && runner=$(printf '%s\n\n%s' "$runner" "$problems" | sed '/./,$!d')
+            fi
+            # One runner kept for the batch and main, where ci.yml keeps one:
+            # the merge queue sets the labels; say when it cannot, or when
+            # none is kept or none carries the label.
+            if grep -q 'vars.CI_KEEP_RUNNER' .github/workflows/ci.yml 2>/dev/null && [ -f scripts/ci/batch-lib.sh ]; then
+              . scripts/ci/batch-lib.sh
+              kept=""
+              [ "$KEEP_RUNNER" != off ] || kept="The merge queue's token cannot manage this repository's runners, so no runner is kept for the batch and main and pull requests take any runner; give the queue's token Administration: write."
+              if [ -z "$kept" ] && [ -n "$ADMIN_TOKEN" ]; then
+                kept=$(runner_label_problem "$(GH_TOKEN="$ADMIN_TOKEN" gh api "repos/$GH_REPO/actions/runners" \
+                  --jq '.runners[] | [.id, .name, .status, ([.labels[].name] | join(","))] | @tsv' 2>/dev/null || true)")
+              fi
+              [ -n "$kept" ] && runner=$(printf '%s\n\n- %s' "$runner" "$kept" | sed '/./,$!d')
             fi
             failed=$(gh api "repos/$GH_REPO/actions/runs?status=failure&per_page=5" --jq '.workflow_runs[].check_suite_id' 2>/dev/null || true)
             notes=""

@@ -26,6 +26,7 @@ const path = require('path');
 const tokens = require('./tokens');
 const sessions = require('./sessions');
 const questions = require('./questions');
+const refusals = require('./refusal-report');
 
 const SEND_MAX_BYTES = 64 * 1024;
 const TIMEOUT_MS = 3000;
@@ -127,6 +128,8 @@ function briefBody(text, opts = {}) {
   }
   const body = { version: 1, sentAt: (opts.now || new Date()).toISOString(), machine: opts.machine || os.hostname(), cards: out };
   if (opts.runners) body.runners = opts.runners;
+  // The kinds of request this machine's listener carries out, only while the listener is on and running (spec 012).
+  if (opts.can && opts.can.length) body.can = opts.can;
   if (opts.ownerSteps && opts.ownerSteps.length) body.ownerSteps = opts.ownerSteps;
   if (opts.localModels && opts.localModels.length) body.localModels = opts.localModels.map((m) => ({ model: m.model, tiers: m.tiers || [] }));
   if (opts.answers && opts.answers.length) body.answers = opts.answers;
@@ -254,7 +257,7 @@ function keepBlock(env, repoId, text) {
  * Send the brief; returns the line to print ('' for none). With sampleOnly,
  * the block is the last one kept and the send is about the session sample.
  */
-async function sendBrief({ text, session = '', repo, env = process.env, now = new Date(), runners, sessions: agents, ownerSteps: steps, localModels, sampleOnly = false }) {
+async function sendBrief({ text, session = '', repo, env = process.env, now = new Date(), runners, sessions: agents, ownerSteps: steps, localModels, sampleOnly = false, root = process.cwd() }) {
   const entry = tokens.find(repo, env);
   if (!entry || !tokens.looksLikeToken(entry.token)) return '';
   if (sampleOnly) text = lastBlock(env, entry.repoId);
@@ -264,14 +267,19 @@ async function sendBrief({ text, session = '', repo, env = process.env, now = ne
   // Refused once this session: nothing more is sent until the next one.
   if (same && mem.said === 'not_connected') return '';
   const answers = questions.pendingAnswers(env, entry.repoId);
-  const body = fit(briefBody(text, { now, machine: entry.machine, runners, sessions: agents, ownerSteps: steps, localModels, answers }));
+  const can = require('./listen').briefCan(env, now.getTime());
+  const built = briefBody(text, { now, machine: entry.machine, runners, sessions: agents, ownerSteps: steps, localModels, answers, can });
+  // Rule reports not yet acknowledged ride along (spec 013), fewer when the whole would pass the limit.
+  const sent = refusals.attach(built, { root, repoId: entry.repoId, env, now: now.getTime(), maxBytes: SEND_MAX_BYTES });
+  const body = fit(built);
   let reply;
   const outcome = body === undefined ? 'too_large' : await post(`${base(env)}/v1/repos/${entry.repoId}/brief`, entry.token, body, TIMEOUT_MS, (r) => { reply = r; });
   if (outcome === 'ok') {
     remember(env, entry.repoId, { session, said: same ? mem.said : '', lastOk: now.getTime() });
     questions.clearAnswers(env, entry.repoId, answers);
     questions.receive(env, entry.repoId, reply && reply.questions, agents, now.getTime());
-    return questions.lineFor(env, entry.repoId, session, repo, __filename);
+    refusals.acknowledge(root, sent, reply);
+    return questions.lineFor(env, entry.repoId, session, repo, __filename) || (sent.length ? refusals.noticeOnce(env, entry.repoId) : '');
   }
   if (outcome === 'rate_limited') return '';
   if (same && mem.said) return '';

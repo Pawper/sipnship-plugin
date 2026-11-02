@@ -195,6 +195,8 @@ deploy_line=""; [ -f .claude/deploy.json ] && [ -f "$here/deploy-gate.sh" ] && d
 # The stop line a drain left (merge-queue.sh), said while the queue is idle.
 stopped_line=""; [ "$mode" = idle ] && stopped_line=$(head -n 1 "$flaky_dir/stopped" 2>/dev/null | tr -d '\r')
 say=$(publish_say "$open_tsv" "$batch_tsv" "$building" "$clashes_tsv" "$attention_tsv" "$runners_tsv" "$deploy_line" "$mode" "$paused_until" "$stopped_line")
+# A token that cannot keep a runner for the batch and main (runs.sh, runner_labels_keep).
+say=$(say_with_need "$say" "$(head -n 1 "$flaky_dir/runner-labels" 2>/dev/null | cut -f2)")
 now_iso=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 json=$(publish_json "$open_tsv" "$batch_tsv" "$building" "$clashes_tsv" "$landed_tsv" "$runners_tsv" "$attention_tsv" "$(printf '%s\t%s\t%s\t%s\t%s' "$main_sha" "$main_state" "$main_checked" "$main_waiting" "$main_failing")" "$deploy_line" "$mode" "$paused_until" "$checking" "$say" "$now_iso" "$rush_tsv" "$waits_tsv")
 

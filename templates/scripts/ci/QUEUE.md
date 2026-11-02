@@ -187,6 +187,8 @@ Two or fewer pull requests with no flag also run serially. More than two with no
 
 Every open pull request starts its own CI run on every update. Once a pull request is in a batch, its own run is competing with the batch's run for the same runners and proving nothing the batch does not. The queue cancels a carried pull request's in-progress run for that reason. If you batch by hand, cancel them yourself.
 
+The batch goes first on the runners without the queue pausing anyone. Where `ci.yml` keeps one runner for the batch and main, pull requests' own jobs never take that one, so a batch's run and main's always have a machine; the queue keeps the runners' labels right at the start of every drain, with no step for a person (`RUNNERS.md`, "One runner kept for the batch and main"). And a run's jobs join the line together rather than one after another, with a run whose checks fail cancelling itself (`RUNNERS.md`, "A run's jobs join the line together"), so the jobs ahead of a batch are fewer and none of them is a doomed run's.
+
 ## What the queue says while it waits
 
 The queue reads the run it waits on and says plainly what is happening, so a stuck run is a line of output and not half an hour of diagnosis.

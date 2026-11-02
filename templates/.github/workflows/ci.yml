@@ -19,6 +19,17 @@
 # one command twice: a step that repeats one above is a runner minute paid
 # for nothing.
 #
+# A run's jobs join the runner line together. "app", "tests" and "screens"
+# wait only on "classify" (seconds), never on "checks", so they queue
+# beside it in GitHub's arrival order instead of behind other pull
+# requests' runs. When a check fails, "checks" cancels its own run, so a
+# doomed run costs only the jobs already started.
+#
+# On self-hosted runners, one runner can be kept for the batch and main:
+# give each pull-request job (checks, app, tests, screens, CI passed) the
+# runs-on expression in scripts/ci/RUNNERS.md ("One runner kept for the
+# batch and main"), and the merge queue keeps the runners' labels itself.
+#
 # RUNS_ON is the runner label for every job here. ubuntu-latest for hosted
 # runners; [self-hosted, windows] for a studio's own machines. The gh-only
 # workflows (audit, board sync, state label, runner watch) stay hosted;
@@ -92,14 +103,12 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: RUNS_ON
     permissions:
-      # The workflow's own, plus actions: read so a failure can name its step.
+      # The workflow's own, plus actions: write so a failure can name its
+      # step and then cancel the rest of its own run.
       contents: read
       issues: write
       pull-requests: read
-      actions: read
-    outputs:
-      classes: ${{ steps.classes.outputs.classes }}
-      parts: ${{ steps.classes.outputs.parts }}
+      actions: write
     env:
       # On a pull request github.sha is the merge of the branch into main as
       # it is now, and its first parent is that main. The recorded base.sha
@@ -112,17 +121,14 @@ jobs:
           fetch-depth: 0
       - id: classes
         name: Classify the change
+        # For this job's own steps; "classify" gives the other jobs theirs,
+        # so none of them waits on these checks.
         run: |
           base="$BASE"
           case "$base" in ""|0000000000000000000000000000000000000000) base="${{ github.sha }}~1" ;; esac
           classes=$(sh scripts/ci/classify.sh "$base" "${{ github.sha }}")
           echo "classes=$classes" >> "$GITHUB_OUTPUT"
           echo "Classes: $classes"
-          # The test parts of those classes (the "!parts" lines of
-          # classes.txt), as the "tests" job's matrix; [] when none.
-          parts=$(sh scripts/ci/test-parts.sh matrix "$classes")
-          echo "parts=$parts" >> "$GITHUB_OUTPUT"
-          echo "Test parts: $parts"
       - name: Fail when a text file has CRLF endings
         # Every pull request: mixed endings make every diff a conflict.
         run: sh scripts/ci/line-endings.sh
@@ -209,12 +215,47 @@ jobs:
       # (or 'docs'). Never repeat a step above.
       - name: Say what failed
         # A summary and an annotation naming the failed step and its last
-        # lines. Never cancels the run, which would mark this job cancelled
-        # and hide the failure; GitHub has no call to cancel one other job.
+        # lines, written before the run is cancelled so the failure stays
+        # named: the report job reads a cancelled job's failed step too.
         if: failure()
         env:
           GH_TOKEN: ${{ github.token }}
         run: sh scripts/ci/failure-report.sh job
+      - name: Cancel the rest of this run
+        # A run whose checks failed cannot merge: its jobs still waiting
+        # for a runner leave the line, and only those already started run on.
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: sh scripts/ci/failure-report.sh cancel
+
+  classify:
+    # Which classes and test parts the change touches, in seconds, so
+    # "app", "tests" and "screens" join the runner line beside "checks"
+    # rather than after it.
+    if: github.event_name == 'pull_request'
+    runs-on: RUNS_ON
+    permissions:
+      contents: read
+    outputs:
+      classes: ${{ steps.classes.outputs.classes }}
+      parts: ${{ steps.classes.outputs.parts }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The merge commit and its two parents: the diff from main.
+          fetch-depth: 2
+      - id: classes
+        name: Classify the change
+        run: |
+          classes=$(sh scripts/ci/classify.sh "HEAD^1" "${{ github.sha }}")
+          echo "classes=$classes" >> "$GITHUB_OUTPUT"
+          echo "Classes: $classes"
+          # The test parts of those classes (the "!parts" lines of
+          # classes.txt), as the "tests" job's matrix; [] when none.
+          parts=$(sh scripts/ci/test-parts.sh matrix "$classes")
+          echo "parts=$parts" >> "$GITHUB_OUTPUT"
+          echo "Test parts: $parts"
 
   app:
     # One install, then everything that needs it. The production build runs
@@ -222,8 +263,8 @@ jobs:
     # inside a worktree, so without it nobody builds before merging, and
     # tests and the type-check once passed on a client bug only the build
     # would show.
-    needs: checks
-    if: github.event_name == 'pull_request' && (contains(needs.checks.outputs.classes, 'app') || contains(needs.checks.outputs.classes, 'core') || contains(needs.checks.outputs.classes, 'deps') || contains(needs.checks.outputs.classes, 'tests') || contains(needs.checks.outputs.classes, 'other'))
+    needs: classify
+    if: github.event_name == 'pull_request' && (contains(needs.classify.outputs.classes, 'app') || contains(needs.classify.outputs.classes, 'core') || contains(needs.classify.outputs.classes, 'deps') || contains(needs.classify.outputs.classes, 'tests') || contains(needs.classify.outputs.classes, 'other'))
     runs-on: RUNS_ON
     permissions:
       # The workflow's own, plus actions: read so a failure can name its step.
@@ -243,12 +284,12 @@ jobs:
         # "pytest --splits 4 --group ${{ matrix.shard }}" or "vitest run --shard=N/4".
         run: echo "replace with the app tests"
       - name: The production build
-        if: contains(needs.checks.outputs.classes, 'app') || contains(needs.checks.outputs.classes, 'core') || contains(needs.checks.outputs.classes, 'deps') || contains(needs.checks.outputs.classes, 'other')
+        if: contains(needs.classify.outputs.classes, 'app') || contains(needs.classify.outputs.classes, 'core') || contains(needs.classify.outputs.classes, 'deps') || contains(needs.classify.outputs.classes, 'other')
         run: echo "replace with BUILD_COMMAND"
       - name: Say what failed
         # A summary and an annotation naming the failed step and its last
-        # lines. Never cancels the run, which would mark this job cancelled
-        # and hide the failure; GitHub has no call to cancel one other job.
+        # lines. A failure here never cancels the run: the other jobs
+        # finish, and only a failed check stops the run early.
         if: failure()
         env:
           GH_TOKEN: ${{ github.token }}
@@ -261,12 +302,12 @@ jobs:
     # rest; in main's gate every part of every class, each to the end.
     # Skipped when there are no parts. The name is plain, never an
     # expression: a skipped matrix job has no matrix values to fill one in.
-    needs: [gate, checks]
-    if: ${{ !cancelled() && (needs.checks.outputs.parts || needs.gate.outputs.parts || '[]') != '[]' }}
+    needs: [gate, classify]
+    if: ${{ !cancelled() && (needs.classify.outputs.parts || needs.gate.outputs.parts || '[]') != '[]' }}
     strategy:
       fail-fast: ${{ github.event_name == 'pull_request' }}
       matrix:
-        part: ${{ fromJSON(needs.checks.outputs.parts || needs.gate.outputs.parts || '[]') }}
+        part: ${{ fromJSON(needs.classify.outputs.parts || needs.gate.outputs.parts || '[]') }}
     name: tests
     runs-on: RUNS_ON
     permissions:
@@ -289,8 +330,8 @@ jobs:
         run: sh scripts/ci/test-parts.sh run "${{ matrix.part }}" 2>&1 | tee "$RUNNER_TEMP/part.log"
       - name: Say what failed
         # A summary and an annotation naming the failed step and its last
-        # lines. Never cancels the run, which would mark this job cancelled
-        # and hide the failure; GitHub has no call to cancel one other job.
+        # lines. A failure here never cancels the run: the other jobs
+        # finish, and only a failed check stops the run early.
         if: failure()
         env:
           GH_TOKEN: ${{ github.token }}
@@ -306,8 +347,8 @@ jobs:
     # threshold is flagged and never fails the job; it fails only when a
     # screen cannot be rendered. It records nothing: a person runs
     # "sh scripts/design/screens.sh compare --mock NAME" after looking.
-    needs: checks
-    if: github.event_name == 'pull_request' && (contains(needs.checks.outputs.classes, 'app') || contains(needs.checks.outputs.classes, 'other'))
+    needs: classify
+    if: github.event_name == 'pull_request' && (contains(needs.classify.outputs.classes, 'app') || contains(needs.classify.outputs.classes, 'other'))
     runs-on: RUNS_ON
     permissions:
       # The workflow's own, plus actions: read so a failure can name its step.
@@ -358,8 +399,8 @@ jobs:
           else gh api "$api/${{ github.event.pull_request.number }}/comments" -F "body=@$OUT/comment.md" >/dev/null; fi
       - name: Say what failed
         # A summary and an annotation naming the failed step and its last
-        # lines. Never cancels the run, which would mark this job cancelled
-        # and hide the failure; GitHub has no call to cancel one other job.
+        # lines. A failure here never cancels the run: the other jobs
+        # finish, and only a failed check stops the run early.
         if: failure()
         env:
           GH_TOKEN: ${{ github.token }}
@@ -372,7 +413,7 @@ jobs:
     # "app" is skipped when a change does not need it, and a required check
     # that never reports blocks the merge.
     name: CI passed
-    needs: [checks, app, tests, screens]
+    needs: [checks, classify, app, tests, screens]
     if: always() && github.event_name == 'pull_request'
     permissions:
       # Reads the jobs and the failed ones' annotations for the summary.
@@ -383,18 +424,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Name the failed job and its lines
-        if: contains(needs.*.result, 'failure')
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
         env:
           GH_TOKEN: ${{ github.token }}
         run: sh scripts/ci/failure-report.sh run
       - name: Report once for every job
         env:
-          PARTS: ${{ needs.checks.outputs.parts }}
+          PARTS: ${{ needs.classify.outputs.parts }}
         run: |
           failed=0
           parts=$(printf '%s' "${PARTS:-[]}" | tr -cd ',"' | tr -d ',' | wc -c)
           echo "test parts: $((parts / 2)) ran as one matrix"
-          for pair in "checks:${{ needs.checks.result }}" "app:${{ needs.app.result }}" "tests:${{ needs.tests.result }}" "screens:${{ needs.screens.result }}"; do
+          for pair in "checks:${{ needs.checks.result }}" "classify:${{ needs.classify.result }}" "app:${{ needs.app.result }}" "tests:${{ needs.tests.result }}" "screens:${{ needs.screens.result }}"; do
             job=${pair%%:*}
             result=${pair#*:}
             echo "$job: $result"

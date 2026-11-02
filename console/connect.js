@@ -47,7 +47,7 @@ function repoIdOf(fullName, env, run) {
 
 const defaultRun = (cmd, args) => execFileSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
 
-async function connect({ repo, token, env = process.env, out = process.stdout, cwd = process.cwd(), machine = os.hostname(), run = defaultRun, pollMs }) {
+async function connect({ repo, token, env = process.env, out = process.stdout, cwd = process.cwd(), machine = os.hostname(), run = defaultRun, pollMs, offer }) {
   const fullName = repo || remoteRepo(cwd);
   if (!fullName || !/^[^/\s]+\/[^/\s]+$/.test(fullName)) {
     out.write('Name the repository: sipnship connect --repo OWNER/NAME\n');
@@ -99,6 +99,8 @@ async function connect({ repo, token, env = process.env, out = process.stdout, c
   }
   tokens.put({ repoId: c.body.repoId, fullName: c.body.fullName || fullName, token: c.body.token, machine: c.body.machine || machine }, env);
   out.write(`${c.body.say || `Connected: ${machine}.`}\n`);
+  // The one question: off unless the person says yes, here, on this machine (spec 012).
+  await require('./listen').offerOn({ env, out, cwd, repo: fullName, ask: offer }).catch(() => false);
   return 0;
 }
 
