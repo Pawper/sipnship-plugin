@@ -9,6 +9,8 @@
 #   pr      NUMBER  TITLE  ci(green|red|pending)  merge(mergeable|conflicting|unknown)  class(app|other)  [reds  held(yes|no)]
 #           reds is how many times its checks failed, on different commits;
 #           held is yes when the queue holds it (a hold label or line)
+#           [busy(yes|no)]: yes when its head commit or newest comment is
+#           under 30 minutes old; a busy one gets no agent (a "busy" line)
 #   issue   NUMBER  TITLE  state(ready|in-progress|waiting-on-owner|blocked)  owner(yes|no)
 #   audit   TEXT            the audit issue's latest comment, one line
 #   red     NUMBER          an open red-main issue
@@ -30,9 +32,14 @@ propose_round() {
     $1 == "pr" && $4 == "green" && $5 == "mergeable" { green[++g] = $2; if ($6 != "other") appgreen++ }
     $1 == "pr" && $4 == "red" {
       if (aside > 0 && $7 + 0 >= aside) setaside[++sa] = $2 "\t" $3 "\t(red " ($7 + 0) " times)"
+      else if ($9 == "yes") busy[++bz] = $2 "\t" $3
       else red[++r] = $2 "\t" $3
     }
-    $1 == "pr" && $4 != "red" && $5 == "conflicting" && $8 != "yes" { behind[++bm] = $2 "\t" $3; next }
+    $1 == "pr" && $4 != "red" && $5 == "conflicting" && $8 != "yes" {
+      if ($9 == "yes") busy[++bz] = $2 "\t" $3
+      else behind[++bm] = $2 "\t" $3
+      next
+    }
     $1 == "pr" && ($4 == "pending" || $5 == "conflicting" || $5 == "unknown") && $4 != "red" { waiting_pr++ }
     $1 == "issue" && $4 == "ready" && $5 == "yes" { ask[++k] = $2 "\t" $3 }
     $1 == "issue" && $4 == "ready" && $5 != "yes" { ready[++n] = $2 "\t" $3 }
@@ -52,6 +59,7 @@ propose_round() {
       for (i = 1; i <= r; i++) { print "fix-pr " red[i]; acted++ }
       for (i = 1; i <= sa; i++) { print "set-aside " setaside[i]; acted++ }
       for (i = 1; i <= bm; i++) { print "merge-main " behind[i]; acted++ }
+      for (i = 1; i <= bz; i++) { print "busy " busy[i] "\tpushed or commented on in the last 30 minutes; someone is likely on it"; waiting_pr++ }
       for (i = 1; i <= k; i++) { print "ask-owner " ask[i]; acted++ }
       slots = (runners < max_agents) ? runners : max_agents
       slots -= inprogress
@@ -73,12 +81,12 @@ propose_round() {
 
 # number_proposal LINES
 # Give each goal a number for a person to answer with: "1. merge-batch 41 42".
-# The defer, hold, landing and stop lines are information, not goals, and
-# stay unnumbered.
+# The defer, hold, landing, busy and stop lines are information, not goals,
+# and stay unnumbered.
 number_proposal() {
   printf '%s\n' "$1" | awk '
     NF == 0 { next }
-    /^(defer |hold |landing |stop:)/ { print; next }
+    /^(defer |hold |landing |busy |stop:)/ { print; next }
     { printf "%d. %s\n", ++n, $0 }'
 }
 

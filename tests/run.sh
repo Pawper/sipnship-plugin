@@ -3296,8 +3296,17 @@ eq "plugin work waits on a running plugin unit" "hold	33	Brief fix	After: Hook f
 rd_snap=$(printf 'pr\t51\tBeds page\tgreen\tmergeable\tapp\npr\t52\tFrost alert\tpending\tmergeable\tapp\npr\t53\tSeed list\tred\tmergeable\tapp\npr\t54\tWatering copy\tgreen\tmergeable\tapp\nissue\t9\tReady thing\tready\tno\n')
 rd_rest=$(printf '51\tclean\t0\tno\n52\tdirty\t0\tno\n53\tunstable\t2\tno\n54\tdirty\t0\tyes\n')
 rd_over=$(overlay_rest "$rd_snap" "$rd_rest")
-eq "REST's mergeable_state: dirty conflicts, and reds and holds are added" "pr	52	Frost alert	pending	conflicting	app	0	no
-pr	54	Watering copy	green	conflicting	app	0	yes" "$(printf '%s\n' "$rd_over" | grep -E '^pr	5[24]	')"
+eq "REST's mergeable_state: dirty conflicts, and reds, holds and busy are added" "pr	52	Frost alert	pending	conflicting	app	0	no	no
+pr	54	Watering copy	green	conflicting	app	0	yes	no" "$(printf '%s\n' "$rd_over" | grep -E '^pr	5[24]	')"
+eq "a head commit under 30 minutes old is someone at work" "yes" "$(recently_touched 10000 '' 11000 30)"
+eq "so is a comment under 30 minutes old" "yes" "$(recently_touched 1000 10500 11000 30)"
+eq "both older is nobody" "no" "$(recently_touched 1000 2000 11000 30)"
+eq "no times is nobody" "no" "$(recently_touched '' '' 11000 30)"
+rd_busy=$(overlay_rest "$rd_snap" "$(printf '52\tdirty\t0\tno\tyes\n53\tunstable\t1\tno\tyes\n')")
+eq "a busy pull request gets no agent: neither merge-main nor fix-pr, only a busy line" "0 2 busy 52	Frost alert	pushed or commented on in the last 30 minutes; someone is likely on it" "$(p=$(propose_round "$rd_busy" 2 4 2); printf '%s ' "$(printf '%s\n' "$p" | grep -cE '^(merge-main|fix-pr) 5[23]')"; printf '%s ' "$(printf '%s\n' "$p" | grep -c '^busy 5[23]')"; printf '%s\n' "$p" | grep '^busy 52')"
+eq "a busy line is not numbered" "busy 52	Frost alert" "$(number_proposal "$(printf 'busy 52\tFrost alert')")"
+eq "red too often is still set aside, busy or not" "set-aside 53	Seed list	(red 2 times)" "$(propose_round "$(overlay_rest "$rd_snap" "$(printf '53\tunstable\t2\tno\tyes\n')")" 2 4 2 | grep '53')"
+eq "the skill says a busy pull request gets no agent" "yes" "$(grep -q 'busy N TITLE' "$root/skills/project-drive/SKILL.md" && echo yes)"
 eq "a pull request that conflicts with main is brought up to date; a held one waits" "1 0" "$(p=$(propose_round "$rd_over" 2 4 2); printf '%s ' "$(printf '%s\n' "$p" | grep -c '^merge-main 52	Frost alert$')"; printf '%s\n' "$p" | grep -c 'merge-main 54')"
 eq "red twice is set aside, not fixed again" "set-aside 53	Seed list	(red 2 times)" "$(propose_round "$rd_over" 2 4 2 | grep '53')"
 eq "under the limit it is fixed" "fix-pr 53	Seed list" "$(propose_round "$rd_over" 2 4 3 | grep '53')"

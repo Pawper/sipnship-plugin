@@ -132,12 +132,22 @@ rest_lines=""
 pr_list=$(gh api "repos/{owner}/{repo}/pulls?state=open&per_page=100" --jq '.[] | [(.number | tostring), .head.ref, ([.labels[].name] | join(",")), ((.body // "") | [splits("\r?\n")] | map(select(test("^Queue: hold"; "i"))) | first // "")] | @tsv' 2>/dev/null | tr -d '\r')
 while IFS="$tab" read -r p_num p_ref p_labels p_hold; do
   [ -n "$p_num" ] || continue
-  p_state=$(gh api "repos/{owner}/{repo}/pulls/$p_num" --jq '.mergeable_state // ""' 2>/dev/null | tr -d '\r')
-  p_reds=0
-  case "$(printf '%s\n' "$snapshot" | awk -F'\t' -v n="$p_num" '$1 == "pr" && $2 == n { print $4 }')" in
-    red) p_reds=$(red_count "$(gh api "repos/{owner}/{repo}/actions/runs?branch=$p_ref&event=pull_request&status=failure&per_page=100" --jq '.workflow_runs[].head_sha' 2>/dev/null)") ;;
-  esac
-  rest_lines="${rest_lines}${p_num}${tab}${p_state}${tab}${p_reds}${tab}$(held_by "$p_labels" "$p_hold")
+  p_info=$(gh api "repos/{owner}/{repo}/pulls/$p_num" --jq '[(.mergeable_state // ""), .head.sha] | @tsv' 2>/dev/null | tr -d '\r')
+  p_state=$(printf '%s' "$p_info" | cut -f1); p_sha=$(printf '%s' "$p_info" | cut -f2)
+  p_reds=0; p_ci=$(printf '%s\n' "$snapshot" | awk -F'\t' -v n="$p_num" '$1 == "pr" && $2 == n { print $4 }')
+  [ "$p_ci" = red ] && p_reds=$(red_count "$(gh api "repos/{owner}/{repo}/actions/runs?branch=$p_ref&event=pull_request&status=failure&per_page=100" --jq '.workflow_runs[].head_sha' 2>/dev/null)")
+  # Someone else on it? Only for one the drive would send an agent to (it
+  # conflicts with main, or it is red): a head commit or a newest comment
+  # under 30 minutes old means an agent in another session is likely at
+  # work, so this one gets none. Two more calls, for those only.
+  p_busy=no
+  if [ "$p_state" = dirty ] || [ "$p_ci" = red ]; then
+    p_head=$(gh api "repos/{owner}/{repo}/commits/$p_sha" --jq '.commit.committer.date | fromdateiso8601' 2>/dev/null | tr -d '\r')
+    p_since=$(date -u -d "@$(( $(date +%s) - 1800 ))" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$(( $(date +%s) - 1800 ))" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null)
+    p_note=$(gh api "repos/{owner}/{repo}/issues/$p_num/comments?since=$p_since&per_page=100" --jq '[.[].created_at | fromdateiso8601] | max // empty' 2>/dev/null | tr -d '\r')
+    p_busy=$(recently_touched "$p_head" "$p_note" "$(date +%s)" 30)
+  fi
+  rest_lines="${rest_lines}${p_num}${tab}${p_state}${tab}${p_reds}${tab}$(held_by "$p_labels" "$p_hold")${tab}${p_busy}
 "
 done <<EOF_PRS
 $pr_list

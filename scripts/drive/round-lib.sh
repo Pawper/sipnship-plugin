@@ -45,22 +45,36 @@ setting() {
 
 # overlay_rest SNAPSHOT LINES
 # LINES are what REST says of each open pull request, one per line:
-# "NUMBER<TAB>MERGEABLE_STATE<TAB>REDS<TAB>HELD(yes|no)". mergeable_state
-# "dirty" (it conflicts with main) makes it conflicting; "unknown" or
-# nothing leaves what the board said; anything else is mergeable. REDS and
-# HELD become the pull request's seventh and eighth fields. Every other
-# line passes through.
+# "NUMBER<TAB>MERGEABLE_STATE<TAB>REDS<TAB>HELD(yes|no)[<TAB>BUSY(yes|no)]".
+# mergeable_state "dirty" (it conflicts with main) makes it conflicting;
+# "unknown" or nothing leaves what the board said; anything else is
+# mergeable. REDS, HELD and BUSY become the pull request's seventh, eighth
+# and ninth fields. Every other line passes through.
 overlay_rest() {
   { printf '%s\n' "$2" | sed 's/^/R	/'; printf '%s\n' "$1" | sed 's/^/S	/'; } | tr -d '\r' | awk -F'\t' -v OFS='\t' '
-    $1 == "R" && $2 != "" { st[$2] = $3; reds[$2] = $4; held[$2] = $5; next }
+    $1 == "R" && $2 != "" { st[$2] = $3; reds[$2] = $4; held[$2] = $5; busy[$2] = $6; next }
     $1 == "S" && $2 == "pr" && ($3 in st) {
       m = $6
       if (st[$3] == "dirty") m = "conflicting"
       else if (st[$3] != "" && st[$3] != "unknown") m = "mergeable"
-      print $2, $3, $4, $5, m, $7, (reds[$3] == "" ? 0 : reds[$3] + 0), (held[$3] == "yes" ? "yes" : "no")
+      print $2, $3, $4, $5, m, $7, (reds[$3] == "" ? 0 : reds[$3] + 0), (held[$3] == "yes" ? "yes" : "no"), (busy[$3] == "yes" ? "yes" : "no")
       next
     }
     $1 == "S" && NF > 1 { sub(/^S\t/, ""); print }'
+}
+
+# recently_touched HEAD_EPOCH COMMENT_EPOCH NOW [MINUTES]
+# "yes" when the pull request's head commit or its newest comment is under
+# MINUTES (default 30) old: someone, likely an agent in another session, is
+# working on it, so the drive sends no agent of its own. "no" otherwise,
+# and for a time it does not have.
+recently_touched() {
+  rt_m=${4:-30}
+  for rt_t in "$1" "$2"; do
+    case "$rt_t" in ''|*[!0-9]*) continue ;; esac
+    if [ $(( $3 - rt_t )) -lt $(( rt_m * 60 )) ]; then echo yes; return 0; fi
+  done
+  echo no
 }
 
 # red_count SHAS
@@ -115,7 +129,7 @@ landing_goals() {
       if (goals == 0 && $0 ~ /proposal ready/) { print "stop: work is in flight; nothing to propose until it lands"; next }
       print; next
     }
-    !/^(defer |hold |landing )/ && NF > 0 { goals++ }
+    !/^(defer |hold |landing |busy )/ && NF > 0 { goals++ }
     { print }'
 }
 

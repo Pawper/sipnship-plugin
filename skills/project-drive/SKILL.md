@@ -36,7 +36,10 @@ The drive works the ready list in rounds, so many issues land in little time wit
   over REST and its `mergeable_state`: one that conflicts with main and is not held by the queue is a
   `merge-main` goal, and a red one no unit owns is a `fix-pr` or `set-aside` goal like any other. Nobody has
   to ask for this. Never put two agents on the same pull request: one a running unit owns goes to that unit's
-  agent, not a new one.
+  agent, not a new one. And never send an agent to a pull request someone else is already working on: one
+  whose head commit or newest comment is under 30 minutes old is likely in an agent's hands in another
+  session, so the plan shows it on an unnumbered `busy` line instead of `merge-main` or `fix-pr`, and a later
+  tick looks again.
 
 ## a. Read the state and the standing approval
 
@@ -118,6 +121,8 @@ The goal lines and what each means:
   agent (isolation, `dispatchModel`) to its branch's worktree: merge origin/main, keep both sides, regenerate
   any generated files, re-run the touched tests per file, and push. Never a second agent on a pull request
   that already has one; a unit's own pull request goes to that unit's agent.
+- **`busy N TITLE`** (unnumbered). The pull request would get `merge-main` or `fix-pr`, but its head commit or
+  newest comment is under 30 minutes old: someone is likely on it. Send nobody; a later tick looks again.
 - **`dispatch N`.** Start an agent for the issue with isolation (a worktree), the model `dispatchModel`
   names (or, when it is empty, the model the plugin's agent-model hook allows for its tier), and a brief that
   names the issue, the files it may touch, the rules in CLAUDE.md or AGENTS.md (install right after the
