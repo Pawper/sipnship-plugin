@@ -330,6 +330,27 @@ machine_line() {
   printf '%s cores, %s runner(s) on this machine across repositories, %s busy now; the rule allows %s (one per two cores)\n' "$ml_c" "$ml_h" "$ml_b" $(( ml_c / 2 ))
 }
 
+# runner_timings JOBS
+# JOBS is one finished job per line, "NAME<TAB>START_EPOCH<TAB>END_EPOCH".
+# Print "NAME<TAB>START_EPOCH<TAB>SECONDS<TAB>QUIET_SECONDS<TAB>BESIDE" for
+# each job, newest 20: SECONDS is how long it took, BESIDE how many other
+# jobs overlapped it, QUIET_SECONDS the shortest time the same name took
+# with nothing beside it. A job never seen alone has no quiet time to
+# compare with and is left out. Names and counts only.
+runner_timings() {
+  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' '
+    NF >= 3 && $2 ~ /^[0-9]+$/ && $3 ~ /^[0-9]+$/ && $3 >= $2 { n++; name[n] = $1; s[n] = $2; e[n] = $3 }
+    END {
+      for (i = 1; i <= n; i++) {
+        b[i] = 0
+        for (j = 1; j <= n; j++) if (j != i && s[j] < e[i] && e[j] > s[i]) b[i]++
+        d[i] = e[i] - s[i]
+        if (b[i] == 0 && (!(name[i] in q) || d[i] < q[name[i]])) q[name[i]] = d[i]
+      }
+      for (i = 1; i <= n; i++) if (name[i] in q) printf "%s\t%d\t%d\t%d\t%d\n", name[i], s[i], d[i], q[name[i]], b[i]
+    }' | sort -t "$(printf '\t')" -k2,2nr | head -n 20
+}
+
 # machine_over CORES HERE: how many runners past the rule; 0 within it.
 machine_over() {
   mo_a=$(( ${1:-0} / 2 )); mo_h=${2:-0}

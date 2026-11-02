@@ -2584,6 +2584,17 @@ eq "a mock comparison is recorded" "home: compared with its mock $(date +%Y-%m-%
 eq "an unknown screen is refused" "exit 2" "$(sed -n 3p "$sdr.out")"
 eq "the line carries its kind" "home TODAY Test-Person mock" "$(sed -n 4p "$sdr.out")"
 eq "the stale count drops the compared screen" "save (mock): never" "$(sed -n 5p "$sdr.out")"
+sdo=$(mktemp -d)
+(
+  cd "$sdo" && git init -q -b main && git config user.email t@t && git config user.name Test-Person
+  cp -r "$sd_fx/." . && mkdir -p scripts/design && cp "$root/templates/scripts/design/"*.sh scripts/design/
+  # A project whose synced mock-lib.sh predates mock_routes
+  sed -n '/^mock_lines()/,/^}/p' "$root/templates/scripts/ci/mock-lib.sh" > scripts/ci/mock-lib.sh
+  sh scripts/design/screens.sh compare --mock home
+  sh scripts/design/screens.sh stale
+) > "$sdo.out" 2>&1
+eq "compare runs without a shell error when the library lacks mock_routes" "0" "$(grep -c 'not found' "$sdo.out")"
+eq "and still records the comparison" "home: compared with its mock $(date +%Y-%m-%d) by Test-Person" "$(sed -n 1p "$sdo.out")"
 sd_browser=$(node "$root/templates/scripts/design/screens-diff.mjs" --browser 2>/dev/null)
 if [ -z "$sd_browser" ]; then
   printf 'skipped: no browser found (the side-by-side renders)\n'
@@ -2677,6 +2688,11 @@ eq "a string" "web" "$(json_string '{"path": "runner", "appRoot": "web"}' appRoo
 eq "a number" "90" "$(json_number '{"intervalMinutes": 90}' intervalMinutes)"
 eq "a zero interval still waits half an hour before calling main behind" "" "$(deploy_health guard abc def 1000 3000 0 '')"
 eq "a fallback to a Vercel build is said, even with main deployed" "Deploys: the last deploy fell back to a build on Vercel because the runner build failed, so it billed Vercel build minutes. Open the Deploy workflow's last run, job build-on-runner." "$(deploy_health runner abc abc '' 9000 60 fellback)"
+eq "the deploy target is read from the config, Vercel when it names none" "cloudflare vercel" "$(deploy_target '{ "target": "cloudflare", "path": "runner" }') $(deploy_target '{ "path": "runner" }')"
+eq "a fallback line is not said for a project that deploys elsewhere" "" "$(deploy_health runner abc abc '' 9000 60 fellback cloudflare)"
+eq "and a Vercel project still hears it" "1" "$(deploy_health runner abc abc '' 9000 60 fellback vercel | grep -c 'fell back to a build on Vercel')"
+eq "a failed deploy is still said for another target" "Deploys: the last scheduled deploy failed; main is not reaching production. Open the Deploy workflow's last run." "$(deploy_health runner abc def 1000 9000 60 failure cloudflare)"
+eq "the audit reads Vercel only for a Vercel target" "2" "$(grep -c '"\$target" = vercel' "$root/templates/.github/workflows/audit.yml")"
 eq "and then says so" "Deploys: main has changes waiting 65 minutes that are not in production (the interval is 0); check the Deploy workflow and the runner." "$(deploy_health guard abc def 1000 4900 0 '')"
 eq "hourly" "17 * * * *" "$(interval_cron 60)"
 eq "every three hours" "17 */3 * * *" "$(interval_cron 180)"
@@ -2986,6 +3002,17 @@ eq "add-runner adds the exclusions and never removes one" "2 0" "$(grep -c 'Add-
 eq "the brief names an old runners key once" "1|" "$(brief_runner_key_line '{ "runners": 3 }' | grep -c 'no longer read')|$(brief_runner_key_line '{}')"
 eq "the brief reads no count from the file" "0" "$(grep -c 'runner_count' "$root/hooks/scripts/session-brief.sh")"
 eq "the queue logs its waits" "1" "$(grep -c 'waits_append .scratch/queue/waits.tsv' "$mq_all")"
+rt_jobs="checks	1000	1100
+checks	2000	2300
+app	2100	2400
+lonely	3000	3500
+checks	4000	4090"
+eq "a job beside another is timed against its quiet time" "checks	2000	300	90	1" "$(runner_timings "$rt_jobs" | grep '	2000	')"
+eq "a job alone is its own quiet time" "lonely	3000	500	500	0" "$(runner_timings "$rt_jobs" | grep '^lonely')"
+eq "a job alone has nothing beside it" "checks	1000	100	90	0" "$(runner_timings "$rt_jobs" | grep '	1000	')"
+eq "a job never seen alone has no quiet time and is left out" "0" "$(runner_timings "$rt_jobs" | grep -c '^app')"
+eq "a bad line is dropped" "" "$(runner_timings 'x	abc	5')"
+eq "the watch writes the timings beside the machine file" "1" "$(grep -c 'timings.tsv' "$root/templates/scripts/ci/runner-watch.sh")"
 eq "the watch prints the machine line" "1" "$(grep -c 'echo "machine line: $mline"' "$root/templates/scripts/ci/runner-watch.sh")"
 eq "the brief reads the waits log and the machine file" "1 1" "$(grep -c 'waits_line "$(tail -n 500' "$root/hooks/scripts/session-brief.sh") $(grep -c 'machine_brief_line "$(head -n 1' "$root/hooks/scripts/session-brief.sh")"
 mv "$wl_dir" "$wl_dir.done" 2>/dev/null || true

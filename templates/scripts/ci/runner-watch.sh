@@ -34,6 +34,16 @@ runs=$(gh api "repos/$repo/actions/runs?per_page=40" --jq '.workflow_runs[] | [.
 stuck=$(stuck_runs "$(printf '%s\n' "$runs" | cut -f1-5)" "$now" 10)
 wait_min=$(printf '%s\n' "$runs" | awk -F'\t' 'NF >= 6 && $4 == "completed" { s += ($6 - $5); n++ } END { if (n > 0) printf "%d", (s / n) / 60; else print 0 }')
 
+# Each recent finished job on our own runners, timed against the same job
+# alone on the machine: the brief carries these as runners.timings so Cost
+# can say when builds slowed each other. Names and counts only.
+job_times() {
+  for jt_run in $(printf '%s\n' "$runs" | awk -F'\t' 'NF >= 6 && $4 == "completed" { print $1 }' | head -n 8); do
+    gh api "repos/$repo/actions/runs/$jt_run/jobs?per_page=30" --jq '.jobs[] | select(.conclusion == "success" and .started_at != null and .completed_at != null and (.labels | index("self-hosted"))) | [.name, (.started_at | fromdate), (.completed_at | fromdate)] | @tsv' 2>/dev/null | tr -d '\r'
+  done
+}
+timings=$(runner_timings "$(job_times)")
+
 # 3. The machine.
 sample_machine() {
   if [ -n "$WINDIR" ]; then
@@ -114,6 +124,7 @@ if [ "$print_only" = yes ]; then
   echo "runners: $status"
   echo "machine: processor ${cpu}%, memory ${mem}%, ${disk} GB free, $jobs job(s) running, jobs waited ${wait_min} min on average, $here runner(s) on this machine, $cores cores"
   echo "machine line: $mline"
+  echo "job timings: $(printf '%s\n' "$timings" | grep -c .) job(s) timed against their quiet time"
   echo "measures: $(printf '%s' "$meas" | awk -F'\t' '{ printf "programs start in %s ms, on for %s h, paged pool %s GB, non-paged pool %s GB, %s handles, %s processes, antivirus %s%% of a core, %s old shells", $1, $2, $3, $4, $5, $6, $7, $8 }')"
   if [ -n "$now_lines" ]; then printf '%s\n' "$now_lines" | sed 's/^[^|]*|/  /'; else echo "nothing to say"; fi
   exit 0
@@ -129,6 +140,10 @@ printf '%s\t%s\n' "$now" "$status" > "$dir/$key.latest"
 # The machine line, for the session brief and the console; one per machine.
 # The measures follow the line, tab-separated, in the order sample_measures gives them.
 printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$now" "${cores:-0}" "${here:-0}" "${busy:-0}" "$mline" "$meas" > "$dir/machine.tsv" 2>/dev/null || true
+
+# The job timings the brief sends beside the machine line, one job a line:
+# name, start (epoch), seconds, quiet seconds, jobs beside it.
+printf '%s\n' "$timings" | sed '/^$/d' > "$dir/timings.tsv" 2>/dev/null || true
 
 # 6. Say what changed, once.
 if [ -n "$changes" ]; then

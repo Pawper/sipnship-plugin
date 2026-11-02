@@ -122,13 +122,30 @@ function briefBody(text, opts = {}) {
 }
 
 /** The runner watch's machine file (epoch, cores, runners, busy, line) as the sample the brief carries. */
-function runnerSample(row) {
+function runnerSample(row, timingsText) {
   const f = String(row || '').replace(/\r/g, '').split('\n')[0].split('\t');
   const n = (v) => (/^\d+$/.test(v || '') ? Number(v) : undefined);
   if (f.length < 4 || n(f[1]) === undefined || n(f[2]) === undefined) return undefined;
   const at = n(f[0]) ? new Date(n(f[0]) * 1000).toISOString() : undefined;
   const measures = measuresOf(f.slice(5));
-  return { cores: n(f[1]), runners: n(f[2]), busy: Math.min(n(f[3]) || 0, n(f[2])), ...(at ? { at } : {}), ...(measures ? { measures } : {}) };
+  const timings = timingsOf(timingsText);
+  return { cores: n(f[1]), runners: n(f[2]), busy: Math.min(n(f[3]) || 0, n(f[2])), ...(at ? { at } : {}), ...(measures ? { measures } : {}), ...(timings.length ? { timings } : {}) };
+}
+
+/**
+ * The runner watch's timings file (job, start epoch, seconds, quiet seconds,
+ * jobs beside it) as runners.timings. Names and counts only; a bad line is dropped.
+ */
+function timingsOf(text) {
+  const out = [];
+  for (const raw of String(text || '').replace(/\r/g, '').split('\n')) {
+    const f = raw.split('\t');
+    const n = (v) => (/^\d+$/.test(v || '') ? Number(v) : undefined);
+    if (f.length < 5 || !f[0].trim() || !n(f[1]) || n(f[2]) === undefined || n(f[3]) === undefined || n(f[4]) === undefined) continue;
+    out.push({ job: f[0].trim().slice(0, 120), at: new Date(n(f[1]) * 1000).toISOString(), seconds: n(f[2]), quietSeconds: n(f[3]), beside: n(f[4]) });
+    if (out.length >= 20) break;
+  }
+  return out;
 }
 
 // The runner watch's measures, after the machine line, in this order: program
@@ -232,7 +249,11 @@ async function main() {
   const text = fs.readFileSync(0, 'utf8');
   let runners;
   const machineFile = arg('--machine-file');
-  if (machineFile) { try { runners = runnerSample(fs.readFileSync(machineFile, 'utf8')); } catch { /* no sample */ } }
+  if (machineFile) {
+    let timingsText = '';
+    try { timingsText = fs.readFileSync(path.join(path.dirname(machineFile), 'timings.tsv'), 'utf8'); } catch { /* no timings yet */ }
+    try { runners = runnerSample(fs.readFileSync(machineFile, 'utf8'), timingsText); } catch { /* no sample */ }
+  }
   let agents;
   try { agents = sessions.readSessions({ root: process.cwd() }); } catch { /* no sample */ }
   const line = await sendBrief({ text, session: arg('--session') || '', repo: arg('--repo'), runners, sessions: agents, ownerSteps: ownerSteps(process.cwd()) });
@@ -241,4 +262,4 @@ async function main() {
 
 if (require.main === module) main().catch(() => {}).finally(() => { process.exitCode = 0; });
 
-module.exports = { post, briefBody, runnerSample, ownerSteps, measuresOf, fit, failureLine, sendBrief, base, SEND_MAX_BYTES, TIMEOUT_MS };
+module.exports = { post, briefBody, runnerSample, timingsOf,ownerSteps, measuresOf, fit, failureLine, sendBrief, base, SEND_MAX_BYTES, TIMEOUT_MS };

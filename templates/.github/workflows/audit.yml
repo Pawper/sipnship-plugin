@@ -74,14 +74,18 @@ jobs:
           # for the guard path, the commit Vercel reports in production.
           deploy=""
           if [ -f .claude/deploy.json ] && [ -f scripts/ci/deploy-health.sh ]; then
+            . scripts/ci/deploy-lib.sh
+            target=$(deploy_target "$(cat .claude/deploy.json)")
             last=$(gh run list --workflow deploy.yml --limit 1 --json databaseId,conclusion --jq '.[0] | "\(.databaseId) \(.conclusion // "")"' 2>/dev/null || true)
             last_run=${last#* }
-            if [ "$last_run" = success ] && [ -n "${last%% *}" ]; then
+            # The build-on-runner job and the Vercel API exist only for a
+            # Vercel project; any other target skips both.
+            if [ "$target" = vercel ] && [ "$last_run" = success ] && [ -n "${last%% *}" ]; then
               fell=$(gh run view "${last%% *}" --json jobs --jq '[.jobs[] | select(.name == "build-on-runner" and .conclusion == "failure")] | length' 2>/dev/null || echo 0)
               [ "${fell:-0}" = 0 ] || last_run=fellback
             fi
             in_prod=""
-            if grep -q '"guard"' .claude/deploy.json && [ -n "$VERCEL_TOKEN" ] && [ -n "$VERCEL_PROJECT_ID" ]; then
+            if [ "$target" = vercel ] && grep -q '"guard"' .claude/deploy.json && [ -n "$VERCEL_TOKEN" ] && [ -n "$VERCEL_PROJECT_ID" ]; then
               in_prod=$(curl -s -H "Authorization: Bearer $VERCEL_TOKEN" "https://api.vercel.com/v6/deployments?projectId=$VERCEL_PROJECT_ID&teamId=$VERCEL_ORG_ID&target=production&state=READY&limit=1" \
                 | sed -n 's/.*"githubCommitSha":"\([0-9a-f]*\)".*/\1/p' | head -n 1)
             fi

@@ -62,7 +62,7 @@ if [ -z "$last_conc" ] && [ "$path" != guard ] && [ -f .github/workflows/deploy.
   lr=$(last_run deploy.yml); last_conc=${lr#*	}
   case "$last_conc" in failure|startup_failure) [ "$(run_billing "${lr%%	*}")" = yes ] && last_conc=billing ;; esac
 fi
-deploy_health "$path" "$main" "$deployed" "$oldest" "$(date +%s)" "$interval" "$last_conc"
+deploy_health "$path" "$main" "$deployed" "$oldest" "$(date +%s)" "$interval" "$last_conc" "$(deploy_target "$cfg")"
 # A listed release that GitHub refused to start for billing: one line each.
 if command -v gh >/dev/null 2>&1; then
   for rel in $(release_workflows "$cfg"); do

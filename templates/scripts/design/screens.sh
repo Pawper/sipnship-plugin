@@ -21,7 +21,7 @@ pairs_file=scripts/ci/parity.txt
 mocks_file=scripts/ci/mocks.txt
 pairs=""; mocked=""; routed=""
 [ -f "$pairs_file" ] && pairs=$(parity_pairs "$(cat "$pairs_file")")
-[ -f "$mocks_file" ] && command -v mock_lines >/dev/null 2>&1 && mocked=$(mock_lines "$(cat "$mocks_file")") && routed=$(mock_routes "$(cat "$mocks_file")")
+[ -f "$mocks_file" ] && command -v mock_lines >/dev/null 2>&1 && mocked=$(mock_lines "$(cat "$mocks_file")") && { ! command -v mock_routes >/dev/null 2>&1 || routed=$(mock_routes "$(cat "$mocks_file")"); }
 [ -n "$pairs" ] || [ -n "$mocked" ] || { echo "No $pairs_file and no $mocks_file: no screens to compare."; exit 0; }
 today=$(date +%Y-%m-%d)
 cmd=${1:-list}; shift 2>/dev/null || true

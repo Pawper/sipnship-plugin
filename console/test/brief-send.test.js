@@ -75,6 +75,17 @@ test('the runner watch\'s machine file becomes the sample', () => {
   assert.strictEqual(send.runnerSample(''), undefined);
 });
 
+test('the watch\'s timings file becomes runners.timings, names and counts only', () => {
+  const t = '1761754320\t8\t5\t2\t8 cores\n';
+  const timings = 'checks\t1761754000\t300\t90\t2\nbuild\t1761754100\t60\t60\t0\nbad line\nx\tabc\t1\t1\t1\n';
+  assert.deepStrictEqual(send.runnerSample(t, timings).timings, [
+    { job: 'checks', at: new Date(1761754000000).toISOString(), seconds: 300, quietSeconds: 90, beside: 2 },
+    { job: 'build', at: new Date(1761754100000).toISOString(), seconds: 60, quietSeconds: 60, beside: 0 },
+  ]);
+  assert.strictEqual('timings' in send.runnerSample(t, ''), false);
+  assert.strictEqual('timings' in send.runnerSample(t), false);
+});
+
 test('the measures after the machine line become the sample\'s measures, and a blank one is left out', () => {
   const row = '1761754320\t8\t5\t2\t8 cores, 5 runners\t65\t44\t18.7\t5.7\t313000\t620\t54\t2';
   assert.deepStrictEqual(send.runnerSample(row).measures, { startMs: 65, uptimeHours: 44, pagedGb: 18.7, nonPagedGb: 5.7, handles: 313000, processes: 620, avShare: 54, oldShells: 2 });
