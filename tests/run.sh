@@ -2360,6 +2360,13 @@ eq "the feed, newest first, open while unsettled" "t3	block-delete	open
 t2	block-delete	workaround
 t1	block-force-push	followed" "$(resolution_feed "$(printf 't1\tblock-force-push\ts\ta\nt2\tblock-delete\ts\tb\nt3\tblock-delete\ts\tc')" "$(printf 'x\ta\tblock-force-push\ts\tfollowed\nx\tb\tblock-delete\ts\tworkaround')")"
 eq "a hook line from before ids is keyed by its time" "t0	block-delete	followed" "$(resolution_feed "$(printf 't0\tblock-delete')" "$(printf 'x\tt0\tblock-delete\ts\tfollowed')")"
+. "$root/hooks/scripts/refusal-time.sh"
+eq "a refusal's time as seconds" "1793635800" "$(refusal_epoch 2026-11-02T16:10:00Z)"
+eq "a refusal's id reads as its time" "1793635800" "$(refusal_epoch 2026-11-02T16:10:00Z-4121)"
+eq "seconds from a refusal to what settled it" "14" "$(refusal_seconds 2026-11-02T16:10:00Z-4121 2026-11-02T16:10:14Z)"
+eq "never below zero, and zero for what is not a time" "0 0" "$(refusal_seconds 2026-11-02T16:10:14Z 2026-11-02T16:10:00Z) $(refusal_seconds nonsense 2026-11-02T16:10:14Z)"
+eq "tool calls are counted up to five" "0 3 5" "$(refusal_calls '') $(refusal_calls 3) $(refusal_calls 9)"
+eq "the kind of tool behind a workaround, never what it was given" "shell|file edit|agent|other" "$(refusal_via Bash)|$(refusal_via Edit)|$(refusal_via Agent)|$(refusal_via WebFetch)"
 eq "every refusing hook logs, and the watcher is registered three times" "10 3" "$(grep -l 'refusal-log.sh' "$root"/hooks/scripts/block-*.sh "$root"/hooks/scripts/require-*.sh | wc -l | tr -d ' ') $(grep -c watch-resolution "$root/hooks/hooks.json")"
 
 section 'one design source for every platform'

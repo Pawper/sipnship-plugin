@@ -8,7 +8,10 @@
 # The files stay in the project's ignored scratch folder on this machine;
 # HOOK_LOG=0 turns it all off.
 # Lines, tab-separated: hooks.log "time hook session id"; pending "id hook
-# session count"; hooks-resolved.log "time id hook session outcome".
+# session count"; hooks-resolved.log "time id hook session outcome after
+# calls via": the seconds and tool calls it took, and for a possible
+# workaround the kind of tool (never what it was given). Reported to the
+# dashboard once settled, when a machine is connected (console/refusal-report.js).
 refusal_log_dir() {
   rl_dir=${CLAUDE_PROJECT_DIR:-.}
   [ -d "$rl_dir/.git" ] || [ -f "$rl_dir/.git" ] || return 1
@@ -28,8 +31,9 @@ refusal_log() {
   rl_p="$rl_s/hooks/pending"
   if [ -f "$rl_p" ]; then
     # an earlier refusal by this hook in this session, still open: retried
+    . "$(dirname "$0")/refusal-time.sh"
     awk -F'\t' -v h="$rl_hook" -v s="$rl_sess" '$2 == h && $3 == s' "$rl_p" | while IFS="$(printf '\t')" read -r p_t p_h p_s p_n; do
-      printf '%s\t%s\t%s\t%s\tretried\n' "$rl_now" "$p_t" "$p_h" "$p_s" >> "$rl_s/hooks-resolved.log"
+      printf '%s\t%s\t%s\t%s\tretried\t%s\t%s\n' "$rl_now" "$p_t" "$p_h" "$p_s" "$(refusal_seconds "$p_t" "$rl_now")" "$(refusal_calls "$p_n")" >> "$rl_s/hooks-resolved.log"
     done
     awk -F'\t' -v h="$rl_hook" -v s="$rl_sess" '!($2 == h && $3 == s)' "$rl_p" > "$rl_p.new" 2>/dev/null && mv "$rl_p.new" "$rl_p"
   fi
