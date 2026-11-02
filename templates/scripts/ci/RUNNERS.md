@@ -71,6 +71,20 @@ The `Runner check` workflow says "scan exclusions missing on NAME" on the audit 
 
 A slow suite split into test parts (`!parts` lines in `classes.txt`) runs as one `tests` job per part, so each part is a job here: three parts on three runners finish in the time of the longest, and the first red part cancels the rest and frees their runners.
 
+## A run's jobs join the line together
+
+GitHub hands a waiting job to the next free runner in the order the jobs were queued, and it has no priority between runs. A job that waits on another job joins the line only when that one ends, behind everything queued meanwhile. So `app`, `tests` and `screens` wait only on `classify`, a job of a few seconds that reads which classes and test parts the change touches, and never on `checks`: a run's jobs queue within seconds of each other. When a check fails, `checks` names the failed step and then cancels its own run (`failure-report.sh cancel`, with `actions: write`), so a run that cannot merge gives back the jobs still waiting; the report job reads a cancelled job with a failed step as failed.
+
+## One runner kept for the batch and main
+
+With several runners, every one of them can be taken by pull requests' own checks while a batch waits, and those checks go stale the moment the batch lands. So one runner is kept for the batch and main: every runner carries the `pr` label but the kept one, and a pull request's jobs ask for `pr` while the repository variable `CI_KEEP_RUNNER` is `on`. A batch's run (a `batch-*` branch), a rush test head's (`rush-*`) and main's take any runner, the kept one included. Each pull-request job in `ci.yml` (checks, app, tests, screens, CI passed) carries the same `runs-on`:
+
+```yaml
+runs-on: ${{ fromJSON(github.event_name == 'pull_request' && !startsWith(github.head_ref, 'batch-') && !startsWith(github.head_ref, 'rush-') && vars.CI_KEEP_RUNNER == 'on' && '["self-hosted","windows","pr"]' || '["self-hosted","windows"]') }}
+```
+
+Nobody sets the labels. `add-runner.ps1` gives a new runner `pr`, so it takes pull requests' jobs from its first one, and the merge queue keeps the rest at the start of every drain, the scheduled one too: it reads the runners GitHub lists and, where `ci.yml` names `CI_KEEP_RUNNER`, leaves exactly one online runner without `pr`. The kept one is the online runner already without it, the oldest by id if there are several, so the role moves only when that runner goes offline; with fewer than two online, none is kept. It writes nothing when the labels are already right, and prints one line for each label it changes. It sets `CI_KEEP_RUNNER` to `on` once they are right. When its token (`QUEUE_TOKEN` in the scheduled drain) cannot manage the repository's runners, it sets `CI_KEEP_RUNNER` to `off`, so pull requests take any runner rather than wait on a label nobody keeps, and the Queue and the nightly audit say so; unset counts as off. The audit also says when no online runner is kept or none carries `pr`.
+
 ## Nobody stops the daemon
 
 A build daemon (Gradle's, Nx's, the .NET build server) is one process for every build on the machine. On a machine that also hosts a runner, an agent that runs `gradlew --stop` from its worktree, meaning to tidy up, kills the runner's daemon mid-build, and the android job fails with "Gradle build daemon has been stopped". The `block-loose-ends` hook refuses `gradlew --stop`, `gradle --stop`, `nx reset`, `nx daemon --stop` and `dotnet build-server shutdown`. Stopping what you started means your own servers and watchers; a daemon idles out on its own. If no runner is on the machine, `DAEMON_STOP_OK=1` in front of the command says so.

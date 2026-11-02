@@ -16,9 +16,14 @@
 # configures it with the labels the workflows expect, and starts the
 # service. It changes nothing else on the machine. Afterwards, run
 # scripts/ci/runner-doctor.sh and the Runner check workflow.
+#
+# The "pr" label lets the runner take pull requests' jobs from its first
+# one. Where ci.yml keeps one runner for the batch and main, the merge
+# queue takes "pr" off exactly one online runner and keeps the rest
+# labelled (scripts/ci/RUNNERS.md); nobody sets the labels by hand.
 param(
   [Parameter(Mandatory = $true)][string]$Name,
-  [string]$Labels = "self-hosted,windows,x64",
+  [string]$Labels = "self-hosted,windows,x64,pr",
   [string]$Root = ""
 )
 $ErrorActionPreference = "Stop"
