@@ -127,6 +127,8 @@ function briefBody(text, opts = {}) {
   }
   const body = { version: 1, sentAt: (opts.now || new Date()).toISOString(), machine: opts.machine || os.hostname(), cards: out };
   if (opts.runners) body.runners = opts.runners;
+  // The kinds of request this machine's listener carries out, only while the listener is on and running (spec 012).
+  if (opts.can && opts.can.length) body.can = opts.can;
   if (opts.ownerSteps && opts.ownerSteps.length) body.ownerSteps = opts.ownerSteps;
   if (opts.localModels && opts.localModels.length) body.localModels = opts.localModels.map((m) => ({ model: m.model, tiers: m.tiers || [] }));
   if (opts.answers && opts.answers.length) body.answers = opts.answers;
@@ -264,7 +266,8 @@ async function sendBrief({ text, session = '', repo, env = process.env, now = ne
   // Refused once this session: nothing more is sent until the next one.
   if (same && mem.said === 'not_connected') return '';
   const answers = questions.pendingAnswers(env, entry.repoId);
-  const body = fit(briefBody(text, { now, machine: entry.machine, runners, sessions: agents, ownerSteps: steps, localModels, answers }));
+  const can = require('./listen').briefCan(env, now.getTime());
+  const body = fit(briefBody(text, { now, machine: entry.machine, runners, sessions: agents, ownerSteps: steps, localModels, answers, can }));
   let reply;
   const outcome = body === undefined ? 'too_large' : await post(`${base(env)}/v1/repos/${entry.repoId}/brief`, entry.token, body, TIMEOUT_MS, (r) => { reply = r; });
   if (outcome === 'ok') {

@@ -23,6 +23,8 @@ function usage() {
   sipnship permissions [--root <project>]
   sipnship connect --repo [OWNER/NAME] [--token <token>]
   sipnship disconnect [--repo OWNER/NAME]
+  sipnship listen [on|off|status]   carry out what you approve on the dashboard (off until turned on here)
+  sipnship ask add-runner [NAME] | remove-runner NAME | migrate [PR] | deploy | scan-skip | scan-again
   sipnship land-next N ["reason"]   land this pull request next
   sipnship hold N ["reason"]        hold it out of the merge queue
   sipnship release N                release a hold
@@ -80,6 +82,26 @@ async function main() {
   if (args.command === 'queue-demo') {
     const page = require('./queue-view').demoPage();
     if (args.out) { fs.writeFileSync(args.out, page); process.stdout.write(`Wrote ${args.out}\n`); } else process.stdout.write(page);
+    return;
+  }
+  if (args.command === 'listen') {
+    const rest = process.argv.slice(3);
+    const l = require('./listen');
+    const i = rest.indexOf('--repo');
+    const repo = i >= 0 ? rest[i + 1] : undefined;
+    if (rest[0] === 'on' || rest[0] === 'off') process.exitCode = l.turn(rest[0] === 'on', { repo });
+    else if (rest[0] === 'status') process.exitCode = l.status();
+    else process.exitCode = await l.listen({});
+    return;
+  }
+  if (args.command === 'ask') {
+    const rest = process.argv.slice(3);
+    const i = rest.indexOf('--repo');
+    const repo = i >= 0 ? rest[i + 1] : undefined;
+    const plain = rest.filter((a, j) => a !== '--repo' && !(i >= 0 && j === i + 1));
+    const kind = plain[0];
+    const named = kind === 'remove-runner' || kind === 'add-runner' || kind === 'migrate';
+    process.exitCode = await require('./ask').ask({ what: kind, param: named ? plain[1] : undefined, reason: plain.slice(named ? 2 : 1).join(' '), repo });
     return;
   }
   if (args.command === 'connect' || args.command === 'disconnect') {
