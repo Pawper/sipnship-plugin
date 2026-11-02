@@ -133,3 +133,53 @@ runner_rows() {
 
 # runners_free ROWS: how many machines runner_rows found with no job.
 runners_free() { printf '%s\n' "$1" | awk -F'\t' '$2 == "free" || $2 == "reserved" { c++ } END { print c + 0 }'; }
+
+# --- One runner kept for the batch and main (scripts/ci/RUNNERS.md) ---
+# Every runner carries the pr label but the kept one, so pull requests
+# never take the machine a batch or main is waiting for. The queue keeps
+# the labels itself; a person never sets them.
+KEEP_LABEL=pr
+
+# runner_label_plan RUNNERS: the label changes that leave exactly one
+# online runner without the label, one "add|remove<TAB>id<TAB>name" a
+# line, nothing when the labels are already right. RUNNERS is one runner
+# a line, "id<TAB>name<TAB>status<TAB>labels" (comma-joined). The kept one
+# is the online runner already without the label, the oldest by id when
+# there are several, so the role moves only when it goes offline; else the
+# oldest online. With fewer than two online, none is kept: all carry it.
+runner_label_plan() {
+  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v lab="$KEEP_LABEL" '
+    NF >= 3 && $1 != "" { n++; id[n] = $1 + 0; nm[n] = $2; on = ($3 == "online"); has[n] = index("," $4 ",", "," lab ",") > 0
+      if (on) { online++; if (!has[n] && (bare == "" || id[n] < bare)) bare = id[n]; if (old == "" || id[n] < old) old = id[n] } }
+    END { kept = (online < 2 ? "" : (bare != "" ? bare : old))
+      for (i = 1; i <= n; i++) {
+        if (kept != "" && id[i] == kept) { if (has[i]) printf "remove\t%s\t%s\n", id[i], nm[i] }
+        else if (!has[i]) printf "add\t%s\t%s\n", id[i], nm[i] } }'
+}
+
+# keep_runner_var MANAGED NOW: what to set the CI_KEEP_RUNNER variable to,
+# or nothing when it is already so. "on" once the queue has the labels
+# right; "off" when its token cannot manage runners, so pull requests take
+# any runner rather than wait on a label nobody keeps.
+keep_runner_var() {
+  if [ "$1" = yes ]; then kv=on; else kv=off; fi
+  [ "$2" = "$kv" ] || echo "$kv"
+}
+
+# say_with_need SAY NOTE: publish_say's three lines with NOTE added to the
+# third, what needs a person; SAY as it was when NOTE is empty.
+say_with_need() {
+  printf '%s\n' "$1" | awk -v n="$2" 'NR == 3 && n != "" { $0 = ($0 == "Nothing needs you." ? n : $0 " " n) } { print }'
+}
+
+# runner_label_problem RUNNERS: the nightly audit's line when no online
+# runner is kept, or none carries the label; nothing when it is right or
+# when fewer than two are online (the audit says that already).
+runner_label_problem() {
+  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v lab="$KEEP_LABEL" '
+    NF >= 3 && $3 == "online" { online++; if (index("," $4 ",", "," lab ",")) carry++; else bare++ }
+    END { if (online < 2) exit
+      if (!bare) print "No runner is kept for the batch and main: every online runner carries the " lab " label. The merge queue sets the labels at its next drain; if it cannot, its token cannot manage runners."
+      else if (!carry) print "No online runner carries the " lab " label, so pull requests wait for a machine. The merge queue sets the labels at its next drain; if it cannot, its token cannot manage runners."
+      else if (bare > 1) print "More than one online runner lacks the " lab " label; one alone is kept for the batch and main. The merge queue sets the labels at its next drain." }'
+}

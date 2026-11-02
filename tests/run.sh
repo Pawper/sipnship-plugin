@@ -1474,6 +1474,31 @@ eq "a rush is read at the very tick, before the other requests" "1" "$(grep -c '
 eq "a proven one merges with no further run" "1" "$(grep -c 'QUEUE_CHAIN_PROVEN:-}" = yes ]; then nr=no' "$qs_mq")"
 eq "the paused row is muted with the agent's badge, never red" '"paused":[{"number":51,"say":"Paused for a rush change","role":"muted","badge":"agent"}]' "$(. "$root/templates/scripts/ci/publish-lib.sh"; publish_json "" "" "" "" "" "" "" "" "" draining "" "" "" 2026-10-30T21:00:00Z "$(printf 'rush\t48\npaused\t51\nmachine\tgarden-3\treserved\tReserved for #48')" | grep -o '"paused":\[[^]]*\]')"
 eq "the machine row says Reserved" '"machines":[{"name":"garden-3","state":"reserved","say":"Reserved for #48"}]' "$(. "$root/templates/scripts/ci/publish-lib.sh"; publish_json "" "" "" "" "" "" "" "" "" draining "" "" "" 2026-10-30T21:00:00Z "$(printf 'rush\t48\nmachine\tgarden-3\treserved\tReserved for #48')" | grep -o '"machines":\[[^]]*\]')"
+# One runner kept for the batch and main: the queue keeps the labels (fixtures/runner-labels).
+rl_dir="$root/tests/fixtures/runner-labels"
+eq "labels already right: no change, so no call" "" "$(runner_label_plan "$(cat "$rl_dir/right.tsv")")"
+eq "a runner added without the label gets it; the kept one stays kept" "add	14	garden-4" "$(runner_label_plan "$(cat "$rl_dir/added.tsv")")"
+eq "the kept runner went offline: the oldest online is kept and it gets the label back" "add	11	garden-1
+remove	12	garden-2" "$(runner_label_plan "$(cat "$rl_dir/kept-offline.tsv")")"
+eq "with one runner online none is kept, so pull requests never wait for an offline one" "add	12	garden-2" "$(runner_label_plan "$(cat "$rl_dir/one-online.tsv")")"
+eq "the variable turns on once the labels are right, and is left alone when it is" "on " "$(keep_runner_var yes off) $(keep_runner_var yes on)"
+eq "a token without the right turns it off, so pull requests take any runner" "off" "$(keep_runner_var no on)"
+eq "and the Queue says so in what needs a person" "Nothing waits.
+Nothing is open.
+The token cannot manage runners." "$(say_with_need "$(printf 'Nothing waits.\nNothing is open.\nNothing needs you.')" "The token cannot manage runners.")"
+eq "no note leaves the Queue's lines as they were" "a
+b
+c" "$(say_with_need "$(printf 'a\nb\nc')" "")"
+rl_fn=$(sed -n '/^runner_labels_keep()/,/^}/p' "$qs_mq")
+eq "it acts only where ci.yml keeps a runner, and reads the runners with the queue's token" "1 1" "$(printf '%s\n' "$rl_fn" | grep -c "grep -q 'vars.CI_KEEP_RUNNER' .github/workflows/ci.yml") $(printf '%s\n' "$rl_fn" | grep -c 'gh_write api "repos/{owner}/{repo}/actions/runners?per_page=100"')"
+eq "a refused label write or read turns it off and leaves the note for the Queue" "2 1" "$(printf '%s\n' "$rl_fn" | grep -c '>/dev/null 2>&1 || rk_ok=no') $(printf '%s\n' "$rl_fn" | grep -c "printf 'cannot")"
+eq "each drain keeps the labels at its start" "1" "$(grep -c '; runner_labels_keep # one runner kept for the batch and main$' "$qs_mq")"
+eq "the Queue's needs line carries the note" "1" "$(grep -c 'say=\$(say_with_need "\$say" "\$(head -n 1 "\$flaky_dir/runner-labels"' "$root/templates/scripts/ci/publish-state.sh")"
+eq "the audit says when none is kept" "1" "$(runner_label_problem "$(printf '11\tgarden-1\tonline\tpr\n12\tgarden-2\tonline\tpr')" | grep -c '^No runner is kept')"
+eq "or none carries the label" "1" "$(runner_label_problem "$(printf '11\tgarden-1\tonline\t\n12\tgarden-2\tonline\tx64')" | grep -c '^No online runner carries the pr label')"
+eq "and nothing when one is kept" "" "$(runner_label_problem "$(cat "$rl_dir/right.tsv")")"
+eq "the audit reads the labels and the variable where ci.yml keeps a runner" "1 1 1" "$(grep -c 'KEEP_RUNNER: \${{ vars.CI_KEEP_RUNNER }}' "$root/templates/.github/workflows/audit.yml") $(grep -c 'kept=\$(runner_label_problem' "$root/templates/.github/workflows/audit.yml") $(grep -c '\[ "\$KEEP_RUNNER" != off \]' "$root/templates/.github/workflows/audit.yml")"
+eq "a new runner carries the label from its first job" "1" "$(grep -c '\[string\]\$Labels = "self-hosted,windows,x64,pr"' "$root/templates/scripts/ci/add-runner.ps1")"
 # The stop line names the reason, and the Queue tab says it while idle.
 qs_why=$(cat "$qs_dir/batch-why.txt")
 eq "the stop line names the reason" "The queue stopped at 3:29 AM: the batch folder could not be made." "$(drain_stop_line '3:29 AM' "$qs_why")"
@@ -1582,7 +1607,9 @@ eq "an unknown mergeable state is read again" "1" "$(grep -c 'while \[ "\$o_mw" 
 eq "CI may read pull requests" "1" "$(grep -c '^  pull-requests: read' "$root/templates/.github/workflows/ci.yml")"
 ci_job() { awk -v j="  $1:" '$0 == j {f=1; next} /^  [a-z-]*:$/ {f=0} f' "$root/templates/.github/workflows/ci.yml"; }
 ci_says() { ci_job "$1" | grep -c -e '^      actions: read$' -e '^        if: failure()$' -e 'run: sh scripts/ci/failure-report.sh job'; }
-eq "a failed job says what failed, and never cancels its run" "3 3 3 0" "$(ci_says checks) $(ci_says app) $(ci_says screens) $(grep -c 'gh run cancel' "$root/templates/.github/workflows/ci.yml")"
+eq "a failed job says what failed; only checks then cancels its run" "3 3 3 0" "$(ci_says checks) $(ci_says app) $(ci_says screens) $(grep -c 'gh run cancel' "$root/templates/.github/workflows/ci.yml")"
+eq "checks names the failure, then cancels its run, with actions: write" "1 1 1" "$(ci_job checks | grep -c 'run: sh scripts/ci/failure-report.sh job$') $(ci_job checks | grep -c 'run: sh scripts/ci/failure-report.sh cancel$') $(ci_job checks | grep -c '^      actions: write$')"
+eq "no other job cancels the run" "0 0 0" "$(ci_job app | grep -c 'failure-report.sh cancel') $(ci_job tests | grep -c 'failure-report.sh cancel') $(ci_job screens | grep -c 'failure-report.sh cancel')"
 eq "main's full job is never stopped" "0" "$(ci_says full)"
 eq "the spec, design and mock checks read the live body" "3" "$(grep -c 'SPEC_TEXT=$(gh api' "$root/templates/.github/workflows/ci.yml")"
 eq "a body with neither carries nothing" "" "$(carried_refs 'Just a copy fix.')"
@@ -2242,6 +2269,7 @@ section 'the CI template is three jobs on a pull request, and the screens job wh
 ciy=$(cat "$root/templates/.github/workflows/ci.yml")
 eq "its jobs" "gate
 checks
+classify
 app
 tests
 screens
@@ -2249,8 +2277,8 @@ ci-passed
 full
 report-red
 report-green" "$(workflow_jobs "$ciy")"
-eq "CI passed waits on checks, app, tests and screens" "1" "$(printf '%s\n' "$ciy" | grep -c 'needs: \[checks, app, tests, screens]')"
-eq "one checkout in gate, checks, app, tests, screens, CI passed and full" "7" "$(printf '%s\n' "$ciy" | grep -c 'uses: actions/checkout@v4')"
+eq "CI passed waits on checks, classify, app, tests and screens" "1" "$(printf '%s\n' "$ciy" | grep -c 'needs: \[checks, classify, app, tests, screens]')"
+eq "one checkout in gate, checks, classify, app, tests, screens, CI passed and full" "8" "$(printf '%s\n' "$ciy" | grep -c 'uses: actions/checkout@v4')"
 eq "a newer push cancels an older pull request run, never a gate" "1" "$(printf '%s\n' "$ciy" | grep -c "cancel-in-progress: \${{ github.event_name == 'pull_request' }}")"
 eq "gate runs share one group" "1" "$(printf '%s\n' "$ciy" | grep -c "pull_request.number || 'gate'")"
 eq "every rule script still runs" "8" "$(for f in classify.sh line-endings.sh status/check.sh numbering-check.sh spec-check.sh setup-check.sh shared-check.sh delete-check.sh; do printf '%s\n' "$ciy" | grep -q "$f" && echo x; done | grep -c x)"
@@ -2624,9 +2652,9 @@ fi
 eq "the stub serve.sh skips the job" "scripts/design/serve.sh is still the stub; fill it in to see each screen beside its mock.
 exit 0" "$(cat "$sdr.stub")"
 ciy_s="$root/templates/.github/workflows/ci.yml"
-eq "the CI template has a screens job after checks" "1" "$(awk '/^  screens:$/{j=1} j && /needs: checks/{n++; j=0} END{print n+0}' "$ciy_s")"
+eq "the CI template's screens job waits on classify, not on checks" "1" "$(awk '/^  screens:$/{j=1} j && /needs: classify/{n++; j=0} END{print n+0}' "$ciy_s")"
 eq "it uploads the images, writes the summary, and edits one comment" "1 1 1 1" "$(grep -c 'actions/upload-artifact@v4' "$ciy_s") $(grep -c 'GITHUB_STEP_SUMMARY' "$ciy_s") $(grep -c "marker='<!-- screens: side by side -->'" "$ciy_s") $(grep -c 'gh api -X PATCH' "$ciy_s")"
-eq "CI passed waits on the screens job" "1" "$(grep -c 'needs: \[checks, app, tests, screens\]' "$ciy_s")"
+eq "CI passed waits on the screens job" "1" "$(grep -c 'needs: \[checks, classify, app, tests, screens\]' "$ciy_s")"
 eq "the brief names screens not compared with their mock" "1" "$(grep -c 'compare --mock NAME' "$root/hooks/scripts/session-brief-screens.sh")"
 
 section 'runner watch'
@@ -3017,11 +3045,13 @@ eq "the watch prints the machine line" "1" "$(grep -c 'echo "machine line: $mlin
 eq "the brief reads the waits log and the machine file" "1 1" "$(grep -c 'waits_line "$(tail -n 500' "$root/hooks/scripts/session-brief.sh") $(grep -c 'machine_brief_line "$(head -n 1' "$root/hooks/scripts/session-brief.sh")"
 mv "$wl_dir" "$wl_dir.done" 2>/dev/null || true
 
-section 'a failing job says what failed and never cancels the run'
+section 'a failing job says what failed, and a failed check cancels the run'
 . "$root/templates/scripts/ci/failure-lib.sh"
 fr_fx="$root/tests/fixtures/failure"
 fr_ci="$root/templates/.github/workflows/ci.yml"
-eq "no job cancels the run" "0 0" "$(grep -c 'gh run cancel' "$fr_ci") $(grep -c 'run cancel\|/cancel' "$root/templates/scripts/ci/failure-report.sh")"
+eq "only the checks job cancels the run, through the API, never gh run cancel" "0 1 1" "$(grep -c 'gh run cancel' "$fr_ci") $(grep -c 'failure-report.sh cancel' "$fr_ci") $(grep -c 'actions/runs/\$GITHUB_RUN_ID/cancel' "$root/templates/scripts/ci/failure-report.sh")"
+eq "a job cancelled after its own step failed is reported failed, not cancelled because of it" "1 0" "$(run_report "$(printf '11\tchecks\tcompleted\tcancelled\tgarden-1\tFail when STATUS.md is stale\n12\ttests (watering)\tcompleted\tcancelled\tgarden-2\t')" "" | grep -c '^### checks failed$') $(run_report "$(printf '11\tchecks\tcompleted\tcancelled\tgarden-1\tFail when STATUS.md is stale\n12\ttests (watering)\tcompleted\tcancelled\tgarden-2\t')" "" | grep -c '^- checks$')"
+eq "and the one cancelled with no step failed is cancelled because of it" "1" "$(run_report "$(printf '11\tchecks\tcompleted\tcancelled\tgarden-1\tFail when STATUS.md is stale\n12\ttests (watering)\tcompleted\tcancelled\tgarden-2\t')" "" | grep -c '^- tests (watering)$')"
 eq "every job that can fail says what failed, the tests job with its part's log" "4 1" "$(grep -c 'run: sh scripts/ci/failure-report.sh job' "$fr_ci") $(grep -c 'failure-report.sh job "$RUNNER_TEMP/part.log"' "$fr_ci")"
 eq "the report job names the failed job" "1" "$(grep -c 'run: sh scripts/ci/failure-report.sh run' "$fr_ci")"
 eq "the failing job finds itself by its runner" "102" "$(own_job "$(cat "$fr_fx/jobs-running.tsv")" garden-2 | cut -f1)"
@@ -3090,7 +3120,7 @@ eq "main's full run takes every part, with its command" "4 sh scripts/ci/line-en
 eq "a project with no parts lines builds no matrix" '[]' "$(parts_matrix "$(class_parts 'app ci other' "$(grep -v '^!parts' "$pj_fx/classes.txt")")")"
 eq "a name given twice runs once" '["a"]' "$(parts_matrix "$(class_parts 'x y' "$(printf '!parts x a=one\n!parts y a=two')")")"
 eq "the template's classes.txt has no parts, so a new project runs as before" '[]' "$(parts_matrix "$(class_parts other "$(cat "$root/templates/scripts/ci/classes.txt")")")"
-eq "test-parts.sh, the classify step and the tests job are in the template" "2 1 1" "$(grep -c 'test-parts.sh matrix' "$root/templates/.github/workflows/ci.yml") $(grep -c "fromJSON(needs.checks.outputs.parts || needs.gate.outputs.parts || '\[\]')" "$root/templates/.github/workflows/ci.yml") $(grep -cx 'scripts/ci/test-parts.sh' "$root/templates/OWNED.txt")"
+eq "test-parts.sh, the classify step and the tests job are in the template" "2 1 1" "$(grep -c 'test-parts.sh matrix' "$root/templates/.github/workflows/ci.yml") $(grep -c "fromJSON(needs.classify.outputs.parts || needs.gate.outputs.parts || '\[\]')" "$root/templates/.github/workflows/ci.yml") $(grep -cx 'scripts/ci/test-parts.sh' "$root/templates/OWNED.txt")"
 pj_ci="$root/templates/.github/workflows/ci.yml"
 pj_tests=$(awk '$0 == "  tests:" {f=1; next} /^  [a-z-]*:$/ {f=0} f' "$pj_ci")
 pj_full=$(awk '$0 == "  full:" {f=1; next} /^  [a-z-]*:$/ {f=0} f' "$pj_ci")
@@ -3099,7 +3129,9 @@ eq "main's gate takes every part as the same matrix, not one serial job" "1 1 0 
 eq "the gate's parts go to the end, and a red gate opens or adds to the red-main issue" "1 2 1" "$(printf '%s\n' "$pj_tests" | grep -c "CI_FULL_RUN: \${{ github.event_name != 'pull_request' && 'yes' || '' }}") $(grep -c '^    needs: \[full, tests\]' "$pj_ci") $(grep -c 'The gate failed again on' "$pj_ci")"
 eq "main gets no run on push: an hourly schedule and a by-hand run instead" "0 1 1" "$(sed -n '/^on:/,/^[a-z]/p' "$pj_ci" | grep -c '^  push:') $(grep -c "^    - cron: '0 \* \* \* \*'" "$pj_ci") $(grep -c '^  workflow_dispatch:' "$pj_ci")"
 eq "the quiet time lives in one place, read by the gate script" "1 1 0" "$(grep -c 'GATE_QUIET_MINUTES: 60' "$pj_ci") $(grep -c 'GATE_QUIET_MINUTES:-60' "$root/templates/scripts/ci/gate.sh") $(grep -c -e '-lt 60' -e ':-60' -e '"60"' "$root/templates/scripts/ci/gate-lib.sh")"
-eq "no test or app job runs on a push or a schedule but through the gate" "1 1 1" "$(printf '%s\n' "$pj_tests" | grep -c '^    needs: \[gate, checks\]') $(awk '$0 == "  checks:" {f=1; next} /^  [a-z-]*:$/ {f=0} f' "$pj_ci" | grep -c "^    if: github.event_name == 'pull_request'") $(awk '$0 == "  app:" {f=1; next} /^  [a-z-]*:$/ {f=0} f' "$pj_ci" | grep -c '^    needs: checks')"
+eq "no test or app job runs on a push or a schedule but through the gate" "1 1 1 1" "$(printf '%s\n' "$pj_tests" | grep -c '^    needs: \[gate, classify\]') $(awk '$0 == "  checks:" {f=1; next} /^  [a-z-]*:$/ {f=0} f' "$pj_ci" | grep -c "^    if: github.event_name == 'pull_request'") $(awk '$0 == "  classify:" {f=1; next} /^  [a-z-]*:$/ {f=0} f' "$pj_ci" | grep -c "^    if: github.event_name == 'pull_request'") $(awk '$0 == "  app:" {f=1; next} /^  [a-z-]*:$/ {f=0} f' "$pj_ci" | grep -c '^    needs: classify')"
+eq "a run's jobs join the line together: no job waits on checks but CI passed" "1" "$(grep -c '^    needs:.*checks' "$pj_ci")"
+eq "classify gives the matrix its parts; checks keeps only its own classes" "1 0" "$(awk '$0 == "  classify:" {f=1; next} /^  [a-z-]*:$/ {f=0} f' "$pj_ci" | grep -c 'test-parts.sh matrix "\$classes"') $(awk '$0 == "  checks:" {f=1; next} /^  [a-z-]*:$/ {f=0} f' "$pj_ci" | grep -c 'test-parts.sh matrix')"
 eq "the tests job has a plain name, the part in its step" "1 0 1" "$(printf '%s\n' "$pj_tests" | grep -cx '    name: tests') $(printf '%s\n' "$pj_tests" | grep -c '^    name: .*matrix') $(printf '%s\n' "$pj_tests" | grep -c 'name: Run the ${{ matrix.part }} part')"
 
 pj_repo="$root/../scripts/ci/classes.txt"
@@ -3119,6 +3151,9 @@ if [ -f "$pj_repo" ] && grep -q '^!parts plugin' "$pj_repo"; then
   eq "an unclassified path runs the service and core parts with the rest" "4" "$(pj_repo_matrix unclassified | tr ',' '\n' | grep -c -e service -e core)"
   eq "each service and core part installs the packages first, then runs its own check" "4 2 2" "$(class_parts all "$pj_rc" | grep -c 'install-packages.sh && ') $(class_parts all "$pj_rc" | grep -c 'tsc --noEmit -p packages/') $(class_parts all "$pj_rc" | grep -c 'vitest run packages/')"
   pj_ci_repo="$root/../.github/workflows/ci.yml"
+  pj_pr_on=$(for pj_j in checks app tests screens ci-passed; do awk -v j="  $pj_j:" '$0 == j {f=1; next} /^  [a-z-]*:$/ {f=0} f && /^    runs-on:/' "$pj_ci_repo"; done)
+  eq "every pull-request job asks for the kept-runner label by one expression, and batch, rush and main take any runner" "5 1 1" "$(printf '%s\n' "$pj_pr_on" | grep -c "vars.CI_KEEP_RUNNER == 'on' && '\[\"self-hosted\",\"windows\",\"pr\"\]' || '\[\"self-hosted\",\"windows\"\]'") $(printf '%s\n' "$pj_pr_on" | sort -u | grep -c .) $(printf '%s\n' "$pj_pr_on" | sort -u | grep -c "github.event_name == 'pull_request' && !startsWith(github.head_ref, 'batch-') && !startsWith(github.head_ref, 'rush-')")"
+  eq "the gate, classify and main's jobs take any runner" "0" "$(for pj_j in gate classify full report-red report-green; do awk -v j="  $pj_j:" '$0 == j {f=1; next} /^  [a-z-]*:$/ {f=0} f && /^    runs-on:/' "$pj_ci_repo"; done | grep -c 'CI_KEEP_RUNNER')"
   eq "a core change also runs the web job, and the tests job carries the Mote's token" "1 1" "$(grep -c "^    if: github.event_name == 'pull_request' && (.*classes, 'core')" "$pj_ci_repo") $(awk '$0 == "  tests:" {f=1; next} /^  [a-z-]*:$/ {f=0} f' "$pj_ci_repo" | grep -c 'GH_PACKAGES_TOKEN')"
 fi
 eq "a web-only change is app and docs" "app docs" "$(classify_paths "$(cat "$pj_fx/paths-web-only.txt")" "$pj_classes" | tr ' ' '\n' | sort | tr '\n' ' ' | sed 's/ $//')"
