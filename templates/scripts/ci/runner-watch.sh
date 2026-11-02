@@ -100,6 +100,25 @@ sample_measures() {
     printf '%s\t%s\t\t\t\t\t\t\n' "$start" "$up"
   fi
 }
+# The runners on this machine by name (one a line), from the services that
+# run them, so "Remove one" can pick from the machine's own list; and
+# whether the scan exclusions cover the runner folders, as the one word
+# present or missing, or nothing when Windows will not say to an ordinary
+# sign-in. Windows only; the brief carries both (spec 012).
+local_runner_names() {
+  [ -n "$WINDIR" ] || return 0
+  powershell -NoProfile -Command '$p = "actions.runner.'"$key"'."; Get-Service "$p*" -ErrorAction SilentlyContinue | ForEach-Object { $_.Name.Substring($p.Length) }' 2>/dev/null | tr -d '\r'
+}
+sample_antivirus() {
+  [ -n "$WINDIR" ] || return 0
+  powershell -NoProfile -Command '
+    $roots = @(Get-Item "C:\actions-runner-*" -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })
+    if ($roots.Count -eq 0) { exit 0 }
+    try { $ex = @((Get-MpPreference -ErrorAction Stop).ExclusionPath) } catch { exit 0 }
+    if (($ex | Where-Object { $_ -like "N/A*" }).Count -gt 0) { exit 0 }
+    $missing = @($roots | Where-Object { $r = $_.TrimEnd("\"); -not (@($ex | Where-Object { $_ -and $r.StartsWith($_.TrimEnd("\"), [StringComparison]::OrdinalIgnoreCase) }).Count) })
+    if ($missing.Count -eq 0) { "present" } else { "missing" }' 2>/dev/null | tr -d '\r'
+}
 meas=$(sample_measures)
 m=$(sample_machine)
 cpu=$(printf '%s' "$m" | cut -f1); mem=$(printf '%s' "$m" | cut -f2); disk=$(printf '%s' "$m" | cut -f3); here=$(printf '%s' "$m" | cut -f4); cores=$(printf '%s' "$m" | cut -f5); busy=$(printf '%s' "$m" | cut -f6)
@@ -140,6 +159,10 @@ printf '%s\t%s\n' "$now" "$status" > "$dir/$key.latest"
 # The machine line, for the session brief and the console; one per machine.
 # The measures follow the line, tab-separated, in the order sample_measures gives them.
 printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$now" "${cores:-0}" "${here:-0}" "${busy:-0}" "$mline" "$meas" > "$dir/machine.tsv" 2>/dev/null || true
+
+# The runners here by name and the scan check's one word, for the brief.
+local_runner_names | sed '/^$/d' > "$dir/names.tsv" 2>/dev/null || true
+sample_antivirus | sed '/^$/d' > "$dir/antivirus.txt" 2>/dev/null || true
 
 # The job timings the brief sends beside the machine line, one job a line:
 # name, start (epoch), seconds, quiet seconds, jobs beside it.
