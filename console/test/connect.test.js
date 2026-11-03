@@ -44,7 +44,7 @@ test('connect runs the device flow, then the connect route, and keeps the token 
   const f = await fake({ pending: 1 });
   try {
     const env = envAt(f.url); const out = sink();
-    const code = await connect({ repo: 'acme/shop', env, out, machine: 'desk', pollMs: 5 });
+    const code = await connect({ repo: 'acme/shop', env, out, machine: 'desk', pollMs: 5, offer: async () => 'no' });
     assert.strictEqual(code, 0);
     assert.deepStrictEqual(f.seen.map((s) => s.url), ['/v1/device/code', '/v1/device/token', '/v1/device/token', '/v1/repos/acme/shop/connect']);
     const c = f.seen[3];
@@ -64,7 +64,7 @@ test('a refused connect keeps nothing and says so', async () => {
   const f = await fake({ pending: 0, connectStatus: 404 });
   try {
     const env = envAt(f.url); const out = sink();
-    assert.strictEqual(await connect({ repo: 'acme/shop', env, out, pollMs: 5 }), 1);
+    assert.strictEqual(await connect({ repo: 'acme/shop', env, out, pollMs: 5, offer: async () => 'no' }), 1);
     assert.match(out.text, /has not heard from this repository/);
     assert.deepStrictEqual(tokens.read(env).repos, {});
   } finally { f.server.close(); }

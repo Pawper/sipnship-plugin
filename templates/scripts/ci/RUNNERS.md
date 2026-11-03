@@ -4,7 +4,7 @@ A runner that fails quietly costs more than a slow one: every check sits queued 
 
 ## Install each runner as a service
 
-A runner started by hand in a terminal stops when the terminal closes, the user logs out, or the machine restarts, and nothing says so. Install it as a Windows service instead. `scripts/ci/add-runner.ps1 -Name NAME` does the whole thing: registration token, download, configuration with the labels the workflows expect, service install and start. A runner installed by hand can be moved over with `config.cmd remove`, then the script.
+A runner started by hand in a terminal stops when the terminal closes, the user logs out, or the machine restarts, and nothing says so. Install it as a Windows service instead. `scripts/ci/add-runner.ps1 -Name NAME` (one runner) or `-Count N` (several) does the whole thing: registration token, download, configuration with the labels the workflows expect, service install and start. A runner installed by hand can be moved over with `config.cmd remove`, then the script.
 
 The script needs an elevated PowerShell, because installing a service does, and it refuses to run without one. An agent can launch the elevated shell and the owner clicks the prompt once:
 
@@ -24,7 +24,7 @@ On a Windows runner the service account's `bash` and `sh` resolve to the WSL stu
 
 ## How many
 
-The count is machine state, not code, so the repository holds no number. The doctor, the session brief and the watch read the runners GitHub has registered for the repository (`gh api repos/{owner}/{repo}/actions/runners`, one REST call; the brief makes it once per run) and the machine's own cores, and judge from those: how many registered runners are online, how many the rule allows (one per two cores), and whether jobs waited while the processor idled. Three is a good start: two so a pull request's jobs run side by side, one a merge-queue drain may hold while it waits for CI. One suits a quiet project that accepts waiting. Add one when the watch says jobs waited while the processor idled. The bootstrap asks how many to install and installs them; `add-runner.ps1 -Name NAME` adds one and `remove-runner.ps1 -Name NAME` takes one away (both need the elevated prompt; the folder is moved aside, never deleted). Neither writes anything to the repository, so changing the count never needs a pull request. A `.claude/runners.json` that still holds `"runners": N` is left as it is; the brief says once that the key is no longer read.
+The count is machine state, not code, so the repository holds no number. The doctor, the session brief and the watch read the runners GitHub has registered for the repository (`gh api repos/{owner}/{repo}/actions/runners`, one REST call; the brief makes it once per run) and the machine's own cores, and judge from those: how many registered runners are online, how many the rule allows (one per two cores), and whether jobs waited while the processor idled. Three is a good start: two so a pull request's jobs run side by side, one a merge-queue drain may hold while it waits for CI. One suits a quiet project that accepts waiting. Add one when the watch says jobs waited while the processor idled. The bootstrap asks how many to install and installs them; `add-runner.ps1 -Name NAME` adds one, `-Count N` adds several in one prompt, and `remove-runner.ps1 -Name NAME` takes one away (both need the elevated prompt; the folder is moved aside, never deleted). Neither writes anything to the repository, so changing the count never needs a pull request. A `.claude/runners.json` that still holds `"runners": N` is left as it is; the brief says once that the key is no longer read.
 
 The machine, not the count, is the real limit. An idle runner holds about 90 MB of memory and almost no processor (one open request to GitHub at a time); a job's worker exists only while the job runs. What grows is disk: every runner keeps its work folder (the checkout, packages, build output). On a personal account a runner serves one repository, so a studio's projects each need their own, and fifteen on one machine is fine while they are idle.
 
@@ -43,7 +43,7 @@ The machine, not the count, is the real limit. An idle runner holds about 90 MB 
 
 ## Run two
 
-One runner is a queue of one: a slow job makes every other job wait, and when it goes offline everything stops. Run at least two, on the same machine or on two. Each is one run of `add-runner.ps1` with a different name.
+One runner is a queue of one: a slow job makes every other job wait, and when it goes offline everything stops. Run at least two, on the same machine or on two. One run of `add-runner.ps1 -Count 2` adds both, with one Windows prompt; or run it once for each with a different `-Name`.
 
 ## Keep the runner's environment clean
 

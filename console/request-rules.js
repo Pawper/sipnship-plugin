@@ -17,11 +17,14 @@ const SCAN_FOLDERS = ['runners', 'git', 'node', 'packages'];
 const EXPIRE_MINUTES = 30;
 
 const RUNNER_NAME = /^[a-z][a-z0-9-]{1,30}[a-z0-9]$/;
+// How many runners one request may add: the script's own limit. A name starts with a letter, so a count never reads as one.
+const RUNNER_COUNT = /^([1-9]|1[0-9]|20)$/;
 
 // paramRule(kind, raw): the parameter in its stored form, or undefined when the rule refuses it.
 function paramRule(kind, raw) {
   const s = typeof raw === 'string' ? raw.trim() : raw === undefined || raw === null ? '' : String(raw);
-  if (kind === 'add-runner' || kind === 'remove-runner') return RUNNER_NAME.test(s) ? s : undefined;
+  if (kind === 'add-runner') return RUNNER_NAME.test(s) || RUNNER_COUNT.test(s) ? s : undefined;
+  if (kind === 'remove-runner') return RUNNER_NAME.test(s) ? s : undefined;
   if (kind === 'grant-permissions') {
     const ids = s.split(',').map((x) => x.trim()).filter(Boolean);
     if (!ids.length || ids.some((i) => !PERMISSION_IDS.includes(i))) return undefined;

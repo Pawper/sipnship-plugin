@@ -21,6 +21,7 @@ const requestLog = require('./request-log');
 const rules = require('./request-rules');
 const { perform } = require('./listen-kinds');
 const { base } = require('./brief-send');
+const { askWindow } = require('./ask-window');
 
 const POLL_MS = 2 * 60000;
 const SLOW_POLL_MS = 10 * 60000;
@@ -186,15 +187,13 @@ function status({ env = process.env, out = process.stdout } = {}) {
   return 0;
 }
 
-// offerOn: the one question at the end of `connect --repo`, No by default.
-async function offerOn({ env = process.env, out = process.stdout, input = process.stdin, ask, cwd = process.cwd(), repo } = {}) {
-  if (!ask && !(input.isTTY && out.isTTY)) return false;
-  const answer = ask ? await ask() : await new Promise((resolve) => {
-    const rl = require('readline').createInterface({ input, output: out });
-    rl.question('Let this machine carry out what you ask from the dashboard? yes or NO: ', (a) => { rl.close(); resolve(a); });
-  });
+// offerOn: the one question at the end of `connect --repo` and behind `listen on`, asked in a window on
+// the machine's own screen, No by default (spec 012). `ask` and `window` are injected so tests show nothing.
+async function offerOn({ env = process.env, out = process.stdout, cwd = process.cwd(), repo, ask, register, window: show = askWindow } = {}) {
+  const entry = tokens.find(repo || require('./connect').remoteRepo(cwd), env);
+  const answer = ask ? await ask() : show({ machine: entry && entry.machine, env }) ? 'yes' : 'no';
   if (!/^y/i.test(String(answer).trim())) return false;
-  return turn(true, { env, out, cwd, repo }) === 0;
+  return turn(true, { env, out, cwd, repo, register }) === 0;
 }
 
 module.exports = { listen, serveRepo, turn, status, offerOn, briefCan, findFacts, readState, writeState, registerTask, elevated, exec, POLL_MS, SLOW_POLL_MS };

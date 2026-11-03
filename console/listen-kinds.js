@@ -37,16 +37,30 @@ async function isAdmin(ctx) {
   return r.status === 0 && String(r.stdout).trim() === 'true';
 }
 
-async function addRunner(ctx, name) {
+// A name adds that one runner; digits add that many in one run, so Windows asks once for all of them and the antivirus exclusion.
+async function addRunner(ctx, param) {
   // GitHub hands out a runner key only to an admin: say so before asking Windows for anything.
   if (!(await isAdmin(ctx))) return { outcome: 'no-admin', facts: {} };
-  const r = await elevatedRun(ctx, path.join(ctx.root, 'scripts', 'ci', 'add-runner.ps1'), ['-Name', name], RUN_WAIT_MS);
+  const count = /^[0-9]+$/.test(param) ? Number(param) : 0;
+  const listed = () => {
+    const s = gh(ctx, ['api', `repos/${ctx.fullName}/actions/runners`, '--paginate', '--jq', '.runners[] | [.name, .status] | @tsv']);
+    return s.status === 0 ? String(s.stdout).split(/\r?\n/).filter(Boolean).map((l) => l.split('\t')) : [];
+  };
+  const before = new Set(listed().map((r) => r[0]));
+  const args = count ? ['-Count', String(count)] : ['-Name', param];
+  const r = await elevatedRun(ctx, path.join(ctx.root, 'scripts', 'ci', 'add-runner.ps1'), args, RUN_WAIT_MS);
   if (!r.ok) return r;
   const until = ctx.now() + ONLINE_WAIT_MS;
   for (;;) {
-    const s = gh(ctx, ['api', `repos/${ctx.fullName}/actions/runners`, '--jq', `.runners[] | select(.name == "${name}") | .status`]);
-    if (s.status === 0 && String(s.stdout).trim() === 'online') return { outcome: 'done', facts: { runner: name } };
-    if (ctx.now() >= until) return { outcome: 'not-online', facts: { runner: name } };
+    const rows = listed();
+    if (count) {
+      // Which names the script picked is its own rule's; the new online ones are what to count.
+      const online = rows.filter((x) => !before.has(x[0]) && x[1] === 'online').length;
+      if (online >= count) return { outcome: 'done', facts: {} };
+    } else if (rows.some((x) => x[0] === param && x[1] === 'online')) {
+      return { outcome: 'done', facts: { runner: param } };
+    }
+    if (ctx.now() >= until) return { outcome: 'not-online', facts: count ? {} : { runner: param } };
     await ctx.sleep(POLL_MS);
   }
 }
