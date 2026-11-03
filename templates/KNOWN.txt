@@ -32,6 +32,7 @@
 .github/workflows/deploy.yml d36302eeb4da243de9dc3b285ccf5432462cc1bc
 .github/workflows/deploy.yml ed27b91dce0be9346068905e62bb19e842362aba
 .github/workflows/deploy.yml fe6d4ab809ac0a71adb15109c7604bb66b11cc9f
+.github/workflows/live.yml 12f262e2bb84cae8a7a15c2b0c24a97df06ce63c
 .github/workflows/queue-drain.yml 0639949e0eb0643f3931c814d4fe40309c8b05fc
 .github/workflows/queue-drain.yml 072cdebf5ebef2e7ff7793ad9b346b8851ded70c
 .github/workflows/queue-drain.yml 0aa127307a053b0cf06720f8e9193b144499c5c5
@@ -260,6 +261,7 @@ scripts/ci/lib.sh fa6b5e563ba6c3d6683ccf6eb3a0c7592e041643
 scripts/ci/lib.sh fa88321c59d9d9e612c5b80ee7afe64fb8af95ef
 scripts/ci/line-endings.sh 22308fcefb607f2e043c2bfe96f1508cc37b3b08
 scripts/ci/line-endings.sh d5fa4cbbe20866ef8c3e753f0ea3c548fa45579c
+scripts/ci/live-report.mjs 8fb8796afd56e82daa413793b346154fd2bbaad4
 scripts/ci/machine-upkeep.sh ce09de3fc5de94d8a9b24b5aec3e36a2928e97e3
 scripts/ci/merge-queue.sh 034292be66f64219bd7816c8d6a217379b39f5ca
 scripts/ci/merge-queue.sh 04721b915f2035037e871005bdc77d3f80151d34
