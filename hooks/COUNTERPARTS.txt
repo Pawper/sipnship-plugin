@@ -1,4 +1,6 @@
 # Every rule hook and what holds the same rule on the pull request.
+# Built by sh scripts/rules.sh build from the counterpart lines of
+# templates/.claude/rules.txt; change those and rebuild, never this file.
 # hook | counterpart (path under plugin/templates/, "session-only", "repository-setting", or "none yet #N") | reason
 # A path must exist. "none yet" needs the number of the issue that tracks the gap.
 block-delete | scripts/ci/delete-check.sh | the check fails a pull request that deletes a tracked file unless its body has a Deletes: line

@@ -135,6 +135,10 @@ jobs:
       - name: Fail when STATUS.md is stale
         # Every pull request: the page must never go stale.
         run: sh scripts/ci/check-log.sh sh status/check.sh
+      - name: Fail when the table of what enforces each rule is stale
+        # Every pull request: AGENTS.md's table is built from .claude/rules.txt
+        # and .claude/rules-own.txt by sh scripts/rules.sh build.
+        run: sh scripts/ci/check-log.sh sh scripts/rules.sh check
       - name: Fail on a reused number or a running task number
         # Two numbered files with one number, or a task with a running
         # number instead of its issue number; a batch that merged two
