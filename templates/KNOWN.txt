@@ -413,11 +413,13 @@ scripts/ci/queue/deploy.sh 352f46c5fa76482713ce4bf65e419f6d8f1c3d9b
 scripts/ci/queue/deploy.sh 61a5fd4b46195f2a32e81964e165a358843f8566
 scripts/ci/queue/overlaps.sh 08515e29a12df47f524644e926f75dc156a6ea9e
 scripts/ci/queue/overlaps.sh 7530b0c2b389cce044b4bee47f5308cd3dbd65e8
+scripts/ci/queue/requests.sh 24d749f709d28b7f91cfa4f63080ad9051686f45
 scripts/ci/queue/requests.sh 36d19effc79fd0c312240f066051de5130131387
 scripts/ci/queue/requests.sh b0d1c461edf592c2c687f3da1b5191a60c02ff84
 scripts/ci/queue/requests.sh f73fabdf22193bd75131df060663bd46ccefa4a8
 scripts/ci/queue/rerun.sh 0061016aad77b0ac0b94004eeb23d2da0731d1ba
 scripts/ci/queue/rescue.sh d09f82e8d2885b27b3cc5c30fa8579f39b122afd
+scripts/ci/queue/rule-issues.sh 4b69ca7942f9a4c5cdfb8f9ec673df0cb8e869b2
 scripts/ci/queue/rules-batch.sh 535aa494031d3291ad4ea46a64bac00194903088
 scripts/ci/queue/rules-batch.sh a31d3fe468610454c7b888568b5d54e9db65575f
 scripts/ci/queue/rules-checkout.sh ec0d3af86c16d373f8c032ef06b16f1ee2918910

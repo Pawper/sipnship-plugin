@@ -12,6 +12,7 @@
 # nothing else. Bounded, never fatal: a request that cannot be read is said
 # once and the queue goes on without it.
 req_road=""; req_id=""; req_token=""; req_issue=""
+[ ! -f "$here/queue/rule-issues.sh" ] || . "$here/queue/rule-issues.sh"
 requests_road_set() {
   # Asked at each tick: an identity token lives only minutes (service-auth.sh).
   [ -n "${QUEUE_SERVICE_AUTH_LOADED:-}" ] || { . "$here/service-auth.sh"; QUEUE_SERVICE_AUTH_LOADED=1; }
@@ -106,6 +107,8 @@ requests_tick() {
   [ -z "${QUEUE_IN_REQUEST:-}" ] || return 0
   requests_road_set
   [ "$req_road" != none ] || return 0
+  # Project-rule requests are filed as issues between rounds (spec 016).
+  [ "$1" != drain ] || rule_issues_file
   rt_lines=$(requests_open)
   # A rush reserves the machines first, at the very tick it is read.
   rt_rush=$(rush_order "$rt_lines" "$(cat "$flaky_dir/requests.done" 2>/dev/null)")

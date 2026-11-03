@@ -10,6 +10,7 @@ queue batch helpers
 queue the queue runs a test file with its own runner
 queue reading a run
 queue the queue on the service road (spec 006)
+queue the drain files rule requests (spec 016)
 queue merging only through the queue
 queue drain
 queue unsticking a pull request at a drain's end
