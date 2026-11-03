@@ -16,7 +16,7 @@ Many agents work here at once. Each kind of thing has one home, every rule has s
 | Kind | Home | Never |
 |---|---|---|
 | Work, decisions, priorities | GitHub issues, one per task, filed before an agent starts; the PR closes it; decisions are comments on it | status files, TODO lists in the repo |
-| Status at a glance | The project board, fed by GitHub's own automation and the State label set at filing | a hand-kept status page |
+| Status at a glance | The SipNShip dashboard, which groups issues by their State label set at filing; a project board only when the project has no service, fed by GitHub's own automation | a hand-kept status page |
 | Orientation for an agent starting cold | `STATUS.md`, generated from one stub per feature in `status/stubs/` and checked in CI | per-day or per-item diaries |
 | Data | The database, through the app's admin; seed files in `SEED_DIR/` only as input to the importer, one file per unit | hand-written copies of data in prose |
 | Research and findings | The work folder outside the repo at WORK_FOLDER, backed up off-site | the docs folder |
