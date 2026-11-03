@@ -104,6 +104,16 @@ The drain workflow's `QUEUE_TOKEN` decides whose budget the queue's polling spen
 
 Which token does what. The drain workflow passes two. `GH_TOKEN` is the workflow's own token (`github.token`, with `checks: read` and `statuses: read` in the workflow's permissions); every read the queue makes uses it, check runs included. `QUEUE_MERGE_TOKEN` is the secret `QUEUE_TOKEN`; the queue uses it, through `gh_write`, only for calls that change GitHub (merge, update-branch, labels, comments, workflow dispatches, closing a pull request), so those still start follow-on workflows. The checkout also uses `QUEUE_TOKEN`, so a push from a batch starts CI. A fine-grained `QUEUE_TOKEN` needs Contents, Pull requests, Issues and Actions read and write, Commit statuses read, and Workflows read and write (a batch branch can carry a change to `.github/workflows`, and GitHub refuses such a push without it). It cannot have Checks, because fine-grained tokens have no such permission; that is why reads do not use it. A classic token with `repo` and `workflow` covers all of it.
 
+## Who the queue signs in as
+
+Best first. **The queue's own GitHub App**: `npx sipnship queue-identity` makes it in two clicks and sets the secrets `QUEUE_APP_ID` and `QUEUE_APP_KEY`; the drain, the audit and Deploy mint its installation token at each run with `scripts/ci/queue-app-token.sh` (openssl and curl, no outside action ever holds the key). Without the App, the secret `QUEUE_TOKEN` (and `RUNNER_WATCH_TOKEN` and `ADMIN_TOKEN` where they read runners). With none of them, the workflow's own token.
+
+The drain reaches SipNShip with the run's own identity token (`id-token: write`, audience `https://sipnship.dev`, asked for at each use by `scripts/ci/service-auth.sh`); a machine uses the token `npx sipnship connect --repo` kept. When the queue cannot sign in at all it writes the "Merge queue" issue instead.
+
+## With no queue App
+
+A push, a pull request or a merge made with the workflow's own token starts no other workflow; GitHub documents two exceptions, `workflow_dispatch` and `repository_dispatch`. Proof, by that documented behaviour and not by a live run: a dispatched run of `ci.yml` reports its check runs on the commit of the ref it ran on, and a pull request's required check is matched by name on its head commit whichever event started the run (the gate always runs a `workflow_dispatch` run, `scripts/ci/gate-lib.sh`). So with `QUEUE_OWN_TOKEN=yes` the queue starts CI itself: on the batch's branch once its pull request is open, and on the base after a landing (`ci_dispatch` in `scripts/ci/queue/state.sh`). A change that touches workflows cannot be landed by the workflow's own token; the queue says so and the change waits for a drain run on a machine. If a project pins its required check to a particular app, keep `QUEUE_TOKEN` or the queue App.
+
 ## Opening and reading pull requests without GraphQL
 
 `sh scripts/pr-open.sh "TITLE" BODY_FILE [BASE] [HEAD]` opens a pull request through REST, with the body read from a file, and prints its address; `sh scripts/pr-checks.sh N` prints the check runs on a pull request's head, one per line, and the one-word rollup the queue reads. Both spend the REST budget and nothing else. `gh pr create` and `gh pr checks` go through GraphQL.

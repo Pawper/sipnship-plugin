@@ -28,12 +28,14 @@
 # minutes (default 10), so runs never stack and hosted minutes stay low:
 # a run with nothing to merge ends in about a minute.
 #
-# The merge needs a token. The default GITHUB_TOKEN can merge, but a push
-# it makes does not start other workflows, so the full run on main would
-# not happen. Give it a classic token with "repo" (and "workflow" if the
-# queue ever touches workflows), created by a user who can push to main,
-# as the repository secret QUEUE_TOKEN. Without the secret the job says so
-# and stops.
+# Who the drain signs in as, best first: the queue's own GitHub App
+# (secrets QUEUE_APP_ID and QUEUE_APP_KEY, made by npx sipnship
+# queue-identity; a token minted at each run), else a classic token with
+# "repo" as the secret QUEUE_TOKEN, else the workflow's own token. A push or
+# merge by the workflow's own token starts no other workflow, so the drain
+# then starts CI on the branch or main itself; a change that touches
+# workflows waits for a drain run on a machine. The drain sends its picture
+# to SipNShip with the run's identity token (id-token: write), no secret.
 name: Queue drain
 
 on:
@@ -54,6 +56,7 @@ permissions:
   actions: write
   checks: read
   statuses: read
+  id-token: write
 
 concurrency:
   group: queue-drain
@@ -110,7 +113,29 @@ jobs:
         if: steps.recent.outputs.skip != 'yes'
         with:
           fetch-depth: 0
-          token: ${{ secrets.QUEUE_TOKEN || github.token }}
+      # The queue's own App (npx sipnship queue-identity): its installation
+      # token is minted here with openssl, so no outside action holds the key.
+      # Without the App the job uses QUEUE_TOKEN, and without that, the
+      # workflow's own token.
+      - name: Sign in as the queue
+        id: app
+        if: steps.recent.outputs.skip != 'yes'
+        env:
+          QUEUE_APP_ID: ${{ secrets.QUEUE_APP_ID }}
+          QUEUE_APP_KEY: ${{ secrets.QUEUE_APP_KEY }}
+          QUEUE_TOKEN: ${{ secrets.QUEUE_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          t=$(sh scripts/ci/queue-app-token.sh) || t=""
+          [ -n "$t" ] || t=$QUEUE_TOKEN
+          if [ -n "$t" ]; then
+            echo "::add-mask::$t"
+            echo "token=$t" >> "$GITHUB_OUTPUT"
+            git config --local --unset-all http.https://github.com/.extraheader || true
+            git config --local http.https://github.com/.extraheader "AUTHORIZATION: basic $(printf 'x-access-token:%s' "$t" | base64 | tr -d '\n')"
+          else
+            echo "No queue App and no QUEUE_TOKEN: the drain lands with the workflow's own token and starts CI itself."
+          fi
       - name: Say so when a rebuild may not run here
         if: steps.recent.outputs.skip != 'yes' && runner.environment == 'github-hosted'
         run: |
@@ -121,15 +146,12 @@ jobs:
         if: steps.recent.outputs.skip != 'yes'
         env:
           GH_TOKEN: ${{ github.token }}
-          QUEUE_MERGE_TOKEN: ${{ secrets.QUEUE_TOKEN }}
+          QUEUE_MERGE_TOKEN: ${{ steps.app.outputs.token }}
+          QUEUE_OWN_TOKEN: ${{ steps.app.outputs.token == '' && 'yes' || 'no' }}
           GH_REPO: ${{ github.repository }}
           QUEUE_DRAIN_MINUTES: ${{ vars.QUEUE_DRAIN_MINUTES || '25' }}
           DEPLOY_INTERVAL_MINUTES: ${{ vars.DEPLOY_INTERVAL_MINUTES }}
         run: |
-          if [ -z "$QUEUE_MERGE_TOKEN" ]; then
-            echo "QUEUE_TOKEN is not set; a merge by the default token would not start the full run on main. See the comment at the top of this workflow."
-            exit 0
-          fi
           git config user.name "merge-queue"
           git config user.email "merge-queue@users.noreply.github.com"
           sh scripts/ci/merge-queue.sh --drain

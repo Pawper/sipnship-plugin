@@ -268,7 +268,7 @@ if [ "$mode" = drain ]; then
         gh_write api -X PATCH "repos/{owner}/{repo}/pulls/$bp" -f state=closed >/dev/null 2>&1 && say "round $round: closed batch #$bp, since$landed landed on their own."
         settled="$settled $bp $(printf '%s' "$landed" | tr -d '#')"
       elif [ "$bstate" = passed ] && bsha=$(gh_write api -X PUT "repos/{owner}/{repo}/pulls/$bp/merge" -f merge_method=merge --jq .sha 2>/dev/null); then
-        say "round $round: merged batch #$bp, left green by an earlier run (members:$(printf ' #%s' $bm))."
+        say "round $round: merged batch #$bp, left green by an earlier run (members:$(printf ' #%s' $bm))."; ci_dispatch "$base"
         settled="$settled $bp $bm"
         for m in $bm; do gh_write api -X POST "repos/{owner}/{repo}/issues/$m/comments" -f body="Merged into $base in batch #$bp (commit $bsha), with its history kept. GitHub may show this pull request as closed rather than merged; its changes are on $base." >/dev/null 2>&1 || true; done
       elif [ "$bstate" = failed ]; then

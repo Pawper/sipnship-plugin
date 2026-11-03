@@ -18,8 +18,7 @@ Every value comes from the environment. List the name, what it is for, and where
 |---|---|---|
 | `DATABASE_URL` | The main database | The team password manager, entry PROJECT_NAME |
 | `SERVICE_API_KEY` | Access to SERVICE | The team password manager, entry PROJECT_NAME |
-| `QUEUE_PUBLISH_STATE` | `issue`: the merge queue rewrites the "Merge queue" issue with its state; `service`: it sends its state to the SipNShip dashboard instead, and writes the issue only with no token or after an hour of failed sends; unset or `off`: it does neither | A repository variable (Settings, Secrets and variables, Actions, Variables) |
-| `SIPNSHIP_REPO_TOKEN` | Lets a queue drain in CI send the queue's state to the SipNShip dashboard. A machine keeps its own token instead: run `npx sipnship connect --repo` there once and approve the code; it is kept in `~/.sipnship/tokens.json` (or under `$SIPNSHIP_HOME`), outside every repository. `npx sipnship disconnect` stops it | A repository secret, made from the dashboard's Connect this machine |
+| `QUEUE_APP_ID` and `QUEUE_APP_KEY` | The queue's own GitHub App: the drain, the audit and Deploy mint a short token from it at each run, so no one's personal token merges. Run `npx sipnship queue-identity` once (two clicks); it sets both secrets and opens the install page, and the key is kept nowhere else. Until then the queue uses `QUEUE_TOKEN`, and with neither the workflow's own token, starting CI itself. After it, `QUEUE_TOKEN`, `RUNNER_WATCH_TOKEN` and `ADMIN_TOKEN` can go. The drain sends to SipNShip with the run's own identity token; no token is pasted | Two repository secrets |
 
 ## First run
 

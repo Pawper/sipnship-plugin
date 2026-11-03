@@ -10,9 +10,8 @@
 #            so a running drain is not read twice; without it the open pull
 #            requests are read here
 #   --print  print the body; write nothing
-# On only when the repository variable QUEUE_PUBLISH_STATE is "issue" or
-# "service" (the state goes to the SipNShip dashboard instead, spec 006)
-# (or the environment sets it); otherwise it exits quietly. Writes only
+# The state goes to the SipNShip dashboard whenever the queue can sign in
+# (spec 006, scripts/ci/service-auth.sh), else to the issue. Writes only
 # when the body changed, and never more often than once a minute. A write
 # that fails is said once and never stops a merge.
 here=$(dirname "$0")
@@ -32,11 +31,11 @@ command -v gh >/dev/null 2>&1 || exit 0
 flaky_dir=${QUEUE_DIR:-.scratch/queue}; mkdir -p "$flaky_dir" 2>/dev/null || true
 tab=$(printf '\t')
 
-switch=${QUEUE_PUBLISH_STATE:-}
-if [ -z "$switch" ]; then
-  switch=$(gh api "repos/{owner}/{repo}/actions/variables/QUEUE_PUBLISH_STATE" --jq .value 2>/dev/null || echo off)
-fi
-case "$switch" in issue|service) ;; *) [ "$print_only" = yes ] || exit 0 ;; esac
+. "$here/service-auth.sh"
+# The queue sends to SipNShip whenever it can sign in, and writes the issue
+# otherwise. QUEUE_PUBLISH_STATE=off (a local override) keeps it quiet.
+[ "${QUEUE_PUBLISH_STATE:-}" != off ] || [ "$print_only" = yes ] || exit 0
+switch=service
 base=${QUEUE_BASE:-main}
 now_epoch=$(date +%s)
 # Once a minute at most, unless the mode ended (idle) or --print.
@@ -215,28 +214,10 @@ fi
 # seconds at most; only the status is read, and never stops a merge.
 write_issue=yes; moved_note=""
 if [ "$switch" = service ] && [ "$print_only" = no ]; then
-  sn_token=${SIPNSHIP_REPO_TOKEN:-}; sn_id=${SIPNSHIP_REPO_ID:-}
-  if [ -z "$sn_token" ] && command -v node >/dev/null 2>&1; then
-    sn_repo=$(git remote get-url origin 2>/dev/null | tr -d '\r' | sed -n 's#.*github\.com[:/]\([^/]*\)/\([^/]*\)$#\1/\2#p' | sed 's/\.git$//')
-    sn_pair=$(node -e '
-      const fs = require("fs"), path = require("path"), os = require("os");
-      const home = process.env.SIPNSHIP_HOME || path.join(os.homedir(), ".sipnship");
-      try {
-        const repos = JSON.parse(fs.readFileSync(path.join(home, "tokens.json"), "utf8")).repos || {};
-        for (const [id, e] of Object.entries(repos)) if (e && String(e.fullName).toLowerCase() === process.argv[1].toLowerCase()) { process.stdout.write(id + "\t" + e.token); break; }
-      } catch {}' "$sn_repo" 2>/dev/null)
-    if [ -n "$sn_pair" ]; then sn_id=${sn_pair%%	*}; sn_token=${sn_pair#*	}; fi
-  fi
-  if [ -n "$sn_token" ] && [ -z "$sn_id" ]; then
-    sn_id=$(cat "$flaky_dir/repo.id" 2>/dev/null)
-    [ -n "$sn_id" ] || { sn_id=$(gh api "repos/{owner}/{repo}" --jq .id 2>/dev/null | tr -d '\r'); [ -n "$sn_id" ] && printf '%s\n' "$sn_id" > "$flaky_dir/repo.id"; }
-  fi
-  if [ -z "$sn_token" ] || [ -z "$sn_id" ] || ! command -v curl >/dev/null 2>&1; then
-    if [ ! -f "$flaky_dir/service.no-token.said" ]; then
-      echo "QUEUE_PUBLISH_STATE is service, but this machine is not connected to SipNShip, so the queue writes its issue as before. Run npx sipnship connect --repo, or set SIPNSHIP_REPO_TOKEN in CI."
-      : > "$flaky_dir/service.no-token.said"
-    fi
+  if ! service_sign_in; then
+    : # Not signed in to SipNShip: the queue writes its issue, as it always did.
   else
+    sn_token=$sv_token; sn_id=$sv_id
     service_body "$json" "$(service_waits_json "$(cat "$flaky_dir/waits.tsv" 2>/dev/null)" $((now_epoch - 7 * 86400)))" > "$flaky_dir/service.body"
     if [ "$(wc -c < "$flaky_dir/service.body" | tr -d ' ')" -gt 65536 ]; then sn_status=413
     else

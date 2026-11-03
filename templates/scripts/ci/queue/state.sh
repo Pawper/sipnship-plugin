@@ -189,3 +189,27 @@ iso_epoch() { # ISO 8601 -> epoch seconds, GNU or BSD date
   date -u -d "$1" +%s 2>/dev/null || date -u -j -f "%Y-%m-%dT%H:%M:%SZ" "$1" +%s 2>/dev/null || echo 0
 }
 
+# With no queue App and no QUEUE_TOKEN the drain works with the workflow's
+# own token (QUEUE_OWN_TOKEN=yes). A push, a pull request or a merge by that
+# token starts no run by itself, but a dispatched run does (GitHub's
+# documented exception), so the queue starts CI on the ref itself: the batch's
+# branch once its pull request is open, and the base after a landing. The run
+# is reported on that commit like any other, so the batch's required check
+# counts it (scripts/ci/QUEUE.md, "With no queue App").
+ci_dispatch() {
+  [ "${QUEUE_OWN_TOKEN:-}" = yes ] && [ -z "${QUEUE_MERGE_TOKEN:-}" ] || return 0
+  if gh_write api -X POST "repos/{owner}/{repo}/actions/workflows/ci.yml/dispatches" -f ref="$1" >/dev/null 2>&1; then
+    say "Started CI on $1 with the workflow's own token."
+  else
+    say "Could not start CI on $1; start it from the Actions page."
+  fi
+}
+
+# The workflow's own token may not change workflow files. Said plainly when a
+# refused merge names them: that change waits for a drain run on a machine.
+workflow_wait_note() {
+  [ "${QUEUE_OWN_TOKEN:-}" = yes ] || return 0
+  grep -qi 'workflow' "$1" 2>/dev/null || return 0
+  printf ' This change touches workflows, which the workflow'"'"'s own token cannot land; it waits for a drain run on your machine (sh scripts/ci/merge-queue.sh --drain).'
+}
+
