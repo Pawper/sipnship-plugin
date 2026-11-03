@@ -47,7 +47,36 @@ function repoIdOf(fullName, env, run) {
 
 const defaultRun = (cmd, args) => execFileSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
 
-async function connect({ repo, token, env = process.env, out = process.stdout, cwd = process.cwd(), machine = os.hostname(), run = defaultRun, pollMs, offer }) {
+const APPROVAL_READS = 12;
+const ANSWER_WORDS = {
+  approved: (m) => `${m} is approved on the dashboard.`,
+  declined: (m) => `The dashboard said this is not ${m}. Nothing more is sent. Run "sipnship disconnect" to forget it here.`,
+  waiting: (m) => `${m} is waiting for you to approve it on the dashboard. It will carry on once you do.`,
+  skipped: () => '', // nothing to wait for, so nothing to say
+};
+
+/**
+ * Register this machine's code at the dashboard (POST), then read what became of it (GET) up to
+ * APPROVAL_READS times with a pause between: 'approved', 'declined', 'waiting' (the reads ran out)
+ * or 'skipped' (the service does not take a code, or could not be reached; connecting stands).
+ */
+async function askDashboard({ url, fullName, gh, machine, code, pause }) {
+  const at = `${url}/v1/repos/${fullName}/setup/machine/pending`;
+  const headers = { authorization: `Bearer ${gh}` };
+  try {
+    const put = await fetch(at, { method: 'POST', headers: { ...headers, 'content-type': 'application/json' }, body: JSON.stringify({ machine, code }), signal: AbortSignal.timeout(15000) });
+    if (put.status !== 204 && put.status !== 200) return 'skipped';
+  } catch { return 'skipped'; }
+  for (let i = 0; i < APPROVAL_READS; i++) {
+    const r = await call(at, { headers }).catch(() => ({ status: 0, body: {} }));
+    if (r.status === 200 && (r.body.state === 'approved' || r.body.state === 'declined')) return r.body.state;
+    if (r.status !== 200) return 'skipped';
+    if (i < APPROVAL_READS - 1) await wait(pause);
+  }
+  return 'waiting';
+}
+
+async function connect({ repo, token, env = process.env, out = process.stdout, cwd = process.cwd(), machine = os.hostname(), run = defaultRun, pollMs, approveMs, offer }) {
   const fullName = repo || remoteRepo(cwd);
   if (!fullName || !/^[^/\s]+\/[^/\s]+$/.test(fullName)) {
     out.write('Name the repository: sipnship connect --repo OWNER/NAME\n');
@@ -99,6 +128,10 @@ async function connect({ repo, token, env = process.env, out = process.stdout, c
   }
   tokens.put({ repoId: c.body.repoId, fullName: c.body.fullName || fullName, token: c.body.token, machine: c.body.machine || machine }, env);
   out.write(`${c.body.say || `Connected: ${machine}.`}\n`);
+  // The dashboard's own answer: this machine registers its code and waits, a bounded number of reads, for the builder to approve it there.
+  const answer = await askDashboard({ url, fullName, gh, machine, code: d.userCode, pause: approveMs ?? 5000 });
+  if (answer !== 'skipped') out.write(`${ANSWER_WORDS[answer](machine)}\n`);
+  if (answer === 'declined') return 1;
   // The one question: off unless the person says yes, here, on this machine (spec 012).
   await require('./listen').offerOn({ env, out, cwd, repo: fullName, ask: offer }).catch(() => false);
   return 0;

@@ -68,7 +68,7 @@ test('it refuses an unknown kind, a bad parameter, an old request, a mismatched 
 
 test('what a machine can do follows what it found', () => {
   assert.deepStrictEqual(rules.canKinds({ windows: true, admin: true, antivirus: true }), []);
-  assert.deepStrictEqual(rules.canKinds({ windows: false, ghAs: 'maya', admin: true }), ['grant-permissions', 'run-migration', 'deploy']);
+  assert.deepStrictEqual(rules.canKinds({ windows: false, ghAs: 'maya', admin: true }), ['grant-permissions', 'run-migration', 'deploy', 'set-places']);
   assert.deepStrictEqual(rules.canKinds({ windows: true, ghAs: 'maya', admin: true, antivirus: true }), rules.KINDS);
 });
 
@@ -91,6 +91,28 @@ function recorder(over = {}) {
   };
   return { ctx, calls, steps };
 }
+
+const ORDER = '{"v":1,"waitLimit":10,"places":[{"place":"own","on":true},{"place":"tenki","on":false,"atCeiling":"move"},{"place":"github","on":false,"atCeiling":"move"}]}';
+
+test('keeping the order in the project sets one repository value with that one line and nothing else', async () => {
+  const rec = recorder();
+  assert.deepStrictEqual(await perform('set-places', ORDER, rec.ctx), { outcome: 'done', facts: {} });
+  assert.deepStrictEqual(rec.calls, [['gh', 'variable', 'set', 'SIPNSHIP_PLACES', '--repo', 'maya/rooftop-garden', '--body', ORDER]]);
+  assert.deepStrictEqual(rec.steps, ['running']);
+  assert.strictEqual(rec.calls.some((c) => c[0] === 'elevated'), false);
+  const refused = recorder();
+  refused.ctx.exec = () => ({ status: 1, stdout: '' });
+  assert.strictEqual((await perform('set-places', ORDER, refused.ctx)).outcome, 'failed');
+});
+
+test('an order that is not one canonical line, or has text after it, is refused before anything runs', () => {
+  assert.strictEqual(rules.paramRule('set-places', ORDER), ORDER);
+  for (const bad of ['', 'rm -rf /', ORDER + '; echo', '{"v":1,"waitLimit":10,"places":[]}', ORDER.replace('"own"', '"own; x"')]) assert.strictEqual(rules.paramRule('set-places', bad), undefined);
+  const r = (param) => rules.refusal({ ...GOOD, kind: 'set-places', param }, { ghAs: 'maya', can: CAN, now: NOW });
+  assert.strictEqual(r(ORDER), null);
+  assert.strictEqual(r('{"v":1,"waitLimit":"10","places":[]}'), 'refused');
+  assert.strictEqual(r(' ' + ORDER), 'refused');
+});
 
 test('add a runner runs its one script, elevated, then waits for GitHub to list it online', async () => {
   const { ctx, calls, steps } = recorder({ stdout: (cmd, args) => (args.includes('--jq') && String(args[1]).includes('/actions/runners') ? 'garden-4\tonline\n' : 'true\n') });

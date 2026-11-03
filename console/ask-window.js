@@ -9,11 +9,15 @@
 // the answer is No.
 
 const { spawnSync } = require('child_process');
+const fs = require('fs');
+const path = require('path');
 
-const SENTENCE = 'Let this machine carry out what you ask from the dashboard? It only does what you approve there, one thing at a time.';
+const ICON = path.join(__dirname, '..', 'assets', 'icon.png');
+
+const SENTENCE = 'SipNShip wants to know: let this machine carry out what you ask from the dashboard at sipnship.dev? It only does what you approve there, one thing at a time. Say No and nothing runs. You can change this later by running npx sipnship listen off.';
 
 function titleFor(machine) {
-  return `Let ${machine || 'this machine'} carry out what you ask?`;
+  return `SipNShip: may ${machine || 'this machine'} carry out what you ask?`;
 }
 
 // Whether there is a screen a person could be looking at.
@@ -24,6 +28,18 @@ function hasScreen(env = process.env, platform = process.platform) {
   if (platform === 'win32') return true;
   if (platform === 'darwin') return true;
   return !!(env.DISPLAY || env.WAYLAND_DISPLAY);
+}
+
+// A test run or a run from an agent's worktree must never raise the real window (issue 882): a person
+// at the machine would see a question nobody asked. Tests inject `run`; the real raise refuses here.
+function rawRaiseRefusal(env = process.env, cwd = process.cwd(), here = __dirname) {
+  const e = (k) => env[k] || process.env[k];
+  if (e('NODE_TEST_CONTEXT') || e('VITEST') || e('JEST_WORKER_ID') || e('NODE_ENV') === 'test') return 'test';
+  const norm = (p) => String(p).replace(/\\/g, '/').toLowerCase();
+  for (const p of [cwd, here].map(norm)) {
+    if (p.includes('/.claude/worktrees/') || p.includes('/github/worktrees/')) return 'worktree';
+  }
+  return null;
 }
 
 const psQuote = (s) => `'${String(s).replace(/'/g, "''")}'`;
@@ -40,8 +56,9 @@ function windowCommand(title, text, platform = process.platform) {
     return { cmd: 'powershell', args: ['-NoProfile', '-NonInteractive', '-Command', script] };
   }
   if (platform === 'darwin') {
+    const icon = fs.existsSync(ICON) ? ` with icon POSIX file ${JSON.stringify(ICON)}` : '';
     const q = (s) => `"${String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
-    return { cmd: 'osascript', args: ['-e', `button returned of (display dialog ${q(text)} with title ${q(title)} buttons {"No", "Yes"} default button "No" cancel button "No")`] };
+    return { cmd: 'osascript', args: ['-e', `button returned of (display dialog ${q(text)} with title ${q(title)} buttons {"No", "Yes"} default button "No" cancel button "No"${icon})`] };
   }
   return null;
 }
@@ -51,6 +68,7 @@ function windowCommand(title, text, platform = process.platform) {
 function askWindow({ machine, env = process.env, platform = process.platform, run, screen } = {}) {
   const shown = screen === undefined ? hasScreen(env, platform) : screen;
   if (!shown) return false;
+  if (!run && rawRaiseRefusal(env)) return false;
   const c = windowCommand(titleFor(machine), SENTENCE, platform);
   if (!c) return false;
   const exec = run || ((cmd, args) => {
@@ -65,4 +83,4 @@ function askWindow({ machine, env = process.env, platform = process.platform, ru
   }
 }
 
-module.exports = { askWindow, hasScreen, windowCommand, titleFor, SENTENCE };
+module.exports = { askWindow, rawRaiseRefusal, hasScreen, windowCommand, titleFor, SENTENCE };

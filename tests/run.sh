@@ -501,6 +501,27 @@ eq "with the cache, still inside 15 seconds" "inside" "$([ "$sb_took" -le 15 ] &
 eq "the cached deploy line says how old it is" "Deploys (as of just now): main has changes waiting 90 minutes that are not in production (the interval is 60); check the Deploy workflow and the runner." "$(printf '%s\n' "$sb_out" | grep '^Deploys')"
 eq "with no board read, the proposal is unavailable" "Proposed next: (unavailable)" "$(printf '%s\n' "$sb_out" | grep '^Proposed next')"
 eq "the hook starts the background read detached, never waiting on it" "1" "$(grep -c 'nohup sh "$here/session-brief-slow.sh" "$sb_cache" </dev/null >/dev/null 2>&1 &' "$root/hooks/scripts/session-brief.sh")"
+# The live app's one line, from the latest Live run that looked (spec 014).
+. "$root/hooks/scripts/session-brief-live.sh"
+eq "a working app is one line" "Live app: Your app is working. Last looked at 9:13 AM." "$(live_app_line 'Your app is working. Last looked at 9:13 AM.')"
+eq "a problem keeps its sentence, on one line" "Live app: Google is refusing the plant-photo checker. Its API is switched off for the project." "$(live_app_line "$(printf 'Google is refusing the plant-photo checker.\r\nIts API is switched off for the project.')")"
+eq "no message, no line" "" "$(live_app_line '')"
+eq "a long sentence is kept short" "280" "$(live_app_line "$(printf 'x%.0s' $(seq 1 400))" | sed 's/^Live app: //' | tr -d '\n' | wc -c | tr -d ' ')"
+sb_live_bin="$sb_fx/live-bin"; mkdir -p "$sb_live_bin"
+cat > "$sb_live_bin/gh" <<'GHEOF'
+#!/bin/sh
+case "$*" in
+  *workflows/live.yml/runs*) printf '31\n30\n29\n' ;;
+  *runs/31/jobs*|*runs/30/jobs*) ;;
+  *runs/29/jobs*) printf '777\n' ;;
+  *check-runs/777/annotations*) printf 'The seed catalog is slow for visitors. Its host answers after 9 seconds.\n' ;;
+  *) exit 1 ;;
+esac
+GHEOF
+chmod +x "$sb_live_bin/gh"
+eq "it walks past runs that did not look, to the latest that did" "Live app: The seed catalog is slow for visitors. Its host answers after 9 seconds." "$(PATH="$sb_live_bin:$PATH" live_app_read)"
+eq "a signed-out gh leaves the line out" "" "$(PATH="$sb_bin:$PATH" live_app_read)"
+eq "the background read keeps the live line, and the brief prints it with its age" "1 1" "$(grep -c 'session-brief-live.sh' "$root/hooks/scripts/session-brief-slow.sh") $(grep -c 'cached live-app' "$root/hooks/scripts/session-brief-network.sh")"
 
 section 'the queue runs a test file with its own runner'
 rt="$root/templates/scripts/ci/run-test-file.mjs"; rtf="$fx/test-runner"

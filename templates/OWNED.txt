@@ -150,3 +150,6 @@ default scripts/ci/copy-allow.txt
 feature supabase
 scripts/supabase-create.sh
 scripts/env-lib.sh
+feature live
+scripts/ci/live-report.mjs
+.github/workflows/live.yml

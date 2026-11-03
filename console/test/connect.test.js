@@ -12,7 +12,8 @@ const T = 'sns_repo_' + 'Q'.repeat(43);
 const T2 = 'sns_repo_' + 'R'.repeat(43);
 
 // A fake SipNShip with the device flow and the connect route.
-function fake({ pending = 1, connectStatus = 200 } = {}) {
+function fake({ pending = 1, connectStatus = 200, answer } = {}) {
+  let reads = 0;
   const seen = [];
   let polls = 0;
   const server = http.createServer((req, res) => {
@@ -30,11 +31,17 @@ function fake({ pending = 1, connectStatus = 200 } = {}) {
         const m = JSON.parse(body).machine;
         return reply(200, { token: T, repoId: 42, fullName: 'acme/shop', machine: m, say: `Connected: ${m}. Each session's brief now reaches the dashboard.` });
       }
+      if (req.url === '/v1/repos/acme/shop/setup/machine/pending') {
+        if (answer === undefined) return reply(404, { code: 'not_found' });
+        if (req.method === 'POST') return reply(204);
+        reads++;
+        return reply(200, { state: reads < 3 ? 'waiting' : answer });
+      }
       if (req.url === '/v1/repos/42/disconnect') return reply(204);
       reply(404, { code: 'not_found' });
     });
   });
-  return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve({ server, seen, url: `http://127.0.0.1:${server.address().port}` })));
+  return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve({ server, seen, reads: () => reads, url: `http://127.0.0.1:${server.address().port}` })));
 }
 
 const sink = () => { const s = { text: '', write: (t) => { s.text += t; } }; return s; };
@@ -46,7 +53,7 @@ test('connect runs the device flow, then the connect route, and keeps the token 
     const env = envAt(f.url); const out = sink();
     const code = await connect({ repo: 'acme/shop', env, out, machine: 'desk', pollMs: 5, offer: async () => 'no' });
     assert.strictEqual(code, 0);
-    assert.deepStrictEqual(f.seen.map((s) => s.url), ['/v1/device/code', '/v1/device/token', '/v1/device/token', '/v1/repos/acme/shop/connect']);
+    assert.deepStrictEqual(f.seen.map((s) => s.url), ['/v1/device/code', '/v1/device/token', '/v1/device/token', '/v1/repos/acme/shop/connect', '/v1/repos/acme/shop/setup/machine/pending']);
     const c = f.seen[3];
     assert.strictEqual(c.auth, 'Bearer gho_person');
     assert.deepStrictEqual(JSON.parse(c.body), { machine: 'desk' });
@@ -57,6 +64,48 @@ test('connect runs the device flow, then the connect route, and keeps the token 
     assert.strictEqual(kept.repoId, 42);
     assert.strictEqual(kept.token, T);
     assert.ok(tokens.file(env).startsWith(env.SIPNSHIP_HOME));
+  } finally { f.server.close(); }
+});
+
+test('connect registers its code at the dashboard and says when it is approved', async () => {
+  const f = await fake({ pending: 0, answer: 'approved' });
+  try {
+    const env = envAt(f.url); const out = sink();
+    assert.strictEqual(await connect({ repo: 'acme/shop', env, out, machine: 'desk', pollMs: 5, approveMs: 5, offer: async () => 'no' }), 0);
+    const pend = f.seen.filter((s) => s.url.endsWith('/setup/machine/pending'));
+    assert.deepStrictEqual(pend.map((s) => s.method), ['POST', 'GET', 'GET', 'GET']);
+    assert.deepStrictEqual(JSON.parse(pend[0].body), { machine: 'desk', code: 'WXYZ-1234' });
+    assert.strictEqual(pend[0].auth, 'Bearer gho_person');
+    assert.match(out.text, /desk is approved on the dashboard\./);
+  } finally { f.server.close(); }
+});
+
+test('a declined code is said plainly and the command ends', async () => {
+  const f = await fake({ pending: 0, answer: 'declined' });
+  try {
+    const env = envAt(f.url); const out = sink();
+    assert.strictEqual(await connect({ repo: 'acme/shop', env, out, machine: 'desk', pollMs: 5, approveMs: 5, offer: async () => 'no' }), 1);
+    assert.match(out.text, /The dashboard said this is not desk\./);
+  } finally { f.server.close(); }
+});
+
+test('an answer that never comes is read a fixed number of times, never forever', async () => {
+  const f = await fake({ pending: 0, answer: 'waiting' });
+  try {
+    const env = envAt(f.url); const out = sink();
+    assert.strictEqual(await connect({ repo: 'acme/shop', env, out, machine: 'desk', pollMs: 5, approveMs: 1, offer: async () => 'no' }), 0);
+    assert.strictEqual(f.reads(), 12);
+    assert.match(out.text, /desk is waiting for you to approve it on the dashboard\./);
+  } finally { f.server.close(); }
+});
+
+test('a service without the route changes nothing about connecting', async () => {
+  const f = await fake({ pending: 0 });
+  try {
+    const env = envAt(f.url); const out = sink();
+    assert.strictEqual(await connect({ repo: 'acme/shop', env, out, machine: 'desk', pollMs: 5, approveMs: 5, offer: async () => 'no' }), 0);
+    assert.strictEqual(f.seen.filter((s) => s.url.endsWith('/pending')).length, 1);
+    assert.doesNotMatch(out.text, /approved on|waiting for you/);
   } finally { f.server.close(); }
 });
 

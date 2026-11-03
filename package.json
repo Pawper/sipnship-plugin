@@ -11,6 +11,7 @@
     "./console": "./console/index.js"
   },
   "files": [
+    ".mcp.json",
     "console",
     "hooks",
     "skills",

@@ -20,6 +20,7 @@ const RUN_WAIT_MS = 30 * 60000;
 const POLL_MS = 15000;
 const PLUGIN_SCRIPT = path.join(__dirname, '..', 'scripts', 'machine', 'antivirus-exclusions.ps1');
 const PR_TITLE = "Allow the agent the project's own commands";
+const PLACES_VARIABLE = 'SIPNSHIP_PLACES';
 
 const gh = (ctx, args) => ctx.exec('gh', args, { cwd: ctx.root, timeoutMs: 60000 });
 
@@ -135,7 +136,16 @@ async function grantPermissions(ctx, param) {
   return pr.status === 0 ? { outcome: 'opened', facts: n ? { pr: n[1] } : {} } : { outcome: 'failed', facts: {} };
 }
 
+// The builder's saved order, kept in the repository's own settings so builds find a place while SipNShip is out of reach.
+// The parameter already passed the order rule; it goes as one argument, never through a shell.
+async function setPlaces(ctx, param) {
+  await ctx.step('running');
+  const r = gh(ctx, ['variable', 'set', PLACES_VARIABLE, '--repo', ctx.fullName, '--body', param]);
+  return { outcome: r.status === 0 ? 'done' : 'failed', facts: {} };
+}
+
 const KIND_RUNNERS = {
+  'set-places': (c, p) => setPlaces(c, p),
   'add-runner': (c, p) => addRunner(c, p),
   'remove-runner': (c, p) => removeRunner(c, p),
   'grant-permissions': (c, p) => grantPermissions(c, p),

@@ -39,7 +39,8 @@ function usage() {
 
 connect sends this repository's session brief to the SipNShip dashboard:
 it shows a code to approve there, then keeps the repository's token in
-~/.sipnship/tokens.json (or $SIPNSHIP_HOME), outside every repository.
+~/.sipnship/tokens.json (or $SIPNSHIP_HOME), outside every repository. It then registers the code on the dashboard and
+says whether it was approved, declined or is still waiting.
 --token installs one the dashboard's Rotate made. disconnect stops it.
 
 Serves the owner console for the project at <project> (default: the current
