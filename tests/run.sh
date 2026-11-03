@@ -1522,6 +1522,8 @@ eq "nor two lines" "" "$(request_from_comment 83 "$(printf 'Queue request: hold 
 eq "the answer's form" "Queue answer: land-next #48: landed" "$(request_answer_form land-next 48 landed)"
 eq "deploy now names no pull request" "84	deploy-now	0	maya	the frost alert copy" "$(request_from_comment 84 'Queue request: deploy-now by maya: the frost alert copy')"
 eq "deploy now needs no reason" "85	deploy-now	0	maya	" "$(request_from_comment 85 'Queue request: deploy-now by maya')"
+eq "a rule change's reason is kept for the say line" "87	land-next	48	rules-sync	First because it changes a rule" "$(request_from_comment 87 'Queue request: land-next #48 by rules-sync: First because it changes a rule')"
+eq "the queue's say line repeats a request's reason" "2" "$(grep -c 'asked\${rq_why:+ (\$rq_why)}' "$root/templates/scripts/ci/queue/requests.sh")"
 eq "deploy now with a number is not the form" "" "$(request_from_comment 86 'Queue request: deploy-now #4 by maya')"
 eq "deploy now's answer" "Queue answer: deploy-now: nothing-to-deploy" "$(request_answer_form deploy-now 0 nothing-to-deploy)"
 eq "a deploy still running answers nothing" "" "$(deploy_run_outcome in_progress '')"

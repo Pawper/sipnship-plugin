@@ -142,7 +142,7 @@ requests_tick() {
         case "$(rush_step "$(pr_rollup "$rq_sha")" "$rq_conf" "$rq_ahead" "${rq_proof%%	*}" "$(printf '%s' "$rq_proof" | cut -f2)")" in
           chain) continue ;;
           proven)
-            say "request: landing #$rq_pr next on its test head's green run, as $rq_by asked"
+            say "request: landing #$rq_pr next on its test head's green run, as $rq_by asked${rq_why:+ ($rq_why)}"
             QUEUE_CHAIN_PROVEN=yes QUEUE_IN_DRAIN=1 QUEUE_IN_REQUEST=1 sh "$0" --serial --base "$base" --because "landing next at the request of $rq_by" "$rq_pr" 2>&1 | tee -a "$log_file" || true
             rm -f "$flaky_dir/pr-$rq_pr.tsv" 2>/dev/null
             if [ "$(gh api "repos/{owner}/{repo}/pulls/$rq_pr" --jq .merged 2>/dev/null)" = true ]; then requests_answer "$rq_id" land-next "$rq_pr" landed; fi
@@ -157,7 +157,7 @@ requests_tick() {
           conflicts) requests_answer "$rq_id" land-next "$rq_pr" conflicts ;;
           after-batch) requests_answer "$rq_id" land-next "$rq_pr" next-after-batch ;;
           serial-now)
-            say "request: landing #$rq_pr next, as $rq_by asked"
+            say "request: landing #$rq_pr next, as $rq_by asked${rq_why:+ ($rq_why)}"
             QUEUE_IN_DRAIN=1 QUEUE_IN_REQUEST=1 sh "$0" --serial --base "$base" --because "landing next at the request of $rq_by" "$rq_pr" 2>&1 | tee -a "$log_file" || true
             rm -f "$flaky_dir/pr-$rq_pr.tsv" 2>/dev/null
             if [ "$(gh api "repos/{owner}/{repo}/pulls/$rq_pr" --jq .merged 2>/dev/null)" = true ]; then requests_answer "$rq_id" land-next "$rq_pr" landed; fi ;;
