@@ -5,6 +5,8 @@
 # A file .gitattributes marks eol=crlf on purpose (gradlew.bat, a .cmd
 # file Windows must read) is allowed, so a project needs no local patch.
 # Usage: sh scripts/ci/line-endings.sh
+rules_lib="$(dirname "$0")/rules-lib.sh"
+if [ -f "$rules_lib" ]; then . "$rules_lib"; if rule_skip line-endings; then exit 0; fi; fi
 bad=$(git grep -I -l "$(printf '\r')" -- . ':!*.png' ':!*.jpg' ':!*.gif' ':!*.ico' ':!*.pdf' 2>/dev/null | while IFS= read -r f; do
   [ -n "$f" ] || continue
   case "$(git check-attr eol -- "$f" 2>/dev/null)" in *": eol: crlf") continue ;; esac

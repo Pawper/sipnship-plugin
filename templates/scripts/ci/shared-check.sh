@@ -4,6 +4,8 @@
 # check always passes.
 # Usage: git diff --name-only BASE HEAD | sh scripts/ci/shared-check.sh
 #    or: sh scripts/ci/shared-check.sh BASE HEAD
+rules_lib="$(dirname "$0")/rules-lib.sh"
+if [ -f "$rules_lib" ]; then . "$rules_lib"; if rule_skip shared; then exit 0; fi; fi
 here=$(dirname "$0")
 . "$here/lib.sh"
 

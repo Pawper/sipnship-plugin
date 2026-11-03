@@ -10,6 +10,7 @@
 here=$(dirname "$0")
 . "$here/lib.sh"
 . "$here/refusal-log.sh"
+. "$here/rule-switch.sh"
 
 input=$(cat)
 cmd=$(json_field "$input" command)
@@ -51,6 +52,7 @@ branch=$(git symbolic-ref -q --short HEAD 2>/dev/null)
 case "$branch" in ''|main|master) exit 0 ;; esac
 
 out=$(cd "$top" && sh scripts/ci/checks-local.sh 2>&1) && exit 0
+rule_gate quick-checks
 
 printf '%s\n' "Blocked the push because the quick checks CI runs on a pull request fail here, and would fail there too. Fix what they say, commit, and push again (sh scripts/ci/checks-local.sh runs them by hand):" >&2
 printf '%s\n' "$out" >&2

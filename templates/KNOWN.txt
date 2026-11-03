@@ -195,6 +195,8 @@ scripts/ci/checks-local.sh 853432bce94f776f8e07237686dd47da9e04f22a
 scripts/ci/checks-local.sh 9b7835fdacbe3393860e7bfc906e4b5c62d2b287
 scripts/ci/classify.sh ffce692eabc9f10dae99261c194270f388824ca3
 scripts/ci/client-env-check.sh 0c054b2adbe91f3418b4e3027bfa5edc6ac6684e
+scripts/ci/client-env-check.sh cd03fc4c7be5190255753e229f35272b7e05d0c6
+scripts/ci/delete-check.sh 1c178aca4caf68a99969bc7da7c9a84ddf7e0cad
 scripts/ci/delete-check.sh de832e14b50d2c16ca2639ba95b67d54fec6ad7c
 scripts/ci/deploy-gate.sh 2f4f9d68d4057094a6f8ed81d69ef169a8b3a1e8
 scripts/ci/deploy-gate.sh 3e1bd682d53c0cb5b34996c126099fd4673dbc45
@@ -224,6 +226,7 @@ scripts/ci/design-check.sh 7b4ade9f06666182b258d166be828cd65c4a8495
 scripts/ci/design-check.sh 90859aa9ff5059589d8debc18303b0d93921568c
 scripts/ci/design-check.sh a122c16afa6dd186240cce8d358bbd49ce1a0357
 scripts/ci/design-check.sh a316c78e4a7844d1e9647461dc608cabfa61a0a0
+scripts/ci/design-check.sh aabe647db4ee3fce0939e1f53f4bb28fb0c68af7
 scripts/ci/design-check.sh b70e04f496274d93a88a7f050f59a4300fbd551e
 scripts/ci/design-check.sh bbe0da135d1beacd7a79725e3b3ff3a8b7da53e6
 scripts/ci/design-check.sh daee1df873e27cd8ef9eb3baf10d8df3da3ad04e
@@ -241,6 +244,7 @@ scripts/ci/gate.sh 5128b4a120d78dc9e8c749175dda29307520d06a
 scripts/ci/gate.sh 5e160d931ed3e95e7657f9629d10c84e02a407ba
 scripts/ci/gate.sh d923fb458576efe7c408d00513c65bc60cc9fcb4
 scripts/ci/hotspots-check.sh 22aa834cdfc90ad8525c5145629e3340dca547b9
+scripts/ci/hotspots-check.sh 2929ddea85c0eec715a6dabf3fbfc4baa5c06a4e
 scripts/ci/hotspots-lib.sh 2a6a2017b45fb37b20e2bda6829a69790691eb5c
 scripts/ci/lib.sh 03c38a2b06a071db2523f57540a0bfd3a2859c6a
 scripts/ci/lib.sh 09b4a522ca57989528abddfada64ec50213e6ad1
@@ -265,6 +269,7 @@ scripts/ci/lib.sh fa30a45e9d571ae6ebe4a9d20358ca0965cfcd58
 scripts/ci/lib.sh fa6b5e563ba6c3d6683ccf6eb3a0c7592e041643
 scripts/ci/lib.sh fa88321c59d9d9e612c5b80ee7afe64fb8af95ef
 scripts/ci/line-endings.sh 22308fcefb607f2e043c2bfe96f1508cc37b3b08
+scripts/ci/line-endings.sh 476f5ad4ab598f027d540e5959d04148e2727730
 scripts/ci/line-endings.sh d5fa4cbbe20866ef8c3e753f0ea3c548fa45579c
 scripts/ci/live-report.mjs 8fb8796afd56e82daa413793b346154fd2bbaad4
 scripts/ci/machine-upkeep.sh ce09de3fc5de94d8a9b24b5aec3e36a2928e97e3
@@ -355,6 +360,7 @@ scripts/ci/merge-queue.sh ff8bc31c8f9ed9b3d78f0db62941d377db87247a
 scripts/ci/numbering-check.sh 14732fadc0a69998e4dc1d3d879be2704ba89e05
 scripts/ci/numbering-check.sh 2a7a3bbcc838dce19041d594955e0332cf0c8ddd
 scripts/ci/numbering-check.sh 883474f7217e3242e6dc30daff0f4017e7e283d9
+scripts/ci/numbering-check.sh b03fe394124b8f187c39d2464b2fdbd4afaeb597
 scripts/ci/numbering-check.sh d6292e804dca8a40afe679ef5b48fd91b84404d6
 scripts/ci/numbering-lib.sh 39f9fff134c99f7f1ef91b20eed10715f31ab324
 scripts/ci/numbering-lib.sh 3b88fdd096764b8e6de9e1d89d79b40bb38e3cff
@@ -475,12 +481,15 @@ scripts/ci/runner-watch.sh 81f61853d1b735ea757d50f5e9b4a0e23a2a84e9
 scripts/ci/runner-watch.sh 9bf864adf766c5d12471dc6aea059d77e1c38de5
 scripts/ci/service-auth.sh f34967870dabc2c0d0ec5071eebe34a6d0b80f29
 scripts/ci/setup-check.sh 04952c22633bf3a54dc280c3e57c56cfe4c4613c
+scripts/ci/setup-check.sh 2334818c0e61c3795708ab29ae5908a5f842efa1
 scripts/ci/setup-check.sh fb299053dd57e88004e0a138ff84f7222480bc49
 scripts/ci/shared-check.sh 136e67bd3bc8e063b9a15b780d67e283acee4991
+scripts/ci/shared-check.sh 2a2fa40814fe0cc6541401645d24ed7dfa1f5ccc
 scripts/ci/smoke.mjs 28327256992fad116be85f973b4128ab01d52fe9
 scripts/ci/spec-check.sh 300deec722d33bb28ebf874f4ab3c84aadb48725
 scripts/ci/spec-check.sh 5e8e0a1e12ceb28ae855f8c99968b032acf11761
 scripts/ci/spec-check.sh 5f8327eb2a071936b47744818e75afc85f4fff2d
+scripts/ci/spec-check.sh 7376d4abcec05bdb1542ddf6f33a4a4e0ee59306
 scripts/ci/spec-check.sh d64ec82b033803d21d02ca9577e30e099b7b93d8
 scripts/ci/test-parts.sh a44fe69bce82fa7a57cf88a9b0b3d388a26686c0
 scripts/ci/vercel-ignore.sh 4332c3b3327451b58885d6c769c7d889ab317f22
@@ -551,4 +560,5 @@ scripts/worktrees.sh c090643a8382f65e8190640e77c645b317fa51b9
 scripts/worktrees.sh ec18a3af4c286a7f3f2ff289616e3ac82b214bc3
 status/build.sh ee98b5722087e857e506256f52b8063fd9b98e9a
 status/check.sh a0357b8c0efbd5795bf33f3ae6b0655b60e6b1d5
+status/check.sh f7eb32746e57b80f5952145df55ee51962e60d7c
 status/lib.sh 7bf2fa0f4c504d609e73ea35222048f358096ad7

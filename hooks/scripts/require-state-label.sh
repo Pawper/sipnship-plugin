@@ -5,6 +5,7 @@
 here=$(dirname "$0")
 . "$here/lib.sh"
 . "$here/refusal-log.sh"
+. "$here/rule-switch.sh"
 
 input=$(cat)
 cmd=$(json_field "$input" command)
@@ -16,6 +17,7 @@ root=${CLAUDE_PROJECT_DIR:-$(json_field "$input" cwd)}
 mode=$(head -n 1 "$root/.claude/issue-state.txt" 2>/dev/null | tr -d '\r ')
 if [ "$mode" = project ]; then
   hit=$(project_flag_reason "$cmd")
+  [ -z "$hit" ] || rule_gate issue-has-state
   [ -n "$hit" ] || exit 0
   printf '%s
 ' "Blocked \`$hit\` because every issue goes on the project board at filing, where its state is set; add \`--project \"<board title>\"\` and set its Status, then run it again." >&2
@@ -23,6 +25,7 @@ if [ "$mode" = project ]; then
 fi
 
 hit=$(state_label_reason "$cmd")
+[ -z "$hit" ] || rule_gate issue-has-state
 [ -n "$hit" ] || exit 0
 
 printf '%s\n' "Blocked \`$hit\` because every issue needs a State label at filing; add \`--label state:ready\` (or state:in-progress, state:waiting-on-owner, state:waiting-on-service, state:parked, state:dated, state:after-launch) and run it again." >&2

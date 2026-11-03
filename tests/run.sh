@@ -2553,7 +2553,7 @@ eq "seconds from a refusal to what settled it" "14" "$(refusal_seconds 2026-11-0
 eq "never below zero, and zero for what is not a time" "0 0" "$(refusal_seconds 2026-11-02T16:10:14Z 2026-11-02T16:10:00Z) $(refusal_seconds nonsense 2026-11-02T16:10:14Z)"
 eq "tool calls are counted up to five" "0 3 5" "$(refusal_calls '') $(refusal_calls 3) $(refusal_calls 9)"
 eq "the kind of tool behind a workaround, never what it was given" "shell|file edit|agent|other" "$(refusal_via Bash)|$(refusal_via Edit)|$(refusal_via Agent)|$(refusal_via WebFetch)"
-eq "every refusing hook logs, and the watcher is registered three times" "11 3" "$(grep -l 'refusal-log.sh' "$root"/hooks/scripts/block-*.sh "$root"/hooks/scripts/require-*.sh | wc -l | tr -d ' ') $(grep -c watch-resolution "$root/hooks/hooks.json")"
+eq "every refusing hook logs, and the watcher is registered three times" "12 3" "$(grep -l 'refusal-log.sh' "$root"/hooks/scripts/block-*.sh "$root"/hooks/scripts/require-*.sh | wc -l | tr -d ' ') $(grep -c watch-resolution "$root/hooks/hooks.json")"
 
 section 'one design source for every platform'
 . "$root/templates/scripts/design/design-lib.sh"
@@ -3092,6 +3092,7 @@ section 'hook counterparts'
 cp_file="$root/hooks/COUNTERPARTS.txt"
 for cp_h in "$root"/hooks/scripts/block-*.sh "$root"/hooks/scripts/require-*.sh; do
   cp_n=$(basename "$cp_h" .sh)
+  [ "$cp_n" = block-rule-switch ] && continue # the lock on the switches: no rule, so no row
   eq "hook $cp_n has a counterpart row" "1" "$(grep -c "^$cp_n |" "$cp_file")"
 done
 while IFS='|' read -r cp_n cp_c cp_r; do
@@ -3107,6 +3108,215 @@ while IFS='|' read -r cp_n cp_c cp_r; do
   [ -f "$root/hooks/scripts/$cp_n.sh" ] || eq "counterpart row $cp_n names a hook that exists" "1" "0"
 done < "$cp_file"
 
+section 'rule switches in the hooks'
+. "$root/hooks/scripts/rule-switch.sh"
+rs_h="$root/hooks/scripts"
+rs_proj=$(mktemp -d)
+mkdir -p "$rs_proj/.claude" "$rs_proj/scripts/ci" "$rs_proj/.scratch"
+git -C "$rs_proj" init -q
+rs_dir=$rs_proj
+rs_n=0
+rs_sw() { printf '%s\n' "$rs_dir/.claude/rules-off.txt"; }
+rs_set() { mkdir -p "$rs_dir/.claude"; printf '%s\n' "$@" > "$(rs_sw)"; }
+rs_none() { if [ -e "$(rs_sw)" ]; then rs_n=$((rs_n + 1)); mv "$(rs_sw)" "$rs_dir/.claude/aside-$rs_n"; fi; }
+rs_logs() { cat "$rs_dir/.scratch/hooks-off.log" 2>/dev/null; }
+rs_last() { rs_logs | tail -n 1 | awk -F'\t' '{ print $2 " " $3 }'; }
+# rs_exit HOOK JSON: the hook's exit code, run inside rs_dir.
+rs_exit() { printf '%s' "$2" | (cd "$rs_dir" && CLAUDE_PROJECT_DIR="$rs_dir" sh "$rs_h/$1.sh" >/dev/null 2>&1; echo $?); }
+
+# rule_on itself
+rs_none
+eq "no switches file: the rule is on" "on" "$(RULES_OFF_FILE=$(rs_sw) rule_on never-delete && echo on || echo off)"
+rs_set 'generated-pages 2026-11-02'
+eq "a rule not named is on" "on" "$(RULES_OFF_FILE=$(rs_sw) rule_on never-delete && echo on || echo off)"
+eq "a rule named is off" "off" "$(RULES_OFF_FILE=$(rs_sw) rule_on generated-pages && echo on || echo off)"
+printf '%s\r\n' '# Maya turned this off' 'generated-pages 2026-11-02' > "$(rs_sw)"
+eq "a comment and a Windows line end change nothing" "off" "$(RULES_OFF_FILE=$(rs_sw) rule_on generated-pages && echo on || echo off)"
+rs_set 'generated-pages-extra 2026-11-02'
+eq "an id that only starts like the rule does not turn it off" "on" "$(RULES_OFF_FILE=$(rs_sw) rule_on generated-pages && echo on || echo off)"
+eq "a folder where the file should be leaves the rule on" "on" "$(RULES_OFF_FILE=$rs_proj/.claude rule_on generated-pages && echo on || echo off)"
+
+# Each hook refuses with no file, with a file naming other rules and with a
+# file it cannot read; with its own rule off it lets the call through and
+# notes that, and only then.
+rs_hooks=0
+rs_case() {
+  rc_id=$1; rc_hook=$2; rc_json=$3
+  rs_none
+  eq "$rc_hook refuses with no switches file" "2" "$(rs_exit "$rc_hook" "$rc_json")"
+  rs_set 'numbering 2026-11-02'
+  eq "$rc_hook refuses while only other rules are off" "2" "$(rs_exit "$rc_hook" "$rc_json")"
+  rs_none; mkdir "$(rs_sw)"
+  eq "$rc_hook refuses when the file cannot be read" "2" "$(rs_exit "$rc_hook" "$rc_json")"
+  rs_n=$((rs_n + 1)); mv "$(rs_sw)" "$rs_dir/.claude/aside-$rs_n"
+  rc_before=$(rs_logs | wc -l | tr -d ' ')
+  rs_set "$rc_id 2026-11-02"
+  eq "$rc_hook lets the call through when $rc_id is off" "0" "$(rs_exit "$rc_hook" "$rc_json")"
+  eq "$rc_hook notes what it let through" "$rc_hook $rc_id" "$(rs_last)"
+  eq "$rc_hook notes exactly one line" "$((rc_before + 1))" "$(rs_logs | wc -l | tr -d ' ')"
+  rs_hooks=$((rs_hooks + 1))
+}
+: > "$rs_proj/scripts/ci/merge-queue.sh"
+printf '#!/bin/sh\necho "the beds are too long" >&2\nexit 1\n' > "$rs_proj/scripts/ci/checks-local.sh"
+git -C "$rs_proj" checkout -q -b rooftop-beds
+rs_case never-delete block-delete '{"command":"rm -rf old-beds","description":"x"}'
+rs_case never-force-push block-force-push '{"command":"git push --force origin rooftop-beds","description":"x"}'
+rs_case tests-one-file block-full-test-sweep '{"command":"npm test","description":"x"}'
+rs_case generated-pages block-generated-page '{"file_path":"STATUS.md"}'
+rs_case issue-has-state require-state-label '{"command":"gh issue create --title Water-the-roof --body x","description":"x"}'
+rs_case land-through-queue require-batch-merge '{"command":"gh pr merge 5","description":"x"}'
+rs_case work-has-ending block-loose-ends '{"command":"gh pr close 5","description":"closing"}'
+rs_case work-has-ending block-loose-ends '{"command":"git worktree add --detach ../beds","description":"adding"}'
+rs_case shell-says-what block-loose-ends '{"command":"ls beds"}'
+rs_case agent-model require-agent-model '{"tool_name":"Agent","subagent_type":"general-purpose","description":"Find the watering plan","prompt":"find the watering plan file","model":""}'
+rs_case quick-checks require-local-checks "{\"command\":\"git push origin rooftop-beds\",\"cwd\":\"$rs_proj\"}"
+eq "every hook but two is asked, one case each" "11" "$rs_hooks"
+
+# The budget hook refuses only when the budget is low.
+rs_budget() { printf '%s\t%s\t5000\t%s\t4000\t5000\t0\n' "$(date +%s)" "$1" "$(( $(date +%s) + 600 ))" > "$rs_proj/.scratch/gh-budget.txt"; }
+rs_none; rs_budget 100
+eq "require-gh-budget refuses with the budget low" "2" "$(rs_exit require-gh-budget '{"command":"gh issue list","description":"x"}')"
+rs_budget 100; rs_set 'github-budget 2026-11-02'
+eq "require-gh-budget lets the call through when github-budget is off" "0" "$(rs_exit require-gh-budget '{"command":"gh issue list","description":"x"}')"
+eq "require-gh-budget notes it" "require-gh-budget github-budget" "$(rs_last)"
+rs_budget 4000
+rs_cnt=$(rs_logs | wc -l | tr -d ' ')
+rs_exit require-gh-budget '{"command":"gh issue list","description":"x"}' >/dev/null
+eq "with the budget fine, an off rule notes nothing" "$rs_cnt" "$(rs_logs | wc -l | tr -d ' ')"
+
+# A hook that holds two rules still refuses the one that is on.
+rs_set 'work-has-ending 2026-11-02'
+eq "with work-has-ending off, a call with no description is still refused" "2" "$(rs_exit block-loose-ends '{"command":"ls beds"}')"
+rs_set 'shell-says-what 2026-11-02'
+eq "with shell-says-what off, a closed pull request is still refused" "2" "$(rs_exit block-loose-ends '{"command":"gh pr close 5","description":"closing"}')"
+
+# The clean folder, in a linked worktree with a file left in it.
+rs_main=$(mktemp -d); rs_wt=$(mktemp -d)
+git -C "$rs_main" init -q
+: > "$rs_main/beds.txt"
+git -C "$rs_main" add -A
+git -C "$rs_main" -c user.name=Maya -c user.email=maya@example.com commit -q -m first
+git -C "$rs_main" worktree add -q -b task-beds "$rs_wt"
+: > "$rs_wt/herbs.txt"
+rs_dir=$rs_wt
+eq "require-clean-worktree refuses a folder with a loose file" "2" "$(rs_exit require-clean-worktree '{"hook_event_name":"SubagentStop"}')"
+rs_set 'clean-folder 2026-11-02'
+eq "require-clean-worktree lets it through when clean-folder is off" "0" "$(rs_exit require-clean-worktree '{"hook_event_name":"SubagentStop"}')"
+eq "require-clean-worktree notes it" "require-clean-worktree clean-folder" "$(rs_last)"
+rs_dir=$rs_proj
+
+section 'block-rule-switch'
+rs_refuse() { eq "refused: $1" "yes" "$([ -n "$(rule_switch_reason "$1")" ] && echo yes || echo no)"; }
+rs_allow() { eq "allowed: $1" "no" "$([ -n "$(rule_switch_reason "$1")" ] && echo yes || echo no)"; }
+rs_refuse 'gh variable set RULES_OFF --body "never-delete 2026-11-03"'
+rs_refuse 'gh variable set RULES_LOCKS --body released'
+rs_refuse 'gh variable delete RULES_OFF'
+rs_refuse 'gh api -X PATCH repos/Pawper/rooftop-garden/actions/variables/RULES_OFF -f value=x'
+rs_refuse 'gh api repos/Pawper/rooftop-garden/actions/variables -f name=RULES_LOCKS -f value=released'
+rs_refuse 'gh api --method=POST repos/Pawper/rooftop-garden/actions/variables/RULES_OFF'
+rs_refuse 'echo never-delete 2026-11-03 >> .claude/rules-off.txt'
+rs_refuse 'sed -i s/never-delete// .claude/rules-off.txt'
+rs_refuse 'mv .claude/rules-off.txt.new .claude/rules-off.txt'
+rs_refuse 'cd beds && printf x | tee .claude/rules-off.txt'
+rs_refuse 'sh scripts/rules.sh off never-delete "the beds"'
+rs_refuse 'sh scripts/rules.sh on never-delete'
+rs_allow 'gh variable list'
+rs_allow 'gh variable set DEPLOY_TIMING --body night'
+rs_allow 'gh api repos/Pawper/rooftop-garden/actions/variables/RULES_OFF'
+rs_allow 'cat .claude/rules-off.txt'
+rs_allow 'git add .claude/rules-off.txt'
+rs_allow 'git commit -m "notes on RULES_OFF"'
+rs_allow 'sh scripts/rules.sh build'
+rs_allow 'sh scripts/rules.sh check'
+eq "a Windows path to the switches file is the file" ".claude/rules-off.txt" "$(rule_switch_path_reason 'C:\Users\Maya\beds\.claude\rules-off.txt' | sed 's|.*/\.claude/|.claude/|')"
+eq "another file is not" "" "$(rule_switch_path_reason 'C:/Users/Maya/beds/rules.txt')"
+rs_none
+eq "the hook refuses a variable set" "2" "$(rs_exit block-rule-switch '{"command":"gh variable set RULES_OFF --body x","description":"x"}')"
+eq "the hook refuses an edit of the switches file" "2" "$(rs_exit block-rule-switch '{"file_path":".claude/rules-off.txt"}')"
+eq "the hook lets an ordinary command through" "0" "$(rs_exit block-rule-switch '{"command":"ls beds","description":"x"}')"
+eq "the hook lets an ordinary edit through" "0" "$(rs_exit block-rule-switch '{"file_path":"beds/README.md"}')"
+rs_set 'never-delete 2026-11-02'
+eq "the hook has no switch: it refuses with a rule off" "2" "$(rs_exit block-rule-switch '{"command":"gh variable set RULES_OFF --body x","description":"x"}')"
+eq "it is registered for Bash and for edits" "2" "$(grep -c 'block-rule-switch.sh' "$root/hooks/hooks.json")"
+
+section 'rule switches in the checks'
+rc_lib="$root/templates/scripts/ci/rules-lib.sh"
+rc_dir=$(mktemp -d)
+mkdir -p "$rc_dir/.claude"
+  . "$rc_lib"
+rc_f=$rc_dir/off; RULES_OFF_FILE=$rc_f
+  eq "no file: the rule is on and nothing is said" "on" "$(rule_skip never-delete && echo off || echo on)"
+  printf '%s\n' 'never-delete 2026-11-02' 'numbering' > "$rc_f"
+  eq "a rule off says so with its day" "This rule is off in this project since November 2, 2026; nothing was checked." "$(rule_skip never-delete)"
+  eq "a rule off with no day still says so" "This rule is off in this project; nothing was checked." "$(rule_skip numbering)"
+  eq "a rule not named is on" "on" "$(rule_skip spec && echo off || echo on)"
+  printf '%s\r\n' '# Maya' 'spec 2026-01-09' > "$rc_f"
+  eq "a comment and a Windows line end change nothing" "This rule is off in this project since January 9, 2026; nothing was checked." "$(rule_skip spec)"
+  printf '%s\n' 'spec-extra 2026-01-09' > "$rc_f"
+  eq "an id that only starts like the rule leaves it on" "on" "$(rule_skip spec && echo off || echo on)"
+  rs_x=$(mktemp -d)
+  printf '%s\n' 'id: a' 'locked: yes' '' 'id: b' 'locked: no' '' 'id: c' 'words: x' '' 'id: d' 'locked: yes' > "$rs_x/one.txt"
+  printf '%s\n' 'id: own-e' 'locked: yes' > "$rs_x/two.txt"
+  eq "the locked rules are read from both lists" "a
+d
+own-e" "$(RULES_LISTS="$rs_x/one.txt $rs_x/two.txt" rules_locked)"
+
+unset RULES_OFF_FILE RULES_LISTS
+# Every check script passes with its one line when its rule is off.
+printf '%s\n' 'x 2026-11-02' > "$rc_dir/.claude/rules-off.txt"
+rc_check() {
+  rc_id=$1; rc_path=$2
+  printf '%s %s\n' "$rc_id" 2026-11-02 > "$rc_dir/.claude/rules-off.txt"
+  eq "$rc_path passes with its line when $rc_id is off" "This rule is off in this project since November 2, 2026; nothing was checked.
+exit 0" "$(cd "$rc_dir" && sh "$root/templates/$rc_path" 2>&1; echo "exit $?")"
+}
+rc_check never-delete scripts/ci/delete-check.sh
+rc_check numbering scripts/ci/numbering-check.sh
+rc_check shared scripts/ci/shared-check.sh
+rc_check small-files scripts/ci/hotspots-check.sh
+rc_check setup scripts/ci/setup-check.sh
+rc_check spec scripts/ci/spec-check.sh
+rc_check client-env scripts/ci/client-env-check.sh
+rc_check design scripts/ci/design-check.sh
+rc_check screen-mock scripts/ci/mock-check.sh
+rc_check line-endings scripts/ci/line-endings.sh
+rc_check generated-pages status/check.sh
+eq "the stale-mock listing the brief reads ignores the switch" "" "$(cd "$rc_dir" && sh "$root/templates/scripts/ci/mock-check.sh" --stale 2>&1 | grep -c 'This rule is off' | grep -v '^0$')"
+eq "a check whose rule is on is not skipped" "0" "$(printf '%s\n' 'spec 2026-11-02' > "$rc_dir/.claude/rules-off.txt"; cd "$rc_dir" && sh "$root/templates/scripts/ci/line-endings.sh" 2>&1 | grep -c 'This rule is off')"
+
+section 'the rules guard'
+rg=$(mktemp -d)
+rg_run() { (cd "$rg" && RULES_OFF="$1" RULES_LOCKS="$2" sh "$root/templates/scripts/ci/rules-guard.sh" base HEAD 2>&1; echo "exit $?"); }
+git -C "$rg" init -q
+mkdir -p "$rg/.claude" "$rg/scripts/ci"
+cp "$rc_lib" "$rg/scripts/ci/rules-lib.sh"
+printf '%s\n' 'id: never-delete' 'locked: yes' '' 'id: numbering' 'locked: no' > "$rg/.claude/rules.txt"
+: > "$rg/beds.txt"
+git -C "$rg" add -A
+git -C "$rg" -c user.name=Maya -c user.email=maya@example.com commit -q -m first
+git -C "$rg" tag base
+cp "$root/templates/scripts/ci/rules-guard.sh" "$rg/scripts/ci/rules-guard.sh"
+eq "a pull request that leaves the file alone passes, whatever the variable says" "The rule switches are unchanged.
+exit 0" "$(rg_run 'numbering' '')"
+printf '%s\n' 'numbering 2026-11-03' > "$rg/.claude/rules-off.txt"
+git -C "$rg" add -A
+git -C "$rg" -c user.name=Maya -c user.email=maya@example.com commit -q -m second
+eq "a file that matches the variable passes" "The rule switches match the ones set in the app.
+exit 0" "$(rg_run 'numbering' '')"
+eq "a file that differs from the variable fails" "1" "$(rg_run '' '' | tail -n 1 | sed 's/exit //')"
+eq "and says it was edited by hand" "1" "$(rg_run '' '' | grep -c 'never by editing the file')"
+eq "a variable naming more than the file fails too" "1" "$(rg_run 'numbering spec' '' | tail -n 1 | sed 's/exit //')"
+printf '%s\n' 'never-delete 2026-11-03' > "$rg/.claude/rules-off.txt"
+git -C "$rg" add -A
+git -C "$rg" -c user.name=Maya -c user.email=maya@example.com commit -q -m third
+eq "a locked rule off, the variable agreeing, the locks on, fails" "1" "$(rg_run 'never-delete' '' | tail -n 1 | sed 's/exit //')"
+eq "and names the rule and the locks" "1" "$(rg_run 'never-delete' '' | grep -c 'locked rule (never-delete) while the safety locks are on')"
+eq "the same with the locks released passes" "The rule switches match the ones set in the app.
+exit 0" "$(rg_run 'never-delete' 'released')"
+eq "with no variables in the environment it leaves the check to CI" "The rule switches changed; the variables are read in CI, so they are checked there.
+exit 0" "$(cd "$rg" && env -u RULES_OFF -u RULES_LOCKS sh scripts/ci/rules-guard.sh base HEAD 2>&1; echo "exit $?")"
+eq "the rules step runs the guard on pull requests, in the workflow and its template" "1" "$(grep -c 'rules-guard.sh' "$root/templates/.github/workflows/ci.yml")"
+
 section 'one list of rules builds the table'
 rl_list="$root/templates/.claude/rules.txt"
 eq "every rule in the plugin's list has its own id" "" "$(sed -n 's/^id: //p' "$rl_list" | sort | uniq -d)"
@@ -3117,7 +3327,7 @@ eq "every hook the list names exists" "" "$rl_bad"
 rl_bad=""
 for rl_c in $(sed -n 's/^check: //p' "$rl_list"); do [ -f "$root/templates/$rl_c" ] || rl_bad="$rl_bad $rl_c"; done
 eq "every check the list names is a template script" "" "$rl_bad"
-eq "every rule hook has one counterpart line" "$(ls "$root"/hooks/scripts/block-*.sh "$root"/hooks/scripts/require-*.sh | wc -l | tr -d ' ')" "$(grep -c '^counterpart: ' "$rl_list")"
+eq "every rule hook has one counterpart line" "$(ls "$root"/hooks/scripts/block-*.sh "$root"/hooks/scripts/require-*.sh | grep -v block-rule-switch | wc -l | tr -d ' ')" "$(grep -c '^counterpart: ' "$rl_list")"
 rp=$(mktemp -d)
 git -C "$rp" init -q
 mkdir -p "$rp/scripts" "$rp/.claude" "$rp/design"

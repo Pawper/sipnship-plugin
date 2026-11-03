@@ -5,6 +5,8 @@
 # never count, and a pull request that must delete says why in a line of its
 # body, written exactly: "Deletes: <reason>" (read from PR_BODY).
 # Usage: PR_BODY="..." sh scripts/ci/delete-check.sh BASE HEAD
+rules_lib="$(dirname "$0")/rules-lib.sh"
+if [ -f "$rules_lib" ]; then . "$rules_lib"; if rule_skip never-delete; then exit 0; fi; fi
 base=${1:?usage: delete-check.sh BASE HEAD}
 head=${2:?usage: delete-check.sh BASE HEAD}
 

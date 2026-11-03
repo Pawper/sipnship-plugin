@@ -4,6 +4,7 @@
 here=$(dirname "$0")
 . "$here/lib.sh"
 . "$here/refusal-log.sh"
+. "$here/rule-switch.sh"
 
 input=$(cat)
 cmd=$(json_field "$input" command)
@@ -11,6 +12,7 @@ cmd=$(json_field "$input" command)
 
 hit=$(delete_reason "$cmd")
 [ -n "$hit" ] || exit 0
+rule_gate never-delete
 
 printf '%s\n' "Blocked \`$hit\` because this project never deletes files; move them aside instead, for example \`git mv path aside/path\` or \`mv path path.aside\`." >&2
 exit 2

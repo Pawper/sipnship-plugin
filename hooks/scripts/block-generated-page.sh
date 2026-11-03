@@ -9,6 +9,7 @@
 here=$(dirname "$0")
 . "$here/lib.sh"
 . "$here/refusal-log.sh"
+. "$here/rule-switch.sh"
 
 input=$(cat)
 path=$(json_field "$input" file_path)
@@ -24,6 +25,7 @@ fi
 
 hit=$(generated_page_reason "$path" "$root" "$patterns")
 [ -n "$hit" ] || exit 0
+rule_gate generated-pages
 
 printf '%s\n' "Blocked a direct edit to \`$hit\` because it is a generated page; change the stub it is built from and run the build script instead (for STATUS.md that is a stub under status/stubs/ and \`sh status/build.sh\`)." >&2
 exit 2

@@ -3,6 +3,8 @@
 # The list of setup files is scripts/ci/setup-paths.txt.
 # Usage: git diff --name-only BASE HEAD | sh scripts/ci/setup-check.sh
 #    or: sh scripts/ci/setup-check.sh BASE HEAD
+rules_lib="$(dirname "$0")/rules-lib.sh"
+if [ -f "$rules_lib" ]; then . "$rules_lib"; if rule_skip setup; then exit 0; fi; fi
 here=$(dirname "$0")
 . "$here/lib.sh"
 

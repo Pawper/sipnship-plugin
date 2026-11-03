@@ -8,6 +8,8 @@
 # Usage: SPEC_TEXT="..." sh scripts/ci/mock-check.sh BASE HEAD
 #    or: sh scripts/ci/mock-check.sh --stale   (screens whose mock is older
 #        than their UI by more than stale-after commits; the brief reads it)
+rules_lib="$(dirname "$0")/rules-lib.sh"
+if [ -f "$rules_lib" ]; then . "$rules_lib"; if [ "${1:-}" != --stale ] && rule_skip screen-mock; then exit 0; fi; fi
 here=$(dirname "$0")
 . "$here/mock-lib.sh"
 cfg=scripts/ci/mocks.txt

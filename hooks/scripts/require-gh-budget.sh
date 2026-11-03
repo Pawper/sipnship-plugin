@@ -9,6 +9,7 @@
 here=$(dirname "$0")
 . "$here/lib.sh"
 . "$here/refusal-log.sh"
+. "$here/rule-switch.sh"
 
 input=$(cat)
 cmd=$(json_field "$input" command)
@@ -23,6 +24,7 @@ rec=$(budget_read "$root")
 [ -n "$rec" ] || exit 0
 floor=${GH_BUDGET_MIN:-500}
 [ "$(budget_low "$rec" "$floor")" = yes ] || exit 0
+rule_gate github-budget
 
 printf '%s\n' "Blocked \`$hit\` because the hour's GraphQL budget is nearly spent and the next call would fail for everyone: $(budget_line "$rec" "$(date +%s)" "$floor") A one-off read is \`gh api repos/{owner}/{repo}/issues/N\`; \`sh scripts/gh-budget.sh\` prints the budget again." >&2
 exit 2

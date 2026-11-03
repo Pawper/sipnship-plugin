@@ -7,6 +7,7 @@
 here=$(dirname "$0")
 . "$here/lib.sh"
 . "$here/refusal-log.sh"
+. "$here/rule-switch.sh"
 . "$here/worktree-lib.sh"
 
 input=$(cat)
@@ -15,6 +16,8 @@ cmd=$(json_field "$input" command)
 desc=$(json_field "$input" description)
 
 long_hit=$(long_command_reason "$cmd" "$desc")
+# A rule that is off lets its call through and notes it; the others still run.
+if [ -n "$long_hit" ] && ! rule_on shell-says-what; then rule_off_note shell-says-what; long_hit=""; fi
 case "$long_hit" in
   "") ;;
   "no description")
@@ -25,7 +28,9 @@ case "$long_hit" in
     exit 2 ;;
 esac
 
-if [ -n "$(pr_close_reason "$cmd")" ]; then
+pr_hit=$(pr_close_reason "$cmd")
+if [ -n "$pr_hit" ] && ! rule_on work-has-ending; then rule_off_note work-has-ending; pr_hit=""; fi
+if [ -n "$pr_hit" ]; then
   printf '%s\n' "Blocked \`gh pr close\` because a closed pull request needs an ending; add \`--comment\` saying why or what replaced it, or run \`sh scripts/worktrees.sh close PR \"reason\"\`, which also archives the branch and removes its worktree." >&2
   exit 2
 fi
@@ -34,7 +39,9 @@ if [ -n "$wait_hit" ]; then
   printf '%s\n' "Blocked \`$wait_hit\` because it reads input that never comes and would hang the shell; give it a file to read, pipe something into it, or use a heredoc (\`cat > file <<'EOF'\`)." >&2
   exit 2
 fi
-if [ -n "$(worktree_add_reason "$cmd")" ]; then
+wt_hit=$(worktree_add_reason "$cmd")
+if [ -n "$wt_hit" ] && ! rule_on work-has-ending; then rule_off_note work-has-ending; wt_hit=""; fi
+if [ -n "$wt_hit" ]; then
   printf '%s\n' "Blocked a detached worktree because its commits would be reachable only from that folder; add it with a branch instead, for example \`git worktree add -b task-name path\`." >&2
   exit 2
 fi

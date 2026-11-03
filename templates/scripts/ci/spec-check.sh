@@ -7,6 +7,8 @@
 # request names it, and touches it only when the design changes.
 # Usage: git diff --name-only BASE HEAD | SPEC_TEXT="..." sh scripts/ci/spec-check.sh
 #    or: SPEC_TEXT="..." sh scripts/ci/spec-check.sh BASE HEAD
+rules_lib="$(dirname "$0")/rules-lib.sh"
+if [ -f "$rules_lib" ]; then . "$rules_lib"; if rule_skip spec; then exit 0; fi; fi
 here=$(dirname "$0")
 . "$here/lib.sh"
 

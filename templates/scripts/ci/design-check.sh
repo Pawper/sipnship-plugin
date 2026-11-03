@@ -16,6 +16,8 @@
 # Each step says when it starts, so a long run is visibly a slow step and
 # not a hang, and the whole check gives up after DESIGN_CHECK_SECONDS
 # (default 90), naming the step it was in.
+rules_lib="$(dirname "$0")/rules-lib.sh"
+if [ -f "$rules_lib" ]; then . "$rules_lib"; if rule_skip design; then exit 0; fi; fi
 here=$(dirname "$0")
 . "$here/../design/design-lib.sh"
 [ -f design/tokens.json ] || { echo "No design/tokens.json; nothing to check."; exit 0; }
