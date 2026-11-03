@@ -1,0 +1,3 @@
+{"type":"user","timestamp":"2026-11-02T17:40:00.000Z","cwd":"/work/rooftop-garden","gitBranch":"main","sessionId":"5d8e2c41-7a10-4b3e-9f62-0c1d2e3f4a5b","message":{"role":"user","content":"Run this round: issues #12 and #15."}}
+{"type":"custom-title","customTitle":"Rooftop rounds","sessionId":"5d8e2c41-7a10-4b3e-9f62-0c1d2e3f4a5b"}
+{"type":"assistant","timestamp":"2026-11-02T17:41:00.000Z","cwd":"/work/rooftop-garden/.claude/worktrees/agent-a1b2c3d4e5f6a7b8c","gitBranch":"main","message":{"model":"claude-opus-5-5","role":"assistant","content":[{"type":"text","text":"Two agents are on the round."}],"usage":{"input_tokens":400,"output_tokens":100,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}

@@ -32,6 +32,22 @@
             "type": "command",
             "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/watch-resolution.sh\"",
             "timeout": 6
+          },
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/session-sample.sh\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/session-sample.sh\"",
+            "timeout": 10
           }
         ]
       }
@@ -49,6 +65,11 @@
             "type": "command",
             "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/watch-resolution.sh\"",
             "timeout": 6
+          },
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/session-sample.sh\"",
+            "timeout": 10
           }
         ]
       }

@@ -14,6 +14,8 @@ const WORDS_MAX = 12;
 const SESSIONS_MAX = 20;
 const RECENT_MS = 2 * 60 * 60 * 1000;
 const LOCAL_PREFIXES = ['ollama/', 'lmstudio/', 'local/'];
+/** The runtime whose logs this file reads. */
+const RUNTIME = 'Claude Code';
 /** The kinds of work a session can be sorted under (specs/011-agent-plans). */
 const CATEGORIES = ['building', 'fixing-check', 'merging-main', 'rerunning', 'restarting-queue', 'writing-spec', 'releasing-plugin'];
 
@@ -64,12 +66,35 @@ function issuesIn(text) {
 }
 
 /**
+ * The issue a branch names: "issue-214-watering", "214-watering" or
+ * "frost-alerts-208". A runtime's own branch ("worktree-agent-a5e249…") and
+ * the queue's dated batch branches name none.
+ */
+function issuesInBranch(branch) {
+  const b = String(branch || '');
+  if (!b || /^batch-/.test(b) || /(?:^|\/)worktree-agent-/.test(b)) return [];
+  const named = numbersBy(b, /issue[-_/]?(\d{1,6})\b/gi);
+  if (named.length) return named;
+  const m = b.match(/^(?:.*\/)?(\d{1,6})[-_]/) || b.match(/[-_/](\d{1,6})$/);
+  return m ? [Number(m[1])] : [];
+}
+
+/** The issues the pull request body in a worktree closes (.scratch/body.md), none when there is no body yet. */
+function issuesInBody(tree) {
+  try {
+    return numbersBy(fs.readFileSync(path.join(tree, '.scratch', 'body.md'), 'utf8'), /\b(?:closes|fixes|resolves)\s+#(\d{1,6})\b/gi);
+  } catch {
+    return [];
+  }
+}
+
+/**
  * One session from its log's text (one JSON object per line): the start,
  * the model, the branch, the issues its first message names, the last thing
  * it said, and the tokens the runtime counted. Fields it lacks are absent.
  */
 function readSession(logText, name, { localModels = [] } = {}) {
-  let started; let model; let branch; let cwd; let last = ''; let issues = [];
+  let started; let model; let branch; let cwd; let title; let last = ''; let issues = [];
   let tokens = 0; let counted = false; let tIn = 0; let tCached = 0; let tOut = 0;
   for (const raw of String(logText).split('\n')) {
     if (!raw.trim()) continue;
@@ -78,7 +103,10 @@ function readSession(logText, name, { localModels = [] } = {}) {
     if (!e || typeof e !== 'object') continue;
     if (!started && e.timestamp) started = e.timestamp;
     if (e.gitBranch) branch = e.gitBranch;
-    if (e.cwd) cwd = e.cwd;
+    // The folder it started in is its worktree; a later cd into another folder does not move it.
+    if (e.cwd && !cwd) cwd = e.cwd;
+    // The title the person gave the session in the runtime, the latest one.
+    if (e.type === 'custom-title' && typeof e.customTitle === 'string' && e.customTitle.trim()) title = e.customTitle.trim();
     const m = e.message;
     if (e.type === 'user' && !issues.length && m) {
       const c = typeof m.content === 'string' ? m.content : (Array.isArray(m.content) ? m.content.map((p) => p && p.text).filter(Boolean).join(' ') : '');
@@ -99,7 +127,8 @@ function readSession(logText, name, { localModels = [] } = {}) {
     }
   }
   if (!started) return undefined;
-  const s = { session: name, started: new Date(started).toISOString() };
+  const s = { session: name, runtime: RUNTIME, started: new Date(started).toISOString() };
+  if (title) s.title = title.slice(0, 120);
   // An agent that never named its issues in its first message may still have named them in its branch or folder: issue-538.
   if (!issues.length) issues = [...String((branch || '') + ' ' + (cwd ? path.basename(cwd) : '')).matchAll(/issue[-_/]?(\d{1,6})\b/gi)].map((m) => Number(m[1])).filter((n, i, a) => a.indexOf(n) === i).slice(0, 5);
   if (issues.length) s.issues = issues;
@@ -174,20 +203,33 @@ function logsIn(folder) {
     const sub = path.join(folder, e.name, 'subagents');
     let agents;
     try { agents = fs.readdirSync(sub).filter((f) => f.endsWith('.jsonl')); } catch { continue; }
-    for (const f of agents) out.push({ file: path.join(sub, f), name: f.replace(/\.jsonl$/, ''), meta: path.join(sub, f.replace(/\.jsonl$/, '.meta.json')) });
+    for (const f of agents) out.push({ file: path.join(sub, f), name: f.replace(/\.jsonl$/, ''), parent: e.name, meta: path.join(sub, f.replace(/\.jsonl$/, '.meta.json')) });
   }
   return out;
 }
 
-/** An agent's meta file: the branch it was given, when the runtime wrote one. */
-function agentBranch(metaFile) {
-  if (!metaFile) return undefined;
+/** An agent's meta file: the branch and worktree it was given and the task it was started with, as far as the runtime wrote them. */
+function agentMeta(metaFile) {
+  if (!metaFile) return {};
+  const str = (v) => (typeof v === 'string' && v.trim() ? v.trim() : undefined);
   try {
-    const m = JSON.parse(fs.readFileSync(metaFile, 'utf8'));
-    return m && typeof m.worktreeBranch === 'string' && m.worktreeBranch ? m.worktreeBranch : undefined;
+    const m = JSON.parse(fs.readFileSync(metaFile, 'utf8')) || {};
+    return { branch: str(m.worktreeBranch), worktree: str(m.worktreePath), task: str(m.description) };
   } catch {
-    return undefined;
+    return {};
   }
+}
+
+/**
+ * Which issue a session works, in this order: what its pull request body
+ * closes, then the number in its branch, then what its first message named.
+ */
+function identify(s) {
+  const body = s.worktree ? issuesInBody(s.worktree.path) : [];
+  const branch = issuesInBranch(s.branch);
+  const issues = body.length ? body : branch.length ? branch : s.issues || [];
+  if (issues.length) s.issues = issues;
+  return s;
 }
 
 function readSessions({ root, logsDir, worktrees, localModels, now = Date.now() } = {}) {
@@ -207,10 +249,15 @@ function readSessions({ root, logsDir, worktrees, localModels, now = Date.now() 
       try { text = fs.readFileSync(log.file, 'utf8'); } catch { continue; }
       const s = readSession(text, log.name, { localModels });
       if (!s) continue;
-      // An agent's log carries the branch its parent session was on; the branch it was given is in its meta file.
-      const given = agentBranch(log.meta);
-      if (given) s.branch = given;
+      // An agent's log carries the branch its parent session was on; the branch and worktree it was given are in its meta file.
+      // It counts as a session of its own, under the session that started it.
+      const meta = agentMeta(log.meta);
+      if (meta.branch) s.branch = meta.branch;
+      if (meta.worktree) s.worktree = { name: path.basename(meta.worktree), path: meta.worktree };
+      if (meta.task && !s.title) s.title = meta.task.slice(0, 120);
+      if (log.parent) s.parent = log.parent;
       if (!s.worktree) s.worktree = { name: path.basename(tree), path: tree };
+      identify(s);
       const note = startedWith(root, s.worktree.name);
       if (note.how) s.startedWith = note.how;
       if (note.category) s.category = note.category;
@@ -220,4 +267,4 @@ function readSessions({ root, logsDir, worktrees, localModels, now = Date.now() 
   return out.sort((a, b) => b._at - a._at).slice(0, SESSIONS_MAX).map(({ _at, ...s }) => s);
 }
 
-module.exports = { lastLine, readSession, readSessions, logFolder, modelId, isLocal, CATEGORIES, WORDS_MAX };
+module.exports = { lastLine, readSession, readSessions, issuesInBranch, issuesInBody, logFolder, modelId, isLocal, CATEGORIES, WORDS_MAX };
