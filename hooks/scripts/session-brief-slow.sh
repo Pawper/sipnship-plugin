@@ -9,6 +9,7 @@
 # Each line is its own file in CACHE_DIR, replaced whole when its step ends:
 #   deploy-health    scripts/ci/deploy-health.sh's line
 #   workflow-breaks  scripts/ci/workflow-breaks.sh's first four, joined
+#   live-app         the live app's one line, from the latest Live run
 #   mock-stale       mock-check.sh --stale's first six, joined
 #   hotspots         the hotspot line
 #   plan             the drive's plan, from CACHE_DIR/facts.tsv (the board
@@ -55,6 +56,11 @@ fi
 # every run since, which a template sync can cause.
 if [ -f scripts/ci/workflow-breaks.sh ] && [ "$have_git" = yes ] && [ "$have_gh" = yes ]; then
   (run_bounded "$bound" sh scripts/ci/workflow-breaks.sh 2>/dev/null | joined 4 | keep workflow-breaks) &
+fi
+
+# Whether the live app works, from the latest Live run that looked at it.
+if [ -f .github/workflows/live.yml ] && [ "$have_gh" = yes ]; then
+  (run_bounded "$bound" sh "$here/session-brief-live.sh" 2>/dev/null | head -n 1 | keep live-app) &
 fi
 
 # Screens whose mock has fallen behind their UI by more than the

@@ -200,6 +200,11 @@ s_workflows() {
     wb=$(cached workflow-breaks)
     [ -z "$wb" ] || add "Workflows ($sb_age): $wb. Open its last run; if the change was a template sync, say so on the plugin's issue."
   fi
+  # Whether the live app works: one line from the latest Live run, read in the background.
+  if [ -f .github/workflows/live.yml ]; then
+    la=$(with_age "$(cached live-app)" "$sb_age")
+    [ -n "$la" ] && add "$la"
+  fi
   # The scheduled queue drain fired late or skipped by GitHub. One REST call.
   if has leftover && [ -f scripts/ci/drain-late.sh ] && [ -f .github/workflows/queue-drain.yml ] && [ "$have_gh" = yes ]; then
     dl=$(run_bounded 6 sh scripts/ci/drain-late.sh 2>/dev/null | head -n 1)
