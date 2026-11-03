@@ -8,7 +8,7 @@
 
 const { RULES } = require('./permissions');
 
-const KINDS = ['add-runner', 'remove-runner', 'grant-permissions', 'run-migration', 'deploy', 'scan-skip', 'scan-again'];
+const KINDS = ['add-runner', 'remove-runner', 'grant-permissions', 'run-migration', 'deploy', 'scan-skip', 'scan-again', 'set-places'];
 // Kinds that end in Windows' own administrator prompt, and the kinds that only change a Windows machine.
 const ELEVATED = ['add-runner', 'remove-runner', 'scan-skip', 'scan-again'];
 const WINDOWS_ONLY = ELEVATED;
@@ -19,6 +19,44 @@ const EXPIRE_MINUTES = 30;
 const RUNNER_NAME = /^[a-z][a-z0-9-]{1,30}[a-z0-9]$/;
 // How many runners one request may add: the script's own limit. A name starts with a letter, so a count never reads as one.
 const RUNNER_COUNT = /^([1-9]|1[0-9]|20)$/;
+
+// The order kept in the project: one canonical line of JSON, the same the service makes (a test keeps the two equal).
+// Only its shape is checked here; the service has already checked each place against its provider list.
+const PLACE_ID = /^[a-z][a-z0-9-]{0,30}$/;
+const WAITS = [5, 10, 20, null];
+const cents = (n) => Math.round(n * 100) / 100;
+function canonicalPlaces(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  if (raw.v !== 1 || !WAITS.includes(raw.waitLimit) || !Array.isArray(raw.places) || raw.places.length < 1 || raw.places.length > 20) return undefined;
+  const seen = new Set();
+  const places = [];
+  for (const e of raw.places) {
+    if (!e || typeof e !== 'object' || typeof e.place !== 'string' || !PLACE_ID.test(e.place) || seen.has(e.place) || typeof e.on !== 'boolean') return undefined;
+    seen.add(e.place);
+    const c = e.ceiling;
+    if (c !== undefined && (typeof c !== 'number' || !Number.isFinite(c) || c < 0 || c > 100000)) return undefined;
+    if (e.atCeiling !== undefined && e.atCeiling !== 'move' && e.atCeiling !== 'wait') return undefined;
+    places.push({ place: e.place, on: e.on, ...(c !== undefined ? { ceiling: cents(c) } : {}), ...(e.atCeiling !== undefined ? { atCeiling: e.atCeiling } : {}) });
+  }
+  if (!places.some((p) => p.on)) return undefined;
+  let spent;
+  if (raw.spent !== undefined) {
+    if (!raw.spent || typeof raw.spent !== 'object' || Array.isArray(raw.spent)) return undefined;
+    const keys = Object.keys(raw.spent).sort();
+    if (keys.length > 20) return undefined;
+    spent = {};
+    for (const k of keys) {
+      const n = raw.spent[k];
+      if (!PLACE_ID.test(k) || typeof n !== 'number' || !Number.isFinite(n) || n < 0 || n > 10000000) return undefined;
+      spent[k] = cents(n);
+    }
+  }
+  return JSON.stringify({ v: 1, waitLimit: raw.waitLimit, places, ...(spent && Object.keys(spent).length ? { spent } : {}) });
+}
+function placesParam(s) {
+  if (typeof s !== 'string' || !s || s.length > 4000) return undefined;
+  try { return canonicalPlaces(JSON.parse(s)); } catch { return undefined; }
+}
 
 // paramRule(kind, raw): the parameter in its stored form, or undefined when the rule refuses it.
 function paramRule(kind, raw) {
@@ -31,6 +69,7 @@ function paramRule(kind, raw) {
     return PERMISSION_IDS.filter((i) => ids.includes(i)).join(',');
   }
   if (kind === 'run-migration') return s === 'main' || /^[1-9]\d{0,6}$/.test(s) ? s : undefined;
+  if (kind === 'set-places') return placesParam(s);
   if (KINDS.includes(kind)) return s === '' ? '' : undefined;
   return undefined;
 }
@@ -81,4 +120,4 @@ function refusal(req, { ghAs, can, now = Date.now() }) {
   return null;
 }
 
-module.exports = { KINDS, ELEVATED, WINDOWS_ONLY, PERMISSION_IDS, SCAN_FOLDERS, EXPIRE_MINUTES, paramRule, canKinds, stepFacts, parseLines, refusal };
+module.exports = { canonicalPlaces, KINDS, ELEVATED, WINDOWS_ONLY, PERMISSION_IDS, SCAN_FOLDERS, EXPIRE_MINUTES, paramRule, canKinds, stepFacts, parseLines, refusal };
