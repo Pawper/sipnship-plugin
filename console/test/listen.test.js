@@ -93,11 +93,36 @@ function recorder(over = {}) {
 }
 
 test('add a runner runs its one script, elevated, then waits for GitHub to list it online', async () => {
-  const { ctx, calls, steps } = recorder({ stdout: (cmd, args) => (args.includes('--jq') && String(args[1]).includes('/actions/runners') ? 'online\n' : 'true\n') });
+  const { ctx, calls, steps } = recorder({ stdout: (cmd, args) => (args.includes('--jq') && String(args[1]).includes('/actions/runners') ? 'garden-4\tonline\n' : 'true\n') });
   const r = await perform('add-runner', 'garden-4', ctx);
   assert.deepStrictEqual(r, { outcome: 'done', facts: { runner: 'garden-4' } });
   assert.deepStrictEqual(steps, ['asking', 'running']);
   assert.deepStrictEqual(calls.find((c) => c[0] === 'elevated'), ['elevated', path.join(scratch, 'scripts', 'ci', 'add-runner.ps1'), '-Name', 'garden-4']);
+});
+
+test('a count adds that many runners in one elevated run and waits for that many new ones online', async () => {
+  let ran = false;
+  const rec = recorder({ stdout: (cmd, args) => (String(args[1]).includes('/actions/runners') ? (ran ? 'garden-1\tonline\ngarden-2\tonline\ngarden-3\tonline\nold-1\tonline\n' : 'old-1\tonline\n') : 'true\n') });
+  const elevated = rec.ctx.elevated;
+  rec.ctx.elevated = async (...a) => { ran = true; return elevated(...a); };
+  const r = await perform('add-runner', '3', rec.ctx);
+  assert.deepStrictEqual(r, { outcome: 'done', facts: {} });
+  assert.deepStrictEqual(rec.calls.filter((c) => c[0] === 'elevated'), [['elevated', path.join(scratch, 'scripts', 'ci', 'add-runner.ps1'), '-Count', '3']]);
+  assert.deepStrictEqual(rec.steps, ['asking', 'running']);
+});
+
+test('a count with only some of the runners online in five minutes is not-online', async () => {
+  let ran = false;
+  const rec = recorder({ stdout: (cmd, args) => (String(args[1]).includes('/actions/runners') ? (ran ? 'garden-1\tonline\ngarden-2\toffline\n' : '') : 'true\n') });
+  const elevated = rec.ctx.elevated;
+  rec.ctx.elevated = async (...a) => { ran = true; return elevated(...a); };
+  assert.strictEqual((await perform('add-runner', '2', rec.ctx)).outcome, 'not-online');
+});
+
+test('a count passes the same rules as a name: one to twenty, in digits', () => {
+  for (const ok of ['1', '3', '20']) assert.strictEqual(rules.paramRule('add-runner', ok), ok);
+  for (const bad of ['0', '21', '-1', '3; x', '007']) assert.strictEqual(rules.paramRule('add-runner', bad), undefined);
+  assert.strictEqual(rules.paramRule('remove-runner', '3'), undefined);
 });
 
 test('a runner that never shows online in five minutes is said so, and a missing admin right stops before Windows is asked', async () => {
@@ -253,5 +278,6 @@ test('the question at the end of connect defaults to No', async () => {
   assert.strictEqual(await listen.offerOn({ env, out, ask: async () => '' }), false);
   assert.strictEqual(await listen.offerOn({ env, out, ask: async () => 'no' }), false);
   assert.strictEqual(listen.readState(env).on, false);
-  assert.strictEqual(await listen.offerOn({ env, out, input: { isTTY: false }, cwd: scratch }), false);
+  // The window is the question: shown only on a screen, No when closed, and never answered by a shell.
+  assert.strictEqual(await listen.offerOn({ env, out, cwd: scratch, window: () => false }), false);
 });

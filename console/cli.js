@@ -9,6 +9,8 @@
 // permissions  a person, in a terminal, chooses the commands the agent may run
 // connect --repo [OWNER/NAME] [--token T]  send the brief to the dashboard
 // disconnect [--repo OWNER/NAME]  stop sending it
+// setup [--repo OWNER/NAME]  how setting up the project is going, in the dashboard's words
+// setup [--repo OWNER/NAME]  how setting up the project is going, in the dashboard's words
 
 const path = require('path');
 const fs = require('fs');
@@ -23,10 +25,12 @@ function usage() {
   sipnship permissions [--root <project>]
   sipnship connect --repo [OWNER/NAME] [--token <token>]
   sipnship disconnect [--repo OWNER/NAME]
+  sipnship setup [--repo OWNER/NAME]   how setting up this project is going, and whose turn each item is
+  sipnship setup [--repo OWNER/NAME]   how setting up this project is going, and whose turn each item is
   sipnship queue-identity [--repo OWNER/NAME] [--org ORG]   give the merge queue its own GitHub App (two clicks)
   sipnship deploy-key [--repo OWNER/NAME] [--host cloudflare|vercel]   take the hosting key once and set the deploy secrets
   sipnship listen [on|off|status]  carry out what you approve on the dashboard (off until turned on here)
-  sipnship ask add-runner [NAME] | remove-runner NAME | migrate [PR] | deploy | scan-skip | scan-again
+  sipnship ask add-runner [NAME | --count N] | remove-runner NAME | migrate [PR] | deploy | scan-skip | scan-again
   sipnship land-next N ["reason"]   land this pull request next
   sipnship hold N ["reason"]        hold it out of the merge queue
   sipnship release N                release a hold
@@ -91,19 +95,37 @@ async function main() {
     const l = require('./listen');
     const i = rest.indexOf('--repo');
     const repo = i >= 0 ? rest[i + 1] : undefined;
-    if (rest[0] === 'on' || rest[0] === 'off') process.exitCode = l.turn(rest[0] === 'on', { repo });
+    if (rest[0] === 'on') {
+      // The question is a window on this machine's screen; nothing an agent types can answer it.
+      const yes = await l.offerOn({ repo });
+      if (!yes) process.stdout.write('Nothing was turned on. This machine carries out nothing from the dashboard.\n');
+    } else if (rest[0] === 'off') process.exitCode = l.turn(false, { repo });
     else if (rest[0] === 'status') process.exitCode = l.status();
     else process.exitCode = await l.listen({});
+    return;
+  }
+  if (args.command === 'setup') {
+    const rest = process.argv.slice(3);
+    const i = rest.indexOf('--repo');
+    process.exitCode = await require('./setup').setup({ repo: i >= 0 ? rest[i + 1] : undefined });
+    return;
+  }
+  if (args.command === 'setup') {
+    const rest = process.argv.slice(3);
+    const i = rest.indexOf('--repo');
+    process.exitCode = await require('./setup').setup({ repo: i >= 0 ? rest[i + 1] : undefined });
     return;
   }
   if (args.command === 'ask') {
     const rest = process.argv.slice(3);
     const i = rest.indexOf('--repo');
     const repo = i >= 0 ? rest[i + 1] : undefined;
-    const plain = rest.filter((a, j) => a !== '--repo' && !(i >= 0 && j === i + 1));
+    const c = rest.indexOf('--count');
+    const count = c >= 0 ? rest[c + 1] : undefined;
+    const plain = rest.filter((a, j) => a !== '--repo' && a !== '--count' && !(i >= 0 && j === i + 1) && !(c >= 0 && j === c + 1));
     const kind = plain[0];
     const named = kind === 'remove-runner' || kind === 'add-runner' || kind === 'migrate';
-    process.exitCode = await require('./ask').ask({ what: kind, param: named ? plain[1] : undefined, reason: plain.slice(named ? 2 : 1).join(' '), repo });
+    process.exitCode = await require('./ask').ask({ what: kind, param: kind === 'add-runner' && count !== undefined ? count : named ? plain[1] : undefined, reason: plain.slice(named && count === undefined ? 2 : 1).join(' '), repo });
     return;
   }
   if (args.command === 'connect' || args.command === 'disconnect') {
