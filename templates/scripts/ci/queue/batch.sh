@@ -421,7 +421,7 @@ gh api "repos/{owner}/{repo}/pulls?state=open&per_page=100" --jq '.[] | select((
 git -C "$wt" push -q -u origin "$branch"
 body=$(batch_pr_body "$carried" "$refs")
 batch_pr=$(gh_write api -X POST "repos/{owner}/{repo}/pulls" -f base="$base" -f head="$branch" -f title="Batch $day: $(printf '%s' "$carried" | wc -l | tr -d ' ') pull requests" -f body="$body" --jq .number 2>"$gh_err") || { rate_stop; echo "Could not open the batch pull request: $(head -n 1 "$gh_err" 2>/dev/null). The branch $branch is pushed; open it by hand or run the batch again."; exit 1; }
-echo "batch PR #$batch_pr opened; waiting for the one full CI run"
+echo "batch PR #$batch_pr opened; waiting for the one full CI run"; ci_dispatch "$branch"
 batch_note pr "$batch_pr"; batch_moment testing
 batch_sha=$(git -C "$wt" rev-parse HEAD)
 batch_ok=no
@@ -452,7 +452,7 @@ if [ "$batch_ok" != yes ]; then
 fi
 wait_quiet_main
 merged_sha=$(gh_write api -X PUT "repos/{owner}/{repo}/pulls/$batch_pr/merge" -f merge_method=merge --jq .sha 2>"$gh_err") || { rate_stop; echo "GitHub refused the batch merge: $(head -n 1 "$gh_err" 2>/dev/null). Nothing merged; run the batch again."; exit 1; }
-echo "batch PR #$batch_pr merged into $base with a merge commit"
+echo "batch PR #$batch_pr merged into $base with a merge commit"; ci_dispatch "$base"
 batch_moment landed
 # GitHub can show a carried pull request as "closed, not merged", which
 # reads as abandoned. Say on each where it went.
