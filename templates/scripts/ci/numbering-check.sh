@@ -8,6 +8,8 @@
 # come from scripts/ci/task-files.txt, one path per line; empty means no
 # task-file check. Runs in CI on every pull request, so a batch that
 # merged two pull requests which each took 0022 fails before it reaches main.
+rules_lib="$(dirname "$0")/rules-lib.sh"
+if [ -f "$rules_lib" ]; then . "$rules_lib"; if rule_skip numbering; then exit 0; fi; fi
 here=$(dirname "$0")
 . "$here/numbering-lib.sh"
 

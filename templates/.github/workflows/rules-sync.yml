@@ -1,0 +1,69 @@
+# Lands a rule switch within minutes. The app sets the repository variable
+# RULES_OFF and adds the label rules:sync to the issue labeled rules; this
+# runs on that label, on the project's own runner, and writes the switches
+# file and the rules table in one pull request that the queue lands first
+# (scripts/ci/rules-sync.sh). The queue drain does the same comparison at
+# each of its runs, so a missed run only delays the change. A person's own
+# terminal (sh scripts/rules.sh off|on) starts it by dispatch. Never hosted.
+name: Rules sync
+
+on:
+  issues:
+    types: [labeled]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: rules-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.label.name == 'rules:sync' }}
+    runs-on: [self-hosted, windows]
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: 'C:\PROGRA~1\Git\bin\bash.exe --noprofile --norc -eo pipefail {0}'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # The queue's own App signs in when there is one, so the pull request
+      # starts its checks; otherwise the workflow's own token is used.
+      - name: Sign in as the queue
+        id: app
+        env:
+          QUEUE_APP_ID: ${{ secrets.QUEUE_APP_ID }}
+          QUEUE_APP_KEY: ${{ secrets.QUEUE_APP_KEY }}
+          QUEUE_TOKEN: ${{ secrets.QUEUE_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          t=$(sh scripts/ci/queue-app-token.sh) || t=""
+          [ -n "$t" ] || t=$QUEUE_TOKEN
+          if [ -n "$t" ]; then
+            echo "::add-mask::$t"
+            echo "token=$t" >> "$GITHUB_OUTPUT"
+            git config --local --unset-all http.https://github.com/.extraheader || true
+            git config --local http.https://github.com/.extraheader "AUTHORIZATION: basic $(printf 'x-access-token:%s' "$t" | base64 | tr -d '\n')"
+          fi
+      - name: Land the rule switches
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token || github.token }}
+          GH_REPO: ${{ github.repository }}
+          RULES_OFF: ${{ vars.RULES_OFF }}
+        run: |
+          git config user.name "rules-sync"
+          git config user.email "rules-sync@users.noreply.github.com"
+          sh scripts/ci/rules-sync.sh
+      # The label has done its work; taking it off lets the next change add it again.
+      - name: Take the label off
+        if: ${{ github.event_name == 'issues' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh api -X DELETE "repos/${{ github.repository }}/issues/${{ github.event.issue.number }}/labels/rules%3Async" >/dev/null || true

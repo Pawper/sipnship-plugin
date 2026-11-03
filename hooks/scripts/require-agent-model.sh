@@ -7,6 +7,7 @@
 here=$(dirname "$0")
 . "$here/lib.sh"
 . "$here/refusal-log.sh"
+. "$here/rule-switch.sh"
 
 input=$(cat)
 tool=$(json_field "$input" tool_name)
@@ -19,6 +20,7 @@ case "$tool" in
     [ -n "$script" ] || exit 0
     missing=$(workflow_model_reason "$script")
     [ -n "$missing" ] || exit 0
+    rule_gate agent-model
     printf '%s\n' "Blocked the workflow because $missing of its agent() calls set no model; give each call a model that fits its task (haiku for a lookup, sonnet for routine work, opus for hard work) so the fan-out does not run every agent on the heaviest model (session effort is $effort and every agent inherits it)." >&2
     exit 2
     ;;
@@ -29,6 +31,7 @@ case "$tool" in
     model=$(json_field "$input" model)
     hit=$(agent_model_reason "$type" "$description" "$prompt" "$model")
     [ -n "$hit" ] || exit 0
+    rule_gate agent-model
     want=${hit%% *}
     tier=${hit#* }
     if [ -z "$model" ]; then

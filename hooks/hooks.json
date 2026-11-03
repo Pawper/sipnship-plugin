@@ -1,5 +1,5 @@
 {
-  "description": "Enforces the SipNShip rules: no deletes, no forced pushes, no full test sweeps, no direct edits to generated pages, no issue filed without a State label, no GraphQL call when the hour's budget is nearly spent, no push from a pull request branch whose quick checks fail, no agent dispatched without a fitting model, no serial merge of more than two pull requests without a named mode, no pull request closed without a comment, no detached worktree; refuses to finish a task in a worktree that is not clean; and prints the project's live state and the drive's proposal at session start; and notes what an agent did after each refusal, for the console's resolution feed.",
+  "description": "Enforces the SipNShip rules: no deletes, no forced pushes, no full test sweeps, no direct edits to generated pages, no issue filed without a State label, no GraphQL call when the hour's budget is nearly spent, no push from a pull request branch whose quick checks fail, no agent dispatched without a fitting model, no serial merge of more than two pull requests without a named mode, no pull request closed without a comment, no detached worktree; each of these follows its rule's switch in .claude/rules-off.txt, and an agent can never flip a switch itself; refuses to finish a task in a worktree that is not clean; and prints the project's live state and the drive's proposal at session start; and notes what an agent did after each refusal, for the console's resolution feed.",
   "hooks": {
     "SessionStart": [
       {
@@ -80,6 +80,12 @@
         "hooks": [
           {
             "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/block-rule-switch.sh\"",
+            "timeout": 10,
+            "statusMessage": "Checking the call leaves the rule switches alone"
+          },
+          {
+            "type": "command",
             "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/block-loose-ends.sh\"",
             "timeout": 10,
             "statusMessage": "Checking for a loose end"
@@ -142,6 +148,12 @@
       {
         "matcher": "Edit|Write|MultiEdit",
         "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/block-rule-switch.sh\"",
+            "timeout": 10,
+            "statusMessage": "Checking the file is not a rule switch"
+          },
           {
             "type": "command",
             "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/block-generated-page.sh\"",

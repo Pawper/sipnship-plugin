@@ -84,7 +84,12 @@ shell-3 drive publishes its rounds
 shell-3 drive reads Auto Drive
 shell-3 drive runs rounds of units
 shell-3 hook counterparts
+shell-3 rule switches in the hooks
+shell-3 block-rule-switch
+shell-3 rule switches in the checks
+shell-3 the rules guard
 shell-3 one list of rules builds the table
+shell-3 a rule switch reaches the repository
 shell-3 the delete check
 shell-3 workspace install
 shell-3 a draft tokens file seeded from the mocks

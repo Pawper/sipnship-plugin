@@ -15,6 +15,7 @@
 here=$(dirname "$0")
 . "$here/lib.sh"
 . "$here/refusal-log.sh"
+. "$here/rule-switch.sh"
 . "$here/worktree-lib.sh"
 
 input=$(cat)
@@ -70,5 +71,6 @@ if [ -n "$running" ]; then
 fi
 
 [ -n "$problems" ] || exit 0
+rule_gate clean-folder
 printf '%s\n' "Not done yet, because a clean folder is part of done: $problems" >&2
 exit 2

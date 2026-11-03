@@ -12,6 +12,8 @@
 # imports "server-only", is a route handler or middleware, ends in
 # .server.ts, or carries the comment "env-check: server".
 # Usage: sh scripts/ci/client-env-check.sh [DIR...]   (default: src app)
+rules_lib="$(dirname "$0")/rules-lib.sh"
+if [ -f "$rules_lib" ]; then . "$rules_lib"; if rule_skip client-env; then exit 0; fi; fi
 dirs=${*:-src app}
 bad=""
 for d in $dirs; do

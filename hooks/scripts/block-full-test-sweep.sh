@@ -5,6 +5,7 @@
 here=$(dirname "$0")
 . "$here/lib.sh"
 . "$here/refusal-log.sh"
+. "$here/rule-switch.sh"
 
 input=$(cat)
 cmd=$(json_field "$input" command)
@@ -12,6 +13,7 @@ cmd=$(json_field "$input" command)
 
 hit=$(full_sweep_reason "$cmd")
 [ -n "$hit" ] || exit 0
+rule_gate tests-one-file
 
 case "$hit" in
   npm*|yarn*|pnpm*|bun*) example="$hit -- path/to/one_test" ;;

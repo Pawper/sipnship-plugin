@@ -4,6 +4,7 @@
 here=$(dirname "$0")
 . "$here/lib.sh"
 . "$here/refusal-log.sh"
+. "$here/rule-switch.sh"
 
 input=$(cat)
 cmd=$(json_field "$input" command)
@@ -11,6 +12,7 @@ cmd=$(json_field "$input" command)
 
 hit=$(force_push_reason "$cmd")
 [ -n "$hit" ] || exit 0
+rule_gate never-force-push
 
 printf '%s\n' "Blocked the forced push (\`$hit\`) because shared history is never rewritten; push a new commit on top, or start a new branch if this one is wrong." >&2
 exit 2

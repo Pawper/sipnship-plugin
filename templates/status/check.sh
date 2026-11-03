@@ -1,6 +1,8 @@
 #!/bin/sh
 # Fail when STATUS.md does not match what the stubs would produce.
 # Run from the project root or from CI: sh status/check.sh
+rules_lib="$(dirname "$0")/../scripts/ci/rules-lib.sh"
+if [ -f "$rules_lib" ]; then . "$rules_lib"; if rule_skip generated-pages; then exit 0; fi; fi
 here=$(dirname "$0")
 root="$here/.."
 . "$here/lib.sh"

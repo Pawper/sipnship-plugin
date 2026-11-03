@@ -8,6 +8,8 @@
 # HOTSPOTS_OTHERS names a file of "NUMBER<TAB>PATH" lines standing in for
 # the other open pull requests (the tests use it); otherwise they are read
 # over REST when a pull request number is given and gh is there.
+rules_lib="$(dirname "$0")/rules-lib.sh"
+if [ -f "$rules_lib" ]; then . "$rules_lib"; if rule_skip small-files; then exit 0; fi; fi
 here=$(dirname "$0")
 . "$here/hotspots-lib.sh"
 
