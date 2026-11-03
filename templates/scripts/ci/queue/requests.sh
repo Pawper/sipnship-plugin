@@ -13,29 +13,10 @@
 # once and the queue goes on without it.
 req_road=""; req_id=""; req_token=""; req_issue=""
 requests_road_set() {
-  [ -z "$req_road" ] || return 0
-  rr_switch=${QUEUE_PUBLISH_STATE:-}
-  [ -n "$rr_switch" ] || rr_switch=$(gh api "repos/{owner}/{repo}/actions/variables/QUEUE_PUBLISH_STATE" --jq .value 2>/dev/null || echo off)
-  req_road=none
-  case "$rr_switch" in
-    issue) req_road=issue ;;
-    service)
-      req_road=issue
-      req_token=${SIPNSHIP_REPO_TOKEN:-}; req_id=${SIPNSHIP_REPO_ID:-}
-      if [ -z "$req_token" ] && command -v node >/dev/null 2>&1; then
-        rr_repo=$(git remote get-url origin 2>/dev/null | tr -d '\r' | sed -n 's#.*github\.com[:/]\([^/]*\)/\([^/]*\)$#\1/\2#p' | sed 's/\.git$//')
-        rr_pair=$(node -e '
-          const fs = require("fs"), path = require("path"), os = require("os");
-          const home = process.env.SIPNSHIP_HOME || path.join(os.homedir(), ".sipnship");
-          try {
-            const repos = JSON.parse(fs.readFileSync(path.join(home, "tokens.json"), "utf8")).repos || {};
-            for (const [id, e] of Object.entries(repos)) if (e && String(e.fullName).toLowerCase() === process.argv[1].toLowerCase()) { process.stdout.write(id + "\t" + e.token); break; }
-          } catch {}' "$rr_repo" 2>/dev/null)
-        if [ -n "$rr_pair" ]; then req_id=${rr_pair%%	*}; req_token=${rr_pair#*	}; fi
-      fi
-      [ -n "$req_id" ] || req_id=$(gh api "repos/{owner}/{repo}" --jq .id 2>/dev/null | tr -d '\r')
-      if [ -n "$req_token" ] && [ -n "$req_id" ] && command -v curl >/dev/null 2>&1; then req_road=service; fi ;;
-  esac
+  # Asked at each tick: an identity token lives only minutes (service-auth.sh).
+  [ -n "${QUEUE_SERVICE_AUTH_LOADED:-}" ] || { . "$here/service-auth.sh"; QUEUE_SERVICE_AUTH_LOADED=1; }
+  req_road=issue
+  if service_sign_in; then req_token=$sv_token; req_id=$sv_id; req_road=service; fi
   return 0
 }
 
@@ -72,6 +53,7 @@ requests_answer() {
     printf '%s\n' "$1" >> "$flaky_dir/requests.done"
   fi
   say "request: $2 #$3: $4"
+  requests_road_set
   case "$req_road" in
     service) printf 'Authorization: Bearer %s\n' "$req_token" | curl -s -o /dev/null --max-time 5 -X POST -H @- -H 'content-type: application/json' --data "{\"outcome\":\"$4\"}" "${SIPNSHIP_URL:-https://sipnship.dev}/v1/repos/$req_id/queue/requests/$1/outcome" 2>/dev/null || true ;;
     issue) [ -z "$req_issue" ] || gh_write api -X POST "repos/{owner}/{repo}/issues/$req_issue/comments" -f body="$(request_answer_form "$2" "$3" "$4")" >/dev/null 2>&1 || true ;;

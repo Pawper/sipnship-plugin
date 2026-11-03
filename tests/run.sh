@@ -674,7 +674,7 @@ eq "and clears the failing clock" "" "$(cat "$sv/q/service.failing-since")"
 mv "$sv/q/published.sig" "$sv/q/published.sig.2" 2>/dev/null
 : > "$sv/log"; sv_out=$( cd "$sv" && PATH="$sv/bin:$PATH" SV_LOG="$sv/log" SV_STATUS=204 QUEUE_PUBLISH_STATE=service SIPNSHIP_REPO_TOKEN= SIPNSHIP_REPO_ID= QUEUE_DIR="$sv/q" SIPNSHIP_HOME="$sv/home" sh "$root/templates/scripts/ci/publish-state.sh" --mode idle 2>/dev/null )
 eq "with no token the queue writes the issue as before" "1" "$(grep -c 'PATCH repos/{owner}/{repo}/issues/5 -F body' "$sv/log")"
-eq "and says so once" "1" "$(printf '%s\n' "$sv_out" | grep -c 'not connected to SipNShip')"
+eq "and says nothing; it is a quiet fallback" "0" "$(printf '%s\n' "$sv_out" | grep -c 'not connected to SipNShip')"
 eq "and sends nothing" "0" "$(grep -c '^curl' "$sv/log")"
 eq "the queue's copy and the template are the same" "same" "$(cmp -s "$root/templates/scripts/ci/publish-state.sh" "$root/../scripts/ci/publish-state.sh" 2>/dev/null && echo same || { [ -f "$root/../scripts/ci/publish-state.sh" ] || echo same; })"
 mv "$sv" "$sv.done" 2>/dev/null || true
@@ -1740,12 +1740,80 @@ eq "the recent-drain skip applies to the schedule only, so a green check is neve
 eq "the one-drain group still never cancels" "1 1" "$(printf '%s\n' "$qd_live" | grep -c '^  group: queue-drain$') $(printf '%s\n' "$qd_live" | grep -c 'cancel-in-progress: false')"
 eq "it never runs hosted" "0" "$(printf '%s\n' "$qd_live" | grep -c 'ubuntu-latest\|macos-latest')"
 
+section 'the queue signs in as its own App or with the workflow token'
+# The App's token is minted with openssl (fake key, fake host answers).
+ap_dir=.scratch/app-token.$$
+mkdir -p "$ap_dir/bin"
+openssl genrsa -out "$ap_dir/key.pem" 2048 >/dev/null 2>&1
+openssl rsa -in "$ap_dir/key.pem" -pubout -out "$ap_dir/pub.pem" >/dev/null 2>&1
+cat > "$ap_dir/bin/curl" <<'CURL'
+#!/bin/sh
+hdr=$(cat)
+printf '%s\n' "$hdr" > "$AP_DIR/header"
+printf '%s\n' "$*" >> "$AP_DIR/curl.log"
+case "$*" in
+  *"/access_tokens"*) printf '{"token":"ghs_faketoken","expires_at":"x"}\n' ;;
+  *"/installation"*) [ -f "$AP_DIR/noinstall" ] && echo '{"message":"Not Found"}' || printf '{\n  "id": 99,\n  "account": {}\n}\n' ;;
+esac
+CURL
+chmod +x "$ap_dir/bin/curl"
+ap_tok=$(AP_DIR="$ap_dir" PATH="$ap_dir/bin:$PATH" QUEUE_APP_ID=123 QUEUE_APP_KEY="$(cat "$ap_dir/key.pem")" GH_REPO=maya/rooftop-garden sh "$root/templates/scripts/ci/queue-app-token.sh" 2>/dev/null)
+eq "the queue App's token is minted from the key" "ghs_faketoken" "$ap_tok"
+eq "it asked for the repository's installation, then its token" "1 1" "$(grep -c 'repos/maya/rooftop-garden/installation' "$ap_dir/curl.log") $(grep -c 'app/installations/99/access_tokens' "$ap_dir/curl.log")"
+ap_jwt=$(sed 's/^Authorization: Bearer //' "$ap_dir/header")
+ap_h=${ap_jwt%%.*}; ap_rest=${ap_jwt#*.}; ap_b=${ap_rest%%.*}; ap_s=${ap_rest#*.}
+ap_pad() { v=$(printf '%s' "$1" | tr '_-' '/+'); case $((${#v} % 4)) in 2) v="$v==" ;; 3) v="$v=" ;; esac; printf '%s' "$v"; }
+ap_pad "$ap_s" | openssl base64 -d -A > "$ap_dir/sig.bin" 2>/dev/null
+printf '%s.%s' "$ap_h" "$ap_b" > "$ap_dir/signed.txt"
+eq "the signed request verifies against the key's public half" "Verified OK" "$(openssl dgst -sha256 -verify "$ap_dir/pub.pem" -signature "$ap_dir/sig.bin" "$ap_dir/signed.txt" 2>&1 | tr -d '\r')"
+eq "it names the App as the issuer" "yes" "$(ap_pad "$ap_b" | openssl base64 -d -A 2>/dev/null | grep -q '"iss":"123"' && echo yes || echo no)"
+eq "with no App set up it prints nothing and is not an error" "" "$(AP_DIR="$ap_dir" PATH="$ap_dir/bin:$PATH" QUEUE_APP_ID= QUEUE_APP_KEY= GH_REPO=maya/rooftop-garden sh "$root/templates/scripts/ci/queue-app-token.sh" 2>/dev/null)"
+: > "$ap_dir/noinstall"
+AP_DIR="$ap_dir" PATH="$ap_dir/bin:$PATH" QUEUE_APP_ID=123 QUEUE_APP_KEY="$(cat "$ap_dir/key.pem")" GH_REPO=maya/rooftop-garden sh "$root/templates/scripts/ci/queue-app-token.sh" >/dev/null 2>&1; ap_code=$?
+eq "an App not installed on the repository fails without a token" "1" "$ap_code"
+eq "the key is never printed by the script" "0" "$(grep -c 'echo.*[$]QUEUE_APP_KEY' "$root/templates/scripts/ci/queue-app-token.sh")"
+# The identity token: asked for by the run, never kept.
+cat > "$ap_dir/bin/curl" <<'CURL'
+#!/bin/sh
+cat > "$AP_DIR/id-header"
+printf '%s\n' "$*" >> "$AP_DIR/id-curl.log"
+printf '{"count":1,"value":"aaa.bbb.ccc"}\n'
+CURL
+ap_id=$( . "$root/templates/scripts/ci/service-auth.sh"; AP_DIR="$ap_dir" PATH="$ap_dir/bin:$PATH" SIPNSHIP_HOME="$ap_dir/home" ACTIONS_ID_TOKEN_REQUEST_URL="https://run.example/token?x=1" ACTIONS_ID_TOKEN_REQUEST_TOKEN=req GITHUB_REPOSITORY_ID=77 service_sign_in && echo "$sv_token $sv_id" )
+eq "a workflow with id-token signs in with its identity token and the repository's id" "aaa.bbb.ccc 77" "$ap_id"
+eq "the identity token's audience is the SipNShip address" "1" "$(grep -c 'audience=https://sipnship.dev' "$ap_dir/id-curl.log")"
+ap_no=$( . "$root/templates/scripts/ci/service-auth.sh"; AP_DIR="$ap_dir" PATH="$ap_dir/bin:$PATH" SIPNSHIP_HOME="$ap_dir/home" service_sign_in && echo signed || echo none )
+eq "with neither an identity token nor a connected machine it does not sign in" "none" "$ap_no"
+eq "no secret named SIPNSHIP_REPO_TOKEN or a publish switch is asked of the project" "0" "$(grep -c 'SIPNSHIP_REPO_TOKEN\|QUEUE_PUBLISH_STATE' "$root/templates/SETUP.md")"
+# With no queue App: the queue starts CI itself, and says plainly when a workflow change waits.
+cat > "$ap_dir/bin/gh" <<'GH'
+#!/bin/sh
+printf '%s\n' "$*" >> "$AP_DIR/gh.log"
+exit 0
+GH
+chmod +x "$ap_dir/bin/gh"
+: > "$ap_dir/gh.log"
+( . "$root/templates/scripts/ci/queue/state.sh"; log_file=/dev/null; AP_DIR="$ap_dir" PATH="$ap_dir/bin:$PATH" QUEUE_OWN_TOKEN=yes QUEUE_MERGE_TOKEN= ci_dispatch batch-2026-11-03 ) >/dev/null
+eq "with the workflow's own token the queue dispatches CI on the ref" "1" "$(grep -c 'actions/workflows/ci.yml/dispatches -f ref=batch-2026-11-03' "$ap_dir/gh.log")"
+: > "$ap_dir/gh.log"
+( . "$root/templates/scripts/ci/queue/state.sh"; log_file=/dev/null; AP_DIR="$ap_dir" PATH="$ap_dir/bin:$PATH" QUEUE_OWN_TOKEN=no QUEUE_MERGE_TOKEN=app ci_dispatch main ) >/dev/null
+( . "$root/templates/scripts/ci/queue/state.sh"; log_file=/dev/null; AP_DIR="$ap_dir" PATH="$ap_dir/bin:$PATH" QUEUE_OWN_TOKEN= QUEUE_MERGE_TOKEN= ci_dispatch main ) >/dev/null
+eq "with an App or QUEUE_TOKEN, whose pushes start CI, it dispatches nothing" "0" "$(wc -l < "$ap_dir/gh.log" | tr -d ' ')"
+printf 'refusing to allow an integration to create or update workflow without workflows permission\n' > "$ap_dir/err"
+eq "a refused workflow change is said to wait for a drain on a machine" "1" "$(QUEUE_OWN_TOKEN=yes; . "$root/templates/scripts/ci/queue/state.sh"; workflow_wait_note "$ap_dir/err" | grep -c 'waits for a drain run on your machine')"
+eq "the note is silent with an App, or for another refusal" "00" "$( . "$root/templates/scripts/ci/queue/state.sh"; QUEUE_OWN_TOKEN=no workflow_wait_note "$ap_dir/err" | wc -c | tr -d ' ')$( printf 'not mergeable\n' > "$ap_dir/err2"; QUEUE_OWN_TOKEN=yes workflow_wait_note "$ap_dir/err2" | wc -c | tr -d ' ')"
+eq "a dispatched run always runs the gate (the proof the check counts rests on this)" "run" "$(sed -n '/workflow_dispatch/p' "$root/templates/scripts/ci/gate-lib.sh" | grep -q 'echo run' && echo run)"
+eq "the batch and serial merges start CI after a landing" "1 1 1 1" "$(grep -c 'ci_dispatch "\$base"' "$root/templates/scripts/ci/queue/serial.sh") $(grep -c 'ci_dispatch "\$base"' "$root/templates/scripts/ci/queue/batch.sh") $(grep -c 'ci_dispatch "\$branch"' "$root/templates/scripts/ci/queue/batch.sh") $(grep -c 'ci_dispatch "\$base"' "$root/templates/scripts/ci/merge-queue.sh")"
+eq "the audit and Deploy sign in as the queue App and fall back to their old tokens" "1 1" "$(grep -c 'steps.app.outputs.token || secrets.RUNNER_WATCH_TOKEN' "$root/templates/.github/workflows/audit.yml") $(grep -c 'steps.app.outputs.token || secrets.ADMIN_TOKEN' "$root/templates/.github/workflows/deploy.yml")"
+mv "$ap_dir" "$ap_dir.done" 2>/dev/null || true
+
+
 section 'the drain reads with its own token and merges with the queue token'
 qt_mq="$mq_all"
 eq "the workflow may read checks and statuses" "1 1" "$(printf '%s\n' "$qd_live" | grep -c '^  checks: read$') $(printf '%s\n' "$qd_live" | grep -c '^  statuses: read$')"
-eq "the drain steps read with the workflow's token and pass the queue token apart" "2 1" "$(printf '%s\n' "$qd_live" | grep -c '^          GH_TOKEN: \${{ github.token }}$') $(printf '%s\n' "$qd_live" | grep -c '^          QUEUE_MERGE_TOKEN: \${{ secrets.QUEUE_TOKEN }}$')"
-eq "the missing-secret guard checks the queue token" "1" "$(printf '%s\n' "$qd_live" | grep -c 'if \[ -z "\$QUEUE_MERGE_TOKEN" \]')"
-eq "the checkout keeps the queue token" "1" "$(printf '%s\n' "$qd_live" | grep -c 'token: \${{ secrets.QUEUE_TOKEN || github.token }}')"
+eq "the drain steps read with the workflow's token and pass the queue token apart" "2 1" "$(printf '%s\n' "$qd_live" | grep -c '^          GH_TOKEN: \${{ github.token }}$') $(printf '%s\n' "$qd_live" | grep -c '^          QUEUE_MERGE_TOKEN: \${{ steps.app.outputs.token }}$')"
+eq "with no queue token the drain no longer stops; it lands with its own token" "0 1" "$(printf '%s\n' "$qd_live" | grep -c 'if \[ -z "\$QUEUE_MERGE_TOKEN" \]') $(printf '%s\n' "$qd_live" | grep -c "QUEUE_OWN_TOKEN:")"
+eq "the drain signs in as the queue App, then QUEUE_TOKEN, and asks for an identity token" "1 1 1" "$(printf '%s\n' "$qd_live" | grep -c 'queue-app-token.sh') $(printf '%s\n' "$qd_live" | grep -c '\[ -n "\$t" \] || t=\$QUEUE_TOKEN') $(printf '%s\n' "$qd_live" | grep -c '^  id-token: write$')"
 qt_dir=".scratch/qt-stub.$$"
 mkdir -p "$qt_dir"
 printf '#!/bin/sh\necho "$GH_TOKEN" >> "$QT_LOG"\n' > "$qt_dir/gh"
@@ -3096,7 +3164,7 @@ eq "the Cloudflare job runs only on the cloudflare path" "1" "$(printf '%s\n' "$
 eq "the workers in deploy order" "packages/service packages/web" "$(. "$root/templates/scripts/ci/deploy-lib.sh"; json_words '{"target": "cloudflare", "workers": ["packages/service", "packages/web"]}' workers)"
 eq "each Worker deploys with wrangler in its folder, assets first when it has the script" "1 1" "$(dt_job deploy-cloudflare "$dt_tpl" | grep -c '(cd "$w" && npx wrangler deploy)') $(dt_job deploy-cloudflare "$dt_tpl" | grep -c '(cd "$w" && npm run assets)')"
 eq "the Cloudflare job has both secrets" "2" "$(dt_job deploy-cloudflare "$dt_tpl" | grep -cE 'CLOUDFLARE_(API_TOKEN|ACCOUNT_ID): \$\{\{ secrets')"
-eq "rendered for Windows, the plan and the Cloudflare job name Git's bash in every step" "1/1 3/3" "$(for j in plan deploy-cloudflare; do t=$(dt_job $j "$dt_win"); printf '%s/%s ' "$(printf '%s\n' "$t" | grep -c 'shell:.*Git\\bin\\bash.exe')" "$(printf '%s\n' "$t" | grep -c 'shell:')"; done | sed 's/ $//')"
+eq "rendered for Windows, the plan and the Cloudflare job name Git's bash in every step" "2/2 3/3" "$(for j in plan deploy-cloudflare; do t=$(dt_job $j "$dt_win"); printf '%s/%s ' "$(printf '%s\n' "$t" | grep -c 'shell:.*Git\\bin\\bash.exe')" "$(printf '%s\n' "$t" | grep -c 'shell:')"; done | sed 's/ $//')"
 eq "and never a bare bash there" "0" "$(printf '%s\n%s\n' "$(dt_job plan "$dt_win")" "$(dt_job deploy-cloudflare "$dt_win")" | grep -cE 'shell:[[:space:]]*(bash|RUN_SHELL)')"
 eq "the sync takes a rendered copy as current, CRLF or not" "yes yes" "$(. "$root/scripts/sync/sync-lib.sh"; same_text "$dt_win" "$(filled_text "$dt_tpl" "$(ci_runs_on "$dt_ci")" "$(ci_shell "$dt_ci")")" | tr -d '\n'; printf ' '; same_text "$(printf '%s\n' "$dt_win" | sed 's/$/\r/')" "$dt_win")"
 section 'waits for a runner and the machine line'

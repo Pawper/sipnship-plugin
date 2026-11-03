@@ -73,11 +73,24 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
+      # The queue's own App (npx sipnship queue-identity) lets the plan see
+      # the runners; without it the plan uses ADMIN_TOKEN, as before.
+      - id: app
+        shell: RUN_SHELL
+        env:
+          QUEUE_APP_ID: ${{ secrets.QUEUE_APP_ID }}
+          QUEUE_APP_KEY: ${{ secrets.QUEUE_APP_KEY }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if [ -f scripts/ci/queue-app-token.sh ]; then
+            t=$(sh scripts/ci/queue-app-token.sh) || t=""
+            if [ -n "$t" ]; then echo "::add-mask::$t"; echo "token=$t" >> "$GITHUB_OUTPUT"; fi
+          fi
       - id: plan
         shell: RUN_SHELL
         env:
           GH_TOKEN: ${{ github.token }}
-          ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
+          ADMIN_TOKEN: ${{ steps.app.outputs.token || secrets.ADMIN_TOKEN }}
           DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
           HAS_TOKEN: ${{ secrets.VERCEL_TOKEN != '' }}
           HAS_CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}

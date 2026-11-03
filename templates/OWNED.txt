@@ -54,6 +54,8 @@ scripts/ci/batch-lib.sh
 # scripts/ci/queue/ is an owned folder: one library a step of the queue, and
 # the pure rules batch-lib.sh loads. A file added there is listed here.
 scripts/ci/queue/state.sh
+scripts/ci/queue-app-token.sh
+scripts/ci/service-auth.sh
 scripts/ci/queue/requests.sh
 scripts/ci/queue/rush.sh
 scripts/ci/queue/runs.sh
