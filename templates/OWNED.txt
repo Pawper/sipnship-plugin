@@ -17,6 +17,7 @@ scripts/ci/lib.sh
 scripts/ci/classify.sh
 scripts/ci/test-parts.sh
 scripts/ci/failure-report.sh
+scripts/ci/check-log.sh
 scripts/ci/failure-lib.sh
 scripts/ci/gate.sh
 scripts/ci/gate-lib.sh
@@ -63,6 +64,8 @@ scripts/ci/queue/deploy.sh
 scripts/ci/queue/overlaps.sh
 scripts/ci/queue/rules-batch.sh
 scripts/ci/queue/rules-drain.sh
+scripts/ci/queue/rules-rerun.sh
+scripts/ci/queue/rerun.sh
 scripts/ci/queue/rules-serial.sh
 scripts/ci/queue/rules-requests.sh
 scripts/ci/queue/rules-deploy.sh

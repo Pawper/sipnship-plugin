@@ -27,6 +27,7 @@ const tokens = require('./tokens');
 const sessions = require('./sessions');
 const questions = require('./questions');
 const refusals = require('./refusal-report');
+const designUse = require('./design-use');
 
 const SEND_MAX_BYTES = 64 * 1024;
 const TIMEOUT_MS = 3000;
@@ -135,6 +136,8 @@ function briefBody(text, opts = {}) {
   if (opts.ownerSteps && opts.ownerSteps.length) body.ownerSteps = opts.ownerSteps;
   if (opts.localModels && opts.localModels.length) body.localModels = opts.localModels.map((m) => ({ model: m.model, tiers: m.tiers || [] }));
   if (opts.answers && opts.answers.length) body.answers = opts.answers;
+  // Where each design token is used and the literals the design check finds (spec 005, the tokens map).
+  if (opts.design) body.design = opts.design;
   if (opts.sessions && opts.sessions.length) body.sessions = opts.sessions.map((s) => (s.lastLine ? { ...s, lastLine: sessions.lastLine(s.lastLine) } : s));
   return body;
 }
@@ -216,6 +219,8 @@ function ownerSteps(root) {
 function fit(body) {
   let text = JSON.stringify(body);
   const b = structuredClone(body);
+  // The tokens map's reading is the first thing to go when the brief is too long.
+  if (Buffer.byteLength(text) > SEND_MAX_BYTES && b.design) { delete b.design; text = JSON.stringify(b); }
   while (Buffer.byteLength(text) > SEND_MAX_BYTES) {
     const biggest = b.cards.reduce((m, c) => (!m || c.items.length > m.items.length ? c : m), undefined);
     if (!biggest || biggest.items.length <= 1) return undefined;
@@ -286,7 +291,7 @@ async function sendBrief({ text, session = '', repo, env = process.env, now = ne
   if (same && mem.said === 'not_connected') return '';
   const answers = questions.pendingAnswers(env, entry.repoId);
   const can = require('./listen').briefCan(env, now.getTime());
-  const built = briefBody(text, { now, machine: entry.machine, runners, sessions: agents, ownerSteps: steps, localModels, answers, can });
+  const built = briefBody(text, { now, machine: entry.machine, runners, sessions: agents, ownerSteps: steps, localModels, answers, can, design: sampleOnly ? undefined : designUse.designUse({ root, now }) });
   // Rule reports not yet acknowledged ride along (spec 013), fewer when the whole would pass the limit.
   const sent = refusals.attach(built, { root, repoId: entry.repoId, env, now: now.getTime(), maxBytes: SEND_MAX_BYTES });
   const body = fit(built);

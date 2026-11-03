@@ -73,7 +73,7 @@ export TMPDIR SUITE_TMP_ROOT GIT_CEILING_DIRECTORIES
 # Blocks that read its text read these two files: the libraries in sourcing
 # order, then the main script (so a function is defined before its call).
 mq_all=$SUITE_TMP_ROOT/merge-queue.all.sh
-cat "$root"/templates/scripts/ci/queue/state.sh "$root"/templates/scripts/ci/queue/requests.sh "$root"/templates/scripts/ci/queue/rush.sh "$root"/templates/scripts/ci/queue/runs.sh "$root"/templates/scripts/ci/queue/choose.sh "$root"/templates/scripts/ci/queue/serial.sh "$root"/templates/scripts/ci/queue/batch.sh "$root"/templates/scripts/ci/queue/deploy.sh "$root"/templates/scripts/ci/merge-queue.sh > "$mq_all"
+cat "$root"/templates/scripts/ci/queue/state.sh "$root"/templates/scripts/ci/queue/requests.sh "$root"/templates/scripts/ci/queue/rush.sh "$root"/templates/scripts/ci/queue/runs.sh "$root"/templates/scripts/ci/queue/choose.sh "$root"/templates/scripts/ci/queue/rerun.sh "$root"/templates/scripts/ci/queue/serial.sh "$root"/templates/scripts/ci/queue/batch.sh "$root"/templates/scripts/ci/queue/deploy.sh "$root"/templates/scripts/ci/merge-queue.sh > "$mq_all"
 bl_all=$SUITE_TMP_ROOT/batch-lib.all.sh
 cat "$root"/templates/scripts/ci/batch-lib.sh "$root"/templates/scripts/ci/queue/rules-*.sh > "$bl_all"
 
@@ -1350,6 +1350,34 @@ eq "behind main with no checks: main is merged in" "update" "$(unstick_action "$
 eq "behind main and red outside the code: main is merged in, a fresh run" "update" "$(unstick_action "$(us_row MERGEABLE red fff999 1 yes 'an install error (EPERM)' done)" "" no)"
 eq "while another runs, nothing that starts CI" "" "$(unstick_action "$(us_row MERGEABLE none fff999 4 yes '' none)" "" yes)"
 eq "red in its code is its agent's turn, behind or not" "" "$(unstick_action "$(us_row MERGEABLE red fff999 5 yes '' done)" "" no)"
+# A red pull request is re-run only when something its checks read has changed, or the failure is infrastructure (spec 009).
+tr_none=""
+tr_seen=$(printf 'aaa111\t100\nbbb222\t200')
+eq "a rule check failed on a head never looked at, pull request untouched: not re-run" "skip a rule check failed and nothing it reads has changed" "$(red_rerun "$(cat "$us_fx/jobs-rule-failed.tsv")" "$tr_none" ccc333 300 no)"
+eq "the same rule failure, pull request edited since the run: re-run" "rerun the pull request was edited since the failed run" "$(red_rerun "$(cat "$us_fx/jobs-rule-failed.tsv")" "$tr_none" ccc333 300 yes)"
+eq "a second drain on the same head and text: not re-run" "skip nothing it reads has changed since the last attempt" "$(red_rerun "$(cat "$us_fx/jobs-rule-failed.tsv")" "$tr_seen" aaa111 100 no)"
+eq "a body edit since the last look: re-run" "rerun the pull request's text changed since the last attempt" "$(red_rerun "$(cat "$us_fx/jobs-rule-failed.tsv")" "$tr_seen" aaa111 101 no)"
+eq "a rule check cancelled with an 'operation was canceled' line is not infrastructure" "skip a rule check failed and nothing it reads has changed" "$(red_rerun "$(cat "$us_fx/jobs-rule-cancelled-text.tsv")" "$tr_none" ccc333 300 no)"
+eq "a failed test on a new head gets one retry" "rerun one retry of a failure on a new commit" "$(red_rerun "$(cat "$us_fx/jobs-test-failed.tsv")" "$tr_none" ccc333 300 no)"
+eq "the same failed test on the same head and text gets none" "skip nothing it reads has changed since the last attempt" "$(red_rerun "$(cat "$us_fx/jobs-test-failed.tsv")" "$tr_seen" bbb222 200 no)"
+eq "a runner lost is infrastructure: re-run even on a head looked at" "rerun a runner lost mid-run" "$(red_rerun "$(cat "$us_fx/jobs-runner-lost.tsv")" "$tr_seen" aaa111 100 no)"
+eq "an install lock is infrastructure: re-run" "rerun an install error (EPERM)" "$(red_rerun "$(cat "$us_fx/jobs-install-eperm.tsv")" "$tr_seen" aaa111 100 no)"
+eq "a changed body changes the mark" "yes" "$([ "$(body_mark 'Water the beds')" != "$(body_mark 'Water the beds daily')" ] && echo yes)"
+eq "a later time is after" "yes" "$(time_after 2026-11-02T17:10:00Z 2026-11-02T17:05:00Z)"
+eq "an earlier or missing time is not" "no no" "$(time_after 2026-11-02T17:00:00Z 2026-11-02T17:05:00Z) $(time_after '' 2026-11-02T17:05:00Z)"
+eq "the marks are read back from the comments" "aaa111	100" "$(rerun_marks "$(rerun_note 'skip a rule check failed' aaa111 100)")"
+eq "the note says what it did and why" "Not re-running this pull request's failed jobs: a rule check failed." "$(rerun_note 'skip a rule check failed' aaa111 100 | head -n 1)"
+eq "the drain hands its re-run to drain_rerun_one" "1" "$(grep -c 'drain_rerun_one "\$r"' "$mq_all")"
+# The checks job keeps the failed check's own lines (scripts/ci/check-log.sh).
+. "$root/templates/scripts/ci/failure-lib.sh"
+cl_tmp=$(mktemp -d)
+cl_said=$(RUNNER_TEMP="$cl_tmp" sh "$root/templates/scripts/ci/check-log.sh" sh -c 'echo "packages/web/src/app.ts is over its limit"; exit 3'); cl_code=$?
+eq "the check keeps its exit code" "3" "$cl_code"
+eq "the check still prints its lines" "packages/web/src/app.ts is over its limit" "$cl_said"
+eq "the lines are kept for the failure report" "packages/web/src/app.ts is over its limit" "$(cat "$cl_tmp/check.log")"
+eq "the failure report names the failed step's own lines" "1" "$(failure_annotation checks 'Fail when a change grows a source file past its size limit' "$(cat "$cl_tmp/check.log")" | grep -c 'over its limit')"
+eq "every check step of the checks job keeps its output" "yes" "$(for n in line-endings numbering-check spec-check setup-check shared-check hotspots-check delete-check client-env-check design-check mock-check; do grep -q "check-log.sh sh scripts/ci/$n.sh" "$root/templates/.github/workflows/ci.yml" || echo no; done | grep -q no && echo no || echo yes)"
+eq "the failing job's annotation is fed the check log" "1" "$(grep -c 'failure-report.sh job "\$RUNNER_TEMP/check.log"' "$root/templates/.github/workflows/ci.yml")"
 eq "red outside the code, up to date: CI again" "rerun" "$(unstick_action "$(us_row MERGEABLE red fff999 0 yes 'an install error (EPERM)' done)" "" no)"
 eq "once per head: a marked re-run is left" "" "$(unstick_action "$(us_row MERGEABLE red bbb222 0 yes 'a runner lost mid-run' done)" "$us_marks" no)"
 eq "cancelled, up to date: CI again" "rerun" "$(unstick_action "$(us_row MERGEABLE cancelled fff999 0 yes 'a cancelled run' done)" "" no)"
@@ -1707,7 +1735,7 @@ eq "CI may read pull requests" "1" "$(grep -c '^  pull-requests: read' "$root/te
 ci_job() { awk -v j="  $1:" '$0 == j {f=1; next} /^  [a-z-]*:$/ {f=0} f' "$root/templates/.github/workflows/ci.yml"; }
 ci_says() { ci_job "$1" | grep -c -e '^      actions: read$' -e '^        if: failure()$' -e 'run: sh scripts/ci/failure-report.sh job'; }
 eq "a failed job says what failed; only checks then cancels its run" "3 3 3 0" "$(ci_says checks) $(ci_says app) $(ci_says screens) $(grep -c 'gh run cancel' "$root/templates/.github/workflows/ci.yml")"
-eq "checks names the failure, then cancels its run, with actions: write" "1 1 1" "$(ci_job checks | grep -c 'run: sh scripts/ci/failure-report.sh job$') $(ci_job checks | grep -c 'run: sh scripts/ci/failure-report.sh cancel$') $(ci_job checks | grep -c '^      actions: write$')"
+eq "checks names the failure, then cancels its run, with actions: write" "1 1 1" "$(ci_job checks | grep -c 'run: sh scripts/ci/failure-report.sh job "\$RUNNER_TEMP/check.log"$') $(ci_job checks | grep -c 'run: sh scripts/ci/failure-report.sh cancel$') $(ci_job checks | grep -c '^      actions: write$')"
 eq "no other job cancels the run" "0 0 0" "$(ci_job app | grep -c 'failure-report.sh cancel') $(ci_job tests | grep -c 'failure-report.sh cancel') $(ci_job screens | grep -c 'failure-report.sh cancel')"
 eq "main's full job is never stopped" "0" "$(ci_says full)"
 eq "the spec, design and mock checks read the live body" "3" "$(grep -c 'SPEC_TEXT=$(gh api' "$root/templates/.github/workflows/ci.yml")"

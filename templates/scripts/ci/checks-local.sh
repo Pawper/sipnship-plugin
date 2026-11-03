@@ -169,7 +169,7 @@ while IFS="$us" read -r kind a b c d; do
   case "$kind" in
     S) launch; name=$a; cond=$b; nbody=$d ;;
     C)
-      cl=$(printf '%s' "$a" | sed 's/\${{ *github\.sha *}}/$CHECKS_HEAD/g; s/"\${{ *github\.event\.pull_request\.number *}}"/""/g')
+      cl=$(printf '%s' "$a" | sed 's#^sh scripts/ci/check-log\.sh ##; s/\${{ *github\.sha *}}/$CHECKS_HEAD/g; s/"\${{ *github\.event\.pull_request\.number *}}"/""/g')
       case "$cl" in
         *'${{'*) skipped="$skipped
   - $name (it needs GitHub's own context)"; name="" ;;
