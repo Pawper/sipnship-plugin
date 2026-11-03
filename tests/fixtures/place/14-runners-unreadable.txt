@@ -1,0 +1,11 @@
+# One case of place_job, on Maya's rooftop-garden app.
+case	The runners could not be read, so Maya's machines are taken to be up and the rescue moves the job if they are not
+places	order=own,tenki,github wait=10 connected=tenki usual=6
+job	linux	pr	self-hosted,linux,pr
+keep	on
+queued	0
+gone	no
+now	1793000000
+runners	unknown
+expect	own	self-hosted,linux,pr	no	-	-
+words	This ran on your machines.

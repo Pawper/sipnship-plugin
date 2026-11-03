@@ -1,0 +1,84 @@
+# Where each build runs, when the builder's order has more than one place
+# ("My machines first, then Tenki, then GitHub"). A queued job never moves
+# to another runner, so the place is chosen before the jobs are queued: a
+# workflow calls this first, and every later job reads its runs-on from it.
+# With "My machines only" nothing calls it, the workflows keep their fixed
+# runs-on, and nothing hosted is ever spent.
+#
+# How a workflow uses it, one line a job in "jobs" (NAME SYSTEM LABELS, the
+# labels being the job's runs-on on your machines):
+#
+#   jobs:
+#     place:
+#       uses: ./.github/workflows/place.yml
+#       secrets: inherit
+#       with:
+#         jobs: |
+#           checks linux self-hosted,linux,pr
+#           tests linux self-hosted,linux,pr
+#     checks:
+#       needs: place
+#       runs-on: ${{ fromJSON(needs.place.outputs.runs-on).checks }}
+#
+# Where this job itself runs: the repository variable
+# SIPNSHIP_PLACE_RUNS_ON, the first place in the order that is not your
+# machines (its smallest machine), else GitHub's smallest. The order is the
+# variable SIPNSHIP_PLACES, which the builder's agent writes when they save
+# it; the rules and its form are in scripts/ci/queue/rules-place.sh. A run
+# placed on a machine that then goes off is started again by the drain's
+# rescue (place-rescue.yml).
+name: Place
+
+on:
+  workflow_call:
+    inputs:
+      jobs:
+        description: "One line a job: NAME SYSTEM LABELS"
+        type: string
+        required: true
+    outputs:
+      runs-on:
+        description: "Each job's runs-on, as JSON keyed by the job's name"
+        value: ${{ jobs.place.outputs.runs-on }}
+      where:
+        description: "Each job's place, as JSON keyed by the job's name"
+        value: ${{ jobs.place.outputs.where }}
+
+jobs:
+  place:
+    runs-on: ${{ vars.SIPNSHIP_PLACE_RUNS_ON || 'ubuntu-latest' }}
+    timeout-minutes: 3
+    outputs:
+      runs-on: ${{ steps.place.outputs.runs-on }}
+      where: ${{ steps.place.outputs.where }}
+    defaults:
+      run:
+        shell: bash --noprofile --norc -eo pipefail {0}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts/ci
+      # The runners can be read only with the queue's identity (its App, or
+      # QUEUE_TOKEN); without it your machines are taken to be up.
+      - name: Sign in as the queue
+        id: app
+        env:
+          QUEUE_APP_ID: ${{ secrets.QUEUE_APP_ID }}
+          QUEUE_APP_KEY: ${{ secrets.QUEUE_APP_KEY }}
+          QUEUE_TOKEN: ${{ secrets.QUEUE_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          t=$(sh scripts/ci/queue-app-token.sh) || t=""
+          [ -n "$t" ] || t=$QUEUE_TOKEN
+          if [ -n "$t" ]; then echo "::add-mask::$t"; echo "token=$t" >> "$GITHUB_OUTPUT"; fi
+      - name: Place each job
+        id: place
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token || github.token }}
+          GH_REPO: ${{ github.repository }}
+          PLACE_JOBS: ${{ inputs.jobs }}
+          SIPNSHIP_PLACES: ${{ vars.SIPNSHIP_PLACES }}
+          SIPNSHIP_PLACE_REFUSED: ${{ vars.SIPNSHIP_PLACE_REFUSED }}
+          HOSTED_MINUTES: ${{ vars.HOSTED_MINUTES }}
+          CI_KEEP_RUNNER: ${{ vars.CI_KEEP_RUNNER }}
+        run: sh scripts/ci/place.sh

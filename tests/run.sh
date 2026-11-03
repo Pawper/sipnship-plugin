@@ -73,7 +73,7 @@ export TMPDIR SUITE_TMP_ROOT GIT_CEILING_DIRECTORIES
 # Blocks that read its text read these two files: the libraries in sourcing
 # order, then the main script (so a function is defined before its call).
 mq_all=$SUITE_TMP_ROOT/merge-queue.all.sh
-cat "$root"/templates/scripts/ci/queue/state.sh "$root"/templates/scripts/ci/queue/requests.sh "$root"/templates/scripts/ci/queue/rush.sh "$root"/templates/scripts/ci/queue/runs.sh "$root"/templates/scripts/ci/queue/choose.sh "$root"/templates/scripts/ci/queue/rerun.sh "$root"/templates/scripts/ci/queue/serial.sh "$root"/templates/scripts/ci/queue/batch.sh "$root"/templates/scripts/ci/queue/deploy.sh "$root"/templates/scripts/ci/queue/attention.sh "$root"/templates/scripts/ci/merge-queue.sh > "$mq_all"
+cat "$root"/templates/scripts/ci/queue/state.sh "$root"/templates/scripts/ci/queue/requests.sh "$root"/templates/scripts/ci/queue/rush.sh "$root"/templates/scripts/ci/queue/runs.sh "$root"/templates/scripts/ci/queue/choose.sh "$root"/templates/scripts/ci/queue/rerun.sh "$root"/templates/scripts/ci/queue/rescue.sh "$root"/templates/scripts/ci/queue/serial.sh "$root"/templates/scripts/ci/queue/batch.sh "$root"/templates/scripts/ci/queue/deploy.sh "$root"/templates/scripts/ci/queue/attention.sh "$root"/templates/scripts/ci/merge-queue.sh > "$mq_all"
 bl_all=$SUITE_TMP_ROOT/batch-lib.all.sh
 cat "$root"/templates/scripts/ci/batch-lib.sh "$root"/templates/scripts/ci/queue/rules-*.sh > "$bl_all"
 
@@ -3788,6 +3788,56 @@ eq "and the rest still run" "1" "$(printf '%s\n' "$qc_nobody" | grep -c 'over th
 (cd "$qc" && grep -v 'hotspots-check.sh' .github/workflows/ci.yml > .scratch/ci.yml && cp .scratch/ci.yml .github/workflows/ci.yml)
 eq "a step taken out of ci.yml is not run" "0" "$(cd "$qc" && CHECKS_LOCAL_OFFLINE=1 sh scripts/ci/checks-local.sh 2>&1 | grep -c 'over the limit')"
 eq "the hook is registered in hooks.json" "1" "$(grep -c 'require-local-checks.sh' "$root/hooks/hooks.json")"
+
+section 'builds that find a place, and the rescue of a build stuck on a machine that went offline'
+. "$root/templates/scripts/ci/batch-lib.sh"
+# pf_read FILE: each fixture line as a shell variable, pf_KEY, in one awk;
+# repeated keys (runner, job, expect) are joined by newlines.
+pf_read() {
+  unset pf_case pf_places pf_job pf_keep pf_queued pf_gone pf_now pf_runners pf_runner pf_expect pf_words
+  eval "$(awk -F'\t' '/^[a-z]/ { k = $1; v = $0; sub(/^[^\t]*\t/, "", v); a[k] = (k in a) ? a[k] "\n" v : v; if (!(k in o)) o[++n] = k }
+    END { for (i = 1; i <= n; i++) { v = a[o[i]]; gsub(/'\''/, "'\''\\'\'''\''", v); printf "pf_%s='\''%s'\''\n", o[i], v } }' "$1")"
+}
+for pf in "$root"/tests/fixtures/place/*.txt; do
+  pf_name=${pf##*/}; pf_name=${pf_name%.txt}
+  pf_read "$pf"
+  IFS='	' read -r pf_sys pf_kind pf_labels <<PF_EOF
+$pf_job
+PF_EOF
+  if [ "${pf_runners:-}" = unknown ]; then pf_facts=unknown
+  else pf_facts=$(own_facts "$pf_labels" "$pf_keep" "$pf_runner" "$pf_queued"); fi
+  pf_out=$(place_job "$pf_places" "$pf_sys" "$pf_kind" "$pf_labels" "$pf_facts" "$pf_gone" "$pf_now")
+  eq "place $pf_name: $pf_case" "$pf_expect" "$pf_out"
+  eq "place $pf_name: the run's line" "$pf_words" "$(place_words "$pf_out")"
+done
+for rf in "$root"/tests/fixtures/rescue/*.txt; do
+  rf_name=${rf##*/}; rf_name=${rf_name%.txt}
+  pf_read "$rf"
+  rf_want=$pf_expect; [ "$rf_want" = nothing ] && rf_want=""
+  rf_got=""
+  # As the drain does: an order with one place, or no wait limit, is never rescued.
+  if [ "$(rescue_on "$pf_places")" = yes ]; then rf_got=$(rescue_runs "$pf_places" "$pf_job" "$pf_runner" "$pf_now"); fi
+  eq "rescue $rf_name: $pf_case" "$rf_want" "$rf_got"
+done
+eq "a word of the order is read" "own,tenki,github" "$(places_get 'order=own,tenki,github wait=10' order)"
+eq "an absent word is empty" "" "$(places_get 'order=own' wait)"
+eq "a pull request's own job" "pr" "$(place_kind pull_request feature-x)"
+eq "a batch's job" "batch" "$(place_kind pull_request batch-2026-11-02-1)"
+eq "a rush head's job" "rush" "$(place_kind pull_request rush-12)"
+eq "main's job" "main" "$(place_kind push '')"
+eq "with no kept runner, none is counted kept" "2 2 0 0" "$(own_facts self-hosted,linux off "$(printf 'online\tfalse\tself-hosted,linux,pr\nonline\tfalse\tself-hosted,linux')" 0)"
+eq "a runner without the job's labels does not count" "1 1 1 3" "$(own_facts self-hosted,windows on "$(printf 'online\tfalse\tself-hosted,linux,pr\nonline\tfalse\tself-hosted,windows')" 3)"
+eq "the outputs are one JSON map each, keyed by the job" '{"checks":["self-hosted","linux","pr"],"app":"tenki-standard-small-2c-4g"}
+{"checks":"own","app":"tenki"}' "$(printf 'checks\town\tself-hosted,linux,pr\napp\ttenki\ttenki-standard-small-2c-4g\n' | place_outputs)"
+eq "a refusal is noted for an hour, beside another place's still inside its hour" "refused.github=1792999000 refused.tenki=1793000000" "$(rescue_skip 'refused.github=1792999000 refused.tenki=1792990000' tenki 1793000000)"
+eq "an older refusal is dropped" "refused.tenki=1793000000" "$(rescue_skip 'refused.github=1792990000' tenki 1793000000)"
+eq "the rescue's line for a machine that went off" "Your machine went offline while this build waited for it, so it was started again to find another place." "$(rescue_words own offline)"
+eq "the rescue's line for a hosted place that left a build waiting" "Tenki left this build waiting past your wait limit, so it was started again elsewhere, and Tenki is passed over for an hour." "$(rescue_words tenki stuck)"
+eq "the order with more than one place and a wait limit is rescued" "yes" "$(rescue_on 'order=own,tenki wait=10')"
+# The drain calls the rescue every round, and the place job's scripts read the rules.
+eq "the drain calls the rescue each round" "1" "$(grep -c '^    drain_rescue' "$root/templates/scripts/ci/merge-queue.sh")"
+eq "the place workflow runs the place job's script" "1" "$(grep -c 'sh scripts/ci/place.sh' "$root/templates/.github/workflows/place.yml")"
+eq "the rescue workflow is skipped with My machines only" "1" "$(grep -c "if: \${{ vars.SIPNSHIP_PLACE_RUNS_ON != '' }}" "$root/templates/.github/workflows/place-rescue.yml")"
 
 # --- end of blocks: the summary, kept in every part.
 eq "no process started by this suite is still running" "" "$(spawned_alive)"

@@ -1,0 +1,13 @@
+# One case of place_job, on Maya's rooftop-garden app.
+case	The same busy runners, but a batch's job keeps the kept runner and stays
+places	order=own,tenki,github wait=10 connected=tenki usual=6
+job	linux	batch	self-hosted,linux,pr
+keep	on
+queued	5
+gone	no
+now	1793000000
+runner	online	true	self-hosted,linux,pr
+runner	online	true	self-hosted,linux,pr
+runner	online	false	self-hosted,linux
+expect	own	self-hosted,linux	no	-	-
+words	This ran on your machines.

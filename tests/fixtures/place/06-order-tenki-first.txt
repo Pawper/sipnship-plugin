@@ -1,0 +1,12 @@
+# One case of place_job, on Maya's rooftop-garden app.
+case	Maya chose Tenki first; it takes the job even with her machines online
+places	order=tenki,own,github wait=10 connected=tenki
+job	linux	pr	self-hosted,linux,pr
+keep	on
+queued	0
+gone	no
+now	1793000000
+runner	online	false	self-hosted,linux,pr
+runner	online	false	self-hosted,linux
+expect	tenki	tenki-standard-small-2c-4g	no	-	-
+words	This ran on Tenki.

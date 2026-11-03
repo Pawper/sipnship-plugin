@@ -1,0 +1,10 @@
+# One case of rescue_runs, on Maya's rooftop-garden app.
+case	A build waits 25 minutes behind others while Maya's runners are online and busy; they will take it, so it is left alone
+places	order=own,tenki,github wait=10 connected=tenki usual=6
+now	1793000000
+job	102	1	place / place	completed	ubuntu-latest	1792998440
+job	102	1	checks	queued	self-hosted,linux,pr	1792998500
+runner	online	true	self-hosted,linux,pr
+runner	online	true	self-hosted,linux,pr
+runner	online	false	self-hosted,linux
+expect	nothing

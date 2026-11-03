@@ -1,0 +1,12 @@
+# One case of place_job, on Maya's rooftop-garden app.
+case	Maya's desktop is online with free runners, so her machines take the job
+places	order=own,tenki,github wait=10 connected=tenki usual=6
+job	linux	pr	self-hosted,linux,pr
+keep	on
+queued	0
+gone	no
+now	1793000000
+runner	online	false	self-hosted,linux,pr
+runner	online	false	self-hosted,linux
+expect	own	self-hosted,linux,pr	no	-	-
+words	This ran on your machines.

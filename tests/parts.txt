@@ -25,6 +25,7 @@ queue waits for a runner and the machine line
 queue a green pull request starts the drain
 queue the queue signs in as its own App or with the workflow token
 queue the drain reads with its own token and merges with the queue token
+queue builds that find a place, and the rescue of a build stuck on a machine that went offline
 shell-2 json_field
 shell-2 split_commands
 shell-2 delete_reason

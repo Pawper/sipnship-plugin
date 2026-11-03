@@ -69,7 +69,7 @@ fi
 . "$here/queue/rush.sh"
 . "$here/queue/runs.sh"
 . "$here/queue/choose.sh"
-. "$here/queue/rerun.sh"
+. "$here/queue/rerun.sh"; . "$here/queue/rescue.sh"
 . "$here/queue/serial.sh"
 . "$here/queue/batch.sh"
 . "$here/queue/deploy.sh"
@@ -306,8 +306,8 @@ if [ "$mode" = drain ]; then
       last_rush=$rush_now
     fi
     queue_step="drain round $round: re-running failed jobs"
-    # A red pull request gets one retry of its failed jobs; a second red,
-    # or a conflict, is collected and named when the drain ends.
+    drain_rescue # a build stuck on a machine that went offline starts again elsewhere (queue/rescue.sh)
+    # A red pull request gets one retry; a second red, or a conflict, is named when the drain ends.
     for r in $(drain_retry "$open" "$base" "$retried"); do
       drain_rerun_one "$r"
       retried="$retried $r"

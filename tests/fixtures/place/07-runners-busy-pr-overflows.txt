@@ -1,0 +1,13 @@
+# One case of place_job, on Maya's rooftop-garden app.
+case	Both pull-request runners are busy with five jobs ahead, past the ten-minute limit, so the pull request's job goes to Tenki
+places	order=own,tenki,github wait=10 connected=tenki usual=6
+job	linux	pr	self-hosted,linux,pr
+keep	on
+queued	5
+gone	no
+now	1793000000
+runner	online	true	self-hosted,linux,pr
+runner	online	true	self-hosted,linux,pr
+runner	online	false	self-hosted,linux
+expect	tenki	tenki-standard-small-2c-4g	no	busy	own:busy
+words	Your runners were busy, so this ran on Tenki.

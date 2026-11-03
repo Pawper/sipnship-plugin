@@ -1,0 +1,12 @@
+# One case of place_job, on Maya's rooftop-garden app.
+case	Tenki reached its ceiling and Maya chose to wait, so the job holds at Tenki
+places	order=own,tenki,github wait=10 connected=tenki usual=6 ceiling.tenki=20:wait spend.tenki=20.40
+job	linux	pr	self-hosted,linux,pr
+keep	on
+queued	0
+gone	no
+now	1793000000
+runner	offline	false	self-hosted,linux,pr
+runner	offline	false	self-hosted,linux
+expect	tenki	tenki-standard-small-2c-4g	ceiling	offline	own:offline
+words	Tenki reached the ceiling you set, and you chose to wait. This build waits until next month or until you raise it.

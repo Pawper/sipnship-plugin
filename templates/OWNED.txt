@@ -72,6 +72,9 @@ scripts/ci/queue/rules-serial.sh
 scripts/ci/queue/rules-requests.sh
 scripts/ci/queue/rules-deploy.sh
 scripts/ci/queue/rules-checkout.sh
+scripts/ci/queue/rules-place.sh
+scripts/ci/queue/rules-rescue.sh
+scripts/ci/queue/rescue.sh
 scripts/ci/run-lib.sh
 scripts/ci/run-test-file.mjs
 scripts/ci/QUEUE.md
@@ -117,6 +120,13 @@ scripts/ci/deploy-health.sh
 scripts/ci/vercel-ignore.sh
 scripts/deploy-setup.sh
 .github/workflows/deploy.yml
+# Builds that find a place: added only to a project whose builder chose an
+# order of more than one place, by the pull request that adds the place job.
+feature places
+.github/workflows/place.yml
+.github/workflows/place-rescue.yml
+scripts/ci/place.sh
+scripts/ci/place-rescue.sh
 feature smoke
 scripts/ci/smoke.mjs
 .github/workflows/smoke.yml

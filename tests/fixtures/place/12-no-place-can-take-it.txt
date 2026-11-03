@@ -1,0 +1,12 @@
+# One case of place_job, on Maya's rooftop-garden app.
+case	Maya's machines are off, Tenki is not connected and GitHub's minutes are used up, so the job waits for her machines
+places	order=own,tenki,github wait=10
+job	linux	pr	self-hosted,linux,pr
+keep	on
+queued	0
+gone	yes
+now	1793000000
+runner	offline	false	self-hosted,linux,pr
+runner	offline	false	self-hosted,linux
+expect	own	self-hosted,linux,pr	yes	offline	own:offline,tenki:not-connected,github:gone
+words	No place could take this build. It waits for your machines until one is free.
