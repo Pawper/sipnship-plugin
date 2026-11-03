@@ -73,7 +73,7 @@ export TMPDIR SUITE_TMP_ROOT GIT_CEILING_DIRECTORIES
 # Blocks that read its text read these two files: the libraries in sourcing
 # order, then the main script (so a function is defined before its call).
 mq_all=$SUITE_TMP_ROOT/merge-queue.all.sh
-cat "$root"/templates/scripts/ci/queue/state.sh "$root"/templates/scripts/ci/queue/requests.sh "$root"/templates/scripts/ci/queue/rush.sh "$root"/templates/scripts/ci/queue/runs.sh "$root"/templates/scripts/ci/queue/choose.sh "$root"/templates/scripts/ci/queue/rerun.sh "$root"/templates/scripts/ci/queue/serial.sh "$root"/templates/scripts/ci/queue/batch.sh "$root"/templates/scripts/ci/queue/deploy.sh "$root"/templates/scripts/ci/merge-queue.sh > "$mq_all"
+cat "$root"/templates/scripts/ci/queue/state.sh "$root"/templates/scripts/ci/queue/requests.sh "$root"/templates/scripts/ci/queue/rush.sh "$root"/templates/scripts/ci/queue/runs.sh "$root"/templates/scripts/ci/queue/choose.sh "$root"/templates/scripts/ci/queue/rerun.sh "$root"/templates/scripts/ci/queue/serial.sh "$root"/templates/scripts/ci/queue/batch.sh "$root"/templates/scripts/ci/queue/deploy.sh "$root"/templates/scripts/ci/queue/attention.sh "$root"/templates/scripts/ci/merge-queue.sh > "$mq_all"
 bl_all=$SUITE_TMP_ROOT/batch-lib.all.sh
 cat "$root"/templates/scripts/ci/batch-lib.sh "$root"/templates/scripts/ci/queue/rules-*.sh > "$bl_all"
 
@@ -1387,6 +1387,13 @@ eq "green is not stuck" "" "$(unstick_action "$(us_row MERGEABLE green fff999 6 
 eq "the re-run comment carries its cause and its mark" "1 rerun fff999" "$(unstick_rerun_note 'an install error (EPERM)' fff999 | grep -c 'stopped for an install error (EPERM)') $(unstick_marks "$(unstick_rerun_note x fff999)")"
 eq "the drain's end unsticks once, after its deploy and its held steps, and not after a held step's merge" "1 1" "$(grep -c '^  \[ "\$held_merged" = yes \] || unstick_one$' "$mq_all") $(sed -n '/deploy_if_due "\$d_begin"/,/|| unstick_one/p' "$mq_all" | grep -c '^  held_steps$')"
 eq "every action returns, so one pull request a drain's end" "3" "$(sed -n '/^unstick_one()/,/^}/p' "$mq_all" | grep -c 'return 0 ;;')"
+eq "a missing rush list means no rush, so the drain does not fail at its end" "1" "$(sed -n '/^unstick_one()/,/^}/p' "$mq_all" | grep -c '^  \[ ! -f "\$flaky_dir/rush.list" \] ||')"
+rl_dir=$(mktemp -d)
+rl_out=$( ( flaky_dir=$rl_dir; base=main; gh_err=/dev/null; tab=$(printf '	'); say() { :; }; gh() { echo ghcalled >> "$rl_dir/gh"; return 1; }; . "$root/templates/scripts/ci/queue/choose.sh"; unstick_one; echo "rc=$?"; cat "$rl_dir/gh" ) 2>&1 )
+eq "unstick_one with no rush.list neither errors nor stops, and goes on to list pull requests" "rc=0 ghcalled" "$(printf '%s' "$rl_out" | tr '
+' ' ' | sed 's/ $//')"
+eq "Needs attention drops a pull request that merged in the same drain" "1" "$(grep -c 'is \$a_state now; not a failure' "$root/templates/scripts/ci/queue/attention.sh")"
+eq "the deploy line never says a number of drains it did not count" "0" "$(grep -c 'held across' "$root/templates/scripts/ci/queue/rules-deploy.sh")"
 eq "merging main in reuses GitHub's update-branch" "1" "$(sed -n '/^unstick_one()/,/^}/p' "$mq_all" | grep -c 'pulls/\$us_pr/update-branch')"
 eq "a clash with main is marked in its comment" "1" "$(sed -n '/^notify_conflict()/,/^}/p' "$mq_all" | grep -c 'unstick_mark clash')"
 
@@ -1683,7 +1690,7 @@ eq "a green pull request the queue can merge holds the deploy" "yes" "$(deploy_w
 eq "one this drain dropped never holds it" "no" "$(deploy_waits_for 12 'state:ready' ' 11 12 ')"
 eq "one labelled blocked never holds it" "no" "$(deploy_waits_for 13 'state:blocked' '')"
 eq "a hold under the bound stays held" "" "$(deploy_hold_bound 1 4000 5000 30)"
-eq "held across two drains, the deploy goes" "held across 2 drains" "$(deploy_hold_bound 2 4000 5000 30)"
+eq "held across two drains, the deploy goes, said plainly" "held for 2 drains in a row; the limit is 2" "$(deploy_hold_bound 2 4000 5000 30)"
 eq "last deploy past the bound, the deploy goes" "last deploy 33 minutes ago, over the 30-minute bound" "$(deploy_hold_bound 0 3000 5000 30)"
 eq "the gate skips held pull requests the way the drain does" "1" "$(grep -c 'held_reason' "$root/templates/scripts/ci/deploy-gate.sh" | awk '{print ($1 >= 1) ? 1 : 0}')"
 gh_stub_d=$(mktemp -d); mkdir -p "$gh_stub_d/.claude"

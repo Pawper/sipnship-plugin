@@ -73,6 +73,7 @@ fi
 . "$here/queue/serial.sh"
 . "$here/queue/batch.sh"
 . "$here/queue/deploy.sh"
+. "$here/queue/attention.sh"
 rules=$(cat "$here/classes.txt")
 
 mode=""
@@ -414,19 +415,7 @@ if [ "$mode" = drain ]; then
   # Re-read each one before calling it a failure: a pull request red
   # earlier in the drain may be green, or only cancelled, by now.
   still=""
-  if [ -n "$attention" ]; then
-    rm -f "$flaky_dir/pr-"*.tsv 2>/dev/null
-    still=$(printf '%s\n' "$attention" | while IFS="$tab" read -r a_num a_why; do
-      [ -n "$a_num" ] || continue
-      case "$a_why" in
-        *"failed CI twice"*)
-          now=$(pr_rollup "$(pr_field "$a_num" 2)")
-          if [ "$now" = red ]; then printf '%s\t%s\n' "$a_num" "$a_why"
-          else say "  #$a_num was red earlier in this drain and is $now now; not a failure."; fi ;;
-        *) printf '%s\t%s\n' "$a_num" "$a_why" ;;
-      esac
-    done)
-  fi
+  [ -z "$attention" ] || still=$(attention_recheck "$attention")
   if [ -n "$still" ]; then
     say "Needs attention:"
     printf '%s\n' "$still" | while IFS="$tab" read -r a_num a_why; do
