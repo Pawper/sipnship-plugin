@@ -131,7 +131,31 @@ targets() {
 }
 
 mode=${1:-}
-case "$mode" in build|check) ;; *) echo "Usage: sh scripts/rules.sh build|check" >&2; exit 2 ;; esac
+case "$mode" in
+  off|on)
+    # A person's own switch, in their own terminal: sets the repository
+    # variable RULES_OFF with their gh sign-in, then starts the rules-sync
+    # workflow; the queue drain is the fallback. An agent is refused.
+    . "$top/scripts/ci/rules-lib.sh"
+    id=${2:-}; why=${3:-}
+    [ -n "$id" ] || { echo "Usage: sh scripts/rules.sh off ID \"reason\"  |  sh scripts/rules.sh on ID" >&2; exit 2; }
+    printf '%s\n' "$(sed -n 's/^id: *//p' .claude/rules.txt .claude/rules-own.txt 2>/dev/null)" | grep -qxF "$id" || { echo "There is no rule called $id. The ids are the 'id:' lines in .claude/rules.txt and .claude/rules-own.txt." >&2; exit 2; }
+    cur=$(gh api "repos/{owner}/{repo}/actions/variables/RULES_OFF" --jq .value 2>/dev/null || true)
+    if [ "$mode" = off ] && rules_locked | grep -qxF "$id" && [ "$(gh api "repos/{owner}/{repo}/actions/variables/RULES_LOCKS" --jq .value 2>/dev/null || true)" != released ]; then
+      echo "$id protects work that cannot be brought back, so it turns off only after the safety locks are released in Settings." >&2; exit 1
+    fi
+    new=$(rules_next_off "$cur" "$id" "$mode")
+    if [ "$new" = "$(rules_next_off "$cur" "-" on)" ]; then echo "Already $mode: nothing to change."; exit 0; fi
+    if [ -z "$new" ]; then gh api -X DELETE "repos/{owner}/{repo}/actions/variables/RULES_OFF" >/dev/null 2>&1 || true
+    elif [ -n "$cur" ]; then gh api -X PATCH "repos/{owner}/{repo}/actions/variables/RULES_OFF" -f name=RULES_OFF -f value="$new" >/dev/null
+    else gh api -X POST "repos/{owner}/{repo}/actions/variables" -f name=RULES_OFF -f value="$new" >/dev/null; fi
+    [ -z "$why" ] || echo "Noted: $why"
+    gh api -X POST "repos/{owner}/{repo}/actions/workflows/rules-sync.yml/dispatches" -f ref=main >/dev/null 2>&1 || true
+    echo "Rule $id is now $mode. The change reaches the repository in a few minutes, as one pull request that lands first."
+    exit 0 ;;
+  build|check) ;;
+  *) echo "Usage: sh scripts/rules.sh build|check|off ID \"reason\"|on ID" >&2; exit 2 ;;
+esac
 [ -f .claude/rules.txt ] || { echo "No .claude/rules.txt here; nothing to build."; exit 0; }
 
 stale=0; i=0

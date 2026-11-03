@@ -3401,6 +3401,92 @@ eq "the counterparts file is built from the list, one row per hook, in order" "b
 require-b | session-only | a live reading" "$(grep -v '^#' "$rl_cp/plugin/hooks/COUNTERPARTS.txt")"
 eq "a stale counterparts file fails the check" "1" "$(printf 'old\n' > "$rl_cp/plugin/hooks/COUNTERPARTS.txt"; cd "$rl_cp" && sh scripts/rules.sh check >/dev/null 2>&1; echo $?)"
 
+section 'a rule switch reaches the repository'
+rw_lib="$root/templates/scripts/ci/rules-lib.sh"
+rw_l=$(mktemp -d)
+printf '%s\n' 'id: never-delete' 'words: Never delete; move aside' '' 'id: design' 'words: The look has one source' > "$rw_l/rules.txt"
+(
+  . "$rw_lib"
+  RULES_LISTS="$rw_l/rules.txt"
+  eq "turning a rule off adds it, sorted" "design never-delete" "$(rules_next_off 'never-delete' design off)"
+  eq "turning it on takes it out" "never-delete" "$(rules_next_off 'design never-delete' design on)"
+  eq "turning off twice changes nothing" "design" "$(rules_next_off 'design' design off)"
+  eq "the last one on leaves nothing" "" "$(rules_next_off 'design' design on)"
+  eq "ids are read from the file's first words, with comments and Windows line ends dropped" "design
+spec" "$(printf '# Maya\r\nspec 2026-11-02\r\ndesign\r\n' | rules_ids_of)"
+  eq "the file keeps the day a rule went off and dates a new one" "# The rules that are off in this project, one 'ID YYYY-MM-DD' per line.
+# Written by the rule-switch sync from the repository variable RULES_OFF;
+# change a switch on the Rules tab, never this file by hand.
+design 2026-11-03
+never-delete 2026-10-01" "$(rules_off_text 'design never-delete' 'never-delete 2026-10-01' 2026-11-03)"
+  eq "one rule off is titled in plain words" "Your rules: The look has one source is off" "$(rules_sync_title '' design)"
+  eq "one rule back on is titled the same way" "Your rules: The look has one source is on" "$(rules_sync_title design '')"
+  eq "several changes are counted" "Your rules: 2 switches changed" "$(rules_sync_title 'design' 'never-delete')"
+)
+
+rw=$(mktemp -d)
+rw_o=$(mktemp -d); rw_b=$(mktemp -d)
+git init -q --bare "$rw_o"
+git -C "$rw" init -q -b main
+git -C "$rw" config user.email t@example.com
+git -C "$rw" config user.name t
+mkdir -p "$rw/scripts/ci" "$rw/.claude"
+for rw_f in scripts/rules.sh scripts/pr-open.sh scripts/pr-lib.sh scripts/ci/rules-lib.sh scripts/ci/rules-sync.sh; do cp "$root/templates/$rw_f" "$rw/$rw_f"; done
+cp "$rw_l/rules.txt" "$rw/.claude/rules.txt"
+printf '%s\n' 'id: never-delete' 'words: Never delete; move aside' 'locked: yes' 'hook: block-delete' 'row: Never delete | The hook refuses rm' '' 'id: design' 'words: The look has one source' 'check: scripts/ci/design-check.sh' 'row: The look has one source | The design step fails a raw colour' > "$rw/.claude/rules.txt"
+printf '# Maya'"'"'s rooftop garden\n\n<!-- rules: begin. Built by sh scripts/rules.sh build; do not edit by hand. -->\nold\n<!-- rules: end -->\n' > "$rw/AGENTS.md"
+printf '.scratch/\n' > "$rw/.gitignore"
+(cd "$rw" && sh scripts/rules.sh build >/dev/null)
+git -C "$rw" add -A
+git -C "$rw" commit -q -m start
+git -C "$rw" remote add origin "$rw_o"
+git -C "$rw" push -q origin main
+printf '%s\n' '#!/bin/sh' 'echo "$*" >> "$FAKE_LOG"' \
+  'case "$*" in' \
+  '  *"actions/variables/RULES_OFF"*"--jq"*) printf "%s\n" "$FAKE_CUR" ;;' \
+  '  *"actions/variables/RULES_LOCKS"*"--jq"*) printf "%s\n" "$FAKE_LOCKS" ;;' \
+  '  *"state=open&per_page"*) printf "%s\n" "$FAKE_OPEN" ;;' \
+  '  *"-X POST repos/{owner}/{repo}/pulls"*) printf "17\thttps://example.test/pull/17\n" ;;' \
+  'esac' 'exit 0' > "$rw_b/gh"
+rw_log="$rw_b/log"
+rw_sync() { (cd "$rw" && PATH="$rw_b:$PATH" FAKE_LOG="$rw_log" FAKE_OPEN="${FAKE_OPEN:-}" FAKE_CUR="${FAKE_CUR:-}" FAKE_LOCKS="${FAKE_LOCKS:-}" RULES_SYNC_DAY=2026-11-03 "$@" 2>&1); }
+
+eq "nothing differs: nothing is opened" "The rule switches are already in step with the repository." "$(rw_sync env RULES_OFF= sh scripts/ci/rules-sync.sh)"
+eq "a dry run says the title and the file and changes nothing" "Your rules: The look has one source is off
+
+# The rules that are off in this project, one 'ID YYYY-MM-DD' per line.
+# Written by the rule-switch sync from the repository variable RULES_OFF;
+# change a switch on the Rules tab, never this file by hand.
+design 2026-11-03" "$(rw_sync env RULES_OFF=design RULES_SYNC_DRY=yes sh scripts/ci/rules-sync.sh)"
+: > "$rw_log"
+rw_out=$(rw_sync env RULES_OFF=design sh scripts/ci/rules-sync.sh)
+eq "a changed switch opens one pull request and asks to land it first" "yes yes yes" "$(printf '%s' "$rw_out" | grep -q 'Opened pull request #17' && echo yes) $(grep -q 'Queue request: land-next #17 by rules-sync: First because it changes a rule' "$rw_log" && echo yes) $(git -C "$rw" ls-remote --heads origin 'rules-sync/*' | grep -q rules-sync && echo yes)"
+rw_ref=$(git -C "$rw_o" for-each-ref --format='%(refname)' 'refs/heads/rules-sync/*' | head -n 1)
+rw_diff=$(git -C "$rw_o" diff main "$rw_ref")
+eq "the branch carries the file and the rebuilt table" "yes yes" "$(printf '%s\n' "$rw_diff" | grep -q '^+design 2026-11-03' && echo yes) $(printf '%s\n' "$rw_diff" | grep -q 'The look has one source: off since November 3, 2026' && echo yes)"
+eq "the checkout is left on main" "main" "$(git -C "$rw" rev-parse --abbrev-ref HEAD)"
+eq "the pull request names the spec and says it plainly" "Spec: specs/016-rule-switches" "$(head -n 1 "$rw/.scratch/rules-sync-body.md")"
+rw_br=$(git -C "$rw_o" for-each-ref --format='%(refname:short)' 'refs/heads/rules-sync/*' | head -n 1)
+: > "$rw_log"
+eq "the same change with its pull request open is left alone" "A pull request for this change is already open: #31." "$(rw_sync env RULES_OFF=design FAKE_OPEN="31 $rw_br" sh scripts/ci/rules-sync.sh)"
+: > "$rw_log"
+rw_sync env RULES_OFF="design never-delete" FAKE_OPEN="31 $rw_br" sh scripts/ci/rules-sync.sh >/dev/null
+eq "an older switch change still open is closed with a comment saying what replaced it" "yes yes" "$(grep -q 'issues/31/comments -f body=Replaced by #17' "$rw_log" && echo yes) $(grep -q 'pulls/31 -f state=closed' "$rw_log" && echo yes)"
+
+: > "$rw_log"
+eq "a person's switch off sets the variable and starts the sync" "yes yes" "$(rw_sync env FAKE_CUR= sh scripts/rules.sh off design 'too noisy' >/dev/null; grep -q 'POST repos/{owner}/{repo}/actions/variables -f name=RULES_OFF -f value=design' "$rw_log" && echo yes) $(grep -q 'workflows/rules-sync.yml/dispatches' "$rw_log" && echo yes)"
+: > "$rw_log"
+rw_sync env FAKE_CUR="design never-delete" sh scripts/rules.sh on design >/dev/null
+eq "switching one on keeps the others off" "yes" "$(grep -q 'PATCH repos/{owner}/{repo}/actions/variables/RULES_OFF -f name=RULES_OFF -f value=never-delete' "$rw_log" && echo yes)"
+: > "$rw_log"
+rw_sync env FAKE_CUR=design sh scripts/rules.sh on design >/dev/null
+eq "the last one on removes the variable" "yes" "$(grep -q 'DELETE repos/{owner}/{repo}/actions/variables/RULES_OFF' "$rw_log" && echo yes)"
+eq "a switch already in place changes nothing" "Already off: nothing to change." "$(rw_sync env FAKE_CUR=design sh scripts/rules.sh off design)"
+eq "a locked rule stays on while the safety locks are on" "yes" "$(rw_sync env FAKE_CUR= FAKE_LOCKS= sh scripts/rules.sh off never-delete | grep -q 'safety locks' && echo yes)"
+eq "an id that is no rule is refused" "yes" "$(rw_sync env sh scripts/rules.sh off no-such-rule | grep -q 'no rule called' && echo yes)"
+eq "the sync is in the drain, ahead of the merging" "1" "$(grep -c 'sh scripts/ci/rules-sync.sh' "$root/templates/.github/workflows/queue-drain.yml")"
+eq "the workflow runs on the label, on the project's own runner, and nowhere hosted" "1 1" "$(grep -c "github.event.label.name == 'rules:sync'" "$root/templates/.github/workflows/rules-sync.yml") $(grep -c 'runs-on: \[self-hosted, windows\]' "$root/templates/.github/workflows/rules-sync.yml")"
+
 
 section 'the delete check'
 dc="$root/templates/scripts/ci/delete-check.sh"

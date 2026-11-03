@@ -43,3 +43,61 @@ rules_locked() {
       END { flush() }'
   done
 }
+
+# The sync and the person's own switch (scripts/ci/rules-sync.sh, and
+# sh scripts/rules.sh off|on). Pure: they print, and touch nothing.
+#   rules_ids_of          stdin to its ids, one per line, sorted: from the
+#                         switches file (the first word of each line) or
+#                         from RULES_OFF, one id to a line
+#   rules_next_off CURRENT ID off|on
+#                         the new RULES_OFF value: CURRENT with ID added or
+#                         taken out, space-separated, sorted
+#   rules_off_text IDS OLD DAY
+#                         the switches file for the ids IDS (words); a rule
+#                         already off in OLD keeps its day
+#   rules_words ID        the rule in the builder's words, from the lists
+#   rules_sync_title NOW WANT
+#                         the plain title of the pull request that moves
+#                         the off ids NOW to WANT (both lists of ids)
+rules_ids_of() {
+  tr -d '\r' | sed 's/#.*//' | awk 'NF { print $1 }' | sort -u
+}
+
+rules_next_off() {
+  { printf '%s\n' "$1" | tr ' ' '\n' | awk -v id="$2" 'NF && $1 != id'; [ "$3" = off ] && printf '%s\n' "$2"; } | awk 'NF' | sort -u | tr '\n' ' ' | sed 's/ $//'
+}
+
+rules_off_text() {
+  printf '%s\n' "# The rules that are off in this project, one 'ID YYYY-MM-DD' per line." \
+    "# Written by the rule-switch sync from the repository variable RULES_OFF;" \
+    "# change a switch on the Rules tab, never this file by hand."
+  for ro_id in $1; do
+    ro_day=$(printf '%s\n' "$2" | tr -d '\r' | sed 's/#.*//' | awk -v id="$ro_id" '$1 == id { print $2; exit }')
+    printf '%s %s\n' "$ro_id" "${ro_day:-$3}"
+  done
+}
+
+rules_words() {
+  for rw_f in ${RULES_LISTS:-.claude/rules.txt .claude/rules-own.txt}; do
+    [ -f "$rw_f" ] || continue
+    tr -d '\r' < "$rw_f" | awk -v id="$1" '
+      /^[ \t]*$/ { on = 0; next }
+      /^id:/ { v = $0; sub(/^id:[ \t]*/, "", v); on = (v == id); next }
+      on && /^words:/ { sub(/^words:[ \t]*/, ""); print; exit }'
+  done | head -n 1
+}
+
+rules_sync_title() {
+  rt_new=""; rt_gone=""
+  for rt_i in $2; do case " $1 " in *" $rt_i "*) ;; *) rt_new="$rt_new $rt_i" ;; esac; done
+  for rt_i in $1; do case " $2 " in *" $rt_i "*) ;; *) rt_gone="$rt_gone $rt_i" ;; esac; done
+  # shellcheck disable=SC2086
+  set -- $rt_new $rt_gone
+  if [ "$#" = 1 ]; then
+    if [ -n "$rt_new" ]; then rt_st=off; else rt_st=on; fi
+    rt_w=$(rules_words "$1"); rt_w=${rt_w:-$1}
+    printf 'Your rules: %s is %s\n' "$rt_w" "$rt_st"
+  else
+    printf 'Your rules: %s switches changed\n' "$#"
+  fi
+}
