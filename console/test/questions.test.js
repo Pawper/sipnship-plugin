@@ -10,8 +10,8 @@ const questions = require('../questions');
 
 const scratch = () => { const d = path.join(__dirname, '..', '..', '..', '.scratch'); fs.mkdirSync(d, { recursive: true }); return d; };
 const T = 'sns_repo_' + 'B'.repeat(43);
-const now = new Date('2026-11-02T16:12:00Z');
-const asked = { id: 'q1', card: 'pull:187', name: 'Reminders for each bed', words: 'why did you choose this?', askedAt: '2026-11-02T15:00:00Z' };
+const now = new Date();
+const asked = { id: 'q1', card: 'pull:187', name: 'Reminders for each bed', words: 'why did you choose this?', askedAt: new Date(now.getTime() - 72 * 60 * 1000).toISOString() };
 
 function fake(replies) {
   const seen = [];
