@@ -35,6 +35,19 @@ A pull request that fell behind main, clashed with it, or went red for a reason 
 
 A red pull request whose failure is in its code is its agent's turn, and is left alone. Held pull requests, an open batch's members, and everything while a rush change lands are left alone too. The rules are pure functions in `queue/rules-drain.sh` (`unstick_candidates`, `unstick_busy`, `outside_cause`, `unstick_action`), tested with fixtures; `QUEUE_UNSTICK=off` turns the step off.
 
+## A re-run needs a reason
+
+A drain's retry of a red pull request used to happen once per drain, so each new drain re-ran a rule check that had failed on an unchanged commit, and attempts 3 and 4 failed the same way. Now the drain re-runs the failed jobs of a red pull request only when something the checks read has changed since the failed attempt, or the failure looks like infrastructure (`queue/rerun.sh`, rules in `queue/rules-rerun.sh`):
+
+- **Infrastructure** (a runner lost, a timeout, an install file lock, a network error; `outside_cause`) is always re-run, unless a rule check failed on the same run: a rule check fails again until something it reads moves.
+- **The same commit and the same title and body** as the last time the drain looked: not re-run. The record is a hidden mark in a comment on the pull request (`merge-queue:rerun HEAD MARK`, the mark a fingerprint of the title and body), so a drain on a runner, which starts with nothing remembered, reads it too. The drain says in that comment what it did and why.
+- **A new commit's first failure:** a failed test is re-run once (it may have flaked); a "Fail when ..." rule check is re-run only when the pull request was edited after the failed run ended. The spec, delete, mock, design and private-names checks read the live title and body, so editing the body counts as a change.
+- **The same commit with an edited body:** re-run.
+
+A red pull request the drain does not re-run stays on its report as failed, and is its agent's turn: push, or edit the pull request. A cancelled head keeps its once-per-drain re-run.
+
+The checks job keeps each check's own output in `$RUNNER_TEMP/check.log` (`scripts/ci/check-log.sh`), and `failure-report.sh job` reads it into the annotation and the job summary. A run cancelled after a failed check therefore says which check failed and why, even though "CI passed" never starts.
+
 ## Held steps, recorded not remembered
 
 An agent that means to act after another pull request lands records the wait on its own pull request, instead of keeping it in mind:

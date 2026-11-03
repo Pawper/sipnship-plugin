@@ -69,6 +69,7 @@ fi
 . "$here/queue/rush.sh"
 . "$here/queue/runs.sh"
 . "$here/queue/choose.sh"
+. "$here/queue/rerun.sh"
 . "$here/queue/serial.sh"
 . "$here/queue/batch.sh"
 . "$here/queue/deploy.sh"
@@ -307,24 +308,7 @@ if [ "$mode" = drain ]; then
     # A red pull request gets one retry of its failed jobs; a second red,
     # or a conflict, is collected and named when the drain ends.
     for r in $(drain_retry "$open" "$base" "$retried"); do
-      rb=$(pr_field "$r" 1)
-      # Only the newest run on the current head, only when no run of the
-      # pull request is queued or running, and a cancelled head once:
-      # re-running an older run cancels the fresh one through CI's
-      # concurrency group.
-      rh=$(pr_field "$r" 2)
-      runs=$(gh api "repos/{owner}/{repo}/actions/workflows/${QUEUE_CI_WORKFLOW:-ci.yml}/runs?branch=$rb&per_page=20" --jq '.workflow_runs[] | [.id, .head_sha, .status, (.conclusion // "")] | @tsv' 2>/dev/null)
-      choice=$(rerun_choice "$runs" "$rh" "$cancel_heads")
-      case "$choice" in
-        rerun\ *)
-          rid=${choice#rerun }
-          if gh_write api -X POST "repos/{owner}/{repo}/actions/runs/$rid/rerun-failed-jobs" >/dev/null 2>&1; then
-            say "round $round: #$r failed or had a job cancelled; re-running the failed jobs of its newest run (a cancelled head, once; a failure, once)."
-          fi
-          cancel_heads="$cancel_heads $rh" ;;
-        twice) attention=$(printf '%s\n%s\tcancelled twice; look at it\n' "$attention" "$r" | sed '/^$/d' | sort -u -n) ;;
-        wait) say "round $round: #$r has a CI run queued or running; not re-running an older one." ;;
-      esac
+      drain_rerun_one "$r"
       retried="$retried $r"
     done
     attention=$(printf '%s

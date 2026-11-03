@@ -131,16 +131,16 @@ jobs:
           echo "Classes: $classes"
       - name: Fail when a text file has CRLF endings
         # Every pull request: mixed endings make every diff a conflict.
-        run: sh scripts/ci/line-endings.sh
+        run: sh scripts/ci/check-log.sh sh scripts/ci/line-endings.sh
       - name: Fail when STATUS.md is stale
         # Every pull request: the page must never go stale.
-        run: sh status/check.sh
+        run: sh scripts/ci/check-log.sh sh status/check.sh
       - name: Fail on a reused number or a running task number
         # Two numbered files with one number, or a task with a running
         # number instead of its issue number; a batch that merged two
         # migrations each called 0022 fails before main.
         if: github.event_name == 'pull_request'
-        run: sh scripts/ci/numbering-check.sh "$BASE" "${{ github.sha }}"
+        run: sh scripts/ci/check-log.sh sh scripts/ci/numbering-check.sh "$BASE" "${{ github.sha }}"
       - name: Fail when src/ changed without naming or changing its spec
         # A change to src/ belongs to a spec: the pull request names it in
         # its body ("Spec: specs/<feature>") or, when the design changed,
@@ -156,14 +156,14 @@ jobs:
           # event's copy when GitHub cannot be read.
           SPEC_TEXT=$(gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}" --jq '.title + "\n" + (.body // "")' 2>/dev/null) || SPEC_TEXT=$PAYLOAD_TEXT
           export SPEC_TEXT
-          sh scripts/ci/spec-check.sh "$BASE" "${{ github.sha }}"
+          sh scripts/ci/check-log.sh sh scripts/ci/spec-check.sh "$BASE" "${{ github.sha }}"
       - name: Fail when a setup file changed without SETUP.md
         if: github.event_name == 'pull_request'
-        run: sh scripts/ci/setup-check.sh "$BASE" "${{ github.sha }}"
+        run: sh scripts/ci/check-log.sh sh scripts/ci/setup-check.sh "$BASE" "${{ github.sha }}"
       - name: Fail when shared code is changed together with other work
         # Passes when the list of shared paths is empty.
         if: github.event_name == 'pull_request'
-        run: sh scripts/ci/shared-check.sh "$BASE" "${{ github.sha }}"
+        run: sh scripts/ci/check-log.sh sh scripts/ci/shared-check.sh "$BASE" "${{ github.sha }}"
       - name: Fail when a change grows a source file past its size limit
         # scripts/ci/hotspots.txt: a file over its limit may shrink but not
         # grow ("split before you add"). Warns, as a comment, at 80% of the
@@ -172,7 +172,7 @@ jobs:
         if: github.event_name == 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: sh scripts/ci/hotspots-check.sh "$BASE" "${{ github.sha }}" "${{ github.event.pull_request.number }}"
+        run: sh scripts/ci/check-log.sh sh scripts/ci/hotspots-check.sh "$BASE" "${{ github.sha }}" "${{ github.event.pull_request.number }}"
       - name: Fail when a file is deleted without a stated reason
         # Never delete; move aside. A pull request that must delete says why
         # in its body: "Deletes: <reason>".
@@ -183,10 +183,10 @@ jobs:
         run: |
           PR_BODY=$(gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}" --jq '.body // ""' 2>/dev/null) || PR_BODY=$PAYLOAD_BODY
           export PR_BODY
-          sh scripts/ci/delete-check.sh "$BASE" "${{ github.sha }}"
+          sh scripts/ci/check-log.sh sh scripts/ci/delete-check.sh "$BASE" "${{ github.sha }}"
       - name: Fail when a client file hands process.env to anything whole
         if: github.event_name == 'pull_request' && (contains(steps.classes.outputs.classes, 'app') || contains(steps.classes.outputs.classes, 'other'))
-        run: sh scripts/ci/client-env-check.sh
+        run: sh scripts/ci/check-log.sh sh scripts/ci/client-env-check.sh
       - name: Fail when a screen gains a literal colour, size or font, or the design files are stale
         # Only in a project with design/tokens.json: the generated design
         # tables are current, no UI file added a raw value, and each screen
@@ -197,7 +197,7 @@ jobs:
         run: |
           SPEC_TEXT=$(gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}" --jq '.title + "\n" + (.body // "")' 2>/dev/null) || SPEC_TEXT="${{ github.event.pull_request.title }}"
           export SPEC_TEXT
-          sh scripts/ci/design-check.sh "$BASE" "${{ github.sha }}"
+          sh scripts/ci/check-log.sh sh scripts/ci/design-check.sh "$BASE" "${{ github.sha }}"
       - name: Fail when a screen changes and its mock does not
         # Only in a project with scripts/ci/mocks.txt: a mapped UI file that
         # changes has its mock (or its generator) change too, or the body
@@ -209,7 +209,7 @@ jobs:
         run: |
           SPEC_TEXT=$(gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}" --jq '.title + "\n" + (.body // "")' 2>/dev/null) || SPEC_TEXT="${{ github.event.pull_request.title }}"
           export SPEC_TEXT
-          sh scripts/ci/mock-check.sh "$BASE" "${{ github.sha }}"
+          sh scripts/ci/check-log.sh sh scripts/ci/mock-check.sh "$BASE" "${{ github.sha }}"
       # A project with data or docs checks of its own adds them here as
       # steps, with "if: contains(steps.classes.outputs.classes, 'data')"
       # (or 'docs'). Never repeat a step above.
@@ -220,7 +220,7 @@ jobs:
         if: failure()
         env:
           GH_TOKEN: ${{ github.token }}
-        run: sh scripts/ci/failure-report.sh job
+        run: sh scripts/ci/failure-report.sh job "$RUNNER_TEMP/check.log"
       - name: Cancel the rest of this run
         # A run whose checks failed cannot merge: its jobs still waiting
         # for a runner leave the line, and only those already started run on.

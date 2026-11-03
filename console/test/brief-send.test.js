@@ -231,3 +231,14 @@ test('the scan check\'s one word rides as runners.antivirus, and anything else i
 test('the brief says this plugin reports what agents did after a rule stopped them', () => {
   assert.strictEqual(send.briefBody('Main: abc\n', { now }).reports, true);
 });
+
+test('the design field rides along when the project has one, and goes first when the brief is too long', () => {
+  const design = { at: '2026-11-02T09:15:00Z', tokens: { terracotta: { parts: ['bedCard'], screens: ['Today'] } }, literals: [{ value: '#2E7D32', screen: 'Harvest', near: 'sprout' }] };
+  assert.deepStrictEqual(send.briefBody(fixture, { now, machine: 'desk', design }).design, design);
+  assert.strictEqual(send.briefBody(fixture, { now, machine: 'desk' }).design, undefined);
+  const screens = Array.from({ length: 60 }, (_, j) => `screen-${j}`);
+  const big = { ...design, tokens: Object.fromEntries(Array.from({ length: 2000 }, (_, i) => [`bed${i}`, { parts: [], screens }])) };
+  const kept = JSON.parse(send.fit(send.briefBody(fixture, { now, machine: 'desk', design: big })));
+  assert.strictEqual(kept.design, undefined);
+  assert.ok(kept.cards.length > 0);
+});

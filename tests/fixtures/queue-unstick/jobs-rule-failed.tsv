@@ -1,0 +1,2 @@
+checks	cancelled	Fail when a change grows a source file past its size limit	The run was canceled by github-actions
+CI passed	failure	Report once for every job	

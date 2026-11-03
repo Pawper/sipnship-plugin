@@ -14,6 +14,7 @@ done
 if [ -z "$bl_dir" ]; then echo "batch-lib.sh: the queue/ folder beside it was not found" >&2; return 1; fi
 . "$bl_dir/queue/rules-batch.sh"
 . "$bl_dir/queue/rules-drain.sh"
+. "$bl_dir/queue/rules-rerun.sh"
 . "$bl_dir/queue/rules-serial.sh"
 . "$bl_dir/queue/rules-requests.sh"
 . "$bl_dir/queue/rules-deploy.sh"

@@ -1,0 +1,2 @@
+tests (beds)	failure	Run the beds part	AssertionError: watering schedule
+CI passed	failure	Report once for every job	
