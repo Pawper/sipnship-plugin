@@ -55,9 +55,16 @@ Many agents work here at once. Each kind of thing has one home, every rule has s
 
 ## What enforces each rule
 
+The table is built by `sh scripts/rules.sh build` from `.claude/rules.txt` (the rules every project gets with SipNShip) and `.claude/rules-own.txt` (this project's own); change a rule there and rebuild, never the table. The `rules` step of the `checks` CI job fails a pull request whose table is stale.
+
+<!-- rules: begin. Built by sh scripts/rules.sh build; do not edit by hand. -->
+
+### From SipNShip
+
 | Rule | Enforced by |
 |---|---|
 | Never delete | The `block-delete` hook refuses rm, del, Remove-Item and git clean |
+| Never delete, on the pull request | The `delete-check` step of the `checks` CI job fails a pull request that deletes a tracked file unless its body carries a line `Deletes: <reason>` |
 | Never force-push | The `block-force-push` hook refuses any forced push |
 | Tests per file | The `block-full-test-sweep` hook refuses a bare test command; CI runs the full suite on main |
 | Nothing appended to a generated page | The `block-generated-page` hook refuses direct edits to the pages in `.claude/generated-pages.txt`; `sh status/check.sh` fails in CI when `STATUS.md` is stale |
@@ -71,13 +78,19 @@ Many agents work here at once. Each kind of thing has one home, every rule has s
 | A clean folder is part of done | The `require-clean-worktree` hook refuses to finish a task in a worktree with files outside `.scratch/`, stray images or build output, a process still running from it, or, at the session's end, any script this session started and left running; the merge queue refuses a pull request whose worktree is not clean |
 | Shared code changes alone | The `shared-check` step of the `checks` CI job fails a pull request that edits a path in `scripts/ci/shared-paths.txt` together with other work |
 | Source files stay small | The `hotspots` step of the `checks` CI job fails a pull request that grows a file past its limit in `scripts/ci/hotspots.txt` ("split before you add"), warns at 80% of the limit and when other open pull requests edit the same file; the session brief names the hotspots |
+| A cheap check fails before the push, not in CI | The `require-local-checks` hook runs `sh scripts/ci/checks-local.sh` on a `git push` from a branch that is not main, and refuses the push with the failures in the checks' own words; the script runs the steps of the `checks` CI job that call a project script, read from `ci.yml` so the two never drift, and takes the pull request body from `.scratch/body.md` or the open pull request; CI runs the same steps for an agent without hooks |
 | Work always has an ending | The `block-loose-ends` hook refuses `gh pr close` without a comment and a detached worktree; `scripts/worktrees.sh` removes ended worktrees and their branches, keeping a closed branch's commits under a `closed/` tag; the nightly audit reports branches left on the remote after their pull request ended |
+| A shell call says what it does | The `block-loose-ends` hook refuses a shell call with no description, and one that pastes a long program into the command instead of running it from a file in `.scratch/`; it has no pull-request form, since a shell call happens only inside a session |
 | A session starts from facts | The `session-brief` hook prints main, open PRs, the queue, what is in progress, the last handoff and what waits on the owner at every session start; `.claude/session-brief.json` tells it where to look |
 | A setup change carries its line | The `setup-check` step of the `checks` CI job fails a PR that changes a file in `scripts/ci/setup-paths.txt` without changing `SETUP.md` |
 | A source change belongs to a spec | The `spec-check` step of the `checks` CI job fails a PR that changes a source root (`src/`, or the folders in `scripts/ci/spec-roots.txt`) without naming its spec in the body or changing a `specs/<feature>/` folder; the queue ignores moves on main in the `docs`, `specs` and `status` classes, so naming a spec never costs another PR a re-run |
+| Client code names each setting it reads | The `client-env-check` step of the `checks` CI job fails a PR whose source hands `process.env` to anything whole, since a bundler fills in a public setting only where it is named, as `process.env.NEXT_PUBLIC_X`; a file that runs only on the server says so and is skipped |
 | The look has one source | The `design` step of the `checks` CI job fails a PR that adds a raw colour, size or font to a UI file, that leaves a generated design file stale, or whose screen pair names different type roles on its two platforms; the brief names screen pairs not compared by eye in 14 days |
+| A screen changes with its mock | The `mock-check` step of the `checks` CI job fails a PR that changes a UI file mapped in `scripts/ci/mocks.txt` without changing its mock, unless its body says `Mock: unchanged, <reason>`, and one that adds a UI file beside mocked screens without mapping it or declaring it unmocked |
 | Line endings stay LF | `.gitattributes` forces it and the `line-endings` step of the `checks` CI job fails on any CRLF file |
 | Nothing drifts quietly | The nightly `audit` workflow comments on the issue labeled `audit` when an issue has no State, a merged PR left one stale, or a red-main issue is still open, and says nothing when clean |
+
+<!-- rules: end -->
 
 Two rules have no mechanical check and are reviewed by hand: report what was not done and which commands were refused, and stop every shell when done.
 
@@ -91,6 +104,7 @@ The hooks come from the `sipnship` plugin, SipNShip's free local part. If a hook
 
 - Build the status page: `sh status/build.sh`
 - Check it is current: `sh status/check.sh`
+- Rebuild the table of what enforces each rule from `.claude/rules.txt` and `.claude/rules-own.txt`: `sh scripts/rules.sh build` (`check` in CI)
 - Run one test file: `TEST_COMMAND path/to/file`
 - Classify a change: `sh scripts/ci/classify.sh`
 - Regenerate the design tables from `design/tokens.json`: `node scripts/design/generate.mjs` (`--check` in CI); record a cross-platform screen comparison: `sh scripts/design/screens.sh compare NAME`

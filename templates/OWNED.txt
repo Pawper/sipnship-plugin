@@ -38,6 +38,8 @@ scripts/pr-lib.sh
 scripts/issue-open.sh
 scripts/gh-budget.sh
 scripts/protect-main.sh
+scripts/rules.sh
+.claude/rules.txt
 # Config with defaults: added when missing to a project using the feature
 # they sit under, never replaced.
 default .claude/generated-pages.txt

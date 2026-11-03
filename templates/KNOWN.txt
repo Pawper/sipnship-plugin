@@ -1,3 +1,4 @@
+.claude/rules.txt 302bcd5e29321b6f03639be2940432cea0f9816b
 .github/workflows/audit.yml 00ddf6c8379ebc42d1e07aba5e6dccb0a2ff58c6
 .github/workflows/audit.yml 1cfd38f7fa71823e7a6926c7eaf4c89657c0bc06
 .github/workflows/audit.yml 21d0bede321376bb995d545971f98e855cf58224
@@ -532,6 +533,7 @@ scripts/pr-lib.sh ce954175d5752c901d13da4634d087735c1967cc
 scripts/pr-open.sh 372ca20ab21a6abfaba666d5f7f0a3d462490b46
 scripts/pr-open.sh 8f647415b4a7c73c371acfa7986b1ae15a026654
 scripts/protect-main.sh df091fbb0c5b4d9ff6346cd62e759acd8caf7dda
+scripts/rules.sh 933c74aadb7690dc8b4d93d08b3228ab831cd8d5
 scripts/state.sh 492c15f4c4b648ddb9e00939cedebda9977a55ba
 scripts/state.sh 83aa2bb9ddac54bdfaaee27d198595f1fa72d08b
 scripts/state.sh a1e4fcd7135592e78798accf1c3dee1b3fedf74f

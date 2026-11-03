@@ -3107,6 +3107,90 @@ while IFS='|' read -r cp_n cp_c cp_r; do
   [ -f "$root/hooks/scripts/$cp_n.sh" ] || eq "counterpart row $cp_n names a hook that exists" "1" "0"
 done < "$cp_file"
 
+section 'one list of rules builds the table'
+rl_list="$root/templates/.claude/rules.txt"
+eq "every rule in the plugin's list has its own id" "" "$(sed -n 's/^id: //p' "$rl_list" | sort | uniq -d)"
+eq "no plugin rule takes an own- id" "" "$(sed -n 's/^id: own-/&/p' "$rl_list")"
+rl_bad=""
+for rl_h in $(sed -n 's/^hook: //p' "$rl_list" | sort -u); do [ -f "$root/hooks/scripts/$rl_h.sh" ] || rl_bad="$rl_bad $rl_h"; done
+eq "every hook the list names exists" "" "$rl_bad"
+rl_bad=""
+for rl_c in $(sed -n 's/^check: //p' "$rl_list"); do [ -f "$root/templates/$rl_c" ] || rl_bad="$rl_bad $rl_c"; done
+eq "every check the list names is a template script" "" "$rl_bad"
+eq "every rule hook has one counterpart line" "$(ls "$root"/hooks/scripts/block-*.sh "$root"/hooks/scripts/require-*.sh | wc -l | tr -d ' ')" "$(grep -c '^counterpart: ' "$rl_list")"
+rp=$(mktemp -d)
+git -C "$rp" init -q
+mkdir -p "$rp/scripts" "$rp/.claude" "$rp/design"
+cp "$root/templates/scripts/rules.sh" "$rp/scripts/rules.sh"
+printf '%s\n' '# a comment' '' 'id: never-delete' 'words: Never delete; move aside' 'locked: yes' 'hook: block-delete' 'row: Never delete | The hook refuses rm' 'row: Never delete, on the pull request | The check fails a delete' '' \
+  'id: watch-brief' 'kind: watch' 'words: A session starts from facts' 'row: A session starts from facts | The brief prints the facts' '' \
+  'id: design' 'words: The look has one source' 'applies-when: design/tokens.json' 'check: scripts/ci/design-check.sh' 'row: The look has one source | The design step fails a raw colour' '' \
+  'id: generated-pages' 'words: Generated pages are rebuilt, never edited' 'check: status/check.sh' 'row: Nothing appended to a generated page | The status check fails a stale page' > "$rp/.claude/rules.txt"
+printf '%s\n' 'id: own-payment-test' 'words: The payment page changes with a test' 'check: scripts/ci/payment-check.sh' 'row: The payment page changes with a test | The payment step fails a change without a test' '' \
+  'id: own-kind-words' 'words: Plant names are written in full' > "$rp/.claude/rules-own.txt"
+printf '# Maya'"'"'s rooftop garden\n\n## What enforces each rule\n\nIntro kept by hand.\n\n<!-- rules: begin. Built by sh scripts/rules.sh build; do not edit by hand. -->\nold table\n<!-- rules: end -->\n\nTwo rules are reviewed by hand.\n' > "$rp/AGENTS.md"
+printf '# No markers\n\n| Rule | Enforced by |\n' > "$rp/CLAUDE.md"
+rl_out=$(cd "$rp" && sh scripts/rules.sh check 2>&1; echo "exit $?")
+eq "a stale table fails the check" "The rules table in AGENTS.md is stale: run sh scripts/rules.sh build and commit the result.
+exit 1" "$rl_out"
+eq "the build says what it built" "Built the rules table in AGENTS.md." "$(cd "$rp" && sh scripts/rules.sh build 2>&1)"
+eq "the built table, in its two groups" "# Maya's rooftop garden
+
+## What enforces each rule
+
+Intro kept by hand.
+
+<!-- rules: begin. Built by sh scripts/rules.sh build; do not edit by hand. -->
+
+### From SipNShip
+
+| Rule | Enforced by |
+|---|---|
+| Never delete | The hook refuses rm |
+| Never delete, on the pull request | The check fails a delete |
+| A session starts from facts | The brief prints the facts |
+| Nothing appended to a generated page | The status check fails a stale page |
+
+### This project's own
+
+| Rule | Enforced by |
+|---|---|
+| The payment page changes with a test | The payment step fails a change without a test |
+
+### Guidance from this project, not checked
+
+- Plant names are written in full
+
+<!-- rules: end -->
+
+Two rules are reviewed by hand." "$(cat "$rp/AGENTS.md")"
+eq "a fresh table passes the check" "The rules tables are current.
+exit 0" "$(cd "$rp" && sh scripts/rules.sh check 2>&1; echo "exit $?")"
+eq "a page without the markers is left as it is" "# No markers
+
+| Rule | Enforced by |" "$(cat "$rp/CLAUDE.md")"
+printf '{}\n' > "$rp/design/tokens.json"
+eq "a rule appears the day its file does" "| The look has one source | The design step fails a raw colour |" "$(cd "$rp" && sh scripts/rules.sh build >/dev/null; grep '^| The look' AGENTS.md)"
+printf '%s\n' 'generated-pages 2026-11-02' 'watch-brief 2026-11-02' > "$rp/.claude/rules-off.txt"
+(cd "$rp" && sh scripts/rules.sh build >/dev/null)
+eq "a rule that is off leaves the table" "" "$(grep '^| Nothing appended' "$rp/AGENTS.md")"
+eq "and is listed as off, with its day" "### Switched off in this project
+
+- Generated pages are rebuilt, never edited: off since November 2, 2026. Nothing holds it now; do not count on it." "$(sed -n '/^### Switched off/,/^- /p' "$rp/AGENTS.md")"
+eq "a watch has no switch and stays" "| A session starts from facts | The brief prints the facts |" "$(grep '^| A session' "$rp/AGENTS.md")"
+eq "no list, nothing to build" "No .claude/rules.txt here; nothing to build." "$(cd "$(mktemp -d)" && git init -q && sh "$rp/scripts/rules.sh" check 2>&1)"
+rl_cp=$(mktemp -d)
+mkdir -p "$rl_cp/plugin/hooks" "$rl_cp/plugin/templates/.claude" "$rl_cp/scripts" "$rl_cp/.claude"
+git -C "$rl_cp" init -q
+cp "$root/templates/scripts/rules.sh" "$rl_cp/scripts/rules.sh"
+printf '%s\n' 'id: b' 'hook: require-b' 'counterpart: session-only | a live reading' '' 'id: a' 'hook: block-a' 'counterpart: scripts/ci/a.sh | the a check' '' 'id: a2' 'hook: block-a' 'row: A two | no counterpart line' > "$rl_cp/plugin/templates/.claude/rules.txt"
+cp "$rl_cp/plugin/templates/.claude/rules.txt" "$rl_cp/.claude/rules.txt"
+printf 'old\n' > "$rl_cp/plugin/hooks/COUNTERPARTS.txt"
+(cd "$rl_cp" && sh scripts/rules.sh build >/dev/null)
+eq "the counterparts file is built from the list, one row per hook, in order" "block-a | scripts/ci/a.sh | the a check
+require-b | session-only | a live reading" "$(grep -v '^#' "$rl_cp/plugin/hooks/COUNTERPARTS.txt")"
+eq "a stale counterparts file fails the check" "1" "$(printf 'old\n' > "$rl_cp/plugin/hooks/COUNTERPARTS.txt"; cd "$rl_cp" && sh scripts/rules.sh check >/dev/null 2>&1; echo $?)"
+
 
 section 'the delete check'
 dc="$root/templates/scripts/ci/delete-check.sh"
