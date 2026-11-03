@@ -1,8 +1,13 @@
 {
-  "_comment": "Read by the project-drive skill at the start of each round. The skill proposes before it acts; nothing in this file lets it skip the approval. runners: how many agents may work at once; a proposal lists ready issues to start up to this, less what is already in progress. maxAgents: the most one round dispatches once approved. maxMinutes: the most one round runs before it reports and stops. queueLogGlob: where the merge queue writes its logs, so a stale one can be proposed for restart. ownerDecisions: short phrases naming what is always the owner's; a ready issue whose title or body mentions one is asked about, never started.",
+  "_comment": "Read by the project-drive skill at the start of each round. The skill proposes before it acts; nothing in this file lets it skip the approval (Auto Drive, the drive:auto label on the drive issue, is the standing approval). runners: how many agents may work at once. maxAgents: the most one round dispatches once approved. maxMinutes: the most one round runs before it reports and stops. queueLogGlob: where the merge queue writes its logs, so a stale one can be proposed for restart. ownerDecisions: short phrases naming what is always the owner's; a ready issue whose title or body mentions one is asked about once, never started. unitsPerRound: the most units (a bundle of issues touching the same files, or one loose issue, each one agent and one pull request) a round holds, within maxAgents; default 2. dispatchModel: the model each unit's agent runs on; default empty, the model the agent-model hook allows for the issue's tier. setAsideAfterReds: a pull request red this many times (on different commits) is set aside with a plain comment instead of fixed again; default 2, 0 never. summaryAt: the local time (HH:MM) of the once-a-day summary on the drive issue; default empty, no summary. healthNote: an optional machine-health figure; command prints one number, name says what it is, above is where a restart is recommended. It only recommends and never pauses work; an empty command (the default) means no note. For example, the load average on Linux or macOS: {\"command\": \"uptime | sed 's/.*load averages*: //' | cut -d, -f1\", \"name\": \"the load average\", \"above\": 8}.",
   "runners": 2,
   "maxAgents": 4,
   "maxMinutes": 90,
   "queueLogGlob": "logs/merge-queue-*.log",
-  "ownerDecisions": ["prices", "policy", "holders to ask"]
+  "ownerDecisions": ["prices", "policy", "holders to ask"],
+  "unitsPerRound": 2,
+  "dispatchModel": "",
+  "setAsideAfterReds": 2,
+  "summaryAt": "",
+  "healthNote": {"command": "", "name": "", "above": 0}
 }

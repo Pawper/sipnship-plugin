@@ -12,12 +12,18 @@
 #
 # The whole board comes from one GraphQL call (hooks/scripts/board-now.sh).
 # Reads .claude/project-drive.json when present: runners (default 2),
-# maxAgents (4), maxMinutes (90), queueLogGlob, ownerDecisions.
+# maxAgents (4), maxMinutes (90), queueLogGlob, ownerDecisions, and the
+# round's choices drive_settings reads (round-lib.sh): unitsPerRound (2),
+# dispatchModel, setAsideAfterReds (2), summaryAt, healthNote.
+# Open pull requests are read again over REST (scripts/drive/round-lib.sh,
+# overlay_rest), so one that conflicts with main is proposed as merge-main
+# and one red too often as set-aside.
 here=$(dirname "$0")
 . "$here/../../hooks/scripts/lib.sh"
 . "$here/../../hooks/scripts/session-brief-lib.sh"
 . "$here/drive-lib.sh"
 . "$here/bundle-lib.sh"
+. "$here/round-lib.sh"
 
 show_snapshot=no; fast=no; facts_file=""
 while [ $# -gt 0 ]; do
@@ -30,12 +36,14 @@ while [ $# -gt 0 ]; do
 done
 
 runners=2; max_agents=4; max_minutes=90; queue_glob=""; owner_phrases=""
+settings=$(drive_settings '{}')
 if [ -f .claude/project-drive.json ]; then
   cfg=$(cat .claude/project-drive.json)
   n=$(json_number "$cfg" runners); [ -n "$n" ] && runners=$n
   n=$(json_number "$cfg" maxAgents); [ -n "$n" ] && max_agents=$n
   n=$(json_number "$cfg" maxMinutes); [ -n "$n" ] && max_minutes=$n
   queue_glob=$(json_field "$cfg" queueLogGlob)
+  settings=$(drive_settings "$cfg")
   owner_phrases=$(printf '%s' "$cfg" | awk 'BEGIN { RS = "\001" } { i = index($0, "\"ownerDecisions\""); if (!i) exit; s = substr($0, i); j = index(s, "["); k = index(s, "]"); if (!j || !k) exit; print substr(s, j + 1, k - j - 1) }' \
     | tr ',' '\n' | sed 's/^[ \t"]*//;s/[ \t"]*$//' | sed '/^$/d')
 fi
@@ -116,6 +124,35 @@ fi
 printf 'queue\t%s\n' "$queue_state" >> "$tmp"
 
 snapshot=$(cat "$tmp")
+# Every open pull request keeps moving, not only the round's own: REST
+# lists them, and each one's mergeable_state says whether it conflicts with
+# main; a red one also gets how many times it was red. One call for the
+# list, one per pull request, one more per red one; all REST.
+rest_lines=""
+pr_list=$(gh api "repos/{owner}/{repo}/pulls?state=open&per_page=100" --jq '.[] | [(.number | tostring), .head.ref, ([.labels[].name] | join(",")), ((.body // "") | [splits("\r?\n")] | map(select(test("^Queue: hold"; "i"))) | first // "")] | @tsv' 2>/dev/null | tr -d '\r')
+while IFS="$tab" read -r p_num p_ref p_labels p_hold; do
+  [ -n "$p_num" ] || continue
+  p_info=$(gh api "repos/{owner}/{repo}/pulls/$p_num" --jq '[(.mergeable_state // ""), .head.sha] | @tsv' 2>/dev/null | tr -d '\r')
+  p_state=$(printf '%s' "$p_info" | cut -f1); p_sha=$(printf '%s' "$p_info" | cut -f2)
+  p_reds=0; p_ci=$(printf '%s\n' "$snapshot" | awk -F'\t' -v n="$p_num" '$1 == "pr" && $2 == n { print $4 }')
+  [ "$p_ci" = red ] && p_reds=$(red_count "$(gh api "repos/{owner}/{repo}/actions/runs?branch=$p_ref&event=pull_request&status=failure&per_page=100" --jq '.workflow_runs[].head_sha' 2>/dev/null)")
+  # Someone else on it? Only for one the drive would send an agent to (it
+  # conflicts with main, or it is red): a head commit or a newest comment
+  # under 30 minutes old means an agent in another session is likely at
+  # work, so this one gets none. Two more calls, for those only.
+  p_busy=no
+  if [ "$p_state" = dirty ] || [ "$p_ci" = red ]; then
+    p_head=$(gh api "repos/{owner}/{repo}/commits/$p_sha" --jq '.commit.committer.date | fromdateiso8601' 2>/dev/null | tr -d '\r')
+    p_since=$(date -u -d "@$(( $(date +%s) - 1800 ))" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$(( $(date +%s) - 1800 ))" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null)
+    p_note=$(gh api "repos/{owner}/{repo}/issues/$p_num/comments?since=$p_since&per_page=100" --jq '[.[].created_at | fromdateiso8601] | max // empty' 2>/dev/null | tr -d '\r')
+    p_busy=$(recently_touched "$p_head" "$p_note" "$(date +%s)" 30)
+  fi
+  rest_lines="${rest_lines}${p_num}${tab}${p_state}${tab}${p_reds}${tab}$(held_by "$p_labels" "$p_hold")${tab}${p_busy}
+"
+done <<EOF_PRS
+$pr_list
+EOF_PRS
+[ -n "$rest_lines" ] && snapshot=$(overlay_rest "$snapshot" "$rest_lines")
 [ "$show_snapshot" = yes ] && { echo "snapshot:"; printf '%s\n' "$snapshot"; echo; }
 # What the saved digest adds: goals that labels alone miss, such as an
 # issue still labeled waiting on owner that the owner has answered. Only
@@ -132,7 +169,9 @@ else
 fi
 
 echo "proposal for $(date '+%A %Y-%m-%d'), the owner's local day (runners $runners, at most $max_agents agents, at most $max_minutes minutes; $note):"
-round=$(propose_round "$snapshot" "$runners" "$max_agents")
+units_per_round=$(setting "$settings" unitsPerRound)
+aside_after=$(setting "$settings" setAsideAfterReds)
+round=$(propose_round "$snapshot" "$runners" "$max_agents" "$aside_after")
 # Plan the ready issues by the files they touch: overlapping guesses become
 # one bundle (one agent, one pull request), disjoint ones stay apart, and an
 # issue touching files a running issue touches is held, naming it.
@@ -157,10 +196,26 @@ $facts
 EOF_FACTS
 if [ -n "$guesses" ]; then
   units=$(plan_units "$guesses" "$running")
-  inprog=$(printf '%s\n' "$snapshot" | awk -F'\t' '$1 == "issue" && $4 == "in-progress" { n++ } END { print n + 0 }')
-  slots=$runners; [ "$max_agents" -lt "$slots" ] && slots=$max_agents
-  slots=$(( slots - inprog )); [ "$slots" -lt 0 ] && slots=0
+  # The proposal is the next round: up to unitsPerRound units (within
+  # maxAgents), planned against the running round's files. It starts only
+  # once the running round lands (approval.sh holds its dispatches).
+  slots=$units_per_round; [ "$max_agents" -lt "$slots" ] && slots=$max_agents
   round=$(apply_units "$round" "$units" "$slots")
+fi
+# A project whose queue lands green work by itself: rely on it, and
+# propose one drain only when green work has sat 15 minutes.
+green_prs=$(printf '%s\n' "$snapshot" | awk -F'\t' '$1 == "pr" && $4 == "green" && $5 == "mergeable" { print $2 }')
+runs=""
+if [ -f scripts/ci/merge-queue.sh ] && [ -n "$green_prs" ]; then
+  runs=$(gh api "repos/{owner}/{repo}/actions/runs?per_page=50" --jq '.workflow_runs[] | [.status, (.run_started_at // .created_at | fromdateiso8601), (.updated_at | fromdateiso8601), .path, .event, .head_branch] | @tsv' 2>/dev/null | tr -d '\r')
+  ages=""
+  for p in $green_prs; do
+    p_ref=$(printf '%s\n' "$facts" | awk -F'\t' -v n="$p" '$1 == "pr" && $2 == n { print $6; exit }')
+    m=$(green_minutes "$runs" "$p_ref" "$(date +%s)")
+    ages="${ages}${p}${tab}${m:-0}
+"
+  done
+  round=$(landing_goals "$round" "$ages" 15)
 fi
 # Unreleased plugin work: one release goal, from this repository's history.
 plugin_ver=$(json_field "$(cat plugin/.claude-plugin/plugin.json 2>/dev/null)" version)
@@ -172,12 +227,36 @@ fi
 number_proposal "$round"
 # Auto Drive, from the drive issue's label drive:auto: one REST call. On is a
 # standing approval; off, the proposal is posted and waits for a reply.
-auto_line "$(auto_drive_state "$(gh api "$AUTO_DRIVE_QUERY" --jq "$AUTO_DRIVE_JQ" 2>/dev/null)")"
+auto=$(auto_drive_state "$(gh api "$AUTO_DRIVE_QUERY" --jq "$AUTO_DRIVE_JQ" 2>/dev/null)")
+auto_line "$auto"
+model=$(setting "$settings" dispatchModel)
+if [ "$aside_after" -gt 0 ] 2>/dev/null; then aside_words="a pull request red $aside_after times is set aside"; else aside_words="a red pull request is never set aside"; fi
+echo "rounds: at most $units_per_round units a round, one round at a time; each unit's agent on ${model:-the model the agent-model hook allows}; $aside_words"
+# The once-a-day summary, when summaryAt is set: due at that local time
+# until a comment "Summary for <today>" is on the drive issue (one REST
+# call, for the last day's comments only).
+summary_at=$(setting "$settings" summaryAt)
+drive_issue=${auto#* }
+if [ -n "$summary_at" ] && [ "$auto" != none ] && [ "$(summary_due "$(date +%H:%M)" "$summary_at" no)" = yes ]; then
+  today=$(date +%Y-%m-%d)
+  since_e=$(( $(date +%s) - 86400 ))
+  since=$(date -u -d "@$since_e" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$since_e" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null)
+  written=no
+  gh api "repos/{owner}/{repo}/issues/$drive_issue/comments?since=$since&per_page=100" --jq '.[].body' 2>/dev/null | grep -q "^Summary for $today" && written=yes
+  [ "$(summary_due "$(date +%H:%M)" "$summary_at" "$written")" = yes ] && echo "summary: due; post today's summary on issue $drive_issue, starting \"Summary for $today\""
+fi
+# The health note, when healthNote is set: a recommendation, never a pause.
+health_cmd=$(setting "$settings" healthCommand)
+if [ -n "$health_cmd" ]; then
+  if command -v timeout >/dev/null 2>&1; then hv=$(timeout 30 sh -c "$health_cmd" 2>/dev/null | tr -d '\r' | tail -n 1 | tr -d ' ')
+  else hv=$(sh -c "$health_cmd" 2>/dev/null | tr -d '\r' | tail -n 1 | tr -d ' '); fi
+  health_line "$(setting "$settings" healthName)" "$hv" "$(setting "$settings" healthAbove)"
+fi
 
 # A pending pull request: say when to look again. One REST call for recent runs.
 pend_pr=$(printf '%s\n' "$snapshot" | awk -F'\t' '$1 == "pr" && $4 == "pending" { print $2; exit }')
 if [ -n "$pend_pr" ]; then
-  runs=$(gh api "repos/{owner}/{repo}/actions/runs?per_page=50" --jq '.workflow_runs[] | [.status, (.run_started_at // .created_at | fromdateiso8601), (.updated_at | fromdateiso8601), .path, .event, .head_branch] | @tsv' 2>/dev/null | tr -d '\r')
+  [ -n "$runs" ] || runs=$(gh api "repos/{owner}/{repo}/actions/runs?per_page=50" --jq '.workflow_runs[] | [.status, (.run_started_at // .created_at | fromdateiso8601), (.updated_at | fromdateiso8601), .path, .event, .head_branch] | @tsv' 2>/dev/null | tr -d '\r')
   branch=$(gh api "repos/{owner}/{repo}/pulls/$pend_pr" --jq .head.ref 2>/dev/null | tr -d '\r')
   # The pending run is the one for that pull request's branch, else the first not completed.
   pending=$(printf '%s\n' "$runs" | awk -F'\t' -v b="$branch" '$1 != "completed" && $1 != "" && b != "" && $6 == b { print; exit }')

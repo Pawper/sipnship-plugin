@@ -6,24 +6,40 @@
 # fixture under tests/fixtures/.
 #
 # A snapshot is one line per fact, tab separated:
-#   pr      NUMBER  TITLE  ci(green|red|pending)  merge(mergeable|conflicting|unknown)  class(app|other)
+#   pr      NUMBER  TITLE  ci(green|red|pending)  merge(mergeable|conflicting|unknown)  class(app|other)  [reds  held(yes|no)]
+#           reds is how many times its checks failed, on different commits;
+#           held is yes when the queue holds it (a hold label or line)
+#           [busy(yes|no)]: yes when its head commit or newest comment is
+#           under 30 minutes old; a busy one gets no agent (a "busy" line)
 #   issue   NUMBER  TITLE  state(ready|in-progress|waiting-on-owner|blocked)  owner(yes|no)
 #   audit   TEXT            the audit issue's latest comment, one line
 #   red     NUMBER          an open red-main issue
 #   queue   recent|stale|none
 
-# propose_round SNAPSHOT RUNNERS MAX_AGENTS
+# propose_round SNAPSHOT RUNNERS MAX_AGENTS [SET_ASIDE_AFTER]
 # Print the goals this round proposes, one per line, in the order they
 # would be pursued: land what is green (as one batch when more than two app
-# PRs are green), fix what is red, ask about what is the owner's, start
+# PRs are green), fix what is red (or set it aside once it has been red
+# SET_ASIDE_AFTER times, default 2; 0 never sets aside), bring every pull
+# request that conflicts with main up to date (merge-main) unless the queue
+# holds it, ask about what is the owner's, start
 # ready issues up to the smaller of RUNNERS and MAX_AGENTS less what is in
 # progress, set right what the audit flagged, restart a stale queue. The
 # last line is a "stop" line saying why the round would end. Nothing here
 # is done; a person approves first.
 propose_round() {
-  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v runners="${2:-2}" -v max_agents="${3:-4}" '
+  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v runners="${2:-2}" -v max_agents="${3:-4}" -v aside="${4:-2}" '
     $1 == "pr" && $4 == "green" && $5 == "mergeable" { green[++g] = $2; if ($6 != "other") appgreen++ }
-    $1 == "pr" && $4 == "red" { red[++r] = $2 "\t" $3 }
+    $1 == "pr" && $4 == "red" {
+      if (aside > 0 && $7 + 0 >= aside) setaside[++sa] = $2 "\t" $3 "\t(red " ($7 + 0) " times)"
+      else if ($9 == "yes") busy[++bz] = $2 "\t" $3
+      else red[++r] = $2 "\t" $3
+    }
+    $1 == "pr" && $4 != "red" && $5 == "conflicting" && $8 != "yes" {
+      if ($9 == "yes") busy[++bz] = $2 "\t" $3
+      else behind[++bm] = $2 "\t" $3
+      next
+    }
     $1 == "pr" && ($4 == "pending" || $5 == "conflicting" || $5 == "unknown") && $4 != "red" { waiting_pr++ }
     $1 == "issue" && $4 == "ready" && $5 == "yes" { ask[++k] = $2 "\t" $3 }
     $1 == "issue" && $4 == "ready" && $5 != "yes" { ready[++n] = $2 "\t" $3 }
@@ -41,6 +57,9 @@ propose_round() {
         for (i = 1; i <= g; i++) { print "merge " green[i]; acted++ }
       }
       for (i = 1; i <= r; i++) { print "fix-pr " red[i]; acted++ }
+      for (i = 1; i <= sa; i++) { print "set-aside " setaside[i]; acted++ }
+      for (i = 1; i <= bm; i++) { print "merge-main " behind[i]; acted++ }
+      for (i = 1; i <= bz; i++) { print "busy " busy[i] "\tpushed or commented on in the last 30 minutes; someone is likely on it"; waiting_pr++ }
       for (i = 1; i <= k; i++) { print "ask-owner " ask[i]; acted++ }
       slots = (runners < max_agents) ? runners : max_agents
       slots -= inprogress
@@ -62,11 +81,12 @@ propose_round() {
 
 # number_proposal LINES
 # Give each goal a number for a person to answer with: "1. merge-batch 41 42".
-# The defer, hold and stop lines are information, not goals, and stay unnumbered.
+# The defer, hold, landing, busy and stop lines are information, not goals,
+# and stay unnumbered.
 number_proposal() {
   printf '%s\n' "$1" | awk '
     NF == 0 { next }
-    /^(defer |hold |stop:)/ { print; next }
+    /^(defer |hold |landing |busy |stop:)/ { print; next }
     { printf "%d. %s\n", ++n, $0 }'
 }
 
@@ -236,7 +256,8 @@ auto_line() {
   esac
 }
 
-# The one REST call that reads it: the open issue labeled drive, its number
-# and its labels, in the shape auto_drive_state reads.
+# The one REST call that reads it: the open issue labeled drive, its number,
+# its labels and its comment count, in the shape auto_drive_state reads
+# (the count, a third field, tells approval.sh which pages are newest).
 AUTO_DRIVE_QUERY='repos/{owner}/{repo}/issues?labels=drive&state=open&per_page=1'
-AUTO_DRIVE_JQ='.[0] // empty | [(.number | tostring), ([.labels[].name] | join(","))] | @tsv'
+AUTO_DRIVE_JQ='.[0] // empty | [(.number | tostring), ([.labels[].name] | join(",")), (.comments | tostring)] | @tsv'

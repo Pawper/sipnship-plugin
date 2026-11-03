@@ -12,8 +12,34 @@ it, and does nothing until a person says which parts to do. The loop is the time
 the audit is the check without the work; a person is interrupted for an approval and for a decision, never for
 a status report.
 
-One invocation is one round. A round is either a proposal or the pursuit of an approved proposal, decided in
-step a.
+One invocation is one tick: do the next step, then end. No wait loops. A tick either proposes or pursues an
+approved proposal, decided in step a.
+
+## Rounds of units
+
+The drive works the ready list in rounds, so many issues land in little time without overwhelming the queue.
+
+- **A unit** is one agent, one worktree, one pull request. It is a bundle of issues that touch the same files,
+  or a loose issue that shares files with nothing else. The plan script makes the bundles (step c,
+  `dispatch`).
+- **Units in a round share no files**, so their pull requests batch together and land in one pass.
+- **Bundles rank before loose issues**: a round fills with the units that carry the most issues first, up to
+  `unitsPerRound`. Splitting one big issue into parts is not a bundle.
+- **A project's plugin or CI work goes in one bundle.** Issues touching `plugin/`, `scripts/ci/` or
+  `.github/` share one test suite, so they always clash; the plan puts every such issue into one bundle and
+  holds plugin work while a plugin unit is running.
+- **One round at a time.** The next round is proposed while the current one runs, planned against the files
+  it is changing, and started only when the current one has landed (its units merged or set aside).
+  `approval.sh` holds an approved `dispatch` while the latest started round still has issues In progress, and
+  says so on a `held:` line; landing, fixing and asking go ahead meanwhile.
+- **Every open pull request keeps moving**, not only the round's own. The plan reads each open pull request
+  over REST and its `mergeable_state`: one that conflicts with main and is not held by the queue is a
+  `merge-main` goal, and a red one no unit owns is a `fix-pr` or `set-aside` goal like any other. Nobody has
+  to ask for this. Never put two agents on the same pull request: one a running unit owns goes to that unit's
+  agent, not a new one. And never send an agent to a pull request someone else is already working on: one
+  whose head commit or newest comment is under 30 minutes old is likely in an agent's hands in another
+  session, so the plan shows it on an unnumbered `busy` line instead of `merge-main` or `fix-pr`, and a later
+  tick looks again.
 
 ## a. Read the state and the standing approval
 
@@ -48,7 +74,13 @@ switch on the dashboard or by hand on GitHub. Both scripts read it with the one 
 issue; the plan's last line says which it is. With the label on, approval is standing: `approval.sh` approves
 the latest proposal whole, ending "approved by Auto Drive", so the round starts the next round as soon as the
 current one has landed (its last pull request merged), with no reply. "Start this round" on the dashboard
-still starts it at once. With the label off, post the proposal and wait for a reply, as below.
+still starts it at once: it arrives on the drive issue as `Queue request: start-round by LOGIN`, and
+`approval.sh` approves the proposal whole for that person, even while a round runs. With the label off,
+dispatch only on a reply or that request: post the proposal and wait, as below.
+
+The plan's closing lines also say the round's settings (`rounds:`, with the units per round, the dispatch
+model and the red limit), `summary: due` when the daily summary should be written (below), and `health:`
+when a health note is set (below).
 
 ## b. Propose, or pursue
 
@@ -74,14 +106,29 @@ The goal lines and what each means:
 - **`merge N` or `merge-batch N N N`.** Land through the project's queue: `sh scripts/ci/merge-queue.sh
   --serial N`, or `--batch N N N` for the batch. See `scripts/ci/QUEUE.md`. Never merge anything that is not
   green at the moment of merging, whatever the proposal said.
+- **`landing N N: ...`** (unnumbered). In a project whose queue drains by itself, green pull requests are
+  left to it; nothing to do.
+- **`drain N N`.** Green pull requests have sat 15 minutes without landing: run `sh
+  scripts/ci/merge-queue.sh --drain` once, in the background, and end the tick. One drain, never a loop.
 - **`fix-pr N`.** Read the failing check. If the cause is inside the pull request's own scope or is a
-  test-environment problem (a flaky test, a cancelled run, a missing fixture), fix it on that branch and let CI
-  run again. Otherwise leave one comment on the pull request naming the cause and set its issue to
-  `state:blocked`.
-- **`dispatch N`.** Start an agent for the issue with isolation (a worktree), the model the plugin's
-  agent-model hook allows for its tier, and a brief that names the issue, the files it may touch, the rules in
-  CLAUDE.md, and the pull request it must open with `Closes #N`. Set the issue to `state:in-progress` with
-  `scripts/state.sh`.
+  test-environment problem (a flaky test, a cancelled run, a missing fixture), fix it on that branch (or have
+  the unit's own agent fix it in its worktree), re-run the touched tests locally, and push; CI runs again.
+  Otherwise leave one comment on the pull request naming the cause and set its issue to `state:blocked`.
+- **`set-aside N TITLE (red K times)`.** The pull request has been red `setAsideAfterReds` times (on
+  different commits). Stop fixing it: one comment on its issue naming the cause in plain words, set the issue
+  to `state:blocked`, and the unit leaves the round, so the round can land without it.
+- **`merge-main N TITLE`.** The pull request conflicts with main and the queue does not hold it. Dispatch one
+  agent (isolation, `dispatchModel`) to its branch's worktree: merge origin/main, keep both sides, regenerate
+  any generated files, re-run the touched tests per file, and push. Never a second agent on a pull request
+  that already has one; a unit's own pull request goes to that unit's agent.
+- **`busy N TITLE`** (unnumbered). The pull request would get `merge-main` or `fix-pr`, but its head commit or
+  newest comment is under 30 minutes old: someone is likely on it. Send nobody; a later tick looks again.
+- **`dispatch N`.** Start an agent for the issue with isolation (a worktree), the model `dispatchModel`
+  names (or, when it is empty, the model the plugin's agent-model hook allows for its tier), and a brief that
+  names the issue, the files it may touch, the rules in CLAUDE.md or AGENTS.md (install right after the
+  worktree is made, run every touched test per file, keep test files inside `.scratch/`, merge origin/main
+  before pushing, never run the queue or re-run CI), and the pull request it must open with `Closes #N`.
+  Dispatch every unit of the round at once. Set the issue to `state:in-progress` with `scripts/state.sh`.
   The plan groups ready issues by the files they are guessed to touch (the paths and specs the body names,
   the project's mocks map, and the files past work on the same spec changed). `dispatch 12 14` with a
   third column "Why together: both change ..." is a bundle: one agent, one worktree, one pull request that
@@ -99,13 +146,18 @@ The goal lines and what each means:
   it also sets each unit's issues to In progress, so dispatching a unit is what moves its issues; publish
   again with `pr:` filled in when an agent opens its pull request. Name the issues in the agent's brief
   or its branch (`issue-538`) so the machine's session report finds the unit.
+  The next round is always on the Work tab: while a round runs, publish the proposed next round (`status:
+  proposed`) beside the started one, and publish it again only when it changes. The service keeps the
+  started round and the proposed one apart, so both show.
 - **`hold N TITLE After: RUNNING TITLE`.** The issue touches files a running bundle touches. Do not start it;
   it is shown as waiting after that bundle and is planned again in the next proposal. It needs no approval
   and does nothing.
 - **`ask-owner N`.** A ready issue whose words touch something the owner has said is theirs. Put one comment
   on it with the question, the options and a recommendation, and set `state:waiting-on-owner`. This is a
   proposal line so the person sees it, but it is the one goal that may run without approval, since it asks
-  rather than acts.
+  rather than acts. Ask once, then wait: the issue leaves the ready list and is never asked again until the
+  owner answers (`set-ready`). The same goes for an issue that turns out, on reading it in full, to need a
+  decision: a design not yet approved, a spec not yet written.
 - **`fix-main N`.** Treat the red run like a red pull request on main itself: fix within scope or report the
   cause on the issue.
 - **`audit TEXT`.** When the facts are plain (an issue with no State whose title says what it is, an issue
@@ -163,6 +215,20 @@ Filed: #51 (the exporter needs a date format, outside #12)
 Skipped: #46, already merged by hand
 ```
 
+## The daily summary (optional)
+
+With `summaryAt` set (a local time such as `"07:00"`), the plan prints `summary: due` once that time has
+passed and today's summary is not on the drive issue yet. Write it once, as one comment on the drive issue
+starting "Summary for YYYY-MM-DD" (the local day), then carry on with the tick: each round with its units,
+what landed and when, what deployed, what was set aside and why, what waits on the owner, and the last health
+note if one is set. Plain words. Without `summaryAt`, no summary.
+
+## The health note (optional)
+
+With `healthNote` set, the plan runs its command (which prints one number) and prints a `health:` line. Over
+`above`, it recommends a restart: say so in the report and the daily summary. It only recommends; it never
+pauses or holds work, and a figure it cannot read changes nothing. Without it, no note.
+
 ## What a round never does
 
 It never acts on a goal nobody approved, except asking. It never edits the owner's settings, CLAUDE.md or
@@ -211,6 +277,15 @@ first round finds the reply and pursues it.
 - `queueLogGlob`: where the merge queue writes its logs
 - `ownerDecisions`: short phrases naming what is always the owner's, for example `["prices", "policy",
   "holders to ask"]`; a ready issue whose title or body contains one is asked about, never dispatched
+- `unitsPerRound`: the most units one round holds, within `maxAgents` (default 2)
+- `dispatchModel`: the model each unit's agent runs on, for example `"sonnet"` (default empty: the model the
+  agent-model hook allows for the issue's tier)
+- `setAsideAfterReds`: how many reds, on different commits, before a pull request is set aside instead of
+  fixed again (default 2; 0 never sets aside)
+- `summaryAt`: the local time of the once-a-day summary, `"HH:MM"` (default empty: no summary)
+- `healthNote`: `{"command": "...", "name": "...", "above": N}`, a command that prints one number about the
+  machine, what it is in plain words, and the figure over which a restart is recommended (default empty
+  command: no note). It never pauses work.
 
 The drive issue is created once by hand or by the bootstrap skill: one open issue labeled `drive`, titled
 "Drive". `scripts/labels.sh` creates the label. The plugin's templates have a commented config example at
