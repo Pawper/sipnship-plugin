@@ -111,6 +111,20 @@ json_number() {
   printf '%s' "$1" | tr -d '\r\n' | sed -n "s/.*\"$2\"[[:space:]]*:[[:space:]]*\\([0-9][0-9]*\\).*/\\1/p"
 }
 
+# deploy_interval VARIABLE CONFIG
+# The minutes between deploys. VARIABLE is the repository variable
+# DEPLOY_INTERVAL_MINUTES, which a project's app may keep as a setting
+# (0 after each landing, 60 at most every hour); it wins when it is a whole
+# number. Otherwise intervalMinutes in CONFIG (.claude/deploy.json's text),
+# otherwise 60. A project with no variable works from the file alone.
+deploy_interval() {
+  case "$1" in
+    ''|*[!0-9]*) di_n=$(json_number "$2" intervalMinutes) ;;
+    *) di_n=$1 ;;
+  esac
+  echo "${di_n:-60}"
+}
+
 # interval_cron MINUTES
 # The cron schedule that runs a deploy at most once per interval: every N
 # minutes under an hour, at minute 17 of every N hours from an hour up.

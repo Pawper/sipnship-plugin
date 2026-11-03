@@ -37,7 +37,11 @@ run_billing() {
 cfg=$(cat .claude/deploy.json)
 path=$(json_string "$cfg" path)
 app=$(json_string "$cfg" appRoot); [ -n "$app" ] || app=.
-interval=$(json_number "$cfg" intervalMinutes); [ -n "$interval" ] || interval=60
+# The interval: the repository variable DEPLOY_INTERVAL_MINUTES first (a
+# workflow passes it in the environment, empty when the project has none;
+# from a session it is read over REST), then .claude/deploy.json.
+interval_var=${DEPLOY_INTERVAL_MINUTES-$(gh api "repos/{owner}/{repo}/actions/variables/DEPLOY_INTERVAL_MINUTES" --jq '.value' 2>/dev/null | tr -d '\r' || true)}
+interval=$(deploy_interval "$interval_var" "$cfg")
 extra=$(json_words "$cfg" neverShips)
 
 main=$(git rev-parse -q --verify origin/main 2>/dev/null || git rev-parse HEAD)

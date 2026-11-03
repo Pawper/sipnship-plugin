@@ -150,6 +150,7 @@ jobs:
           QUEUE_OWN_TOKEN: ${{ steps.app.outputs.token == '' && 'yes' || 'no' }}
           GH_REPO: ${{ github.repository }}
           QUEUE_DRAIN_MINUTES: ${{ vars.QUEUE_DRAIN_MINUTES || '25' }}
+          DEPLOY_INTERVAL_MINUTES: ${{ vars.DEPLOY_INTERVAL_MINUTES }}
         run: |
           git config user.name "merge-queue"
           git config user.email "merge-queue@users.noreply.github.com"

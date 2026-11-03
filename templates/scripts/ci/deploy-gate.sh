@@ -1,8 +1,10 @@
 #!/bin/sh
 # Is a deploy due? One rule for the queue, the release workflows, --status
 # and the brief: a deploy goes when no other open pull request is green
-# (it lands first; one deploy carries both) and the interval in
-# .claude/deploy.json has passed since the last successful Deploy run.
+# (it lands first; one deploy carries both) and the interval has passed
+# since the last successful Deploy run. The interval is the repository
+# variable DEPLOY_INTERVAL_MINUTES when it is set, else intervalMinutes in
+# .claude/deploy.json.
 # Nine serial landings once each carried a --deploy flag an agent copied
 # from its last command; there is no flag now, only this state.
 #
@@ -31,7 +33,11 @@ if [ "$1" = --ships ]; then
 fi
 for a in "$@"; do case "$a" in --last) mode=last ;; *) base=$a ;; esac; done
 [ -f .claude/deploy.json ] || { echo "deploy: no .claude/deploy.json, nothing gates it"; exit 0; }
-interval=$(json_number "$(cat .claude/deploy.json)" intervalMinutes); [ -n "$interval" ] || interval=60
+# The interval: the repository variable DEPLOY_INTERVAL_MINUTES first (a
+# workflow passes it in the environment, empty when the project has none;
+# from a session it is read over REST), then .claude/deploy.json.
+interval_var=${DEPLOY_INTERVAL_MINUTES-$(gh api "repos/{owner}/{repo}/actions/variables/DEPLOY_INTERVAL_MINUTES" --jq '.value' 2>/dev/null | tr -d '\r' || true)}
+interval=$(deploy_interval "$interval_var" "$(cat .claude/deploy.json)")
 last_at=$(gh api "repos/{owner}/{repo}/actions/workflows/deploy.yml/runs?status=success&branch=$base&per_page=1" --jq '.workflow_runs[0].updated_at // ""' 2>/dev/null | tr -d '\r' || true)
 last=""
 if [ -n "$last_at" ]; then
