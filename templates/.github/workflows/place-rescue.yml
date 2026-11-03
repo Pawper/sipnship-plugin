@@ -29,7 +29,7 @@ concurrency:
 jobs:
   rescue:
     if: ${{ vars.SIPNSHIP_PLACE_RUNS_ON != '' }}
-    runs-on: ${{ vars.SIPNSHIP_PLACE_RUNS_ON }}
+    runs-on: ${{ vars.SIPNSHIP_PLACE_RUNS_ON || 'ubuntu-latest' }}
     timeout-minutes: 5
     defaults:
       run:
