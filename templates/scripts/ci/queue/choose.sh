@@ -234,7 +234,8 @@ EOF
 # everything while a rush change lands. QUEUE_UNSTICK=off turns it off.
 unstick_one() {
   [ "${QUEUE_UNSTICK:-on}" != off ] || return 0
-  [ -z "$(tr -d ' \r\n' < "$flaky_dir/rush.list" 2>/dev/null)" ] || return 0
+  # A missing list means no rush.
+  [ ! -f "$flaky_dir/rush.list" ] || [ -z "$(tr -d ' \r\n' < "$flaky_dir/rush.list" 2>/dev/null)" ] || return 0
   rm -f "$flaky_dir/pr-"*.tsv 2>/dev/null
   us_listed=$(gh api "repos/{owner}/{repo}/pulls?state=open&per_page=100" --jq '.[] | [.number, (.draft | tostring), .head.sha, .base.ref] | @tsv' 2>"$gh_err") || { say "Unsticking: the open pull requests could not be listed; nothing done."; return 0; }
   us_listed=$(drop_members "$us_listed" "${held:-} ${members:-}")

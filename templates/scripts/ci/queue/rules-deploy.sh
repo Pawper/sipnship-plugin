@@ -91,7 +91,7 @@ deploy_waits_for() {
 # MAX_HOLD_MIN (QUEUE_DEPLOY_MAX_HOLD, default 30). With steady work there is
 # always one more green pull request, so a hold without a bound never ends.
 deploy_hold_bound() {
-  if [ "${1:-0}" -ge 2 ]; then echo "held across $1 drains"; return 0; fi
+  if [ "${1:-0}" -ge 2 ]; then echo "held for $1 drains in a row; the limit is 2"; return 0; fi
   if [ -n "$2" ] && [ $(( $3 - $2 )) -ge $(( ${4:-30} * 60 )) ]; then
     echo "last deploy $(( ($3 - $2) / 60 )) minutes ago, over the ${4:-30}-minute bound"
   fi
