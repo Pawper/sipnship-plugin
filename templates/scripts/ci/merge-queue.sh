@@ -416,16 +416,8 @@ if [ "$mode" = drain ]; then
   # earlier in the drain may be green, or only cancelled, by now.
   still=""
   [ -z "$attention" ] || still=$(attention_recheck "$attention")
-  if [ -n "$still" ]; then
-    say "Needs attention:"
-    printf '%s\n' "$still" | while IFS="$tab" read -r a_num a_why; do
-      [ -n "$a_num" ] || continue
-      say "  #$a_num $a_why"
-      case "$a_why" in *"failed CI twice"*) why_red "$a_num" | tee -a "$log_file" ;; esac
-    done
-    exit 1
-  fi
-  exit 0
+  attention_report "$still"
+  exit $?
 fi
 
 if [ "$mode" = serial ]; then queue_serial; fi

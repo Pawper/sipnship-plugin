@@ -1393,6 +1393,12 @@ rl_out=$( ( flaky_dir=$rl_dir; base=main; gh_err=/dev/null; tab=$(printf '	'); s
 eq "unstick_one with no rush.list neither errors nor stops, and goes on to list pull requests" "rc=0 ghcalled" "$(printf '%s' "$rl_out" | tr '
 ' ' ' | sed 's/ $//')"
 eq "Needs attention drops a pull request that merged in the same drain" "1" "$(grep -c 'is \$a_state now; not a failure' "$root/templates/scripts/ci/queue/attention.sh")"
+ar_log=$(mktemp)
+ar_run() { ( tab=$(printf '	'); log_file=$ar_log; say() { :; }; why_red() { :; }; . "$root/templates/scripts/ci/queue/attention.sh"; attention_report "$@"; echo "rc=$?" ) 2>&1 | tail -n 1; }
+eq "findings only (a red and a conflicting pull request) leave the drain at exit 0" "rc=0" "$(ar_run "$(printf '44\tfailed CI twice\n47\thas conflicts with main')")"
+eq "no findings leave the drain at exit 0" "rc=0" "$(ar_run "")"
+eq "a queue error exits 1, with or without findings" "rc=1 rc=1" "$(ar_run "" "git merge failed") $(ar_run "$(printf '44\tfailed CI twice')" "git merge failed")"
+eq "the drain's end exits with the report, and a failed listing still exits 1" "1 1" "$(grep -c '^  exit \$?$' "$mq_all") $(grep -c 'this is a failed listing, not an empty queue' "$mq_all")"
 eq "the deploy line never says a number of drains it did not count" "0" "$(grep -c 'held across' "$root/templates/scripts/ci/queue/rules-deploy.sh")"
 eq "merging main in reuses GitHub's update-branch" "1" "$(sed -n '/^unstick_one()/,/^}/p' "$mq_all" | grep -c 'pulls/\$us_pr/update-branch')"
 eq "a clash with main is marked in its comment" "1" "$(sed -n '/^notify_conflict()/,/^}/p' "$mq_all" | grep -c 'unstick_mark clash')"

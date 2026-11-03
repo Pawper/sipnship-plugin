@@ -19,3 +19,21 @@ attention_recheck() {
     esac
   done
 }
+
+# attention_report LIST [ERRORS]
+# Print the findings, "NUMBER<TAB>why" a row, and return the drain's exit
+# code. A red, conflicting or left-out pull request needs its owner, not
+# the queue: the drain did its work, so findings alone return 0. Only the
+# queue's own failure (ERRORS, one line saying what broke) returns 1.
+attention_report() {
+  if [ -n "$1" ]; then
+    say "Needs attention:"
+    printf '%s\n' "$1" | while IFS="$tab" read -r a_num a_why; do
+      [ -n "$a_num" ] || continue
+      say "  #$a_num $a_why"
+      case "$a_why" in *"failed CI twice"*) why_red "$a_num" | tee -a "$log_file" ;; esac
+    done
+  fi
+  [ -z "$2" ] || { say "The queue itself failed: $2"; return 1; }
+  return 0
+}
