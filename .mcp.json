@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "sipnship": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/console/mcp.js"]
+    }
+  }
+}

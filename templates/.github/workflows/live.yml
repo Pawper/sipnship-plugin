@@ -1,0 +1,62 @@
+# Look at the deployed app on this project's own runner and tell SipNShip
+# what is failing for the people who use it (an outside service refusing the
+# app, or the app's own errors). It reads the app's refusal lines from Workers
+# Logs and each Worker's request counts, with the deploy's own
+# CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID, applies the counting rules
+# so a blip never leaves the machine, and sends only the findings that count
+# (scripts/ci/live-report.mjs). The same sentences go to the run's summary
+# and one notice.
+#
+# When it looks: once an hour, and once about ten minutes after each deploy
+# finished. The schedule wakes every ten minutes and the plan step decides in
+# a second whether this is one of those moments; nothing waits or loops.
+# The job always succeeds: a failing app is not a failing check.
+name: Live
+
+on:
+  schedule:
+    - cron: "3,13,23,33,43,53 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+
+concurrency:
+  group: live-look
+  cancel-in-progress: false
+
+jobs:
+  live:
+    runs-on: RUNS_ON
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Decide whether this is a moment to look
+        id: plan
+        shell: RUN_SHELL
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          deployed=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/deploy.yml/runs?status=success&per_page=1" --jq '.workflow_runs[0].updated_at // ""' 2>/dev/null || true)
+          recent=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/deploy.yml/runs?per_page=10" --jq '[.workflow_runs[].created_at] | join(",")' 2>/dev/null || true)
+          echo "deploys=$recent" >> "$GITHUB_OUTPUT"
+          plan=$(LIVE_DEPLOYED_AT="$deployed" node scripts/ci/live-report.mjs --plan || echo skip)
+          echo "plan=$plan" >> "$GITHUB_OUTPUT"
+          echo "This moment: $plan."
+      - name: Look at the live app
+        if: steps.plan.outputs.plan != 'skip'
+        shell: RUN_SHELL
+        continue-on-error: true
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          SIPNSHIP_REPO_TOKEN: ${{ secrets.SIPNSHIP_REPO_TOKEN }}
+          LIVE_DEPLOYS: ${{ steps.plan.outputs.deploys }}
+        run: |
+          if [ -f scripts/ci/service-auth.sh ]; then
+            . scripts/ci/service-auth.sh
+            if service_sign_in; then export LIVE_SERVICE_TOKEN="$sv_token" LIVE_REPO_ID="$sv_id"; fi
+          fi
+          node scripts/ci/live-report.mjs || true
