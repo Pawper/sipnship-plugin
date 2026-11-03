@@ -1,0 +1,9 @@
+# One case of rescue_runs, on Maya's rooftop-garden app.
+case	A job placed on Tenki has waited 25 minutes (Tenki out of credit), so it starts again and Tenki is passed over
+places	order=own,tenki,github wait=10 connected=tenki usual=6
+now	1793000000
+job	104	1	place / place	completed	ubuntu-latest	1792998440
+job	104	1	checks	queued	tenki-standard-small-2c-4g	1792998500
+runner	offline	false	self-hosted,linux,pr
+runner	offline	false	self-hosted,linux
+expect	restart 104 tenki stuck

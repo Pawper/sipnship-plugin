@@ -1,0 +1,59 @@
+# The drain's rescue, on a place that is up. A build placed on your machine
+# waits when that machine goes off afterwards; the drain on your machines
+# starts it again elsewhere every round, but a drain cannot run on a machine
+# that is off. So, with an order of more than one place, this runs the
+# rescue alone on the first place that is not your machines, on the
+# drain's two-hourly timer: a run whose job has waited past the wait limit
+# with no runner online to take it is cancelled and started again, and its
+# place job chooses afresh (scripts/ci/queue/rules-rescue.sh).
+#
+# With "My machines only" SIPNSHIP_PLACE_RUNS_ON is unset, the job is
+# skipped before any machine is asked for, and nothing hosted is spent.
+# It has its own concurrency group, so a drain waiting for a machine that
+# is off never holds it back.
+name: Place rescue
+
+on:
+  schedule:
+    - cron: "37 */2 * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: place-rescue
+  cancel-in-progress: true
+
+jobs:
+  rescue:
+    if: ${{ vars.SIPNSHIP_PLACE_RUNS_ON != '' }}
+    runs-on: ${{ vars.SIPNSHIP_PLACE_RUNS_ON || 'ubuntu-latest' }}
+    timeout-minutes: 5
+    defaults:
+      run:
+        shell: bash --noprofile --norc -eo pipefail {0}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts/ci
+      - name: Sign in as the queue
+        id: app
+        env:
+          QUEUE_APP_ID: ${{ secrets.QUEUE_APP_ID }}
+          QUEUE_APP_KEY: ${{ secrets.QUEUE_APP_KEY }}
+          QUEUE_TOKEN: ${{ secrets.QUEUE_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          t=$(sh scripts/ci/queue-app-token.sh) || t=""
+          [ -n "$t" ] || t=$QUEUE_TOKEN
+          if [ -n "$t" ]; then echo "::add-mask::$t"; echo "token=$t" >> "$GITHUB_OUTPUT"; fi
+      - name: Start again the builds stuck on a machine that went offline
+        env:
+          GH_TOKEN: ${{ github.token }}
+          QUEUE_MERGE_TOKEN: ${{ steps.app.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+          SIPNSHIP_PLACES: ${{ vars.SIPNSHIP_PLACES }}
+          SIPNSHIP_PLACE_REFUSED: ${{ vars.SIPNSHIP_PLACE_REFUSED }}
+        run: sh scripts/ci/place-rescue.sh

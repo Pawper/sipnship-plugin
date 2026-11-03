@@ -1,0 +1,12 @@
+# One case of place_job, on Maya's rooftop-garden app.
+case	Tenki left a job waiting twenty minutes ago (its daily spending limit), so it is passed over and GitHub takes it
+places	order=own,tenki,github wait=10 connected=tenki usual=6 refused.tenki=1792998800
+job	linux	pr	self-hosted,linux,pr
+keep	on
+queued	0
+gone	no
+now	1793000000
+runner	offline	false	self-hosted,linux,pr
+runner	offline	false	self-hosted,linux
+expect	github	ubuntu-latest	no	offline	own:offline,tenki:credit
+words	Your machine was offline, so this ran on GitHub.

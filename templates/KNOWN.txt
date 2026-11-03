@@ -33,6 +33,9 @@
 .github/workflows/deploy.yml ed27b91dce0be9346068905e62bb19e842362aba
 .github/workflows/deploy.yml fe6d4ab809ac0a71adb15109c7604bb66b11cc9f
 .github/workflows/live.yml 12f262e2bb84cae8a7a15c2b0c24a97df06ce63c
+.github/workflows/place-rescue.yml 13db43903148fa352ebe7a566a013538a69d0028
+.github/workflows/place-rescue.yml d167f29b374df87b3eeb42fc20fda8e5c8954f13
+.github/workflows/place.yml 06a2cce41600ddc55fc07f71dbe6220ad350e8a3
 .github/workflows/queue-drain.yml 0639949e0eb0643f3931c814d4fe40309c8b05fc
 .github/workflows/queue-drain.yml 072cdebf5ebef2e7ff7793ad9b346b8851ded70c
 .github/workflows/queue-drain.yml 0aa127307a053b0cf06720f8e9193b144499c5c5
@@ -169,6 +172,7 @@ scripts/ci/batch-lib.sh a7be4d01a3846080b1ecf0277b8790cdcc6759a6
 scripts/ci/batch-lib.sh abd447b6013f9ca4909e2e7112c2ea4f8838b786
 scripts/ci/batch-lib.sh ad6dd423904a3dcdacf1ab772934950b8c1b4412
 scripts/ci/batch-lib.sh b081b2624b5b4bf5a1fa143ece50c9bfed00b78f
+scripts/ci/batch-lib.sh b09f3b506abfd1fc4445fd094068148b6d2c365b
 scripts/ci/batch-lib.sh b31d0a9be0897402491804a5c4414544bcbc5398
 scripts/ci/batch-lib.sh b9194f780f06cbf947c3c9b133701a489664deb8
 scripts/ci/batch-lib.sh bddee3c45acff18180c631b700ea96172eadda6d
@@ -283,6 +287,7 @@ scripts/ci/merge-queue.sh 244af9db86685a685b7cf6d2a026146621093dd4
 scripts/ci/merge-queue.sh 249ef40837f5dc0da9170d8468db93ce70e87dfd
 scripts/ci/merge-queue.sh 25f1fc06a0f5b412c051bcc1b6693c16feb842dc
 scripts/ci/merge-queue.sh 26028f2609ec6ca65f04f880e0a2566f4602f1a3
+scripts/ci/merge-queue.sh 27179d03fa79d1652cef1634d3e306093385ed3c
 scripts/ci/merge-queue.sh 27e5e330a91b708982360dc2a60e229316d57ae4
 scripts/ci/merge-queue.sh 29751d8120febaa13130c9fff88e9e4d6e803622
 scripts/ci/merge-queue.sh 2d545e2ed00455f0a39d4a1fd4c66cf53595bfc9
@@ -356,6 +361,8 @@ scripts/ci/numbering-lib.sh 4253dc2c6825d8d1cb50709d979cdc599b8fe11e
 scripts/ci/numbering-lib.sh 6ce86b4041debf5437b2007d155fee4cabcfa11f
 scripts/ci/numbering-lib.sh c8556f1cfe46123506cbf822c8bb31775171a546
 scripts/ci/numbering-lib.sh eba4ec8f44cd31094238da6c0487ccf3dc6d5304
+scripts/ci/place-rescue.sh 8ccd66d60880891d1be21814e583a96b75d0757f
+scripts/ci/place.sh c411a9c2dcdd719de3416493f6aba1792da81602
 scripts/ci/publish-lib.sh 0188733f153b1328b00168a108ae9c1707a27db2
 scripts/ci/publish-lib.sh 124a6fc4fa2041fc18cc9abf6e90ffb27ffa9707
 scripts/ci/publish-lib.sh 14b5b7f83db73f7f444fe7de9d21cb5c5241fbeb
@@ -399,6 +406,7 @@ scripts/ci/queue/overlaps.sh 7530b0c2b389cce044b4bee47f5308cd3dbd65e8
 scripts/ci/queue/requests.sh 36d19effc79fd0c312240f066051de5130131387
 scripts/ci/queue/requests.sh f73fabdf22193bd75131df060663bd46ccefa4a8
 scripts/ci/queue/rerun.sh 0061016aad77b0ac0b94004eeb23d2da0731d1ba
+scripts/ci/queue/rescue.sh d09f82e8d2885b27b3cc5c30fa8579f39b122afd
 scripts/ci/queue/rules-batch.sh 535aa494031d3291ad4ea46a64bac00194903088
 scripts/ci/queue/rules-batch.sh a31d3fe468610454c7b888568b5d54e9db65575f
 scripts/ci/queue/rules-checkout.sh ec0d3af86c16d373f8c032ef06b16f1ee2918910
@@ -410,9 +418,11 @@ scripts/ci/queue/rules-drain.sh 51e1f9cb36dcc777910f93efa1e8de5420061de3
 scripts/ci/queue/rules-drain.sh 70a04902429d9fff555610e413e02b8b1396cec7
 scripts/ci/queue/rules-drain.sh ba557c696f117c7521e64b5456572e56a7dd859a
 scripts/ci/queue/rules-drain.sh fbee41f7caa7175ef353f4fc0f9da0642e5a884f
+scripts/ci/queue/rules-place.sh 51e6e76972b9dd244b1c1f41847fcde94bcc3d41
 scripts/ci/queue/rules-requests.sh 21ad16a647f24eac015b937158f10e9d909f0bc9
 scripts/ci/queue/rules-requests.sh f78d260b156acf0761d1200f3fecde44baa022b7
 scripts/ci/queue/rules-rerun.sh 46bada87b630e88a1d214f339d18ce835d50cb03
+scripts/ci/queue/rules-rescue.sh 2553d53ddef38ca0ee458a1e066c72a55f6c3f46
 scripts/ci/queue/rules-serial.sh 367d29dc3143c91ce1d0f4fcb7a5ffa410769f0c
 scripts/ci/queue/runs.sh 8b09e164f36aa22ec3a73fe0f1d4f19ec41656bc
 scripts/ci/queue/runs.sh a8ea8a3d859fe95bef28dea870c8241623e2e6ca

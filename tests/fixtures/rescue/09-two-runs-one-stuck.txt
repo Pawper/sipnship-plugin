@@ -1,0 +1,12 @@
+# One case of rescue_runs, on Maya's rooftop-garden app.
+case	Of two runs, only the one whose machine went off starts again
+places	order=own,tenki,github wait=10 connected=tenki usual=6
+now	1793000000
+job	109	1	place / place	completed	ubuntu-latest	1792998440
+job	109	1	checks	queued	self-hosted,windows	1792998500
+job	110	1	place / place	completed	ubuntu-latest	1792998440
+job	110	1	checks	queued	self-hosted,linux,pr	1792998500
+runner	online	false	self-hosted,linux,pr
+runner	online	false	self-hosted,linux
+runner	offline	false	self-hosted,windows
+expect	restart 109 own offline

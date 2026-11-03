@@ -1,0 +1,12 @@
+# One case of place_job, on Maya's rooftop-garden app.
+case	Maya put GitHub before Tenki; with her machines off, GitHub takes it
+places	order=own,github,tenki wait=10 connected=tenki
+job	linux	pr	self-hosted,linux,pr
+keep	on
+queued	0
+gone	no
+now	1793000000
+runner	offline	false	self-hosted,linux,pr
+runner	offline	false	self-hosted,linux
+expect	github	ubuntu-latest	no	offline	own:offline
+words	Your machine was offline, so this ran on GitHub.
