@@ -89,6 +89,7 @@ shell-3 block-rule-switch
 shell-3 rule switches in the checks
 shell-3 the rules guard
 shell-3 one list of rules builds the table
+shell-3 a rule switch reaches the repository
 shell-3 the delete check
 shell-3 workspace install
 shell-3 a draft tokens file seeded from the mocks

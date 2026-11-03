@@ -84,12 +84,16 @@ scripts/ci/deploy-gate.sh
 scripts/ci/publish-lib.sh
 scripts/ci/publish-state.sh
 scripts/ci/wait-for.sh
+scripts/ci/rules-lib.sh
+scripts/ci/rules-guard.sh
+scripts/ci/rules-sync.sh
 default scripts/ci/generated-paths.txt
 default scripts/ci/spec-roots.txt
 scripts/pr-checks.sh
 scripts/worktrees-lib.sh
 scripts/worktrees.sh
 .github/workflows/queue-drain.yml
+.github/workflows/rules-sync.yml
 feature board
 scripts/board-lib.sh
 scripts/board-sync.sh

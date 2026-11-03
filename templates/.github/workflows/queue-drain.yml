@@ -136,6 +136,20 @@ jobs:
           else
             echo "No queue App and no QUEUE_TOKEN: the drain lands with the workflow's own token and starts CI itself."
           fi
+      # The fallback for the rules-sync workflow: when the variable RULES_OFF
+      # and the switches file differ, one pull request lands them (it asks the
+      # queue to land it first). It leaves the checkout as it found it.
+      - name: Land any rule switch that is waiting
+        if: steps.recent.outputs.skip != 'yes'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token || github.token }}
+          GH_REPO: ${{ github.repository }}
+          RULES_OFF: ${{ vars.RULES_OFF }}
+        run: |
+          git config user.name "merge-queue"
+          git config user.email "merge-queue@users.noreply.github.com"
+          if [ -f scripts/ci/rules-sync.sh ]; then sh scripts/ci/rules-sync.sh; fi
       - name: Say so when a rebuild may not run here
         if: steps.recent.outputs.skip != 'yes' && runner.environment == 'github-hosted'
         run: |
