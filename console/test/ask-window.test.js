@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
 const path = require('path');
-const { askWindow, hasScreen, windowCommand, titleFor, SENTENCE } = require('../ask-window');
+const { askWindow, rawRaiseRefusal, hasScreen, windowCommand, titleFor, SENTENCE } = require('../ask-window');
 const tokens = require('../tokens');
 const listen = require('../listen');
 
@@ -15,7 +15,7 @@ test('the window asks the listener question with Yes and No, and No is the defau
   const script = win.args[win.args.length - 1];
   assert.match(script, /YesNo/);
   assert.match(script, /Button2/);
-  assert.match(script, /Let Maya''s desktop carry out what you ask\?/);
+  assert.match(script, /SipNShip: may Maya''s desktop carry out what you ask\?/);
   assert.match(script, /It only does what you approve there, one thing at a time/);
   const mac = windowCommand('t', 's', 'darwin');
   assert.match(mac.args[1], /default button "No"/);
@@ -56,5 +56,28 @@ test('the connect question and listen on turn the listener on only after a Yes i
     assert.strictEqual(listen.readState(env).on, true);
   } finally {
     fs.rmSync(env.SIPNSHIP_HOME, { recursive: true, force: true });
+  }
+});
+
+test('the sentence says SipNShip is asking, where the dashboard is, and how to change the answer', () => {
+  assert.match(SENTENCE, /^SipNShip wants to know:/);
+  assert.match(SENTENCE, /sipnship\.dev/);
+  assert.match(SENTENCE, /listen off/);
+  assert.match(titleFor('desk'), /^SipNShip: may desk carry out what you ask\?$/);
+});
+
+test('the real window is never raised from a test run or a worktree', () => {
+  // This very run is a test run: the real raise must refuse, with no stand-in, even with a screen.
+  assert.strictEqual(rawRaiseRefusal({}, '/home/maya/rooftop-garden', '/home/maya/plugin'), 'test');
+  assert.strictEqual(askWindow({ machine: 'desk', screen: true, platform: 'win32', env: {} }), false);
+  const clean = { NODE_TEST_CONTEXT: '', VITEST: '', JEST_WORKER_ID: '', NODE_ENV: '' };
+  const saved = {};
+  for (const k of Object.keys(clean)) { saved[k] = process.env[k]; delete process.env[k]; }
+  try {
+    assert.strictEqual(rawRaiseRefusal({}, 'C:\\Users\\Maya\\Documents\\GitHub\\worktrees\\garden\\x', 'C:\\plugin'), 'worktree');
+    assert.strictEqual(rawRaiseRefusal({}, 'C:/repo/.claude/worktrees/agent-1', 'C:/plugin'), 'worktree');
+    assert.strictEqual(rawRaiseRefusal({}, 'C:/Users/Maya/garden', 'C:/Users/Maya/plugin'), null);
+  } finally {
+    for (const [k, v] of Object.entries(saved)) if (v !== undefined) process.env[k] = v;
   }
 });
