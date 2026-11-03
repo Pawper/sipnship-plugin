@@ -2423,7 +2423,7 @@ eq "seconds from a refusal to what settled it" "14" "$(refusal_seconds 2026-11-0
 eq "never below zero, and zero for what is not a time" "0 0" "$(refusal_seconds 2026-11-02T16:10:14Z 2026-11-02T16:10:00Z) $(refusal_seconds nonsense 2026-11-02T16:10:14Z)"
 eq "tool calls are counted up to five" "0 3 5" "$(refusal_calls '') $(refusal_calls 3) $(refusal_calls 9)"
 eq "the kind of tool behind a workaround, never what it was given" "shell|file edit|agent|other" "$(refusal_via Bash)|$(refusal_via Edit)|$(refusal_via Agent)|$(refusal_via WebFetch)"
-eq "every refusing hook logs, and the watcher is registered three times" "10 3" "$(grep -l 'refusal-log.sh' "$root"/hooks/scripts/block-*.sh "$root"/hooks/scripts/require-*.sh | wc -l | tr -d ' ') $(grep -c watch-resolution "$root/hooks/hooks.json")"
+eq "every refusing hook logs, and the watcher is registered three times" "11 3" "$(grep -l 'refusal-log.sh' "$root"/hooks/scripts/block-*.sh "$root"/hooks/scripts/require-*.sh | wc -l | tr -d ' ') $(grep -c watch-resolution "$root/hooks/hooks.json")"
 
 section 'one design source for every platform'
 . "$root/templates/scripts/design/design-lib.sh"
@@ -3620,6 +3620,61 @@ eq "the drain's round line keeps its words and adds the overlaps" "round 3: 1 gr
 eq "the CI template runs the check on pull requests" "1" "$(grep -c 'hotspots-check.sh' "$root/templates/.github/workflows/ci.yml")"
 eq "the plugin's default list ships and holds no shrink line" "0" "$(grep -c '^shrink ' "$root/templates/scripts/ci/hotspots.txt")"
 here=$here_before
+
+section 'quick checks before a push'
+# A small repository of Maya's rooftop-garden app with the template CI, its
+# check scripts, a size limit and one mocked screen. Each branch is pushed
+# through the hook, which runs scripts/ci/checks-local.sh.
+qc=$(mktemp -d)
+(
+  cd "$qc" && git init -q -b main && git config user.email t@t && git config user.name t && git config core.autocrlf false
+  mkdir -p .github/workflows scripts/ci src lib design/mocks .scratch
+  cp "$root/templates/.github/workflows/ci.yml" .github/workflows/
+  cp "$root"/templates/scripts/ci/*.sh "$root"/templates/scripts/ci/*.txt scripts/ci/
+  printf '.scratch/\n' > .gitignore
+  printf 'limit 40 *.ts\nwarn-at 80\n' > scripts/ci/hotspots.txt
+  printf 'beds src/beds.ts design/mocks/beds.html\n' > scripts/ci/mocks.txt
+  : > scripts/ci/setup-paths.txt
+  seq 1 10 | sed 's/^/const water = /' > lib/watering.ts
+  printf 'export const beds = 1\n' > src/beds.ts
+  printf '<p>Garden beds</p>\n' > design/mocks/beds.html
+  git add -A && git commit -q -m base
+  git checkout -q -b size && seq 1 50 | sed 's/^/const water = /' > lib/watering.ts && git commit -qam grow
+  git checkout -q main && git checkout -q -b mock && printf 'export const beds = 2\n' > src/beds.ts && git commit -qam beds
+  git checkout -q main && git checkout -q -b fine && seq 1 12 | sed 's/^/const water = /' > lib/watering.ts && git commit -qam water
+  printf 'Closes #12\n\nSpec: specs/001-garden-beds\n' > .scratch/body.md
+) >/dev/null 2>&1
+# qc_push BRANCH [COMMAND]: the hook's exit code and what it said.
+qc_push() {
+  (cd "$qc" && git checkout -q "$1") >/dev/null 2>&1
+  qc_in=$(printf '{"command":"%s","cwd":"%s"}' "${2:-git push -u origin $1}" "$qc")
+  qc_out=$(printf '%s' "$qc_in" | CHECKS_LOCAL_OFFLINE=1 HOOK_LOG=0 sh "$root/hooks/scripts/require-local-checks.sh" 2>&1)
+  printf 'rc=%s\n%s\n' "$?" "$qc_out"
+}
+qc_size=$(qc_push size)
+eq "a file grown past its limit refuses the push" "rc=2" "$(printf '%s\n' "$qc_size" | head -n 1)"
+eq "the refusal carries the size check's own words" "1" "$(printf '%s\n' "$qc_size" | grep -c 'lib/watering.ts has 50 lines, over the limit of 40')"
+eq "and names the CI step that would fail" "1" "$(printf '%s\n' "$qc_size" | grep -c '^Failed: Fail when a change grows a source file past its size limit')"
+qc_mock=$(qc_push mock)
+eq "a screen changed without its mock refuses the push" "rc=2" "$(printf '%s\n' "$qc_mock" | head -n 1)"
+eq "the refusal carries the mock check's own words" "1" "$(printf '%s\n' "$qc_mock" | grep -c 'These screens changed but their mocks did not: beds')"
+qc_fine=$(qc_push fine)
+eq "a clean push passes quietly" "rc=0|" "$(printf '%s\n' "$qc_fine" | head -n 1)|$(printf '%s\n' "$qc_fine" | sed 1d)"
+eq "a push from main is not checked" "rc=0" "$(qc_push main 'git push origin main' | head -n 1)"
+eq "a push that deletes a branch is not checked" "rc=0" "$(qc_push size 'git push origin --delete size' | head -n 1)"
+eq "a command that does not push is not checked" "rc=0" "$(qc_push size 'git status' | head -n 1)"
+eq "git -C names the folder pushed from" "rc=2" "$(qc_push size "git -C $qc push" | head -n 1)"
+# The body: a Mock: line in it lets the screen through, as CI would.
+printf 'Spec: specs/001-garden-beds\nMock: unchanged, the count is not drawn\n' > "$qc/.scratch/body.md"
+eq "the body's Mock: line is read from .scratch/body.md" "rc=0" "$(qc_push mock | head -n 1)"
+mv "$qc/.scratch/body.md" "$qc/.scratch/body.off"
+qc_nobody=$(cd "$qc" && git checkout -q size && CHECKS_LOCAL_OFFLINE=1 sh scripts/ci/checks-local.sh 2>&1)
+eq "with no body the steps that read it are skipped, saying so" "1" "$(printf '%s\n' "$qc_nobody" | grep -c 'no pull request body was found')"
+eq "and the rest still run" "1" "$(printf '%s\n' "$qc_nobody" | grep -c 'over the limit of 40')"
+# The steps come from ci.yml: a step taken out there is not run here.
+(cd "$qc" && grep -v 'hotspots-check.sh' .github/workflows/ci.yml > .scratch/ci.yml && cp .scratch/ci.yml .github/workflows/ci.yml)
+eq "a step taken out of ci.yml is not run" "0" "$(cd "$qc" && CHECKS_LOCAL_OFFLINE=1 sh scripts/ci/checks-local.sh 2>&1 | grep -c 'over the limit')"
+eq "the hook is registered in hooks.json" "1" "$(grep -c 'require-local-checks.sh' "$root/hooks/hooks.json")"
 
 # --- end of blocks: the summary, kept in every part.
 eq "no process started by this suite is still running" "" "$(spawned_alive)"

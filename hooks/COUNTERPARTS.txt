@@ -10,4 +10,5 @@ require-agent-model | session-only | a dispatch happens inside a session, never 
 require-batch-merge | scripts/ci/merge-queue.sh | the queue is the only merge path and refuses what is not ready
 require-clean-worktree | scripts/ci/merge-queue.sh | the queue refuses a pull request whose worktree is not clean
 require-gh-budget | session-only | the hourly API budget is a live reading, not a property of a change
+require-local-checks | .github/workflows/ci.yml | the checks job runs the same steps on the pull request
 require-state-label | .github/workflows/state-label.yml | the workflow keeps every issue's State label in step with the board

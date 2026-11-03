@@ -25,6 +25,7 @@ scripts/ci/spec-check.sh
 scripts/ci/setup-check.sh
 scripts/ci/shared-check.sh
 scripts/ci/hotspots-check.sh
+scripts/ci/checks-local.sh
 scripts/ci/hotspots-lib.sh
 scripts/ci/delete-check.sh
 scripts/ci/numbering-check.sh

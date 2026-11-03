@@ -1,0 +1,9 @@
+# Workers Logs for a Cloudflare Worker, on by default for a project the plugin
+# sets up. Paste this block into each Worker's wrangler.toml. Request-by-request
+# logs stay off, so only the one-line refusal records (live-problem.ts) and
+# thrown errors are kept: failure-only volume, inside Cloudflare's free allowance.
+[observability]
+enabled = true
+
+[observability.logs]
+invocation_logs = false
