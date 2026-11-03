@@ -16,16 +16,23 @@ numbering_glob() {
   printf '%s\n' "$1" | tr -d '\r' | awk -v k="$2" '$1 == k && NF >= 2 { print $2; exit }'
 }
 
+# numbered_names: only the paths whose file name starts with a digit, the
+# only ones a number can be read from. One awk instead of a shell loop
+# over every tracked file, which took seconds on a large checkout.
+numbered_names() {
+  awk '{ n = $0; sub(/.*\//, "", n) } n ~ /^[0-9]/'
+}
+
 # numbers_in PATHS GLOB
 # PATHS is one path per line. Print the leading number of each file name
 # that matches GLOB, one per line, as written (zero padding kept).
 numbers_in() {
   set -f
-  ni_out=$(printf '%s\n' "$1" | tr -d '\r' | tr '\\' '/' | while IFS= read -r ni_p; do
+  ni_out=$(printf '%s\n' "$1" | tr -d '\r' | tr '\\' '/' | numbered_names | while IFS= read -r ni_p; do
     [ -n "$ni_p" ] || continue
     case "$ni_p" in $2) ;; *) continue ;; esac
     ni_base=${ni_p##*/}
-    ni_num=$(printf '%s' "$ni_base" | sed -n 's/^\([0-9][0-9]*\).*/\1/p')
+    ni_num=${ni_base%%[!0-9]*}
     if [ -n "$ni_num" ]; then printf '%s\n' "$ni_num"; fi
   done)
   set +f
@@ -49,16 +56,17 @@ next_free_number() {
 # which each took 0022 shows here before it reaches main.
 duplicate_numbers() {
   set -f
-  dn_rows=$(printf '%s\n' "$1" | tr -d '\r' | tr '\\' '/' | while IFS= read -r dn_p; do
+  dn_rows=$(printf '%s\n' "$1" | tr -d '\r' | tr '\\' '/' | numbered_names | while IFS= read -r dn_p; do
     [ -n "$dn_p" ] || continue
     case "$dn_p" in $2) ;; *) continue ;; esac
-    dn_num=$(printf '%s' "${dn_p##*/}" | sed -n 's/^\([0-9][0-9]*\).*/\1/p')
-    # Compare by value, so 22 and 0022 are the same number.
-    if [ -n "$dn_num" ]; then printf '%s\t%s\n' "$(printf '%s' "$dn_num" | sed 's/^0*//; s/^$/0/')" "${dn_p##*/}"; fi
+    dn_b=${dn_p##*/}
+    dn_num=${dn_b%%[!0-9]*}
+    if [ -n "$dn_num" ]; then printf '%s\t%s\n' "$dn_num" "$dn_b"; fi
   done)
   set +f
+  # Compare by value, so 22 and 0022 are the same number.
   printf '%s\n' "$dn_rows" | awk -F'\t' '
-    NF >= 2 { n[$1]++; files[$1] = (files[$1] == "") ? $2 : files[$1] " " $2 }
+    NF >= 2 { k = $1 + 0; n[k]++; files[k] = (files[k] == "") ? $2 : files[k] " " $2 }
     END { for (k in n) if (n[k] > 1) printf "%04d\t%s\n", k, files[k] }' | sort
 }
 

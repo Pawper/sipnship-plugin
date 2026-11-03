@@ -116,7 +116,9 @@ if [ -n "$css_gen" ] && [ -f "$css_gen" ]; then
   # is filtered from the list instead.
   ui_files=$({ git ls-files -- $glob_specs 2>/dev/null || true; } | { grep -v '/node_modules/' || true; })
   set +f
-  defined=$( { cat "$css_gen"; for uf in $ui_files; do cat "$uf" 2>/dev/null; done; } )
+  # One cat for every file: a cat a file took seconds on a large checkout.
+  # shellcheck disable=SC2086
+  defined=$( { cat "$css_gen"; [ -z "$ui_files" ] || cat $ui_files 2>/dev/null; } < /dev/null)
   gaps=$(css_var_gaps "$ui_diff" "$(css_var_names "$defined")")
   if [ -n "$gaps" ]; then
     echo "These lines read a token name that $css_gen does not define, so the value resolves to nothing:" >&2

@@ -164,6 +164,8 @@ scripts/ci/batch-lib.sh e8a6b28bccc0319b781886b5e5305a1a58de92ac
 scripts/ci/batch-lib.sh eec724acf036579f255f40014708a438191a48e3
 scripts/ci/batch-lib.sh f5da59099c390faae56dada5e9a47919c649560e
 scripts/ci/batch-lib.sh fa567389e19b830ba7a2c13fad6c6172d591f001
+scripts/ci/checks-local.sh 0de4e30803de74e2b200396a73d0b338de867fc8
+scripts/ci/checks-local.sh 853432bce94f776f8e07237686dd47da9e04f22a
 scripts/ci/classify.sh ffce692eabc9f10dae99261c194270f388824ca3
 scripts/ci/client-env-check.sh 0c054b2adbe91f3418b4e3027bfa5edc6ac6684e
 scripts/ci/delete-check.sh de832e14b50d2c16ca2639ba95b67d54fec6ad7c
@@ -184,6 +186,7 @@ scripts/ci/deploy-lib.sh e3316bb09795ecd487470982c4cefcc101b51cb5
 scripts/ci/deploy-lib.sh efca5893ba28a3cb81fa01b41d3ed516bdcab0db
 scripts/ci/design-check.sh 019a9c34cf0d4a84844fd0121a66a3442fabad0d
 scripts/ci/design-check.sh 3ae1385e4793a10707dabd63cc1541921632c282
+scripts/ci/design-check.sh 4b578172a66d9e021252f5e2a9b16b7f62339711
 scripts/ci/design-check.sh 4c41722ab7e78744eb2b048b225a8c5e869aecc4
 scripts/ci/design-check.sh 56932b0b8a8dd47f6e900f9f109b047aa14edbd0
 scripts/ci/design-check.sh 6c29989a5310597373f80079be32c96fa6c697ea
@@ -318,6 +321,7 @@ scripts/ci/numbering-check.sh 883474f7217e3242e6dc30daff0f4017e7e283d9
 scripts/ci/numbering-check.sh d6292e804dca8a40afe679ef5b48fd91b84404d6
 scripts/ci/numbering-lib.sh 39f9fff134c99f7f1ef91b20eed10715f31ab324
 scripts/ci/numbering-lib.sh 3b88fdd096764b8e6de9e1d89d79b40bb38e3cff
+scripts/ci/numbering-lib.sh 4253dc2c6825d8d1cb50709d979cdc599b8fe11e
 scripts/ci/numbering-lib.sh 6ce86b4041debf5437b2007d155fee4cabcfa11f
 scripts/ci/numbering-lib.sh c8556f1cfe46123506cbf822c8bb31775171a546
 scripts/ci/numbering-lib.sh eba4ec8f44cd31094238da6c0487ccf3dc6d5304
