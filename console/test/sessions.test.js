@@ -118,6 +118,20 @@ test('the kind of work comes from the drive note, only when it is one of the kno
   assert.ok(sessions.CATEGORIES.includes('releasing-plugin'));
 });
 
+test('a session carries when its log last changed, as a UTC time', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'sns-active-home-'));
+  const tree = '/work/rooftop-garden/worktrees/watering';
+  const folder = path.join(home, sessions.logFolder(tree));
+  fs.mkdirSync(folder, { recursive: true });
+  const file = path.join(folder, 'abc.jsonl');
+  fs.writeFileSync(file, log);
+  const when = new Date(Date.now() - 60 * 60 * 1000);
+  fs.utimesSync(file, when, when);
+  const got = sessions.readSessions({ root: home, logsDir: home, worktrees: [tree] });
+  assert.strictEqual(got[0].lastActiveAt, when.toISOString());
+  assert.strictEqual(got[0]._at, undefined);
+});
+
 test('an agent a session started is sampled from the subagents folder, with its own issue and branch', () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'sns-agent-'));
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sns-agent-root-'));

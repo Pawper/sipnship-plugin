@@ -261,7 +261,7 @@ function readSessions({ root, logsDir, worktrees, localModels, now = Date.now() 
       const note = startedWith(root, s.worktree.name);
       if (note.how) s.startedWith = note.how;
       if (note.category) s.category = note.category;
-      out.push({ ...s, _at: st.mtimeMs });
+      out.push({ ...s, lastActiveAt: new Date(st.mtimeMs).toISOString(), _at: st.mtimeMs });
     }
   }
   return out.sort((a, b) => b._at - a._at).slice(0, SESSIONS_MAX).map(({ _at, ...s }) => s);
