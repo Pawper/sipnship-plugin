@@ -15,8 +15,16 @@ root=${CLAUDE_PROJECT_DIR:-$(json_field "$input" cwd)}
 [ -n "$root" ] && [ -d "$root" ] && cd "$root" 2>/dev/null || exit 0
 
 # Nothing settled yet, or everything already sent: no process, no request.
-[ -s .scratch/hooks-resolved.log ] || exit 0
-if [ -s .scratch/hooks/sent ] && [ "$(tail -n 1 .scratch/hooks-resolved.log | cut -f2)" = "$(head -n 1 .scratch/hooks/sent | tr -d '\r')" ]; then exit 0; fi
+# A rule that was off notes what it let through (hooks-off.log); those ride
+# the same send with the outcome "off", and have a cursor of their own.
+sn_new=0
+if [ -s .scratch/hooks-resolved.log ]; then
+  if [ -s .scratch/hooks/sent ] && [ "$(tail -n 1 .scratch/hooks-resolved.log | cut -f2)" = "$(head -n 1 .scratch/hooks/sent | tr -d '\r')" ]; then :; else sn_new=1; fi
+fi
+if [ -s .scratch/hooks-off.log ]; then
+  if [ -s .scratch/hooks/sent-off ] && [ "$(tail -n 1 .scratch/hooks-off.log | cut -f5 | tr -d '\r')" = "$(head -n 1 .scratch/hooks/sent-off | tr -d '\r')" ]; then :; else sn_new=1; fi
+fi
+[ "$sn_new" = 1 ] || exit 0
 
 sn_home="${SIPNSHIP_HOME:-$HOME/.sipnship}"
 [ -f "$sn_home/tokens.json" ] || exit 0

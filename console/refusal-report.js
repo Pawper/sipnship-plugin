@@ -23,7 +23,7 @@ const fs = require('fs');
 const path = require('path');
 const tokens = require('./tokens');
 
-const OUTCOMES = ['followed', 'asked', 'retried', 'moved on', 'stopped', 'workaround'];
+const OUTCOMES = ['followed', 'asked', 'retried', 'moved on', 'stopped', 'workaround', 'off'];
 const VIAS = ['shell', 'file edit', 'agent', 'other'];
 const MAX_REPORTS = 200;
 const KEEP_MS = 30 * 24 * 60 * 60 * 1000;
@@ -71,13 +71,36 @@ function reportsFrom(hooksText, resolvedText, { repoId, now = Date.now(), issues
   return out;
 }
 
-/** The last report the service acknowledged, or ''. */
-const cursor = (root) => read(path.join(dir(root), 'sent')).trim();
-function moveCursor(root, id) {
+/**
+ * The reports for what a rule let through while it was off: hooks-off.log
+ * lines are "time hook rule session id". The outcome is `off`, with no
+ * seconds, calls or kind of tool; the command was never in the log.
+ */
+function offReportsFrom(offText, { repoId, now = Date.now() } = {}) {
+  const out = [];
+  for (const raw of String(offText).replace(/\r/g, '').split('\n')) {
+    const f = raw.split('\t');
+    if (f.length < 5) continue;
+    const [at, hook, , sess, id] = f;
+    if (!ID.test(id) || !HOOK.test(hook) || !STAMP.test(at) || Number.isNaN(Date.parse(at)) || now - Date.parse(at) > KEEP_MS) continue;
+    out.push({ id, rule: hook, at, outcome: 'off', after: 0, calls: 0, session: sessionKey(sess, repoId) });
+  }
+  return out;
+}
+
+/** The last report the service acknowledged, or ''. Off reports keep their own cursor, in sent-off. */
+const cursor = (root, file = 'sent') => read(path.join(dir(root), file)).trim();
+function moveCursor(root, id, file = 'sent') {
   try {
     fs.mkdirSync(dir(root), { recursive: true });
-    fs.writeFileSync(path.join(dir(root), 'sent'), `${id}\n`);
+    fs.writeFileSync(path.join(dir(root), file), `${id}\n`);
   } catch { /* the next send carries them again */ }
+}
+/** Moves each cursor to the last report of its kind among those sent. */
+function moveCursors(root, sent) {
+  const last = (want) => { const l = sent.filter((r) => (r.outcome === 'off') === want); return l.length ? l[l.length - 1].id : ''; };
+  if (last(false)) moveCursor(root, last(false));
+  if (last(true)) moveCursor(root, last(true), 'sent-off');
 }
 
 /** The issue numbers each session was on, from the session sample; none when it cannot be read. */
@@ -93,13 +116,19 @@ function issuesOf(root, wanted) {
 function pending(root, repoId, now = Date.now()) {
   const hooks = read(path.join(root, '.scratch', 'hooks.log'));
   const resolved = read(path.join(root, '.scratch', 'hooks-resolved.log'));
-  if (!resolved.trim()) return [];
-  const all = reportsFrom(hooks, resolved, { repoId, now });
-  const from = all.findIndex((r) => r.id === cursor(root)) + 1;
-  if (from >= all.length) return [];
-  // The sample is read only when something waits, and only for the sessions that have something.
-  const issues = issuesOf(root, new Set(resolved.split('\n').map((l) => l.split('\t')[3])));
-  return reportsFrom(hooks, resolved, { repoId, now, issuesBySession: issues }).slice(from, from + MAX_REPORTS);
+  const offAll = offReportsFrom(read(path.join(root, '.scratch', 'hooks-off.log')), { repoId, now });
+  const offWaiting = offAll.slice(offAll.findIndex((r) => r.id === cursor(root, 'sent-off')) + 1);
+  let settled = [];
+  if (resolved.trim()) {
+    const all = reportsFrom(hooks, resolved, { repoId, now });
+    const from = all.findIndex((r) => r.id === cursor(root)) + 1;
+    if (from < all.length) {
+      // The sample is read only when something waits, and only for the sessions that have something.
+      const issues = issuesOf(root, new Set(resolved.split('\n').map((l) => l.split('\t')[3])));
+      settled = reportsFrom(hooks, resolved, { repoId, now, issuesBySession: issues }).slice(from);
+    }
+  }
+  return [...settled, ...offWaiting].slice(0, MAX_REPORTS);
 }
 
 const enabled = (env) => (env.HOOK_LOG ?? '1') !== '0';
@@ -143,8 +172,8 @@ async function sendNow({ root, repo, session = '', env = process.env, now = Date
   if (!reports.length) return '';
   const last = reports[reports.length - 1].id;
   const { status, json } = await post(`${base(env)}/v1/repos/${entry.repoId}/refusals`, entry.token, JSON.stringify({ reports }));
-  if (status === 200 && json && Array.isArray(json.ids) && json.ids.includes(last)) { moveCursor(root, last); return noticeOnce(env, entry.repoId); }
-  if (status === 400) { moveCursor(root, last); return sayOnce(root, sessionKey(session, entry.repoId), LINES.bad); }
+  if (status === 200 && json && Array.isArray(json.ids) && json.ids.includes(last)) { moveCursors(root, reports); return noticeOnce(env, entry.repoId); }
+  if (status === 400) { moveCursors(root, reports); return sayOnce(root, sessionKey(session, entry.repoId), LINES.bad); }
   if (status === 401 || status === 429) return '';
   return sayOnce(root, sessionKey(session, entry.repoId), LINES.unreachable);
 }
@@ -166,7 +195,7 @@ function attach(body, { root, repoId, env = process.env, now = Date.now(), maxBy
 function acknowledge(root, sent, reply) {
   if (!sent.length || !reply) return;
   const last = sent[sent.length - 1].id;
-  if (reply.rejected === true || (Array.isArray(reply.refusals) && reply.refusals.includes(last))) moveCursor(root, last);
+  if (reply.rejected === true || (Array.isArray(reply.refusals) && reply.refusals.includes(last))) moveCursors(root, sent);
 }
 
 /** Said once on a machine connected before reports shipped. */
@@ -186,4 +215,4 @@ async function main() {
 
 if (require.main === module) main().catch(() => {}).finally(() => { process.exitCode = 0; });
 
-module.exports = { sessionKey, reportsFrom, pending, cursor, sendNow, attach, acknowledge, noticeOnce, OUTCOMES, VIAS, MAX_REPORTS, LINES };
+module.exports = { sessionKey, reportsFrom, offReportsFrom, pending, cursor, sendNow, attach, acknowledge, noticeOnce, OUTCOMES, VIAS, MAX_REPORTS, LINES };

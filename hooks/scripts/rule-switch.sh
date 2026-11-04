@@ -13,7 +13,7 @@
 #                  and ends the hook with exit 0.
 #
 # The note is one line in .scratch/hooks-off.log (time, hook, rule id,
-# session), never the command, so the builder can see what a switch cost.
+# session, an id of its own for the report), never the command, so the builder can see what a switch cost.
 # HOOK_LOG=0 turns it off, as for refusals. The file is read from
 # RULES_OFF_FILE when set (the tests use it), else from the project.
 rule_on() {
@@ -28,7 +28,8 @@ rule_off_note() {
   ro_s=$(refusal_log_dir) || return 0
   mkdir -p "$ro_s" 2>/dev/null || return 0
   ro_sess=$(json_field "${input:-}" session_id 2>/dev/null)
-  printf '%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(basename "$0" .sh)" "$1" "${ro_sess:-unknown}" >> "$ro_s/hooks-off.log" 2>/dev/null || true
+  ro_now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  printf '%s\t%s\t%s\t%s\t%s\n' "$ro_now" "$(basename "$0" .sh)" "$1" "${ro_sess:-unknown}" "$ro_now-$$" >> "$ro_s/hooks-off.log" 2>/dev/null || true
 }
 
 rule_gate() {
