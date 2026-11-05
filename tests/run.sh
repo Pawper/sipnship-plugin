@@ -3950,6 +3950,9 @@ eq "--no-labels leaves the labels alone for a started round" "0" "$(: > "$pr_dir
 eq "two units sharing a file are refused before anything is posted" "The round was not published: file src/schedule.ts is in two lines; a round keeps its units apart.|0" "$(: > "$pr_dir/log"; pr_run "$fx/drive-round/overlap.txt" | tr '\n' '|' | sed 's/|$//')|$(wc -l < "$pr_dir/log" | tr -d ' ')"
 eq "a line it does not know is refused" "The round was not published: a line this script does not know: garden: beds." "$(printf 'unit: 1\ngarden: beds\n' > "$pr_dir/odd.txt"; pr_run --dry-run "$pr_dir/odd.txt")"
 eq "the skill tells the drive to publish its rounds" "yes" "$(grep -q 'publish-round.sh' "$root/skills/project-drive/SKILL.md" && echo yes)"
+printf 'status: proposed\nunit: 240\nwaits: the seed catalog to "open", about 9 AM\n' > "$pr_dir/waits.txt"
+pr_waits=$(pr_run --dry-run "$pr_dir/waits.txt")
+eq "what a proposed round waits for is a plain line and a field in the marker" "- Waits on: the seed catalog to \"open\", about 9 AM|1" "$(printf '%s\n' "$pr_waits" | grep '^- Waits on' )|$(printf '%s\n' "$pr_waits" | grep -cF '"held":[],"waits":"the seed catalog to \"open\", about 9 AM"} -->')"
 
 section 'drive reads Auto Drive'
 . "$root/scripts/drive/drive-lib.sh"
@@ -3989,6 +3992,40 @@ eq "the skill names Auto Drive's label" "yes" "$(grep -q 'drive:auto' "$root/ski
 eq "Start this round approves the whole proposal at once, Auto Drive off" "dispatch 214 Watering schedule skips the first bed
 dispatch 223 Seed packets
 approved by maya, with Start this round" "$(ad_run 'drive' 'Queue request: start-round by maya')"
+# A drive issue whose rounds are published only for the dashboard (a
+# coordinator acting as the drive): the comments come from a file.
+sr_dir=$(mktemp -d)
+mkdir -p "$sr_dir/bin"
+cat > "$sr_dir/bin/gh" <<'FAKE'
+#!/bin/sh
+case "$*" in
+  "auth status") exit 0 ;;
+  *labels=drive*) printf '99\tdrive,drive:auto\t3\n' ;;
+  "api user --jq .login") echo maya-drive ;;
+  *labels=state:in-progress*) echo 214 ;;
+  *issues/99/comments*) cat "$SR_DIR/comments" ;;
+esac
+exit 0
+FAKE
+chmod +x "$sr_dir/bin/gh"
+sr_run() { printf '%s' "$1" > "$sr_dir/comments"; SR_DIR="$sr_dir" PATH="$sr_dir/bin:$PATH" sh "$root/scripts/drive/approval.sh" 2>&1; }
+sr_started='2026-11-04T01:30:00Z	maya-drive	Round started: 1 agent at work.\n\n- #214\n\n<!-- sipnship-proposal {"status":"started","units":[{"issues":[214],"areas":["schedule"]}],"held":[]} -->
+'
+sr_proposed='2026-11-04T01:50:00Z	maya-drive	Proposed next round: 2 agents.\n\n- #226\n- #223, #240: both change the seed list\n\n<!-- sipnship-proposal {"status":"proposed","units":[{"issues":[226],"areas":["queue"]},{"issues":[223,240],"whyTogether":"both change the seed list","areas":["seeds"]}],"held":[]} -->
+'
+sr_ask='2026-11-04T02:05:00Z	sipnship[bot]	Queue request: start-round by maya
+'
+eq "Start this round starts a round published only for the dashboard, even while one runs" "dispatch 226
+dispatch 223 240
+approved by maya, with Start this round" "$(sr_run "$sr_started$sr_proposed$sr_ask")"
+eq "the published round is the proposal Auto Drive approves, and it waits for the running round" "nothing: 2 dispatch goal(s) wait for the running round (#214) to land" "$(sr_run "$sr_started$sr_proposed")"
+sr_go='2026-11-04T02:06:26Z	maya-drive	Round started: 2 agents at work.\n\n<!-- sipnship-proposal {"status":"started","units":[{"issues":[226],"areas":["queue"]},{"issues":[223,240],"areas":["seeds"]}],"held":[]} -->
+'
+eq "once that round is published as started, the request does not start it again" "nothing: no proposal on issue 99 yet" "$(sr_run "$sr_started$sr_proposed$sr_ask$sr_go")"
+sr_text='2026-11-04T01:40:00Z	maya-drive	Proposal for Tuesday\n1. merge 51\n2. dispatch 226 Land now and Land next\n3. dispatch 223 240 Seed list\nstop: proposal ready for approval
+'
+eq "a published round that repeats the numbered proposal keeps that proposal's numbers" "dispatch 223 240 Seed list
+approved by maya" "$(printf '%s' "$sr_text$sr_proposed" > "$sr_dir/comments"; printf '2026-11-04T02:00:00Z\tmaya\t3\n' >> "$sr_dir/comments"; sed -i 's/drive,drive:auto/drive/' "$sr_dir/bin/gh"; SR_DIR="$sr_dir" PATH="$sr_dir/bin:$PATH" sh "$root/scripts/drive/approval.sh" 2>&1)"
 
 section 'drive runs rounds of units'
 . "$root/scripts/drive/drive-lib.sh"

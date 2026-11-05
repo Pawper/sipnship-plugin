@@ -74,8 +74,10 @@ switch on the dashboard or by hand on GitHub. Both scripts read it with the one 
 issue; the plan's last line says which it is. With the label on, approval is standing: `approval.sh` approves
 the latest proposal whole, ending "approved by Auto Drive", so the round starts the next round as soon as the
 current one has landed (its last pull request merged), with no reply. "Start this round" on the dashboard
-still starts it at once: it arrives on the drive issue as `Queue request: start-round by LOGIN`, and
-`approval.sh` approves the proposal whole for that person, even while a round runs. With the label off,
+still starts it at once: SipNShip's app leaves it on the drive issue as `Queue request: start-round by LOGIN`,
+and `approval.sh` approves the proposal whole for that person, even while a round runs. A round published
+with `publish-round.sh` counts as the proposal when no numbered one covers it, one `dispatch` goal per unit,
+and once that round is published as started, the request is spent. With the label off,
 dispatch only on a reply or that request: post the proposal and wait, as below.
 
 The plan's closing lines also say the round's settings (`rounds:`, with the units per round, the dispatch
@@ -140,7 +142,9 @@ The goal lines and what each means:
   The dashboard's Work tab draws a round from a comment on the open issue labeled `drive`, so publish the
   round whenever you propose it and again when you dispatch it (also when a coordinator is acting as the
   drive): write the round to `.scratch/drive/round.txt` (one `unit:` line per agent with its issues, `why:`,
-  `files:` and, once its pull request opens, `pr:`; `hold:` lines for work waiting; `status: proposed` or
+  `files:` and, once its pull request opens, `pr:`; `hold:` lines for work waiting; one `waits:` line in plain
+words when the whole proposed round waits for something, such as a usage window or a blocked issue, so the
+tab says it waits and on what instead of saying it starts on its own; `status: proposed` or
   `status: started`; the format is at the top of the script) and run
   `sh "$CLAUDE_PLUGIN_ROOT/scripts/drive/publish-round.sh" .scratch/drive/round.txt`. With `status: started`
   it also sets each unit's issues to In progress, so dispatching a unit is what moves its issues; publish

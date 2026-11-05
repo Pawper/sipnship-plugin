@@ -55,11 +55,49 @@ comments=$(printf '%s\n' "$comments" | sed '/^$/d')
 proposal=""; proposal_at=""; reply=""; reply_by=""
 printf '%s\n' "$comments" | while IFS="$tab" read -r at author body; do :; done
 # Walk the comments in order; keep the last proposal and the last reply after it.
+# A round published for the dashboard (publish-round.sh's marker) is a
+# proposal too, one dispatch goal per unit, unless it only repeats the
+# numbered proposal before it; a started round that shares an issue with the
+# proposal is that proposal started, so no earlier reply approves it again.
 state=$(printf '%s\n' "$comments" | awk -F'\t' -v me="$me" '
+  function marker_goals(b,   j, s, out) {
+    j = b; sub(/.*sipnship-proposal /, "", j); sub(/"held":.*/, "", j); out = ""
+    while (match(j, /"issues":\[[0-9, ]*\]/)) {
+      s = substr(j, RSTART + 10, RLENGTH - 11); gsub(/ /, "", s); gsub(/,/, " ", s)
+      if (s != "") out = out "dispatch " s "\n"
+      j = substr(j, RSTART + RLENGTH)
+    }
+    return out
+  }
+  function dispatched(lines,   n, a, i, s, m, w, k, t) {
+    t = " "; n = split(lines, a, "\n")
+    for (i = 1; i <= n; i++) {
+      s = a[i]; sub(/^[0-9]+\. /, "", s)
+      if (s !~ /^dispatch /) continue
+      m = split(substr(s, 10), w, /[ \t]+/)
+      for (k = 1; k <= m && w[k] ~ /^[0-9]+$/; k++) t = t w[k] " "
+    }
+    return t
+  }
+  function shares(a, b,   n, x, i) { n = split(a, x, " "); for (i = 1; i <= n; i++) if (index(b, " " x[i] " ")) return 1; return 0 }
+  function within(a, b,   n, x, i) { n = split(a, x, " "); if (n == 0) return 0; for (i = 1; i <= n; i++) if (!index(b, " " x[i] " ")) return 0; return 1 }
   {
     body = $3
     gsub(/\\n/, "\n", body)
-    if (body ~ /^Proposal/) { proposal = body; at = $1; reply = ""; by = ""; next }
+    if (index(body, "sipnship-proposal {")) {
+      goals = marker_goals(body); named = dispatched(goals)
+      if (index(body, "\"status\":\"started\"")) {
+        if (proposal != "" && shares(named, pissues)) { proposal = ""; pissues = " "; reply = ""; by = "" }
+        next
+      }
+      if (goals != "" && !(proposal != "" && within(named, pissues))) {
+        proposal = "Proposal: the round published on the drive issue"; c = 0
+        n = split(goals, g, "\n"); for (i = 1; i <= n; i++) if (g[i] != "") proposal = proposal "\n" (++c) ". " g[i]
+        pissues = named; at = $1; reply = ""; by = ""
+      }
+      next
+    }
+    if (body ~ /^Proposal/) { proposal = body; pissues = dispatched(body); at = $1; reply = ""; by = ""; next }
     if (proposal != "" && $2 != me) { first = body; sub(/\n.*/, "", first); reply = first; by = $2 }
   }
   END {

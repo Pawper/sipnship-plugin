@@ -21,6 +21,10 @@
 #   hold: 16 | after: 12 14 | files: src/beds/
 #                             work that waits on a running unit, named by that
 #                             unit's issues
+#   waits: the usage saving to end, about 1 AM Thursday
+#                             what the whole proposed round waits for, in
+#                             plain words; the Work tab says it waits, and on
+#                             what, instead of saying it starts on its own
 # No two units may share an issue or a file; the script says so and posts
 # nothing. With status started, each unit's issues that have no pull request
 # are set to In progress (the state label, over REST; the nightly board sync
@@ -59,8 +63,9 @@ function arealist(s,   n, a, i, out) {
   return out
 }
 function bad(msg) { print "error\t" msg; failed = 1; exit }
-BEGIN { status = "proposed"; units = ""; held = ""; nu = 0 }
+BEGIN { status = "proposed"; units = ""; held = ""; waits = ""; nu = 0 }
 /^[ \t]*(#|$)/ { next }
+/^waits:/ { waits = substr(trim(substr($0, 7)), 1, 200); next }
 /^status:/ { v = trim(substr($0, 8)); if (v != "proposed" && v != "started") bad("status is proposed or started, not " v); status = v; next }
 /^(unit|hold):/ {
   kind = ($0 ~ /^unit:/) ? "unit" : "hold"
@@ -101,7 +106,8 @@ BEGIN { status = "proposed"; units = ""; held = ""; nu = 0 }
 END {
   if (failed) exit
   if (nu == 0) { print "error\tthe round has no unit line"; exit }
-  print "json\t{\"status\":\"" status "\",\"units\":[" units "],\"held\":[" held "]}"
+  if (waits != "") lines = lines "- Waits on: " waits "\n"
+  print "json\t{\"status\":\"" status "\",\"units\":[" units "],\"held\":[" held "]" (waits != "" ? ",\"waits\":\"" esc(waits) "\"" : "") "}"
   print "open\t" open
   print "status\t" status
   print "count\t" nu
