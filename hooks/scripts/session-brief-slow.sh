@@ -12,6 +12,7 @@
 #   live-app         the live app's one line, from the latest Live run
 #   mock-stale       mock-check.sh --stale's first six, joined
 #   hotspots         the hotspot line
+#   handoff-comment  the newest handoff on the drive issue, epoch and link
 #   plan             the drive's plan, from CACHE_DIR/facts.tsv (the board
 #                    the hook read)
 #   stamp            when the last read ended, epoch seconds
@@ -89,6 +90,11 @@ if [ -f .claude/project-drive.json ] && [ -f "$here/../../scripts/drive/plan.sh"
   else
     : | keep plan
   fi
+fi
+
+# The newest handoff comment on the drive issue: "epoch<TAB>url", REST only.
+if [ -f .claude/project-drive.json ] && [ -f "$here/../../scripts/drive/handoff.sh" ] && [ "$have_gh" = yes ]; then
+  (run_bounded "$bound" sh "$here/../../scripts/drive/handoff.sh" last 2>/dev/null | head -n 1 | keep handoff-comment) &
 fi
 
 wait

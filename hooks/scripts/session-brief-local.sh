@@ -2,6 +2,8 @@
 # git, and the cached slow lines, each a function run in the background into
 # its own file. Uses the hook's has, add, cached and the facts it found once.
 
+. "$here/session-brief-handoff.sh"
+
 # Main
 s_main() {
   has main || return 0
@@ -100,6 +102,15 @@ s_screens() {
 
 # Last handoff
 s_handoff() {
+  # The handoff comment on the drive issue, read in the background by
+  # session-brief-slow.sh: when it was written, how long ago, and its link.
+  if has handoff && [ -s "$sb_cache/handoff-comment" ]; then
+    hc_row=$(cached handoff-comment)
+    hc_epoch=$(printf '%s' "$hc_row" | cut -f1)
+    hc_local=$(date -d "@$hc_epoch" '+%A %Y-%m-%d, %H:%M %Z' 2>/dev/null || date -r "$hc_epoch" '+%A %Y-%m-%d, %H:%M %Z' 2>/dev/null || echo "")
+    hc_line=$(handoff_comment_line "$hc_row" "$(date +%s)" "${hc_local:-at an unknown time}")
+    [ -z "$hc_line" ] || add "$hc_line"
+  fi
   has handoff && [ -n "$memory_dir" ] && [ -d "$memory_dir" ] || return 0
   listing=$(for f in "$memory_dir"/handoff-*; do
     [ -f "$f" ] || continue

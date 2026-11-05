@@ -392,6 +392,13 @@ eq "a healthy API budget is silent" "" "$(rate_line "4800	5000	1600" 1000)"
 eq "an unknown API budget is silent" "" "$(rate_line '' 1000)"
 eq "newest handoff, ignoring other notes" "/mem/handoff-2026-10-02.md" "$(newest_handoff "$(cat "$fx/handoff-listing.tsv")")"
 eq "no handoff files, nothing" "" "$(newest_handoff "$(printf '1\t/mem/notes.md\n')")"
+. "$root/hooks/scripts/session-brief-handoff.sh"
+eq "a UTC stamp becomes epoch seconds" "1793836800" "$(iso_epoch 2026-11-05T00:00:00Z)"
+eq "not a stamp, nothing" "" "$(iso_epoch yesterday)"
+eq "a red change untouched for 30 minutes has nobody on it; a recent or green one does not" "Red with nobody on it: #43 Seed catalog import (red, untouched 50 min); #44 Bed layout (red, untouched 120 min). The agent that built it has finished, and the queue does not re-run a failure from the change itself. Send an agent to fix it, or say it is set aside." "$(unattended_red_lines "$(cat "$fx/red-unattended-facts.tsv")" 1793836800 30)"
+eq "no red change, no line" "" "$(unattended_red_lines "$(cat "$fx/board-facts-dated.tsv")" 1793836800 30)"
+eq "the handoff comment line says when, how long ago and where" "Last handoff, on the drive issue: written Thursday 4:00 PM (2 h ago). Read it first: https://github.com/maya/rooftop/issues/3#issuecomment-1" "$(handoff_comment_line "$(cat "$fx/handoff-comment-row.tsv")" 1793926800 'Thursday 4:00 PM')"
+eq "no handoff comment, no line" "" "$(handoff_comment_line '' 1793926800 'x')"
 eq "handoff head skips front matter" "The batch queue PR is open and waiting on one full run.
 Next: merge it, then run the serial queue for #45, which conflicted." "$(handoff_head "$(cat "$fx/handoff-2026-10-02.md")" 2)"
 eq "trim within the limit" "a
@@ -495,8 +502,11 @@ sb_cache="$sb_home/brief-cache/$(project_slug "${sb_common%/.git}")"
 (cd "$sb_repo" && PATH="$sb_bin:$PATH" SIPNSHIP_HOME="$sb_home" SIPNSHIP_BRIEF_SLOW_BOUND=3 bounded 60 sh "$root/hooks/scripts/session-brief-slow.sh" "$sb_cache") >/dev/null 2>&1
 eq "the background read stamps its cache and lets go of its lock" "yes no" "$([ -s "$sb_cache/stamp" ] && echo yes || echo no) $([ -d "$sb_cache/lock" ] && echo yes || echo no)"
 eq "a step past its bound leaves its line empty" "" "$(cat "$sb_cache/workflow-breaks" 2>/dev/null)"
+printf '%s\t%s\n' "$(( $(date +%s) - 7200 ))" "https://github.com/maya/rooftop/issues/3#issuecomment-1" > "$sb_cache/handoff-comment"
 sb_t0=$(date +%s); sb_out=$(sb_run); sb_t1=$(date +%s)
 sb_took=$((sb_t1 - sb_t0))
+eq "the brief shows the handoff comment's time, age and link" "1 1" "$(printf '%s\n' "$sb_out" | grep -c '^Last handoff, on the drive issue: written .* (2 h ago)\. Read it first: https://github.com/maya/rooftop/issues/3#issuecomment-1$') $(printf '%s\n' "$sb_out" | grep -c '^Last handoff (handoff-2026-11-02.md):')"
+eq "the handoff skill is named handoff and reaches the script" "1 1" "$(grep -c '^name: handoff$' "$root/skills/handoff/SKILL.md") $(grep -c 'scripts/drive/handoff.sh' "$root/skills/handoff/SKILL.md")"
 eq "with the cache, still inside 15 seconds" "inside" "$([ "$sb_took" -le 15 ] && echo inside || echo "took $sb_took s")"
 eq "the cached deploy line says how old it is" "Deploys (as of just now): main has changes waiting 90 minutes that are not in production (the interval is 60); check the Deploy workflow and the runner." "$(printf '%s\n' "$sb_out" | grep '^Deploys')"
 eq "with no board read, the proposal is unavailable" "Proposed next: (unavailable)" "$(printf '%s\n' "$sb_out" | grep '^Proposed next')"

@@ -1,0 +1,4 @@
+pr	41	Add retries	SUCCESS	MERGEABLE	retries	src/client.ts	2026-11-04T23:00:00Z
+pr	42	Watering schedule screen	FAILURE	MERGEABLE	schedule	src/schedule.ts	2026-11-04T23:55:00Z
+pr	43	Seed catalog import	FAILURE	MERGEABLE	seeds	src/seeds.ts	2026-11-04T23:10:00Z
+pr	44	Bed layout	ERROR	CONFLICTING	beds	src/beds.ts	2026-11-04T22:00:00Z
