@@ -18,7 +18,8 @@ permissions:
 
 jobs:
   wake:
-    if: ${{ (startsWith(github.event.comment.body, 'Queue request: land-') || startsWith(github.event.comment.body, 'Queue request: deploy-now')) && (github.event.comment.user.type == 'Bot' || contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)) }}
+    if: >-
+      ${{ (startsWith(github.event.comment.body, 'Queue request: land-') || startsWith(github.event.comment.body, 'Queue request: deploy-now')) && (github.event.comment.user.type == 'Bot' || contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)) }}
     runs-on: RUNS_ON
     steps:
       - name: Start a drain

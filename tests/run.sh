@@ -1647,6 +1647,8 @@ qr_open=$(printf '48\tfalse\tMERGEABLE\tgreen\tmain\n51\tfalse\tMERGEABLE\tpendi
 eq "an ordinary green change is held for others' CI" "yes" "$(drain_hold 1 "$(drain_waiting "$qr_open" main "")")"
 eq "a land request is not: with a rush standing, nothing running counts against it" "no" "$(drain_hold 1 "$(drain_waiting "$(rush_only "$qr_open" "48 ")" main "")")"
 eq "the wake starts a drain, with no runner spent on other comments" "1 1" "$(grep -c "startsWith(github.event.comment.body, 'Queue request: land-')" "$root/templates/.github/workflows/queue-wake.yml") $(grep -c 'workflows/queue-drain.yml/dispatches' "$root/templates/.github/workflows/queue-wake.yml")"
+# A plain YAML value cannot hold a colon and a space: GitHub cannot load such a workflow, starts no job, and no check says so.
+eq "no workflow's if: line is a plain value holding a colon and a space" "" "$(grep -lE "^ *(- )?if: [^>|\"'].*: " "$root"/templates/.github/workflows/*.yml)"
 qr_rush=$(rush_order "$(cat "$qr_dir/requests-two-rush.tsv")" "")
 eq "two rush requests keep the order asked, each once" "48 52" "$(printf '%s' "$qr_rush" | tr '\n' ' ' | sed 's/ $//')"
 eq "an answered request leaves the rush list" "52" "$(rush_order "$(cat "$qr_dir/requests-two-rush.tsv")" "901
