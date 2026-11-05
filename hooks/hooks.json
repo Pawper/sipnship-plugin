@@ -173,6 +173,16 @@
             "timeout": 5
           }
         ]
+      },
+      {
+        "matcher": "Agent|Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/session-sample.sh\"",
+            "timeout": 10
+          }
+        ]
       }
     ]
   }
