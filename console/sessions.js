@@ -232,9 +232,28 @@ function identify(s) {
   return s;
 }
 
-function readSessions({ root, logsDir, worktrees, localModels, now = Date.now() } = {}) {
+/**
+ * The agents the stop hook saw end, by id, at the time it saw it: the
+ * machine's brief-send/agents-ended.tsv, AGENT-ID<TAB>EPOCH SECONDS.
+ */
+function endedAgents(file) {
+  const out = new Map();
+  try {
+    for (const row of fs.readFileSync(file, 'utf8').split(/\r?\n/)) {
+      const [id, at] = row.split('\t');
+      if (id && Number(at) > 0) out.set(id.trim(), Number(at) * 1000);
+    }
+  } catch { /* none ended yet */ }
+  return out;
+}
+
+/** An agent ended when its stop was seen and its log has not moved on since (a resumed agent's has). */
+const ENDED_SLACK_MS = 10 * 1000;
+
+function readSessions({ root, logsDir, worktrees, localModels, now = Date.now(), endedFile } = {}) {
   const dir = logsDir || path.join(os.homedir(), '.claude', 'projects');
   const trees = worktrees || worktreesOf(root);
+  const ended = endedAgents(endedFile || path.join(require('./tokens').home(), 'brief-send', 'agents-ended.tsv'));
   const out = [];
   const seen = new Set();
   for (const tree of trees) {
@@ -256,6 +275,8 @@ function readSessions({ root, logsDir, worktrees, localModels, now = Date.now() 
       if (meta.worktree) s.worktree = { name: path.basename(meta.worktree), path: meta.worktree };
       if (meta.task && !s.title) s.title = meta.task.slice(0, 120);
       if (log.parent) s.parent = log.parent;
+      const endedAt = log.parent ? ended.get(log.name.replace(/^agent-/, '')) : undefined;
+      if (endedAt && st.mtimeMs <= endedAt + ENDED_SLACK_MS) s.endedAt = new Date(endedAt).toISOString();
       if (!s.worktree) s.worktree = { name: path.basename(tree), path: tree };
       identify(s);
       const note = startedWith(root, s.worktree.name);
