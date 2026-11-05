@@ -185,7 +185,8 @@ tab says it waits and on what instead of saying it starts on its own; `status: p
   proposal line so the person sees it, but it is the one goal that may run without approval, since it asks
   rather than acts. Ask once, then wait: the issue leaves the ready list and is never asked again until the
   owner answers (`set-ready`). The same goes for an issue that turns out, on reading it in full, to need a
-  decision: a design not yet approved, a spec not yet written.
+  decision: a design not yet approved, a spec not yet written. Write the comment as an ask (below), so the
+  dashboard's Needs you card can say it.
 - **`fix-main N`.** Treat the red run like a red pull request on main itself: fix within scope or report the
   cause on the issue.
 - **`audit TEXT`.** When the facts are plain (an issue with no State whose title says what it is, an issue
@@ -211,10 +212,32 @@ Three kinds, three moves, never a fourth.
    issue's own scope and go on.
 2. **A decision only a person can make**: a price, a policy, a holder to ask, anything in the config's owner
    decisions list, anything the owner has said is theirs. One comment on the issue with the question, the
-   options and a recommendation; set `state:waiting-on-owner`; move on. Never guess on a decision the owner
-   has stated.
+   options and a recommendation, written as an ask (below); set `state:waiting-on-owner`; move on. Never guess
+   on a decision the owner has stated.
 3. **Work outside the goal's own words**: file a new issue with a State label and leave it. Never widen the
    round. Widening is a new proposal, next round.
+
+**How to write an ask.** Whoever sets `state:waiting-on-owner`, the drive or a coordinator, leaves one comment
+the dashboard reads onto the issue's Needs you card. Context first, as much as the owner needs; then, at the
+end, the ask in this shape:
+
+```
+Keep a year of watering history, or ninety days?
+1. A year: older entries move to the archive each night. Recommended.
+2. Ninety days: older entries are dropped, and the spec changes to match.
+```
+
+- The question is one line ending in a question mark, right before the choices. Name the decision in it:
+  "Keep a year of watering history, or ninety days?", not "Which would you like?". The card shows that line
+  alone, cut at 160 characters.
+- The choices are a numbered list starting at 1, right after the question, no more than four. Start each with
+  a short name, then a colon, then the detail: the card shows the name, cut at 80 characters.
+- End the recommended choice with "Recommended." The card marks it in words.
+- With no choices to give, the question line alone is the ask.
+- Comment and set the State together: a comment more than ten minutes older than the State is not read as its
+  reason, and a later ask on the issue replaces an earlier one.
+- No quoted lines or code in the ask itself; they are never read. The card shows the words as written, in
+  quotation marks, so write them to the owner, plainly.
 
 ## e. Stop
 
