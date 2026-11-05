@@ -12,7 +12,10 @@
 #                     is on.
 #   rule_skip ID      for a check: when its rule is off, prints the one
 #                     plain line and succeeds, and the check ends with 0;
-#                     when it is on, prints nothing and fails.
+#                     when it is on, prints nothing and fails. On Actions it
+#                     also leaves a notice titled "Rule off" whose message is
+#                     the id, so the service keeps the step as off, not as a
+#                     pass, though the step ends green.
 #   rules_locked      the ids of the locked rules, one per line, from the
 #                     project's two lists.
 rule_off_day() {
@@ -30,6 +33,7 @@ rule_skip() {
       printf " since %s %d, %s", m[$2 + 0], $3 + 0, $1 }')
   fi
   printf 'This rule is off in this project%s; nothing was checked.\n' "$rs_when"
+  if [ "${GITHUB_ACTIONS:-}" = true ]; then printf '::notice title=Rule off::%s\n' "$1"; fi
 }
 
 rules_locked() {

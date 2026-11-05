@@ -3300,11 +3300,17 @@ rc_dir=$(mktemp -d)
 mkdir -p "$rc_dir/.claude"
   . "$rc_lib"
 rc_f=$rc_dir/off; RULES_OFF_FILE=$rc_f
+# These lines are read as a person sees them; the notice Actions adds is tested on its own.
+rc_ga=${GITHUB_ACTIONS:-}; GITHUB_ACTIONS=
   eq "no file: the rule is on and nothing is said" "on" "$(rule_skip never-delete && echo off || echo on)"
   printf '%s\n' 'never-delete 2026-11-02' 'numbering' > "$rc_f"
   eq "a rule off says so with its day" "This rule is off in this project since November 2, 2026; nothing was checked." "$(rule_skip never-delete)"
   eq "a rule off with no day still says so" "This rule is off in this project; nothing was checked." "$(rule_skip numbering)"
   eq "a rule not named is on" "on" "$(rule_skip spec && echo off || echo on)"
+  eq "on Actions a rule off also leaves its notice, naming the rule" "This rule is off in this project; nothing was checked.
+::notice title=Rule off::numbering" "$(GITHUB_ACTIONS=true rule_skip numbering)"
+  eq "off Actions it leaves no notice" "0" "$(GITHUB_ACTIONS= rule_skip numbering | grep -c '::notice')"
+  eq "a rule on leaves no notice on Actions" "0" "$(GITHUB_ACTIONS=true rule_skip spec | grep -c '::notice')"
   printf '%s\r\n' '# Maya' 'spec 2026-01-09' > "$rc_f"
   eq "a comment and a Windows line end change nothing" "This rule is off in this project since January 9, 2026; nothing was checked." "$(rule_skip spec)"
   printf '%s\n' 'spec-extra 2026-01-09' > "$rc_f"
@@ -3317,13 +3323,14 @@ d
 own-e" "$(RULES_LISTS="$rs_x/one.txt $rs_x/two.txt" rules_locked)"
 
 unset RULES_OFF_FILE RULES_LISTS
+GITHUB_ACTIONS=$rc_ga
 # Every check script passes with its one line when its rule is off.
 printf '%s\n' 'x 2026-11-02' > "$rc_dir/.claude/rules-off.txt"
 rc_check() {
   rc_id=$1; rc_path=$2
   printf '%s %s\n' "$rc_id" 2026-11-02 > "$rc_dir/.claude/rules-off.txt"
   eq "$rc_path passes with its line when $rc_id is off" "This rule is off in this project since November 2, 2026; nothing was checked.
-exit 0" "$(cd "$rc_dir" && sh "$root/templates/$rc_path" 2>&1; echo "exit $?")"
+exit 0" "$(cd "$rc_dir" && GITHUB_ACTIONS= sh "$root/templates/$rc_path" 2>&1; echo "exit $?")"
 }
 rc_check never-delete scripts/ci/delete-check.sh
 rc_check numbering scripts/ci/numbering-check.sh
