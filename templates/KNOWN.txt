@@ -452,6 +452,7 @@ scripts/ci/remove-runner.ps1 20bc17d0f981845b8c8850dcedfea5084161800f
 scripts/ci/remove-runner.ps1 b6e829e790e3229b4f29109492a9b122ba8800d6
 scripts/ci/rules-guard.sh 154af6622a5010a84e4be7f1cd1e42e5c24a5d10
 scripts/ci/rules-lib.sh 5e7e08e5ac635fdedd212a5680bcffe41e854a1b
+scripts/ci/rules-lib.sh 8802b5c9bb9341949d582f25cd7b93ddf6118910
 scripts/ci/rules-sync.sh fd440f6ed91f418ec0bc712b4d90e683b82c28c5
 scripts/ci/run-lib.sh 05ae7db3aabe8daff0627d631361d639d175f484
 scripts/ci/run-lib.sh 1bf9d40404314c439b4ad1e374529a5c934313e1
