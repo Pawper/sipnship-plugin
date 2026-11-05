@@ -197,6 +197,16 @@ The rebuild runs in the batch checkout with the queue's own environment: whateve
 
 Setting a repository variable needs a token that can administer the repository; the owner's own `gh` sign-in can.
 
+## Land now, and waking a drain
+
+A green pull request's card has Land now beside Land this next: the same serial merge for that one change, with the same rules (`--serial`, never red, never beside a drain). Land this next also reserves the machines and waits for its checks; Land now is for a change already green and cancels nothing.
+
+Two queue runs cannot go at once, so neither runs beside a drain. A running drain honours the request at its next tick, which comes round every two minutes through a hold for others' CI; that hold is for ordinary green changes, and a land request is served before it. While a batch is being built there are no ticks, so a land request hears `after-drain` ("Next, after the drain that's running"), or `next-after-batch` if it is in that batch, each a step and not an end.
+
+With no drain running, the request starts one. The service leaves the request's form on the Merge queue issue through its App; `.github/workflows/queue-wake.yml` wakes on that comment and dispatches the Queue drain. A drain already running keeps the new one pending, so it starts the moment the first ends and never beside it.
+
+A drain in a workflow signs in to the service with GitHub's identity token (`service-auth.sh`), and reads and answers requests with it, as a connected machine does with its own.
+
 ## When to go serial
 
 By choice, for a change that must land alone: a migration, a change to the deploy, anything whose failure you want to see on its own. Say so:

@@ -191,6 +191,30 @@ start_request() {
   printf '%s\n' "$1" | tr -d '\r' | sed -nE 's/^Queue request: start-round( #0)? by ([A-Za-z0-9][A-Za-z0-9-]{0,38})(: .*)?$/\2/p' | head -n 1
 }
 
+# work_requests COMMENTS START_SINCE HOLD_SINCE
+# COMMENTS are the drive issue's comments, one "at<TAB>login<TAB>body" a line,
+# oldest first. Prints the Work tab's requests the drive still owes, one
+# "start-next N by LOGIN" or "hold-agent N by LOGIN" a line. A request is the
+# exact form, left by the App or by the person it names; an answer in the
+# form `Queue answer: KIND #N: outcome` spends it; one older than its SINCE
+# (a UTC time, compared as text) has already been told it did not happen.
+work_requests() {
+  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v s="$2" -v h="$3" '
+    {
+      if (match($3, /^Queue answer: (start-next|hold-agent) #[0-9]+: /)) {
+        split(substr($3, 15), a, /[ #:]+/); delete owed[a[1] " " a[2]]; next
+      }
+      if ($3 !~ /^Queue request: (start-next|hold-agent) #[0-9]+ by [A-Za-z0-9][A-Za-z0-9-]*(: .*)?$/) next
+      split($3, w, " ")
+      kind = w[3]; n = w[4]; sub(/^#/, "", n); who = w[6]; sub(/:$/, "", who)
+      if ($2 != who && $2 !~ /\[bot\]$/) next
+      if ($1 < (kind == "start-next" ? s : h)) next
+      if (!((kind " " n) in owed)) order[++c] = kind " " n
+      owed[kind " " n] = who
+    }
+    END { for (i = 1; i <= c; i++) if (order[i] in owed) { split(order[i], k, " "); print k[1], k[2], "by", owed[order[i]]; delete owed[order[i]] } }'
+}
+
 # hold_dispatch GOALS RUNNING
 # While a round runs (RUNNING names its issues), approved dispatch goals
 # wait for it to land; every other goal goes ahead. Prints the goals left,

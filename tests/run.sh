@@ -1631,6 +1631,22 @@ eq "a second cancel on the same head gets none" "twice" "$(rerun_choice "$(cat "
 eq "the drain re-runs through rerun_choice" "1" "$(grep -c 'choice=\$(rerun_choice' "$qs_mq")"
 # A rush: land-next reserves the machines (fixtures/queue-rush).
 qr_dir="$root/tests/fixtures/queue-rush"
+# Land now, and a land request waiting on the running drain.
+eq "land now is a request in the fixed form" "91	land-now	48	maya	" "$(request_from_comment 91 'Queue request: land-now #48 by maya')"
+eq "land now answers in the same form" "Queue answer: land-now #48: after-drain" "$(request_answer_form land-now 48 after-drain)"
+eq "land now is not a rush: it cancels nobody's checks" "" "$(rush_order "$(printf '91\tland-now\t48\tmaya\t')" "")"
+eq "the tick lands it by the same serial path" "1" "$(grep -c 'land-next|land-now)$' "$mq_all")"
+qr_lines=$(printf '91\tland-now\t48\tmaya\t\n92\tland-next\t52\tmaya\t\n93\tland-next\t60\tmaya\t\n94\thold\t61\tmaya\t')
+eq "a batch being built: one outside it waits on the drain, one inside lands with it, an answered or other request says nothing" "91	land-now	48	after-drain
+92	land-next	52	next-after-batch" "$(requests_waiting_on "$qr_lines" "52 53" "93")"
+eq "the batch's build says so before its first member and after each one" "2" "$(grep -c 'requests_waiting "\$prs"' "$mq_all")"
+eq "after-drain is a step, so the request stays open" "1" "$(grep -c '\[ "\$4" = after-drain \]' "$mq_all")"
+eq "a failed read is said in the log, never read as a request" "1" "$(grep -c 'going on without them." >&2' "$mq_all")"
+# The case from a real drain: one green with six running, and Land this next on it.
+qr_open=$(printf '48\tfalse\tMERGEABLE\tgreen\tmain\n51\tfalse\tMERGEABLE\tpending\tmain\n53\tfalse\tMERGEABLE\tpending\tmain\n')
+eq "an ordinary green change is held for others' CI" "yes" "$(drain_hold 1 "$(drain_waiting "$qr_open" main "")")"
+eq "a land request is not: with a rush standing, nothing running counts against it" "no" "$(drain_hold 1 "$(drain_waiting "$(rush_only "$qr_open" "48 ")" main "")")"
+eq "the wake starts a drain, with no runner spent on other comments" "1 1" "$(grep -c "startsWith(github.event.comment.body, 'Queue request: land-')" "$root/templates/.github/workflows/queue-wake.yml") $(grep -c 'workflows/queue-drain.yml/dispatches' "$root/templates/.github/workflows/queue-wake.yml")"
 qr_rush=$(rush_order "$(cat "$qr_dir/requests-two-rush.tsv")" "")
 eq "two rush requests keep the order asked, each once" "48 52" "$(printf '%s' "$qr_rush" | tr '\n' ' ' | sed 's/ $//')"
 eq "an answered request leaves the rush list" "52" "$(rush_order "$(cat "$qr_dir/requests-two-rush.tsv")" "901
@@ -4091,6 +4107,25 @@ held: 1 dispatch goal(s) wait for the running round (#226, #223) to land" "$(hol
 eq "a Start this round request names who pressed it" "maya" "$(start_request 'Queue request: start-round by maya')"
 eq "the button's form with #0 is the same" "maya" "$(start_request 'Queue request: start-round #0 by maya')"
 eq "anything else is not a start" "" "$(start_request 'please start-round by maya')"
+# The Work tab's requests the drive owes (work-requests.sh).
+wq_t=$(printf '\t')
+wq_c="2026-11-05T08:00:00Z${wq_t}sipnship[bot]${wq_t}Queue request: start-next #214 by maya
+2026-11-05T08:01:00Z${wq_t}sipnship[bot]${wq_t}Queue request: hold-agent #223 by maya: the seed list changed
+2026-11-05T08:02:00Z${wq_t}maya${wq_t}Queue request: start-next #231 by maya
+2026-11-05T08:03:00Z${wq_t}tom${wq_t}Queue request: start-next #232 by maya
+2026-11-05T08:04:00Z${wq_t}maya${wq_t}could we Queue request: start-next #233 by maya"
+eq "the drive owes each request in the form, left by the App or by the person it names" "start-next 214 by maya
+hold-agent 223 by maya
+start-next 231 by maya" "$(work_requests "$wq_c" 2026-11-04T08:00:00Z 2026-11-05T07:00:00Z)"
+eq "an answer spends one, the rest stay owed" "hold-agent 223 by maya
+start-next 231 by maya" "$(work_requests "$wq_c
+2026-11-05T08:05:00Z${wq_t}maya${wq_t}Queue answer: start-next #214: started-next" 2026-11-04T08:00:00Z 2026-11-05T07:00:00Z)"
+eq "a request asked again after its answer is owed again" "start-next 214 by maya" "$(work_requests "2026-11-05T08:00:00Z${wq_t}maya${wq_t}Queue request: start-next #214 by maya
+2026-11-05T08:01:00Z${wq_t}maya${wq_t}Queue answer: start-next #214: started-next
+2026-11-05T08:02:00Z${wq_t}maya${wq_t}Queue request: start-next #214 by maya" 2026-11-04T08:00:00Z 2026-11-05T07:00:00Z)"
+eq "one past its window has already been told it did not happen" "start-next 214 by maya
+start-next 231 by maya" "$(work_requests "$wq_c" 2026-11-04T08:00:00Z 2026-11-05T08:30:00Z)"
+eq "these never count as a reply to the proposal" "1" "$(grep -c 'request: (start-next|hold-agent|land-next|land-now|deploy-now)' "$root/scripts/drive/approval.sh")"
 eq "Auto Drive on with a round running: the dispatches wait" "nothing: 1 dispatch goal(s) wait for the running round (#214) to land" "$(cat > "$ad_dir/bin/gh" <<'FAKE'
 #!/bin/sh
 case "$*" in

@@ -1,0 +1,30 @@
+# Wakes a drain when a person asks for something only a drain can do: Land now,
+# Land this next or Deploy now on the dashboard, which the service leaves in
+# their fixed form on the Merge queue issue, or the same comment by hand. The
+# drain's own concurrency group keeps one running and one pending, so a request
+# made while a drain runs starts the next one the moment that one ends, and
+# never beside it. Every other comment skips the job, which spends no runner.
+# Where it runs: where the project's CI runs. RUNS_ON and RUN_SHELL are filled
+# from .github/workflows/ci.yml by the bootstrap and the template sync.
+name: Queue wake
+
+on:
+  issue_comment:
+    types: [created]
+
+# The workflow's own token may dispatch a workflow, and nothing else here.
+permissions:
+  actions: write
+
+jobs:
+  wake:
+    if: ${{ (startsWith(github.event.comment.body, 'Queue request: land-') || startsWith(github.event.comment.body, 'Queue request: deploy-now')) && (github.event.comment.user.type == 'Bot' || contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)) }}
+    runs-on: RUNS_ON
+    steps:
+      - name: Start a drain
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          REF: ${{ github.event.repository.default_branch }}
+        shell: RUN_SHELL
+        run: gh api -X POST "repos/$GH_REPO/actions/workflows/queue-drain.yml/dispatches" -f ref="$REF"

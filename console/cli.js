@@ -32,6 +32,7 @@ function usage() {
   sipnship listen [on|off|status]  carry out what you approve on the dashboard (off until turned on here)
   sipnship ask add-runner [NAME | --count N] | remove-runner NAME | migrate [PR] | deploy | scan-skip | scan-again
   sipnship land-next N ["reason"]   land this pull request next
+  sipnship land-now N ["reason"]    land this green pull request now
   sipnship hold N ["reason"]        hold it out of the merge queue
   sipnship release N                release a hold
   sipnship drop N "reason"          take it out, closing it with the reason
@@ -146,7 +147,7 @@ async function main() {
       : await require('./deploy-key').deployKey({ repo: value('--repo'), host: value('--host') });
     return;
   }
-  if (['land-next', 'hold', 'drop', 'release', 'deploy-now'].includes(args.command)) {
+  if (['land-next', 'land-now', 'hold', 'drop', 'release', 'deploy-now'].includes(args.command)) {
     const rest = process.argv.slice(3);
     const i = rest.indexOf('--repo');
     const repo = i >= 0 ? rest[i + 1] : undefined;

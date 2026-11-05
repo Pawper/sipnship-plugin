@@ -301,7 +301,7 @@ if [ "$mode" = drain ]; then
     mkdir -p "$flaky_dir" 2>/dev/null || true
     rush_now=$(tr -d '\r' < "$flaky_dir/rush.list" 2>/dev/null | tr '\n' ' ')
     if [ -n "$(printf '%s' "$rush_now" | tr -d ' ')" ]; then
-      open=$(printf '%s\n' "$open" | awk -F'\t' -v k=" $rush_now " 'NF && index(k, " " $1 " ")')
+      open=$(rush_only "$open" "$rush_now")
       [ "$rush_now" = "${last_rush:-}" ] || say "round $round: a rush change is landing ($(printf '#%s ' $rush_now)); the others are paused until it has."
       last_rush=$rush_now
     fi

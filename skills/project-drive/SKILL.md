@@ -80,6 +80,18 @@ with `publish-round.sh` counts as the proposal when no numbered one covers it, o
 and once that round is published as started, the request is spent. With the label off,
 dispatch only on a reply or that request: post the proposal and wait, as below.
 
+**Requests from the Work tab.** SipNShip's app also leaves `Queue request: start-next #N by LOGIN` and
+`Queue request: hold-agent #N by LOGIN` on the drive issue. They are a person's word about one issue, so they
+need no proposal or reply. Read them on every tick, whatever `approval.sh` said:
+
+```bash
+sh "${CLAUDE_PLUGIN_ROOT}/scripts/drive/work-requests.sh"
+```
+
+It prints one line per request still owed, `start-next N by LOGIN` or `hold-agent N by LOGIN`, or nothing. Do
+each (step c), and answer on the drive issue in the fixed form, one comment each, so the dashboard's waiting line
+ends. A request nobody answers tells the person it did not happen: a start after a day, a hold after an hour.
+
 The plan's closing lines also say the round's settings (`rounds:`, with the units per round, the dispatch
 model and the red limit), `summary: due` when the daily summary should be written (below), and `health:`
 when a health note is set (below).
@@ -153,6 +165,18 @@ tab says it waits and on what instead of saying it starts on its own; `status: p
   The next round is always on the Work tab: while a round runs, publish the proposed next round (`status:
   proposed`) beside the started one, and publish it again only when it changes. The service keeps the
   started round and the proposed one apart, so both show.
+- **`start-next N by LOGIN`.** Start this issue now if a runner is free and nothing running touches its files:
+  dispatch it as a one-off, set `state:in-progress` (from Parked or another set-aside State too, since the person
+  asked for it by name), note `next` in `started-with.tsv`, and answer `Queue answer: start-next #N: started-next`.
+  Otherwise make it the first unit of the next round you publish, and leave it unanswered: the dashboard says
+  "First in the next round" until it starts. If the issue closed, answer `Queue answer: start-next #N: not-open`.
+  If it cannot start at all, say why in one comment on the issue and answer `... : not-started`.
+- **`hold-agent N by LOGIN`.** Tell the agent working the issue, if this session started it (your runtime's
+  message to a running agent): finish the current step, commit and push what is done, and stop. Then set
+  `state:waiting-on-owner` with `scripts/state.sh`, which moves the card to Needs you, and answer
+  `Queue answer: hold-agent #N: held-agent`. An agent you cannot reach (another session's, or one in a person's
+  terminal) is not held: change no State and answer `Queue answer: hold-agent #N: not-held`, so the person hears
+  it at once. Never set the State without stopping the agent.
 - **`hold N TITLE After: RUNNING TITLE`.** The issue touches files a running bundle touches. Do not start it;
   it is shown as waiting after that bundle and is planned again in the next proposal. It needs no approval
   and does nothing.

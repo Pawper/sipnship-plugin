@@ -98,6 +98,8 @@ state=$(printf '%s\n' "$comments" | awk -F'\t' -v me="$me" '
       next
     }
     if (body ~ /^Proposal/) { proposal = body; pissues = dispatched(body); at = $1; reply = ""; by = ""; next }
+    # The other requests and answers left here are not a reply to the proposal (work-requests.sh reads them).
+    if (body ~ /^Queue (request: (start-next|hold-agent|land-next|land-now|deploy-now) ?|answer: )/) next
     if (proposal != "" && $2 != me) { first = body; sub(/\n.*/, "", first); reply = first; by = $2 }
   }
   END {

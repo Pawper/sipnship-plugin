@@ -52,4 +52,5 @@ test('when SipNShip cannot be reached, it prints the issue form the queue reads'
   assert.strictEqual(code, 1);
   assert.match(out.text, /Queue request: drop #51 by maya: the seed catalog moved/);
   assert.strictEqual(issueForm('hold', 48, 'maya', ''), 'Queue request: hold #48 by maya');
+  assert.strictEqual(issueForm('land-now', 48, 'maya', ''), 'Queue request: land-now #48 by maya');
 });

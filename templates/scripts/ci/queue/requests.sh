@@ -1,5 +1,5 @@
 #!/bin/sh
-# Requests to the queue: land this next, hold, take out, release.
+# Requests to the queue: land this next, land now, hold, take out, release.
 # Sourced by scripts/ci/merge-queue.sh; functions only.
 
 # --- Requests to the queue: land this next, hold this, take it out ---
@@ -26,7 +26,7 @@ requests_open() {
   case "$req_road" in
     service)
       if ! printf 'Authorization: Bearer %s\n' "$req_token" | curl -s -f --max-time 5 -H @- "${SIPNSHIP_URL:-https://sipnship.dev}/v1/repos/$req_id/queue/requests/open" 2>/dev/null | tr -d '\r'; then
-        [ -f "$flaky_dir/requests.unreachable" ] || { say "Requests to the queue could not be read from SipNShip; going on without them."; : > "$flaky_dir/requests.unreachable"; }
+        [ -f "$flaky_dir/requests.unreachable" ] || { say "Requests to the queue could not be read from SipNShip; going on without them." >&2; : > "$flaky_dir/requests.unreachable"; }
       fi ;;
     issue)
       [ -n "$req_issue" ] || req_issue=$(gh api "repos/{owner}/{repo}/issues?labels=queue&state=all&per_page=20" --jq '[.[] | select(.title == "Merge queue")] | .[0].number // empty' 2>/dev/null | tr -d '\r')
@@ -45,9 +45,10 @@ requests_open() {
 }
 
 # requests_answer ID KIND PR OUTCOME: record what the queue did, on the
-# road the request came by. "next-after-batch" is a step, not the end.
+# road the request came by. "next-after-batch" and "after-drain" are steps,
+# not the end.
 requests_answer() {
-  if [ "$4" = next-after-batch ] || [ "$4" = deploying ]; then
+  if [ "$4" = next-after-batch ] || [ "$4" = after-drain ] || [ "$4" = deploying ]; then
     grep -qx "$1" "$flaky_dir/requests.after" 2>/dev/null && return 0
     printf '%s\n' "$1" >> "$flaky_dir/requests.after"
   else
@@ -99,6 +100,26 @@ requests_deploy_now() {
   return 0
 }
 
+# requests_waiting MEMBERS: a batch is being built, which reads no requests
+# for as long as its members take. So a land request hears what it waits on
+# rather than look stuck; the drain's next tick lands it.
+requests_waiting() {
+  [ -z "${QUEUE_IN_REQUEST:-}" ] || return 0
+  requests_road_set
+  requests_waiting_on "$(requests_open)" "$1" "$(cat "$flaky_dir/requests.done" 2>/dev/null)" | while IFS="$tab" read -r rw_id rw_kind rw_pr rw_out; do
+    requests_answer "$rw_id" "$rw_kind" "$rw_pr" "$rw_out"
+  done
+  return 0
+}
+
+# requests_closed KIND SHA: how a request on a closed pull request ends. A
+# batch's member shows closed, not merged, once it is on main: that landed.
+requests_closed() {
+  case "$1" in land-next|land-now) ;; *) echo not-open; return 0 ;; esac
+  git fetch -q origin "$base" 2>/dev/null || true
+  if [ -n "$2" ] && git merge-base --is-ancestor "$2" "origin/$base" 2>/dev/null; then echo landed; else echo not-open; fi
+}
+
 requests_classes() { classify_paths "$(gh api "repos/{owner}/{repo}/pulls/$1/files?per_page=100" --jq '.[].filename' 2>/dev/null)" "$rules"; }
 
 # requests_tick WHERE: honour the open requests. WHERE is "drain" between
@@ -121,7 +142,8 @@ requests_tick() {
     if [ "$rq_kind" = deploy-now ]; then requests_deploy_now "$rq_id" "$rq_by"; continue; fi
     rq_state=$(gh api "repos/{owner}/{repo}/pulls/$rq_pr" --jq '"\(.state)\t\(.head.sha)\t\(.mergeable_state // "")"' 2>/dev/null | tr -d '\r')
     [ -n "$rq_state" ] || continue
-    if [ "${rq_state%%	*}" != open ]; then requests_answer "$rq_id" "$rq_kind" "$rq_pr" not-open; continue; fi
+    rq_rest=${rq_state#*	}; rq_sha=${rq_rest%%	*}
+    if [ "${rq_state%%	*}" != open ]; then requests_answer "$rq_id" "$rq_kind" "$rq_pr" "$(requests_closed "$rq_kind" "$rq_sha")"; continue; fi
     case "$rq_kind" in
       hold)
         gh_write api -X POST "repos/{owner}/{repo}/issues/$rq_pr/labels" -f "labels[]=queue:hold" >/dev/null 2>&1 && requests_answer "$rq_id" hold "$rq_pr" held ;;
@@ -132,11 +154,12 @@ requests_tick() {
         if [ -f "$here/../worktrees.sh" ] && sh "$here/../worktrees.sh" close "$rq_pr" "Taken out of the queue at the request of $rq_by: $rq_why" >/dev/null 2>&1; then
           requests_answer "$rq_id" drop "$rq_pr" dropped
         fi ;;
-      land-next)
-        rq_rest=${rq_state#*	}; rq_sha=${rq_rest%%	*}
+      land-next|land-now)
         rq_conf=""; [ "$(mergeable_word "${rq_rest#*	}")" = CONFLICTING ] && rq_conf=yes
         rq_batch=no; rq_over=no
         case " $rt_members " in *" $rq_pr "*) continue ;; esac
+        # A rush has the machines alone: a Land now, already green, goes straight after it.
+        if [ "$rq_kind" = land-now ] && [ -n "$(printf '%s' "$rt_rush" | tr -d ' \n')" ]; then requests_answer "$rq_id" land-now "$rq_pr" after-drain; continue; fi
         # The chain: behind another rush one it waits on its test head; once
         # those ahead have landed, a green test head of the same tree is
         # its result, and it merges with no further run.
@@ -148,7 +171,7 @@ requests_tick() {
             say "request: landing #$rq_pr next on its test head's green run, as $rq_by asked${rq_why:+ ($rq_why)}"
             QUEUE_CHAIN_PROVEN=yes QUEUE_IN_DRAIN=1 QUEUE_IN_REQUEST=1 sh "$0" --serial --base "$base" --because "landing next at the request of $rq_by" "$rq_pr" 2>&1 | tee -a "$log_file" || true
             rm -f "$flaky_dir/pr-$rq_pr.tsv" 2>/dev/null
-            if [ "$(gh api "repos/{owner}/{repo}/pulls/$rq_pr" --jq .merged 2>/dev/null)" = true ]; then requests_answer "$rq_id" land-next "$rq_pr" landed; fi
+            if [ "$(gh api "repos/{owner}/{repo}/pulls/$rq_pr" --jq .merged 2>/dev/null)" = true ]; then requests_answer "$rq_id" "$rq_kind" "$rq_pr" landed; fi
             continue ;;
         esac
         if [ "$1" = batch ] && [ -n "$(printf '%s' "$rt_members" | tr -d ' ')" ]; then
@@ -156,14 +179,14 @@ requests_tick() {
           rq_over=$(classes_overlap "$(requests_classes "$rq_pr")" "$(for rq_m in $rt_members; do requests_classes "$rq_m"; echo; done)")
         fi
         case "$(land_next_step "$(pr_rollup "$rq_sha")" "$rq_conf" "$rq_batch" "$rq_over")" in
-          red) requests_answer "$rq_id" land-next "$rq_pr" red ;;
-          conflicts) requests_answer "$rq_id" land-next "$rq_pr" conflicts ;;
-          after-batch) requests_answer "$rq_id" land-next "$rq_pr" next-after-batch ;;
+          red) requests_answer "$rq_id" "$rq_kind" "$rq_pr" red ;;
+          conflicts) requests_answer "$rq_id" "$rq_kind" "$rq_pr" conflicts ;;
+          after-batch) requests_answer "$rq_id" "$rq_kind" "$rq_pr" next-after-batch ;;
           serial-now)
-            say "request: landing #$rq_pr next, as $rq_by asked${rq_why:+ ($rq_why)}"
-            QUEUE_IN_DRAIN=1 QUEUE_IN_REQUEST=1 sh "$0" --serial --base "$base" --because "landing next at the request of $rq_by" "$rq_pr" 2>&1 | tee -a "$log_file" || true
+            say "request: landing #$rq_pr ${rq_kind#land-}, as $rq_by asked${rq_why:+ ($rq_why)}"
+            QUEUE_IN_DRAIN=1 QUEUE_IN_REQUEST=1 sh "$0" --serial --base "$base" --because "landing ${rq_kind#land-} at the request of $rq_by" "$rq_pr" 2>&1 | tee -a "$log_file" || true
             rm -f "$flaky_dir/pr-$rq_pr.tsv" 2>/dev/null
-            if [ "$(gh api "repos/{owner}/{repo}/pulls/$rq_pr" --jq .merged 2>/dev/null)" = true ]; then requests_answer "$rq_id" land-next "$rq_pr" landed; fi ;;
+            if [ "$(gh api "repos/{owner}/{repo}/pulls/$rq_pr" --jq .merged 2>/dev/null)" = true ]; then requests_answer "$rq_id" "$rq_kind" "$rq_pr" landed; fi ;;
           *) : ;;
         esac ;;
     esac

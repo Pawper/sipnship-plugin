@@ -1,5 +1,6 @@
 'use strict';
 // sipnship land-next N ["reason"]   land this pull request next
+// sipnship land-now N ["reason"]    land this green pull request now
 // sipnship hold N ["reason"]        hold it out of the queue
 // sipnship drop N "reason"          take it out, closing it with the reason
 // sipnship release N                release a hold
@@ -14,7 +15,7 @@ const { execFileSync } = require('child_process');
 const { base } = require('./brief-send');
 const { remoteRepo } = require('./connect');
 
-const KINDS = { 'land-next': 'land-next', hold: 'hold', drop: 'drop', release: 'release', 'deploy-now': 'deploy-now' };
+const KINDS = { 'land-next': 'land-next', 'land-now': 'land-now', hold: 'hold', drop: 'drop', release: 'release', 'deploy-now': 'deploy-now' };
 
 function ghToken(run) {
   try {
@@ -32,7 +33,7 @@ function issueForm(kind, pr, login, reason) {
 }
 
 async function request({ kind, pr, reason = '', repo, via = 'cli', env = process.env, out = process.stdout, cwd = process.cwd(), run = defaultRun }) {
-  if (!KINDS[kind]) { out.write('Ask for one of: land-next, hold, drop, release.\n'); return 2; }
+  if (!KINDS[kind]) { out.write('Ask for one of: land-next, land-now, hold, drop, release.\n'); return 2; }
   const deploy = kind === 'deploy-now';
   const n = deploy ? 0 : Number(pr);
   if (!deploy && (!Number.isInteger(n) || n <= 0)) { out.write(`Name the pull request by its number: sipnship ${kind} 48\n`); return 2; }

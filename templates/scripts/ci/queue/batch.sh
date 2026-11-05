@@ -264,7 +264,7 @@ b_merged=0
 : > "$flaky_dir/batch.state" 2>/dev/null || true
 batch_note branch "$branch"
 for pr in $prs; do batch_note member "$pr" "$(pr_field "$pr" 3)" planned; done
-batch_moment cut
+batch_moment cut; requests_waiting "$prs"
 for pr in $prs; do
   printf 'building %s %s %s %s\n' "$b_merged" "$b_total" "$pr" "$(printf '%s ' $prs | sed 's/ $//')" > "$flaky_dir/now" 2>/dev/null || true
   hw=$(pr_held "$pr")
@@ -382,7 +382,7 @@ package.json"*|*"/package.json"*) ensure_modules ;; esac
 "
   refs="$refs$(carried_refs "$(gh api "repos/{owner}/{repo}/pulls/$pr" --jq '.body // ""' 2>/dev/null)" "$pr")
 "
-  batch_line "$pr" "merged into the batch"; batch_note member "$pr" "$title" merged; batch_moment building
+  batch_line "$pr" "merged into the batch"; batch_note member "$pr" "$title" merged; batch_moment building; requests_waiting "$prs"
   b_merged=$((b_merged + 1))
 done
 : > "$flaky_dir/now" 2>/dev/null || true

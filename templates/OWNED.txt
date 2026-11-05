@@ -103,6 +103,7 @@ scripts/labels.sh
 scripts/state.sh
 .github/workflows/board-sync.yml
 .github/workflows/state-label.yml
+.github/workflows/queue-wake.yml
 .github/workflows/audit.yml
 scripts/ci/workflow-breaks.sh
 scripts/ci/drain-late.sh

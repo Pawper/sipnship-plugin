@@ -15,7 +15,7 @@ request_from_comment() {
   rc_body=$(printf '%s' "$2" | tr -d '\r')
   [ "$(printf '%s\n' "$rc_body" | wc -l | tr -d ' ')" = 1 ] || return 0
   rc_t=$(printf '\t')
-  rc_l=$(printf '%s\n' "$rc_body" | sed -nE "s/^Queue request: (land-next|hold|drop|release) #([0-9]+) by ([A-Za-z0-9][A-Za-z0-9-]{0,38})(: (.+))?\$/\\1${rc_t}\\2${rc_t}\\3${rc_t}\\5/p")
+  rc_l=$(printf '%s\n' "$rc_body" | sed -nE "s/^Queue request: (land-next|land-now|hold|drop|release) #([0-9]+) by ([A-Za-z0-9][A-Za-z0-9-]{0,38})(: (.+))?\$/\\1${rc_t}\\2${rc_t}\\3${rc_t}\\5/p")
   # "Deploy now" names no pull request; it is kept as 0.
   [ -n "$rc_l" ] || rc_l=$(printf '%s\n' "$rc_body" | sed -nE "s/^Queue request: deploy-now by ([A-Za-z0-9][A-Za-z0-9-]{0,38})(: (.+))?\$/deploy-now${rc_t}0${rc_t}\\1${rc_t}\\3/p")
   [ -n "$rc_l" ] || return 0
@@ -53,6 +53,24 @@ land_next_step() {
   if [ "$2" = yes ]; then echo conflicts; return 0; fi
   case "$1" in red) echo red; return 0 ;; green) ;; *) echo wait; return 0 ;; esac
   if [ "$3" = yes ] && [ "$4" = yes ]; then echo after-batch; else echo serial-now; fi
+}
+
+# requests_waiting_on LINES MEMBERS DONE: while a batch is being built no
+# request can land, so each land request not yet answered hears why, one
+# "id<TAB>kind<TAB>pr<TAB>outcome" a line: a member of the batch lands with it,
+# any other lands the moment the batch's round lets go of the queue.
+requests_waiting_on() {
+  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v m=" $(printf '%s' "$2" | tr '\n' ' ') " -v done=" $(printf '%s' "$3" | tr '\n' ' ') " '
+    ($2 == "land-next" || $2 == "land-now") && $3 != "" && index(done, " " $1 " ") == 0 {
+      printf "%s\t%s\t%s\t%s\n", $1, $2, $3, (index(m, " " $3 " ") ? "next-after-batch" : "after-drain")
+    }'
+}
+
+# rush_only OPEN RUSH: the rows of OPEN (pull request first) a rush list keeps.
+# With a rush standing the others are not read, so nothing running counts
+# against it and the drain's hold for others' CI never applies to it.
+rush_only() {
+  printf '%s\n' "$1" | awk -F'\t' -v k=" $2 " 'NF && index(k, " " $1 " ")'
 }
 
 # --- Rush changes: "land this next" reserves the machines ---
