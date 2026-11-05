@@ -232,8 +232,14 @@ Keep a year of watering history, or ninety days?
   alone, cut at 160 characters.
 - The choices are a numbered list starting at 1, right after the question, no more than four. Start each with
   a short name, then a colon, then the detail: the card shows the name, cut at 80 characters.
-- End the recommended choice with "Recommended." The card marks it in words.
-- With no choices to give, the question line alone is the ask.
+- Every ask with choices recommends exactly one, however many there are: end the one you would pick with
+  "Recommended." and a short reason why ("Recommended, since the spec you approved says a year."). The card
+  marks it in words and always shows it, even past the fourth choice; an ask with none recommended says "No
+  choice was recommended." on the card. Setting `state:waiting-on-owner` is refused while the ask left in
+  the last ten minutes gives choices and none, or more than one, is recommended (the `require-state-label`
+  hook; the nightly audit names any that got through another way). Fix the comment, then set the state.
+- With no choices to give, the question line alone is the ask; say in the context above it which answer you
+  would give and why.
 - Comment and set the State together: a comment more than ten minutes older than the State is not read as its
   reason, and a later ask on the issue replaces an earlier one.
 - No quoted lines or code in the ask itself; they are never read. The card shows the words as written, in

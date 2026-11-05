@@ -182,7 +182,16 @@ jobs:
             hygiene=$(sh scripts/ci/machine-upkeep.sh | sed 's/^/- /')
           fi
 
+          # An ask with choices recommends exactly one: the hook refuses it in
+          # a session; this names any that reached the owner another way.
+          asks=""
+          if [ -f scripts/ci/ask-audit.sh ]; then
+            asks=$(sh scripts/ci/ask-audit.sh | sed 's/^/- /')
+            [ -z "$asks" ] || asks=$(printf 'Issues waiting on you whose ask does not recommend exactly one choice:\n%s' "$asks")
+          fi
+
           body=$(audit_comment "$missing" "$stale" "$red" "$branches")
+          if [ -n "$asks" ]; then body=$(printf '%s\n\n%s' "$body" "$asks" | sed '/./,$!d'); fi
           if [ -n "$runner" ]; then body=$(printf '%s\n\n%s' "$body" "$runner" | sed '/./,$!d'); fi
           if [ -n "$serial" ]; then body=$(printf '%s\n\n- %s' "$body" "$serial" | sed '/./,$!d'); fi
           if [ -n "$deploy" ]; then body=$(printf '%s\n\n- %s' "$body" "$deploy" | sed '/./,$!d'); fi
