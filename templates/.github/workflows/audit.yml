@@ -71,7 +71,7 @@ jobs:
             pr=${line%% *}
             for n in $(issue_refs "$line"); do
               labels=$(gh issue view "$n" --json state,labels --jq 'select(.state == "OPEN") | [.labels[].name] | join(",")' 2>/dev/null || true)
-              [ "$(state_slug "$(state_label_in "$labels")")" = ready ] && printf '%s %s\n' "$pr" "$n"
+              if [ "$(state_slug "$(state_label_in "$labels")")" = ready ]; then printf '%s %s\n' "$pr" "$n"; fi
             done
           done > stale.txt
           stale=$(cat stale.txt)
@@ -147,7 +147,7 @@ jobs:
             if [ -n "$ADMIN_TOKEN" ]; then
               problems=$(runner_problems "$(GH_TOKEN="$ADMIN_TOKEN" gh api "repos/$GH_REPO/actions/runners" \
                 --jq '.runners[] | [.name, .status, (.busy | tostring)] | @tsv' 2>/dev/null || true)")
-              [ -n "$problems" ] && runner=$(printf '%s\n\n%s' "$runner" "$problems" | sed '/./,$!d')
+              if [ -n "$problems" ]; then runner=$(printf '%s\n\n%s' "$runner" "$problems" | sed '/./,$!d'); fi
             fi
             # One runner kept for the batch and main, where ci.yml keeps one:
             # the merge queue sets the labels; say when it cannot, or when
@@ -160,7 +160,7 @@ jobs:
                 kept=$(runner_label_problem "$(GH_TOKEN="$ADMIN_TOKEN" gh api "repos/$GH_REPO/actions/runners" \
                   --jq '.runners[] | [.id, .name, .status, ([.labels[].name] | join(","))] | @tsv' 2>/dev/null || true)")
               fi
-              [ -n "$kept" ] && runner=$(printf '%s\n\n- %s' "$runner" "$kept" | sed '/./,$!d')
+              if [ -n "$kept" ]; then runner=$(printf '%s\n\n- %s' "$runner" "$kept" | sed '/./,$!d'); fi
             fi
             failed=$(gh api "repos/$GH_REPO/actions/runs?status=failure&per_page=5" --jq '.workflow_runs[].check_suite_id' 2>/dev/null || true)
             notes=""
@@ -171,7 +171,7 @@ jobs:
               done
             done
             quota=$(quota_gone "$notes")
-            [ -n "$quota" ] && runner=$(printf '%s\n\n- %s' "$runner" "$quota" | sed '/./,$!d')
+            if [ -n "$quota" ]; then runner=$(printf '%s\n\n- %s' "$runner" "$quota" | sed '/./,$!d'); fi
           fi
 
           # What the runner's machine is quietly collecting: a Temp folder that
@@ -200,3 +200,23 @@ jobs:
           fi
           gh issue comment "$tracking" --body "$body"
           echo "Commented on issue $tracking."
+
+      # A failed audit must reach someone: the audit is what reports drift,
+      # so while it is red those reports are not arriving. This comments on
+      # the issue labeled "audit" (or opens it) with the run to read.
+      - name: Say the audit failed
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        shell: RUN_SHELL
+        run: |
+          . scripts/ci/lib.sh
+          note="The nightly audit failed, so its reports of drift, offline runners and stale issues did not arrive tonight. Read the failed step: $RUN_URL"
+          tracking=$(gh issue list --label audit --state open --limit 1 --json number --jq '.[0].number')
+          if [ -z "$tracking" ]; then
+            tracking=$(gh issue create --title "Audit" --label "audit,$(state_label parked "$(project_label_form)")" \
+              --body "The nightly audit comments here when something is wrong. It says nothing when all is clean." | sed 's#.*/##')
+          fi
+          gh issue comment "$tracking" --body "$note"
