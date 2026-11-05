@@ -13,7 +13,9 @@
 # The steps that read the pull request's body (Spec:, Mock:, Design:,
 # Parity:, Deletes:) take it from .scratch/body.md when it is there, else
 # from the open pull request for this branch over REST; with neither, they
-# say so and are skipped, and every other step still runs.
+# still run, as if the body were empty, since most of what they fail (a new
+# screen file no line maps, a raw colour, a private name) no body line can
+# allow. A failure of one of them then says a body line might allow it.
 # CHECKS_LOCAL_BODY names another body file; CHECKS_LOCAL_OFFLINE=1 skips
 # the REST read. The steps run side by side; the whole run gives up after
 # CHECKS_LOCAL_SECONDS (default 60).
@@ -127,10 +129,11 @@ trap 'exit 130' INT TERM HUP
 export BASE="$base" CHECKS_HEAD="$head"
 if [ -n "$body_from" ]; then
   SPEC_TEXT=$pr_text; PR_TEXT=$pr_text; PR_BODY=$pr_body
-  export SPEC_TEXT PR_TEXT PR_BODY
 else
-  unset SPEC_TEXT PR_TEXT PR_BODY
+  # Set but empty: the body is known to say nothing yet.
+  SPEC_TEXT=""; PR_TEXT=""; PR_BODY=""
 fi
+export SPEC_TEXT PR_TEXT PR_BODY
 # No pull request number: the checks then make no network call of their
 # own (no overlap read, no comment), and judge only this change.
 unset GH_TOKEN
@@ -156,11 +159,9 @@ launch() {
   [ -n "$name" ] || return 0
   if [ -z "$cmds" ]; then :
   elif ! cond_holds "$cond"; then :
-  elif [ "$nbody" = 1 ] && [ -z "$body_from" ]; then
-    skipped="$skipped
-  - $name"
   else
     n=$((n + 1)); run_step "$n" "$name" "$cmds"
+    [ "$nbody" != 1 ] || : > "$tmp/$n.body"
   fi
   name=""; cmds=""
 }
@@ -190,11 +191,12 @@ watchdog=$!
 for p in $pids; do wait "$p" 2>/dev/null; done
 kill "$watchdog" 2>/dev/null; wait "$watchdog" 2>/dev/null
 
-failed=0; i=1
+failed=0; body_failed=0; i=1
 while [ "$i" -le "$n" ]; do
   rc=$(cat "$tmp/$i.rc" 2>/dev/null || echo timeout)
   if [ "$rc" != 0 ]; then
     failed=$((failed + 1))
+    [ ! -f "$tmp/$i.body" ] || body_failed=$((body_failed + 1))
     if [ "$rc" = timeout ]; then
       printf 'Failed: %s (still running after %ss; CHECKS_LOCAL_SECONDS raises the budget)\n' "$(cat "$tmp/$i.name")" "$budget"
     else
@@ -205,12 +207,9 @@ while [ "$i" -le "$n" ]; do
   i=$((i + 1))
 done
 took=$(( $(date +%s) - start ))
-if [ -n "$skipped" ]; then
-  if [ -z "$body_from" ]; then
-    printf 'Not run here, because no pull request body was found (write it to %s, or open the pull request):%s\n' "$body_file" "$skipped"
-  else
-    printf 'Not run here:%s\n' "$skipped"
-  fi
+[ -z "$skipped" ] || printf 'Not run here:%s\n' "$skipped"
+if [ -z "$body_from" ] && [ "$body_failed" -gt 0 ]; then
+  printf 'No pull request body was found, so the steps that read it ran as if it were empty. Where a check above says a line in the body allows it (Spec:, Mock:, Design:, Deletes:), write the body to %s and push again.\n' "$body_file"
 fi
 if [ "$failed" -gt 0 ]; then
   printf '%s of %s quick checks failed (%ss). CI runs the same steps and would fail them too.\n' "$failed" "$n" "$took"

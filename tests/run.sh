@@ -4238,8 +4238,15 @@ printf 'Spec: specs/001-garden-beds\nMock: unchanged, the count is not drawn\n' 
 eq "the body's Mock: line is read from .scratch/body.md" "rc=0" "$(qc_push mock | head -n 1)"
 mv "$qc/.scratch/body.md" "$qc/.scratch/body.off"
 qc_nobody=$(cd "$qc" && git checkout -q size && CHECKS_LOCAL_OFFLINE=1 sh scripts/ci/checks-local.sh 2>&1)
-eq "with no body the steps that read it are skipped, saying so" "1" "$(printf '%s\n' "$qc_nobody" | grep -c 'no pull request body was found')"
-eq "and the rest still run" "1" "$(printf '%s\n' "$qc_nobody" | grep -c 'over the limit of 40')"
+eq "with no body the steps that do not read it still run" "1" "$(printf '%s\n' "$qc_nobody" | grep -c 'over the limit of 40')"
+eq "and a failure no body line could allow does not mention the body" "0" "$(printf '%s\n' "$qc_nobody" | grep -c 'No pull request body was found')"
+# A first push, before any body is written: a new screen file beside the
+# mocked one, with no line mapping it, is refused in the mock check's words.
+(cd "$qc" && git checkout -q main && git checkout -q -b paths && printf 'export const paths = 1\n' > src/paths.ts && git add -A && git commit -qm paths) >/dev/null 2>&1
+qc_unmapped=$(qc_push paths)
+eq "with no body, a new unmapped screen file refuses the push" "rc=2" "$(printf '%s\n' "$qc_unmapped" | head -n 1)"
+eq "the refusal carries the mock check's own words" "1" "$(printf '%s\n' "$qc_unmapped" | grep -c 'no line in scripts/ci/mocks.txt names them: src/paths.ts')"
+eq "and says a body line might allow a check that reads it" "1" "$(printf '%s\n' "$qc_unmapped" | grep -c 'No pull request body was found')"
 # The steps come from ci.yml: a step taken out there is not run here.
 (cd "$qc" && grep -v 'hotspots-check.sh' .github/workflows/ci.yml > .scratch/ci.yml && cp .scratch/ci.yml .github/workflows/ci.yml)
 eq "a step taken out of ci.yml is not run" "0" "$(cd "$qc" && CHECKS_LOCAL_OFFLINE=1 sh scripts/ci/checks-local.sh 2>&1 | grep -c 'over the limit')"
