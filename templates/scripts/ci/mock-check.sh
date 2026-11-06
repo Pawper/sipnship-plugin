@@ -36,11 +36,19 @@ if [ "${1:-}" = "--stale" ]; then
 fi
 
 base=${1:?usage: mock-check.sh BASE HEAD}; head=${2:?usage: mock-check.sh BASE HEAD}
-# Judged on the pull request's own lines, as the design check is.
+# Judged on the pull request's own lines, as the design check is: from
+# where HEAD left BASE. When HEAD is a merge and that point is one of its
+# parents, it is the main the merge took in: CI's merge into main (BASE is
+# its first parent) or, here, a branch that merged main in (BASE is where it
+# left main, the second parent), so what main brought is never the branch's.
+# A merge whose parents neither is that point is CI's merge into main
+# against an older recorded base, so its first parent, main as it is now.
+mb=$(git merge-base "$base" "$head" 2>/dev/null) || mb=""
 if git rev-parse -q --verify "$head^2" >/dev/null 2>&1; then
-  base=$(git rev-parse "$head^1")
-else
-  mb=$(git merge-base "$base" "$head" 2>/dev/null) && base=$mb
+  if [ -n "$mb" ] && git rev-parse "$head^@" | grep -qxF "$mb"; then base=$mb
+  else base=$(git rev-parse "$head^1"); fi
+elif [ -n "$mb" ]; then
+  base=$mb
 fi
 changed=$(git diff --name-only "$base" "$head") || { echo "Could not read the diff between $base and $head; the checkout may be shallow (use fetch-depth: 0). This is not a stale mock." >&2; exit 1; }
 added=$(git diff --name-only --diff-filter=AM "$base" "$head")

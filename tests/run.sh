@@ -1855,7 +1855,7 @@ eq "a failed job says what failed; only checks then cancels its run" "3 3 3 0" "
 eq "checks names the failure, then cancels its run, with actions: write" "1 1 1" "$(ci_job checks | grep -c 'run: sh scripts/ci/failure-report.sh job "\$RUNNER_TEMP/check.log"$') $(ci_job checks | grep -c 'run: sh scripts/ci/failure-report.sh cancel$') $(ci_job checks | grep -c '^      actions: write$')"
 eq "no other job cancels the run" "0 0 0" "$(ci_job app | grep -c 'failure-report.sh cancel') $(ci_job tests | grep -c 'failure-report.sh cancel') $(ci_job screens | grep -c 'failure-report.sh cancel')"
 eq "main's full job is never stopped" "0" "$(ci_says full)"
-eq "the spec, design and mock checks read the live body" "3" "$(grep -c 'SPEC_TEXT=$(gh api' "$root/templates/.github/workflows/ci.yml")"
+eq "the spec, design and mock checks read the live body" "3" "$(grep -c 'SPEC_TEXT=$(sh scripts/ci/pr-text.sh' "$root/templates/.github/workflows/ci.yml")"
 eq "a body with neither carries nothing" "" "$(carried_refs 'Just a copy fix.')"
 eq "the batch body carries its members' lines" "Carried from the members:
 
@@ -2729,6 +2729,22 @@ pp=$(mktemp -d)
 ) > "$pp.out" 2>&1
 eq "an untouched folder pair after main moved reports nothing" "0" "$(sed -n 1p "$pp.out")"
 eq "a real mismatch against a folder side is still found" "  Screen.kt: Screen.kt uses sentence, web/screen/ does not" "$(sed -n 2p "$pp.out")"
+pm=$(mktemp -d)
+(
+  cd "$pm" && git init -q -b main && git config user.email t@t && git config user.name t && git config core.autocrlf false
+  mkdir -p design scripts/ci scripts/design phone web/screen other
+  cp "$root/templates/scripts/ci/design-check.sh" scripts/ci/ && cp "$root/templates/scripts/design/design-lib.sh" scripts/design/
+  printf '{"type": {"roles": [{"key": "heading"}, {"key": "sentence"}]}}\n' > design/tokens.json
+  printf 'screen phone/Screen.kt web/screen/\n' > scripts/ci/parity.txt
+  printf 'Text(style = DesignType.Heading)\n' > phone/Screen.kt
+  printf '<h1 className="type-heading" />\n' > web/screen/page.tsx
+  git add -A && git commit -qm base
+  git checkout -qb pr && printf 'x\n' > other/admin.ts && git add -A && git commit -qm pr
+  git checkout -q main && printf 'Text(style = DesignType.Heading)\nText(style = DesignType.Sentence)\n' > phone/Screen.kt && git add -A && git commit -qm "main: phone only"
+  git checkout -q pr && git merge -q --no-edit main
+  sh scripts/ci/design-check.sh "$(git merge-base main HEAD)" HEAD 2>&1 | grep -c 'does not'
+) > "$pm.out" 2>&1
+eq "a branch that merged main in is not blamed for what main brought" "0" "$(sed -n 1p "$pm.out")"
 eq "a screen of blocks is one comparison against the union" "android/Settings.kt	src/app/settings/a.tsx src/app/settings/b.tsx
 src/app/page.tsx	android/Today.kt" "$(parity_groups "$(parity_pairs "$(printf 'sa src/app/settings/a.tsx android/Settings.kt
 sb src/app/settings/b.tsx android/Settings.kt
@@ -2804,6 +2820,53 @@ eq "with Mock: unchanged it passes" "0" "$(sed -n 3p "$mk.out")"
 eq "an unmapped file in a mapped folder fails" "1" "$(sed -n 4p "$mk.out")"
 eq "a declared unmocked file passes" "0" "$(sed -n 5p "$mk.out")"
 eq "the stale count names only the screen past stale-after" "home: 3 commits" "$(sed -n '6,$p' "$mk.out")"
+# A branch that merged main in: HEAD is a merge whose second parent is main.
+# Judged from where it left main (what the quick checks pass as BASE), what
+# main brought is never the branch's; CI's merge into main still judges the
+# branch's own lines, against its first parent or an older recorded base.
+mm=$(mktemp -d)
+(
+  cd "$mm" && git init -q -b main && git config user.email t@t && git config user.name t && git config core.autocrlf false
+  cp -r "$root/tests/fixtures/mocks/." . && cp "$root/templates/scripts/ci/mock-check.sh" "$root/templates/scripts/ci/mock-lib.sh" scripts/ci/
+  git add -A && git commit -qm base && git tag start
+  git checkout -qb branch && printf 'notes\n' > notes.md && git add -A && git commit -qm "branch: no screen"
+  git checkout -q main && printf 'x\n' >> src/app/page.tsx && git commit -qam "main: a screen, allowed there"
+  git checkout -q branch && git merge -q --no-edit main
+  sh scripts/ci/mock-check.sh "$(git merge-base main HEAD)" HEAD >/dev/null 2>&1; echo $?
+  printf 'y\n' >> src/app/settings/page.tsx && git commit -qam "branch: its own screen"
+  git checkout -q main && printf 'z\n' >> design/mocks/gen_screens.py && git commit -qam "main moves" && git checkout -q branch && git merge -q --no-edit main
+  sh scripts/ci/mock-check.sh "$(git merge-base main HEAD)" HEAD >/dev/null 2>&1; echo $?
+  git checkout -q -b ci main && git merge -q --no-ff --no-edit branch
+  sh scripts/ci/mock-check.sh HEAD^1 HEAD >/dev/null 2>&1; echo $?
+  sh scripts/ci/mock-check.sh start HEAD >/dev/null 2>&1; echo $?
+) > "$mm.out" 2>&1
+eq "a branch that only merged main in passes with no Mock: line" "0" "$(sed -n 1p "$mm.out")"
+eq "its own screen change is still judged after a merge of main" "1" "$(sed -n 2p "$mm.out")"
+eq "CI's merge into main judges the branch's own lines" "1" "$(sed -n 3p "$mm.out")"
+eq "and against an older recorded base, main's own changes are not the branch's" "1" "$(sed -n 4p "$mm.out")"
+# Stylesheets: one glob over the folder tied to one screen blamed that
+# screen for every sheet; each sheet tied to its own screens asks only them.
+st_glob=$(printf 'home-style src/styles/* design/mocks/Home*\nsettings src/app/settings/*.tsx design/mocks/Settings*\n')
+st_each=$(printf 'home-style src/styles/home.css design/mocks/Home*\nsettings-style src/styles/settings.css design/mocks/Settings*\nshared-style src/styles/tokens.css design/mocks/*\n')
+eq "a folder glob blames the one screen for another screen's sheet" "home-style" "$(mock_missing 'src/styles/settings.css' "$st_glob")"
+eq "a sheet tied to its screens asks only their mock" "settings-style" "$(mock_missing 'src/styles/settings.css' "$st_each")"
+eq "and passes with that mock" "" "$(mock_missing "$(printf 'src/styles/settings.css\ndesign/mocks/SettingsDark.html')" "$st_each")"
+eq "a shared sheet counts against any mock" "" "$(mock_missing "$(printf 'src/styles/tokens.css\ndesign/mocks/HomeDark.html')" "$st_each")"
+eq "a new sheet beside mapped ones is named until it is mapped" "src/styles/new.css" "$(mock_unmapped 'src/styles/new.css' "$st_each")"
+# The body is read live, three times; when GitHub never answers, the step
+# says so in the check's place instead of judging a body it never saw.
+pt=$(mktemp -d)
+mkdir -p "$pt/bin"
+printf '#!/bin/sh\nn=$(cat "%s/n" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "%s/n"\n[ "$n" -ge "${GH_OK_AT:-99}" ] || exit 1\nprintf "T\\nMock: unchanged, copy only\\n"\n' "$pt" "$pt" > "$pt/bin/gh"
+chmod +x "$pt/bin/gh"
+pt_out=$(PATH="$pt/bin:$PATH" GH_OK_AT=3 PR_TEXT_WAIT=0 RUNNER_TEMP="$pt" sh "$root/templates/scripts/ci/pr-text.sh" 7 "the mock check" 2>/dev/null)
+eq "a body read on the third try is the body" "T
+Mock: unchanged, copy only 3" "$pt_out $(cat "$pt/n")"
+rm -f "$pt/n"
+pt_err=$(PATH="$pt/bin:$PATH" PR_TEXT_WAIT=0 RUNNER_TEMP="$pt" sh "$root/templates/scripts/ci/pr-text.sh" 7 "the mock check" 2>&1 >/dev/null; echo "rc=$?")
+eq "never read, it says so in the check's place and fails on the read" "yes yes 3" "$(printf '%s' "$pt_err" | grep -q 'could not be read from GitHub (3 tries), so the mock check did not run' && echo yes || echo no) $(printf '%s' "$pt_err" | grep -q 'rc=1' && echo yes || echo no) $(cat "$pt/n")"
+eq "and the failure report reads the same words" "1" "$(grep -c 'so the mock check did not run' "$pt/check.log")"
+eq "no body step falls back to the title alone or skips the retry" "0 4" "$(grep -c 'SPEC_TEXT=\$(gh api\|PR_TEXT=\$(gh api\|PR_BODY=\$(gh api' "$root/templates/.github/workflows/ci.yml") $(grep -c 'scripts/ci/pr-text.sh' "$root/templates/.github/workflows/ci.yml")"
 eq "the CI template runs the mock check where mocks.txt exists" "1" "$(grep -c "hashFiles('scripts/ci/mocks.txt') != ''" "$root/templates/.github/workflows/ci.yml")"
 eq "the template mocks.txt has no live lines" "" "$(mock_lines "$(cat "$root/templates/scripts/ci/mocks.txt")")"
 eq "the brief has a stale-mock line" "1" "$(grep -c 'mock-check.sh" --stale' "$root/hooks/scripts/session-brief-slow.sh")"

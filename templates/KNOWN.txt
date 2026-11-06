@@ -234,6 +234,7 @@ scripts/ci/design-check.sh 4b578172a66d9e021252f5e2a9b16b7f62339711
 scripts/ci/design-check.sh 4c41722ab7e78744eb2b048b225a8c5e869aecc4
 scripts/ci/design-check.sh 56932b0b8a8dd47f6e900f9f109b047aa14edbd0
 scripts/ci/design-check.sh 6c29989a5310597373f80079be32c96fa6c697ea
+scripts/ci/design-check.sh 6d8c4d7047627f56025b7fb18b7121ea4c839d51
 scripts/ci/design-check.sh 7b4ade9f06666182b258d166be828cd65c4a8495
 scripts/ci/design-check.sh 90859aa9ff5059589d8debc18303b0d93921568c
 scripts/ci/design-check.sh a122c16afa6dd186240cce8d358bbd49ce1a0357
@@ -383,6 +384,7 @@ scripts/ci/numbering-lib.sh c8556f1cfe46123506cbf822c8bb31775171a546
 scripts/ci/numbering-lib.sh eba4ec8f44cd31094238da6c0487ccf3dc6d5304
 scripts/ci/place-rescue.sh 8ccd66d60880891d1be21814e583a96b75d0757f
 scripts/ci/place.sh c411a9c2dcdd719de3416493f6aba1792da81602
+scripts/ci/pr-text.sh e44b567664decd505f35309620561875fae6b27a
 scripts/ci/publish-lib.sh 0188733f153b1328b00168a108ae9c1707a27db2
 scripts/ci/publish-lib.sh 124a6fc4fa2041fc18cc9abf6e90ffb27ffa9707
 scripts/ci/publish-lib.sh 14b5b7f83db73f7f444fe7de9d21cb5c5241fbeb
