@@ -327,6 +327,23 @@ eq "batch PR body" "- #41 Add retries. Closes #41
 eq "one line per PR" "#13 dropped: conflicts with the batch so far" "$(batch_line 13 dropped 'conflicts with the batch so far')"
 eq "one line without a reason" "#12 merged into the batch" "$(batch_line 12 'merged into the batch')"
 
+section 'timing lines of the drain'
+# The drain's "timing:" lines once said a step "took -1793971983s" and every
+# other "took 0s": the clock was read with `date +` where `date +%s` was
+# meant. The project's own queue scripts hold b_lap; the published plugin
+# carries no copy, so these run only where the project's scripts sit beside it.
+tl_dir=$(cd "$root/.." && pwd)
+if [ -f "$tl_dir/scripts/ci/queue/rules-place.sh" ]; then
+  tl_fn=$(sed -n '/^b_lap()/p' "$tl_dir/scripts/ci/queue/rules-place.sh")
+  tl_out=$( ( bt=$(( $(date +%s) - 3 )); eval "$tl_fn"; b_lap "linking packages in Maya's rooftop-garden app"; echo "next=$(( $(date +%s) - bt ))" ) 2>&1 )
+  tl_secs=$(printf '%s\n' "$tl_out" | sed -n 's/^  timing: .* took \(-\{0,1\}[0-9]*\)s$/\1/p')
+  eq "a timing line names the step and a number of seconds, never negative" "1" "$(printf '%s\n' "$tl_out" | grep -c '^  timing: linking packages in Maya.s rooftop-garden app took [0-9][0-9]*s$')"
+  eq "a step that began three seconds ago took three or four" "1" "$( [ -n "$tl_secs" ] && [ "$tl_secs" -ge 3 ] && [ "$tl_secs" -le 4 ] && echo 1 || echo 0 )"
+  eq "the next lap starts where the last one ended" "1" "$( n=$(printf '%s\n' "$tl_out" | sed -n 's/^next=//p'); [ -n "$n" ] && [ "$n" -ge 0 ] && [ "$n" -le 1 ] && echo 1 || echo 0 )"
+  eq "no script reads the clock with date and a bare plus" "0" "$(grep -rEc 'date( -[a-z]+)* \+([^%A-Za-z0-9"'"'"']|$)' "$tl_dir/scripts/ci" "$root" --include='*.sh' --include='*.yml' 2>/dev/null | grep -v ':0$' | grep -v 'tests/run.sh' | wc -l | tr -d ' ')"
+  eq "every lap in the batch has its start set first" "1" "$(grep -c '^bt=\$(date +%s); ensure_modules; b_lap' "$tl_dir/scripts/ci/queue/batch.sh")"
+fi
+
 section 'session brief'
 . "$root/hooks/scripts/session-brief-lib.sh"
 . "$root/hooks/scripts/session-brief-fast.sh"
