@@ -3,6 +3,7 @@
 # its own file. Uses the hook's has, add, cached and the facts it found once.
 
 . "$here/session-brief-handoff.sh"
+. "$here/session-brief-answers.sh"
 
 # Main
 s_main() {
@@ -145,6 +146,7 @@ s_plan() {
   else
     add "Proposed next: (being read in the background; the next session start shows it)"
   fi
+  brief_answers
   return 0
 }
 

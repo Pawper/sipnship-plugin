@@ -2,9 +2,10 @@
 # PreToolUse hook for Bash: refuses `gh issue create` without a State label.
 # The rule it enforces: every issue carries its state from the moment it is
 # filed, so the board and the audits can trust the label.
-# It holds a second rule: an ask with choices recommends exactly one. Setting
-# an issue to waiting on the owner is refused while the ask it was just left
-# with gives choices and none, or more than one, is recommended.
+# It holds a second rule: an ask gives choices and recommends exactly one.
+# Setting an issue to waiting on the owner is refused while the ask it was just
+# left with gives choices and none, or more than one, is recommended, or is a
+# question with no choices at all.
 here=$(dirname "$0")
 . "$here/lib.sh"
 . "$here/refusal-log.sh"
@@ -25,7 +26,7 @@ waiting=""
 if [ -n "$waiting" ] && rule_on ask-recommends-one; then
   fix=$(ask_fix "$(ask_of_issue "$waiting")")
   if [ -n "$fix" ]; then
-    printf '%s\n' "Blocked setting #$waiting to waiting on the owner, because $fix. Edit that comment (or post the ask again, fixed), then set the state again. A question with no choices says which answer you would give." >&2
+    printf '%s\n' "Blocked setting #$waiting to waiting on the owner, because $fix. Edit that comment (or post the ask again, fixed), then set the state again. The project-drive skill's \"How to write an ask\" shows the shape." >&2
     exit 2
   fi
 elif [ -n "$waiting" ]; then

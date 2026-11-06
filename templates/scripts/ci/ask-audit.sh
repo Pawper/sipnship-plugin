@@ -1,6 +1,6 @@
 #!/bin/sh
 # For the nightly audit: every open issue waiting on the owner whose ask gives
-# choices and does not recommend exactly one, one line each, "#N: what to fix."
+# no choices, or does not recommend exactly one, one line each, "#N: what to fix."
 # The same rule the state-label hook holds inside a session, for an agent
 # without hooks or a state set from GitHub's own page. The ask is the newest
 # comment that carries one, posted since the issue was set to waiting on the

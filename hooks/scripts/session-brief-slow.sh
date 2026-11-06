@@ -13,6 +13,7 @@
 #   mock-stale       mock-check.sh --stale's first six, joined
 #   hotspots         the hotspot line
 #   handoff-comment  the newest handoff on the drive issue, epoch and link
+#   answers          the builder's answers still owed, from the drive's answers.sh
 #   plan             the drive's plan, from CACHE_DIR/facts.tsv (the board
 #                    the hook read)
 #   stamp            when the last read ended, epoch seconds
@@ -95,6 +96,11 @@ fi
 # The newest handoff comment on the drive issue: "epoch<TAB>url", REST only.
 if [ -f .claude/project-drive.json ] && [ -f "$here/../../scripts/drive/handoff.sh" ] && [ "$have_gh" = yes ]; then
   (run_bounded "$bound" sh "$here/../../scripts/drive/handoff.sh" last 2>/dev/null | head -n 1 | keep handoff-comment) &
+fi
+
+# The builder's answers to what was asked, still owed; the brief names the new ones.
+if [ -f .claude/project-drive.json ] && [ -f "$here/../../scripts/drive/answers.sh" ] && [ "$have_gh" = yes ]; then
+  (run_bounded "$bound" sh "$here/../../scripts/drive/answers.sh" --all 2>/dev/null | keep answers) &
 fi
 
 wait

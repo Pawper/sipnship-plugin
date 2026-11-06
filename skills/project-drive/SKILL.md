@@ -106,6 +106,22 @@ It prints one line per request still owed, `start-next N by LOGIN` or `hold-agen
 each (step c), and answer on the drive issue in the fixed form, one comment each, so the dashboard's waiting line
 ends. A request nobody answers tells the person it did not happen: a start after a day, a hold after an hour.
 
+**Answers to what was asked.** A choice pressed on a Needs you card is written on the issue (or on its pull
+request, when the question was asked there) as two lines, the second in a fixed form: `Builder answer: #N
+choice K by LOGIN`, ending `changes <comment id>` when it replaces an earlier answer. A person may write the
+same line by hand on GitHub, and it counts. Read them on every tick too:
+
+```bash
+sh "${CLAUDE_PLUGIN_ROOT}/scripts/drive/answers.sh"
+```
+
+It prints one line per answer not yet read, `answer #N choice K by LOGIN (comment ID)`, or nothing; `--all`
+lists every answer still owed, read before or not. The answer is the builder's decision: carry on from it on
+that issue, in the next round's proposal or at once when the round already holds it, and say on the issue
+what you are doing with it. A comment from anyone else after the answer means it was acted on, and the line
+stops. The issue has already moved to Ready, so a round that missed the line still proposes it with the
+answer above it.
+
 The plan's closing lines also say the round's settings (`rounds:`, with the units per round, the dispatch
 model and the red limit), `summary: due` when the daily summary should be written (below), and `health:`
 when a health note is set (below).
@@ -252,10 +268,18 @@ Keep a year of watering history, or ninety days?
   "Recommended." and a short reason why ("Recommended, since the spec you approved says a year."). The card
   marks it in words and always shows it, even past the fourth choice; an ask with none recommended says "No
   choice was recommended." on the card. Setting `state:waiting-on-owner` is refused while the ask left in
-  the last ten minutes gives choices and none, or more than one, is recommended (the `require-state-label`
-  hook; the nightly audit names any that got through another way). Fix the comment, then set the state.
-- With no choices to give, the question line alone is the ask; say in the context above it which answer you
-  would give and why.
+  the last ten minutes gives choices and none, or more than one, is recommended, or is a question with no
+  choices (the `require-state-label` hook; the nightly audit names any that got through another way). Fix the
+  comment, then set the state.
+- A question that starts out open is turned into choices too, your best guess first, so the card always has
+  buttons and a suggested one. Write the draft you would send as the first choice, and let the last be the
+  builder's own words:
+
+  ```
+  What should the welcome email for new gardeners say?
+  1. Use this draft: "Welcome to Maya's rooftop garden. Your first bed is ready to plant." Recommended, it says the garden's name in its first line.
+  2. I will write my own on the issue.
+  ```
 - Comment and set the State together: a comment more than ten minutes older than the State is not read as its
   reason, and a later ask on the issue replaces an earlier one.
 - No quoted lines or code in the ask itself; they are never read. The card shows the words as written, in

@@ -1,5 +1,5 @@
 #!/bin/sh
-# An ask with choices recommends exactly one. What counts as an ask, its
+# An ask gives choices and recommends exactly one. What counts as an ask, its
 # choices and "recommended" is the plain convention the dashboard reads onto
 # an issue's Needs you card:
 #   - the question is one line ending in a question mark, right before the
@@ -107,9 +107,12 @@ ask_verdict() {
 
 # ask_fix VERDICT
 # What to fix, in a sentence, for a verdict that breaks the rule; nothing for
-# one that keeps it.
+# one that keeps it. A question with no choices breaks it too: every ask the
+# builder sees gives choices and a suggested one, so an open question is
+# turned into choices, the best guess first.
 ask_fix() {
   case "$1" in
+    question) printf '%s\n' 'its ask is a question with no choices. Turn it into choices: keep the question on its own line, then a numbered list of two to four, your best guess first, ending "Recommended." and a short reason why; for an open question, give a draft to say yes to and a last choice such as "I will write my own on the issue."' ;;
     unrecommended) printf '%s\n' 'its ask gives choices and none is recommended. End the one you would pick with "Recommended." and a short reason why, in the same comment' ;;
     several) printf '%s\n' 'its ask gives choices and more than one says "Recommended". Keep the word on the one you would pick, with a short reason why, and take it off the others' ;;
   esac

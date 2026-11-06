@@ -4598,7 +4598,8 @@ eq "the newest comment that asks decides; a later reply that asks nothing does n
 eq "an older comment is read only when the newer ones ask nothing" "one" \
   "$({ cat "$ak_fx/one-recommended.md"; printf '%s\n' "$ASK_NEXT"; cat "$ak_fx/two-unrecommended.md"; } | ask_verdict)"
 eq "no comments: no ask" "none" "$(printf '' | ask_verdict)"
-eq "a verdict that keeps the rule has nothing to fix" "" "$(ask_fix one)$(ask_fix question)$(ask_fix none)"
+eq "a verdict that keeps the rule has nothing to fix" "" "$(ask_fix one)$(ask_fix none)"
+eq "a question with no choices says how to turn it into choices, one recommended" "yes" "$(ask_fix question | grep -q 'question with no choices. Turn it into choices: .*your best guess first, ending "Recommended."' && echo yes)"
 eq "none recommended says what to write" "yes" "$(ask_fix unrecommended | grep -q 'End the one you would pick with "Recommended."' && echo yes)"
 eq "two recommended says to keep one" "yes" "$(ask_fix several | grep -q 'more than one says "Recommended"' && echo yes)"
 
@@ -4634,7 +4635,8 @@ eq "the refusal says what to fix" "yes" "$(grep -q '^Blocked setting #207 to wai
 eq "two recommended is refused" "2" "$(ak_hook "$ak_fx/two-recommended.md" "$ak_set")"
 eq "one recommended goes through" "0" "$(ak_hook "$ak_fx/one-recommended.md" "$ak_set")"
 eq "a recommended fifth goes through" "0" "$(ak_hook "$ak_fx/fifth-recommended.md" "$ak_set")"
-eq "a question alone goes through" "0" "$(ak_hook "$ak_fx/question-only.md" "$ak_set")"
+eq "a question alone is refused" "2" "$(ak_hook "$ak_fx/question-only.md" "$ak_set")"
+eq "the refusal shows how to turn it into choices" "yes" "$(grep -q '^Blocked setting #207 to waiting on the owner, because its ask is a question with no choices. Turn it into choices' "$ak_dir/err" && grep -q 'How to write an ask' "$ak_dir/err" && echo yes)"
 eq "no ask in the last ten minutes goes through" "0" "$(ak_hook "$ak_fx/no-question.md" "$ak_set")"
 eq "GitHub not answering never refuses" "0" "$(ak_hook "$ak_dir/missing.md" "$ak_set")"
 eq "the state script form is refused too" "2" "$(ak_hook "$ak_fx/two-unrecommended.md" 'sh scripts/state.sh 3 maya 207 \"Waiting on owner\"')"
@@ -4646,10 +4648,69 @@ eq "a filing without a State is still refused" "2" "$(ak_hook "$ak_fx/one-recomm
 # The nightly audit, for an agent without hooks.
 eq "the audit names the issue and what to fix" "#207: its ask gives choices and none is recommended. End the one you would pick with \"Recommended.\" and a short reason why, in the same comment." \
   "$(AK_COMMENTS="$ak_fx/two-unrecommended.md" PATH="$ak_dir/bin:$PATH" GH_REPO=maya/rooftop-garden sh "$root/templates/scripts/ci/ask-audit.sh")"
+eq "the audit names a question with no choices too" "1" \
+  "$(AK_COMMENTS="$ak_fx/question-only.md" PATH="$ak_dir/bin:$PATH" GH_REPO=maya/rooftop-garden sh "$root/templates/scripts/ci/ask-audit.sh" | grep -c '^#207: its ask is a question with no choices')"
 eq "the audit is quiet when the ask recommends one" "" \
   "$(AK_COMMENTS="$ak_fx/one-recommended.md" PATH="$ak_dir/bin:$PATH" GH_REPO=maya/rooftop-garden sh "$root/templates/scripts/ci/ask-audit.sh")"
 eq "the audit workflow runs it and adds its lines" "1 1" "$(grep -c 'asks=\$(sh scripts/ci/ask-audit.sh' "$root/templates/.github/workflows/audit.yml") $(grep -c 'if \[ -n "\$asks" \]' "$root/templates/.github/workflows/audit.yml")"
 eq "the plugin owns both scripts" "2" "$(grep -cE '^scripts/ci/ask-(lib|audit)\.sh$' "$root/templates/OWNED.txt")"
+
+section 'the drive reads answers'
+. "$root/scripts/drive/answers-lib.sh"
+an_t=$(printf '\t')
+eq "the dashboard's two lines: the second is the answer" "214 1 maya 0" "$(answer_line 'Maya answered on the dashboard: Yes, let it land.\nBuilder answer: #214 choice 1 by maya')"
+eq "a changed answer names the one it changes" "214 2 maya 9001" "$(answer_line 'Builder answer: #214 choice 2 by maya changes 9001')"
+eq "a quoted answer is not one" "" "$(answer_line '> Builder answer: #214 choice 1 by maya')"
+eq "an answer in a code block is not one" "" "$(answer_line 'For example:\n```\nBuilder answer: #214 choice 1 by maya\n```')"
+eq "a near miss is not an answer" "" "$(answer_line 'Builder answer: #214 choice 1 by maya.')$(answer_line 'Builder answer: 214 choice 1 by maya')$(answer_line 'builder answer: #214 choice 1 by maya')"
+an_c="9001${an_t}2026-11-05T08:00:00Z${an_t}sipnship[bot]${an_t}214${an_t}Maya answered on the dashboard: A year.\nBuilder answer: #214 choice 1 by maya
+9002${an_t}2026-11-05T08:01:00Z${an_t}maya${an_t}223${an_t}Thanks, going with the second.\nBuilder answer: #223 choice 2 by maya
+9003${an_t}2026-11-05T08:02:00Z${an_t}tom${an_t}231${an_t}Builder answer: #231 choice 1 by maya
+9004${an_t}2026-11-05T08:03:00Z${an_t}maya${an_t}240${an_t}Builder answer: #240 choice 1 by maya
+9005${an_t}2026-11-05T08:04:00Z${an_t}maya-drive${an_t}240${an_t}Carrying on from your answer.
+9006${an_t}2026-11-05T08:05:00Z${an_t}maya${an_t}250${an_t}Builder answer: #250 choice 1 by maya"
+eq "owed: the App's answer, and a person's own reply in the form; not another's line in their name, not one the drive has carried on from, not an issue no longer waiting" "answer #214 choice 1 by maya (comment 9001)
+answer #223 choice 2 by maya (comment 9002)" "$(owed_answers "$an_c" "$(printf '214\n223\n231\n240\n')")"
+eq "the newest answer counts, and says what it changes" "answer #214 choice 2 by maya (comment 9010, changes 9001)" "$(owed_answers "$an_c
+9010${an_t}2026-11-05T09:00:00Z${an_t}sipnship[bot]${an_t}214${an_t}Maya answered on the dashboard: Ninety days.\nBuilder answer: #214 choice 2 by maya changes 9001" 214)"
+eq "the answerer's own later comment keeps it owed" "answer #223 choice 2 by maya (comment 9002)" "$(owed_answers "$an_c
+9011${an_t}2026-11-05T09:00:00Z${an_t}maya${an_t}223${an_t}And thank you." 223)"
+eq "an answer written on the pull request counts for its issue" "answer #214 choice 1 by maya (comment 9020)" "$(owed_answers "9020${an_t}2026-11-05T08:00:00Z${an_t}sipnship[bot]${an_t}231${an_t}Builder answer: #214 choice 1 by maya" 214)"
+eq "a comment already read is not read again" "answer #223 choice 2 by maya (comment 9002)" "$(unseen_answers "$(owed_answers "$an_c" '214 223')" 9001)"
+# The script on a tick, with GitHub answering from the lines above.
+an_dir=$(mktemp -d)
+mkdir -p "$an_dir/bin" "$an_dir/home"
+cat > "$an_dir/bin/gh" <<'FAKE'
+#!/bin/sh
+printf '%s\n' "$*" >> "$AN_DIR/log"
+case "$*" in
+  "auth status") exit 0 ;;
+  *issues/comments*) cat "$AN_DIR/comments" ;;
+  *"issues?state=open"*) printf '214\n223\n' ;;
+esac
+exit 0
+FAKE
+chmod +x "$an_dir/bin/gh"
+printf '%s\n' "$an_c" > "$an_dir/comments"
+an_run() { (cd "$an_dir" && AN_DIR="$an_dir" SIPNSHIP_HOME="$an_dir/home" PATH="$an_dir/bin:$PATH" sh "$root/scripts/drive/answers.sh" "$@" 2>&1); }
+eq "the fixed form read on a tick" "answer #214 choice 1 by maya (comment 9001)
+answer #223 choice 2 by maya (comment 9002)" "$(an_run)"
+eq "read once: the next tick has nothing new" "" "$(an_run)"
+eq "--all still lists what is owed" "2" "$(an_run --all | grep -c '^answer #')"
+eq "three REST calls a tick at most, never one per issue" "yes" "$(: > "$an_dir/log"; an_run >/dev/null; [ "$(grep -vc '^auth status$' "$an_dir/log")" -le 3 ] && ! grep -q 'issues/[0-9]' "$an_dir/log" && echo yes)"
+eq "the skill's tick reads it" "1" "$(grep -c 'scripts/drive/answers.sh"' "$root/skills/project-drive/SKILL.md")"
+# The session brief names an answer once: "1 answer since your last session".
+. "$root/hooks/scripts/session-brief-answers.sh"
+an_owed=$(owed_answers "$an_c" '214 223')
+eq "one new answer, said once in the brief's line" "1 answer since your last session: #223 choice 2 by maya. Carry on from each: sh \"/p/answers.sh\" --all lists them." "$(answers_brief_line "$an_owed" 9001 /p/answers.sh)"
+eq "two say answers" "yes" "$(answers_brief_line "$an_owed" '' /p/answers.sh | grep -q '^2 answers since your last session: #214 choice 1 by maya; #223 choice 2 by maya\.' && echo yes)"
+eq "none new, no line" "" "$(answers_brief_line "$an_owed" "$(printf '9001\n9002\n')" /p/answers.sh)"
+an_cache=$(mktemp -d)
+printf '%s\n' "$an_owed" > "$an_cache/answers"
+an_brief() { (here="$root/hooks/scripts"; sb_cache=$an_cache; add() { printf '%s\n' "$1"; }; cached() { cat "$sb_cache/$1"; }; brief_answers); }
+eq "the brief's slot names them from the slow read's cache" "1" "$(an_brief | grep -c '^2 answers since your last session')"
+eq "and the next session start does not name them again" "" "$(an_brief)"
+eq "the slow read keeps the owed answers for it" "1" "$(grep -c 'answers.sh" --all 2>/dev/null | keep answers' "$root/hooks/scripts/session-brief-slow.sh")"
 
 # --- end of blocks: the summary, kept in every part.
 eq "no process started by this suite is still running" "" "$(spawned_alive)"
