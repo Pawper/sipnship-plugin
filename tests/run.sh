@@ -2369,6 +2369,36 @@ eq "a filled workflow matches its released version" "yes" "$(known_match "$km_kn
 eq "a project's own file matches none" "no" "$(known_match "$km_known" a/x.yml '    runs-on: [mine]' '[self-hosted]' '')"
 km_missing=$(for p in $(owned_paths "$(cat "$root/templates/OWNED.txt")"); do grep -qxF "$p $(norm_hash "$(cat "$root/templates/$p")")" "$root/templates/KNOWN.txt" || echo "$p"; done)
 eq "every current template is in KNOWN.txt (run scripts/sync/known-hashes.sh before a release)" "" "$km_missing"
+# The local checks refuse a push that changes a template and leaves KNOWN.txt behind.
+if [ -f "$root/../scripts/ci/known-hashes-check.sh" ]; then
+  kc=$(mktemp -d)
+  (
+    cd "$kc" && git init -q -b main && git config user.email t@t && git config user.name t && git config core.autocrlf false
+    mkdir -p .github/workflows plugin/templates plugin/scripts/sync scripts/ci src
+    printf 'on: pull_request\njobs:\n  checks:\n    runs-on: x\n    steps:\n      - name: Fail when a template changed and the list of known template hashes did not\n        if: github.event_name == '"'"'pull_request'"'"'\n        run: sh scripts/ci/check-log.sh sh scripts/ci/known-hashes-check.sh "$BASE" "${{ github.sha }}"\n' > .github/workflows/ci.yml
+    cp "$root/../scripts/ci/known-hashes-check.sh" "$root/../scripts/ci/check-log.sh" "$root/../scripts/ci/checks-local.sh" "$root/../scripts/ci/classify.sh" "$root/../scripts/ci/lib.sh" "$root/../scripts/ci/classes.txt" scripts/ci/
+    cp "$root/scripts/sync/sync-lib.sh" "$root/scripts/sync/known-hashes.sh" plugin/scripts/sync/
+    printf 'water.sh\n' > plugin/templates/OWNED.txt
+    printf 'echo water the tomatoes at six\n' > plugin/templates/water.sh
+    printf 'export const beds = 1\n' > src/beds.ts
+    printf '.scratch/\n' > .gitignore
+    sh plugin/scripts/sync/known-hashes.sh --all > plugin/templates/KNOWN.txt
+    git add -A && git commit -q -m base
+    git checkout -q -b stale && printf 'echo water the tomatoes at seven\n' > plugin/templates/water.sh && git commit -qam seven
+    git checkout -q main && git checkout -q -b fresh && printf 'echo water the tomatoes at eight\n' > plugin/templates/water.sh
+    sh plugin/scripts/sync/known-hashes.sh main..HEAD > .scratch-known && cp .scratch-known plugin/templates/KNOWN.txt && rm .scratch-known
+    git commit -qam eight
+    git checkout -q main && git checkout -q -b quiet && printf 'export const beds = 2\n' > src/beds.ts && git commit -qam beds
+  ) >/dev/null 2>&1
+  kc_run() { (cd "$kc" && git checkout -q "$1" && CHECKS_LOCAL_OFFLINE=1 sh scripts/ci/checks-local.sh main HEAD 2>&1; echo "rc=$?"); }
+  kc_stale=$(kc_run stale)
+  eq "a template changed without KNOWN.txt refuses the push" "rc=1" "$(printf '%s\n' "$kc_stale" | tail -n 1)"
+  eq "and names the template in plain words" "1" "$(printf '%s\n' "$kc_stale" | grep -c 'does not hold its new version:')"
+  eq "and the command that fixes it" "1" "$(printf '%s\n' "$kc_stale" | grep -c 'sh plugin/scripts/sync/known-hashes.sh origin/main..HEAD')"
+  eq "a template changed with KNOWN.txt refreshed passes" "rc=0" "$(kc_run fresh | tail -n 1)"
+  eq "a change touching no template passes without a word" "Quick checks passed:" "$(kc_run quiet | head -n 1 | cut -c1-20)"
+  rm -rf "$kc"
+fi
 
 # The queue derives the known-hashes list after a merge that changes a template
 kr=$(mktemp -d)
