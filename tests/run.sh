@@ -4069,7 +4069,7 @@ eq "a proposed round holds it behind the running unit" "0" "$(printf 'unit: 230 
 : > "$pr_dir/inprog"
 eq "once the running unit is no longer in progress its area is free" "0" "$(pr_run --dry-run "$pr_dir/feedback.txt" > /dev/null; echo $?)"
 : > "$pr_dir/comments"
-. "$root/scripts/drive/round-lib.sh"
+. "$root/scripts/drive/areas-lib.sh"
 eq "running_units names each unit of the latest started round still in progress, with its areas" "300,301	watering,frost" "$(running_units "$(printf '%s\n' 'x <!-- sipnship-proposal {"status":"started","units":[{"issues":[1],"areas":["seeds"]}],"held":[]} -->' 'y <!-- sipnship-proposal {"status":"started","units":[{"issues":[300,301],"whyTogether":"a ] in words","areas":["watering","frost"]},{"issues":[302],"areas":["seeds"],"pr":9}],"held":[{"issues":[303],"waitsOn":[300],"areas":["seeds"]}]} -->')" "$(printf '301\n303\n1\n')")"
 eq "running_units says nothing when no round was started" "" "$(running_units 'a comment' '301')"
 eq "the drive's skill says feedback during a round is filed, not dispatched" "yes" "$(grep -q 'files it as a ready issue' "$root/skills/project-drive/SKILL.md" && grep -q 'files it as a ready issue' "$root/skills/handoff/SKILL.md" && echo yes)"

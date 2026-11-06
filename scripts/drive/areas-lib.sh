@@ -73,7 +73,7 @@ round_areas() {
 }
 
 # area_problem ROUND RUNNING
-# ROUND is round_areas' output; RUNNING is running_units' (round-lib.sh). The
+# ROUND is round_areas' output; RUNNING is running_units' (below). The
 # first way the round breaks the area rule, in words that say what to do, or
 # nothing when it keeps it:
 #   two units of the round share an area: bundle them, or hold one behind the
@@ -131,6 +131,34 @@ area_problem() {
           a = shared(ua[i], rf[2])
           if (a != "" && !apart(ui[i], ri)) say("the unit " hashes(ui[i]) " is in the area " a ", which the running unit " hashes(ri) " owns; give it to that unit (add it to the line of that unit), or hold it after that unit (hold: " ui[i] " | after: " ri " | areas: " a "), or say why it runs apart on an apart: line")
         }
+      }
+    }'
+}
+
+# running_units COMMENTS IN_PROGRESS
+# COMMENTS are the drive issue's comment bodies, one per line. IN_PROGRESS is
+# the open issues labeled In progress, one number per line. Prints each unit
+# of the latest started round that still has an issue in progress, one
+# "ISSUES<TAB>AREAS" line, both comma separated: the areas a running unit
+# owns, so publish-round.sh can give new work in them to that unit or hold it
+# behind it. Nothing when no round runs.
+running_units() {
+  ru_m=$(printf '%s\n' "$1" | tr -d '\r' | grep -F 'sipnship-proposal {"status":"started"' | tail -n 1 \
+    | sed 's/.*sipnship-proposal {"status":"started",//; s/"held":.*//')
+  [ -n "$ru_m" ] || return 0
+  printf '%s\n' "$ru_m" | awk -v ip="$(printf '%s\n' "$2" | tr -d '\r' | tr '\n' ' ')" '
+    BEGIN { n = split(ip, a, " "); for (i = 1; i <= n; i++) if (a[i] != "") live[a[i]] = 1 }
+    {
+      k = split($0, part, /\{"issues":/)
+      for (p = 2; p <= k; p++) {
+        u = part[p]
+        if (!match(u, /^\[[0-9, ]*\]/)) continue
+        is = substr(u, 2, RLENGTH - 2); gsub(/ /, "", is)
+        ar = ""
+        if (match(u, /"areas":\[[^]]*\]/)) { ar = substr(u, RSTART + 9, RLENGTH - 10); gsub(/"/, "", ar) }
+        m = split(is, ns, ","); on = 0
+        for (i = 1; i <= m; i++) if (ns[i] in live) on = 1
+        if (on) print is "\t" ar
       }
     }'
 }
