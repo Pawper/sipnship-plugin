@@ -326,14 +326,14 @@ if [ "$mode" = drain ]; then
     elapsed=$(( $(date +%s) - d_start ))
     # Wait here, or end and free the runner (queue/wait.sh)? On a runner a
     # hold counts from when the one green pull request turned green.
-    where=$(drain_wait_where); held_for=$elapsed
-    if [ "$where" = end ] && [ "$(drain_hold "$n" "$waiting")" = yes ]; then held_for=$(drain_held_for "$elapsed" "$(green_since "$pick")" "$(date +%s)"); fi
+    where=$(drain_wait_where); held_for=$(drain_held_now "$where" "$n" "$waiting" "$elapsed" "$pick")
     step=$(drain_wait_step "$where" "$n" "$waiting" "$held_for" $((drain_minutes * 60)) "$last_look")
+    bound=$(hold_bound_said "$where" "$held_for" $((drain_minutes * 60)) "$(date +%s)"); drain_hold_note "$step" "$pick" "$held_for" $((drain_minutes * 60))
     # A serial merge now would move main under the ones still running
     # and send them back round CI; the batch after it would be empty.
     case "$step" in
-      hold) say "round $round: $n green, $waiting still running CI; holding the serial merge until they finish, so it does not send them back round CI."; round=$((round - 1)); sleep 120; continue ;;
-      end-hold) say "round $round: $(drain_end_line hold "$waiting")"; break ;;
+      hold) say "round $round: $n green, $waiting still running CI; holding the serial merge until they finish, so it does not send them back round CI, and $bound."; round=$((round - 1)); sleep 120; continue ;;
+      end-hold) say "round $round: $(drain_end_line hold "$waiting" no "$bound")"; break ;;
     esac
     drain_stall || break
     # One more look a minute later before saying nothing is left (in a

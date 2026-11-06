@@ -22,7 +22,9 @@ sh scripts/ci/merge-queue.sh --drain
 
 That is the command for "merge what is ready", so no agent writes its own loop. A pull request a round could not merge is not tried again in that drain; its line says why. A red pull request gets one retry of its failed jobs. When the drain ends, every pull request that conflicts with main or failed twice is listed under "Needs attention" and the drain exits non-zero, so an agent running it on a timer is woken by the failure instead of reading past a log line.
 
-The drain holds a serial merge while other pull requests are still running CI. One green pull request merged alone moves main under every one of them, they are updated and sent back round CI, and the batch that should have followed has nothing. So with one green and others pending, the drain waits two minutes at a time until they finish, then batches; the hold is bounded by `QUEUE_DRAIN_MINUTES`.
+The drain holds a serial merge while other pull requests are still running CI. One green pull request merged alone moves main under every one of them, they are updated and sent back round CI, and the batch that should have followed has nothing. So with one green and others pending, the drain waits two minutes at a time until they finish, then batches; the hold is bounded by `QUEUE_DRAIN_MINUTES`. The bound is said, not only kept: the drain's log names the time the hold ends at the latest ("no later than 17:25 UTC (25 minutes after it turned green)", in UTC), and the published state carries it as `holds` (`number`, `heldSince`, `endsAt`, `limitMinutes`, `waitingFor`), so the dashboard shows what the change waits for and the latest time it is held. The row in `open` stays `green` and says it is held for a batch.
+
+The bound is the latest the queue holds a change, not the minute it lands. On a runner the drain ends at each hold, and nothing starts a drain at the bound: one starts when a pull request's checks finish (the Queue drain workflow's `workflow_run` trigger), every two hours (the schedule), and on request (Land now, Land this next, Deploy now). So once the bound has passed, the next drain that runs lands the change alone, and that is all the words promise. With others still running CI that is usually within minutes, since each of their finishing checks starts a drain; with none running, the change is no longer held and the next drain lands it.
 
 ### A drain on a runner never holds it to wait
 
@@ -31,7 +33,7 @@ Run by hand in a terminal, the drain waits as above. On one of the project's CI 
 | Wait | In a terminal | On a runner |
 |---|---|---|
 | Nothing green, others still running CI (two minutes at a time) | waits | ends; a run finishing starts the next drain |
-| One green held for others still running (two minutes at a time) | waits, bounded by `QUEUE_DRAIN_MINUTES` from the drain's start | ends; the bound counts from when that one turned green, so it is held no longer than before |
+| One green held for others still running (two minutes at a time) | waits, bounded by `QUEUE_DRAIN_MINUTES` from the drain's start; the log says the time it ends at the latest | ends, saying that time; the bound counts from when that one turned green, so it is held no longer than before, and the next drain after it lands the change alone |
 | One more look a minute before "nothing left" | waits | none: a change that turns green after the read starts a drain of its own, queued behind this one |
 | A run cancelled before a runner took it, re-run during a serial merge | waits for the re-run | re-runs and moves on; the re-run's end starts a drain |
 | A batch's own full run | waits | waits: only this drain finishes the batch (a cancelled job's one re-run, the members' notes and worktrees, the serial merge of the members it dropped, the deploy) |

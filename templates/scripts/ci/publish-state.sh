@@ -17,7 +17,7 @@
 here=$(dirname "$0")
 . "$here/publish-lib.sh"
 . "$here/batch-lib.sh"
-. "$here/gate-lib.sh"
+. "$here/gate-lib.sh"; . "$here/queue/wait.sh" # the hold's words and fields (functions only)
 mode=idle; open_file=""; print_only=no
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -87,6 +87,7 @@ open_tsv=$(printf '%s\n' "$rows" | sed '/^$/d' | while IFS="$tab" read -r n d mw
   fi
   printf '%s\t%s\t%s\t%s\n' "$n" "$t" "$s" "$say"
 done)
+hold_tsv=$(head -n 1 "$flaky_dir/hold.tsv" 2>/dev/null | tr -d '\r'); open_tsv=$(hold_open_say "$open_tsv" "$hold_tsv") # a green change the drain holds for others (queue/wait.sh)
 # The open batch pull request, if any.
 batch_row=$(printf '%s\n' "$titles" | awk -F'\t' '$4 ~ /<!-- merge-queue:batch -->/ || $4 ~ /^One integration run for the pull requests below/ { print $1; exit }')
 batch_tsv=""
@@ -198,6 +199,7 @@ say=$(publish_say "$open_tsv" "$batch_tsv" "$building" "$clashes_tsv" "$attentio
 say=$(say_with_need "$say" "$(head -n 1 "$flaky_dir/runner-labels" 2>/dev/null | cut -f2)")
 now_iso=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 json=$(publish_json "$open_tsv" "$batch_tsv" "$building" "$clashes_tsv" "$landed_tsv" "$runners_tsv" "$attention_tsv" "$(printf '%s\t%s\t%s\t%s\t%s' "$main_sha" "$main_state" "$main_checked" "$main_waiting" "$main_failing")" "$deploy_line" "$mode" "$paused_until" "$checking" "$say" "$now_iso" "$rush_tsv" "$waits_tsv")
+json=$(hold_json_add "$json" "$(hold_json "$open_tsv" "$hold_tsv")")
 
 # 5. Only a change worth a write: the time stamp and the two numbers that
 # tick with time (how long a queued run has waited, a batch's minutes left)
