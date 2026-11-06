@@ -207,32 +207,40 @@ test('the dispatching tool call sends too, and a turn ending close behind a send
   } finally { f.server.close(); }
 });
 
-test('a send never holds the event up: the hook returns before the send is made', () => {
-  // The service is unreachable and every send would wait out its bound; the hook does not.
-  const m = machine('http://127.0.0.1:9');
-  dispatch(m);
-  m.env.SIPNSHIP_SAMPLE_DELAY = '3';
-  const { out, ms } = run(m, 'SubagentStart', { agent_id: AGENT });
-  assert.strictEqual(out, '');
-  assert.ok(ms < 2500, `the hook returned in ${ms} ms`);
+test('a send never holds the event up: the hook returns before the send is made, and the send follows', async () => {
+  // The send is set well past the hook's own run, so what the test reads is the order of
+  // events (returned first, heard after), never how fast this machine runs the hook.
+  const f = await fake();
+  try {
+    const m = machine(f.url);
+    dispatch(m);
+    m.env.SIPNSHIP_SAMPLE_DELAY = '8';
+    const { out } = run(m, 'SubagentStart', { agent_id: AGENT });
+    assert.strictEqual(out, '');
+    assert.strictEqual(f.seen.length, 0, 'nothing was sent while the hook ran');
+    assert.strictEqual(await heard(f, 1), 1, 'the send follows in the background');
+  } finally { f.server.close(); }
 });
 
 test('with the real spacing, sends for one repository stay six seconds apart and events close together share one', () => {
   const m = machine('http://127.0.0.1:9');
   delete m.env.SIPNSHIP_SAMPLE_DELAY;
   delete m.env.SIPNSHIP_SAMPLE_GAP;
+  // The hook is handed the clock, so how long each run takes on this machine decides nothing.
+  const now = 1_800_000_000;
+  m.env.SIPNSHIP_SAMPLE_NOW = String(now);
   const mark = path.join(m.home, 'brief-send', 'sample-at-acme-shop');
-  const now = Math.floor(Date.now() / 1000);
   run(m, 'SubagentStart', { agent_id: AGENT });
   const first = Number(fs.readFileSync(mark, 'utf8'));
-  assert.ok(first >= now + 3 && first <= now + 5, 'an agent starting is read three seconds on, once its log is written');
+  assert.strictEqual(first, now + 3, 'an agent starting is read three seconds on, once its log is written');
   run(m, 'PostToolUse', { tool_name: 'Agent' });
   assert.strictEqual(Number(fs.readFileSync(mark, 'utf8')), first, 'the dispatching call is covered by the send already set');
   run(m, 'SubagentStop', { agent_id: AGENT });
   assert.strictEqual(Number(fs.readFileSync(mark, 'utf8')), first, 'so is a stop before that send reads');
-  fs.writeFileSync(mark, `${now - 1}\n`);
+  fs.writeFileSync(mark, `${now - 1}
+`);
   run(m, 'SubagentStop', { agent_id: AGENT });
-  assert.ok(Number(fs.readFileSync(mark, 'utf8')) >= now + 5, 'a stop just after a send waits until six seconds after it, never dropped as too close');
+  assert.strictEqual(Number(fs.readFileSync(mark, 'utf8')), now + 5, 'a stop just after a send waits until six seconds after it, never dropped as too close');
   assert.ok(!fs.existsSync(path.join(m.home, 'brief-send', 'sample-at')), 'no machine-wide mark: each repository has its own');
 });
 

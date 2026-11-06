@@ -3179,8 +3179,11 @@ if command -v node >/dev/null 2>&1; then
   else
     fail=$((fail + 1))
     printf 'FAIL  console tests, see tests/console.log\n'
-    grep -E '^not ok|^# (fail|pass)' "$root/tests/console.log"
-    block_failed "$(printf 'FAIL  console tests\n'; grep -E '^not ok' "$root/tests/console.log")"
+    grep -E '^# (fail|pass)' "$root/tests/console.log"
+    # The failing case by name, with its message, in this run's own log.
+    console_why=$(sh "$root/tests/console-failures.sh" "$root/tests/console.log")
+    printf '%s\n' "$console_why"
+    block_failed "$(printf 'FAIL  console tests\n%s' "$console_why")"
   fi
   mv "$root/tests/console.log" "$root/tests/console.log.last"
 else

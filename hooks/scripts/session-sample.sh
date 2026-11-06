@@ -61,7 +61,10 @@ sn_name=$(printf '%s' "$sn_repo" | tr -c 'A-Za-z0-9._\n-' '-')
 [ -n "${CLAUDE_PROJECT_DIR:-}" ] && printf '%s\n' "$sn_name" > "$sn_home/brief-send/root-$(printf '%s' "$CLAUDE_PROJECT_DIR" | tr -c 'A-Za-z0-9' '-')" 2>/dev/null
 
 event=$(json_field "$input" hook_event_name)
-now=$(date +%s 2>/dev/null) || exit 0
+# SIPNSHIP_SAMPLE_NOW is a clock handed in by a test, so the spacing can be
+# checked without the machine's speed or load deciding the answer.
+now=${SIPNSHIP_SAMPLE_NOW:-$(date +%s 2>/dev/null)} || exit 0
+[ -n "$now" ] || exit 0
 delay=${SIPNSHIP_SAMPLE_DELAY:-3}
 gap=${SIPNSHIP_SAMPLE_GAP:-6}
 

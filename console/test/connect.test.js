@@ -64,7 +64,7 @@ test('connect runs the device flow, then the connect route, and keeps the token 
     assert.strictEqual(kept.repoId, 42);
     assert.strictEqual(kept.token, T);
     assert.ok(tokens.file(env).startsWith(env.SIPNSHIP_HOME));
-  } finally { f.server.close(); }
+  } finally { f.server.closeAllConnections?.(); f.server.close(); }
 });
 
 test('connect registers its code at the dashboard and says when it is approved', async () => {
@@ -77,7 +77,7 @@ test('connect registers its code at the dashboard and says when it is approved',
     assert.deepStrictEqual(JSON.parse(pend[0].body), { machine: 'desk', code: 'WXYZ-1234' });
     assert.strictEqual(pend[0].auth, 'Bearer gho_person');
     assert.match(out.text, /desk is approved on the dashboard\./);
-  } finally { f.server.close(); }
+  } finally { f.server.closeAllConnections?.(); f.server.close(); }
 });
 
 test('a declined code is said plainly and the command ends', async () => {
@@ -86,7 +86,7 @@ test('a declined code is said plainly and the command ends', async () => {
     const env = envAt(f.url); const out = sink();
     assert.strictEqual(await connect({ repo: 'acme/shop', env, out, machine: 'desk', pollMs: 5, approveMs: 5, offer: async () => 'no' }), 1);
     assert.match(out.text, /The dashboard said this is not desk\./);
-  } finally { f.server.close(); }
+  } finally { f.server.closeAllConnections?.(); f.server.close(); }
 });
 
 test('an answer that never comes is read a fixed number of times, never forever', async () => {
@@ -96,7 +96,7 @@ test('an answer that never comes is read a fixed number of times, never forever'
     assert.strictEqual(await connect({ repo: 'acme/shop', env, out, machine: 'desk', pollMs: 5, approveMs: 1, offer: async () => 'no' }), 0);
     assert.strictEqual(f.reads(), 12);
     assert.match(out.text, /desk is waiting for you to approve it on the dashboard\./);
-  } finally { f.server.close(); }
+  } finally { f.server.closeAllConnections?.(); f.server.close(); }
 });
 
 test('a service without the route changes nothing about connecting', async () => {
@@ -106,7 +106,7 @@ test('a service without the route changes nothing about connecting', async () =>
     assert.strictEqual(await connect({ repo: 'acme/shop', env, out, machine: 'desk', pollMs: 5, approveMs: 5, offer: async () => 'no' }), 0);
     assert.strictEqual(f.seen.filter((s) => s.url.endsWith('/pending')).length, 1);
     assert.doesNotMatch(out.text, /approved on|waiting for you/);
-  } finally { f.server.close(); }
+  } finally { f.server.closeAllConnections?.(); f.server.close(); }
 });
 
 test('a refused connect keeps nothing and says so', async () => {
@@ -116,7 +116,7 @@ test('a refused connect keeps nothing and says so', async () => {
     assert.strictEqual(await connect({ repo: 'acme/shop', env, out, pollMs: 5, offer: async () => 'no' }), 1);
     assert.match(out.text, /has not heard from this repository/);
     assert.deepStrictEqual(tokens.read(env).repos, {});
-  } finally { f.server.close(); }
+  } finally { f.server.closeAllConnections?.(); f.server.close(); }
 });
 
 test('--token installs a rotated token over the one kept, with no request', async () => {
@@ -128,7 +128,7 @@ test('--token installs a rotated token over the one kept, with no request', asyn
     assert.strictEqual(tokens.find(42, env).token, T2);
     assert.strictEqual(tokens.find(42, env).machine, 'desk');
     assert.strictEqual(f.seen.length, 0);
-  } finally { f.server.close(); }
+  } finally { f.server.closeAllConnections?.(); f.server.close(); }
 });
 
 test('--token on a new machine finds the repository id through gh', async () => {
@@ -154,7 +154,7 @@ test('disconnect tells the service with the machine\'s token and forgets it here
     assert.deepStrictEqual(f.seen.map((s) => [s.url, s.auth]), [['/v1/repos/42/disconnect', `Bearer ${T}`]]);
     assert.strictEqual(tokens.find(42, env), undefined);
     assert.match(out.text, /^Disconnected acme\/shop\./);
-  } finally { f.server.close(); }
+  } finally { f.server.closeAllConnections?.(); f.server.close(); }
 });
 
 test('the CLI accepts the rotate command exactly as the dashboard shows it', () => {
