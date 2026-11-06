@@ -3831,11 +3831,30 @@ eq "the target defaults to vercel" "vercel" "$(. "$root/templates/scripts/ci/dep
 eq "the Vercel jobs still run on the vercel and runner paths" "1 1" "$(printf '%s\n' "$dt_tpl" | grep -c "needs.plan.outputs.path == 'vercel' ||") $(printf '%s\n' "$dt_tpl" | grep -c "needs.plan.outputs.path == 'runner'")"
 eq "the Cloudflare job runs only on the cloudflare path" "1" "$(printf '%s\n' "$dt_tpl" | grep -c "needs.plan.outputs.path == 'cloudflare'")"
 eq "the workers in deploy order" "packages/service packages/web" "$(. "$root/templates/scripts/ci/deploy-lib.sh"; json_words '{"target": "cloudflare", "workers": ["packages/service", "packages/web"]}' workers)"
-eq "each Worker deploys with wrangler in its folder, assets first when it has the script" "1 1" "$(dt_job deploy-cloudflare "$dt_tpl" | grep -c '(cd "$w" && npx wrangler deploy)') $(dt_job deploy-cloudflare "$dt_tpl" | grep -c '(cd "$w" && npm run assets)')"
+eq "each Worker deploys with wrangler in its folder, assets first when it has the script" "1 1" "$(dt_job deploy-cloudflare "$dt_tpl" | grep -c '(cd "$w" && deploy_with_retry)') $(dt_job deploy-cloudflare "$dt_tpl" | grep -c '(cd "$w" && npm run assets)')"
 eq "the Cloudflare job has both secrets" "2" "$(dt_job deploy-cloudflare "$dt_tpl" | grep -cE 'CLOUDFLARE_(API_TOKEN|ACCOUNT_ID): \$\{\{ secrets')"
 eq "rendered for Windows, the plan and the Cloudflare job name Git's bash in every step" "2/2 3/3" "$(for j in plan deploy-cloudflare; do t=$(dt_job $j "$dt_win"); printf '%s/%s ' "$(printf '%s\n' "$t" | grep -c 'shell:.*Git\\bin\\bash.exe')" "$(printf '%s\n' "$t" | grep -c 'shell:')"; done | sed 's/ $//')"
 eq "and never a bare bash there" "0" "$(printf '%s\n%s\n' "$(dt_job plan "$dt_win")" "$(dt_job deploy-cloudflare "$dt_win")" | grep -cE 'shell:[[:space:]]*(bash|RUN_SHELL)')"
 eq "the sync takes a rendered copy as current, CRLF or not" "yes yes" "$(. "$root/scripts/sync/sync-lib.sh"; same_text "$dt_win" "$(filled_text "$dt_tpl" "$(ci_runs_on "$dt_ci")" "$(ci_shell "$dt_ci")")" | tr -d '\n'; printf ' '; same_text "$(printf '%s\n' "$dt_win" | sed 's/$/\r/')" "$dt_win")"
+section 'a deploy that met a brief provider outage tries again'
+dr_fx="$root/tests/fixtures/deploy"
+dr_dir=$(mktemp -d)
+dr_run() { # fixture, fails, tries: prints "exit runs"
+  echo 0 > "$dr_dir/count"
+  ( . "$root/templates/scripts/ci/deploy-lib.sh"
+    STAND_IN_DIR="$dr_dir" STAND_IN_FIXTURE="$dr_fx/$1" STAND_IN_FAILS=$2 DEPLOY_TRIES=$3 DEPLOY_PAUSE=0
+    export STAND_IN_DIR STAND_IN_FIXTURE STAND_IN_FAILS DEPLOY_TRIES DEPLOY_PAUSE
+    deploy_with_retry sh "$dr_fx/stand-in.sh" > "$dr_dir/out" 2>&1; echo "$? $(cat "$dr_dir/count")" )
+}
+eq "with one try, a provider 503 fails at once, as before" "1 1" "$(dr_run provider-503.txt 9 1)"
+eq "a 503 then success goes through on the second try" "0 2" "$(dr_run provider-503.txt 1 3)"
+eq "the log says the try in plain words" "The hosting provider did not answer (503). Trying again, try 2 of 3." "$(grep '^The hosting' "$dr_dir/out")"
+eq "when the tries run out it fails after three" "1 3" "$(dr_run provider-503.txt 9 3)"
+eq "and the provider's own lines stay in the log, once per try" "3" "$(grep -c 'no healthy upstream' "$dr_dir/out")"
+eq "a build error is not tried again" "1 1" "$(dr_run build-error.txt 9 3)"
+eq "a deploy that works first time runs once" "0 1" "$(dr_run build-error.txt 0 3)"
+eq "the Deploy workflow calls the retry, not the bare command" "1 0" "$(grep -c 'deploy_with_retry)' "$root/templates/.github/workflows/deploy.yml") $(grep -c 'npx wrangler deploy)' "$root/templates/.github/workflows/deploy.yml")"
+
 section 'waits for a runner and the machine line'
 . "$root/templates/scripts/ci/batch-lib.sh"
 . "$root/templates/scripts/ci/run-lib.sh"

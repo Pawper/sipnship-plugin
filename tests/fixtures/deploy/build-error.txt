@@ -1,0 +1,5 @@
+ ⛅️ wrangler 3.99.0
+-------------------
+
+X [ERROR] Build failed with 1 error:
+  src/water-schedule.ts:12:7: ERROR: Could not resolve "./beds"

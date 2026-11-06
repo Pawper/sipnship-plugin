@@ -190,7 +190,7 @@ jobs:
           for w in $(json_words "$(cat .claude/deploy.json)" workers); do
             echo "Deploying the Worker in $w."
             if grep -q '"assets"[[:space:]]*:' "$w/package.json" 2>/dev/null; then (cd "$w" && npm run assets); fi
-            (cd "$w" && npx wrangler deploy)
+            (cd "$w" && deploy_with_retry)
           done
       - name: Record the deployed commit
         shell: RUN_SHELL

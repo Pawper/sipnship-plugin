@@ -198,3 +198,35 @@ deploy_health() {
     echo "Deploys: main has changes waiting $dh_age minutes that are not in production (the interval is ${6:-60}); check the Deploy workflow and the runner."
   fi
 }
+
+# Run a Worker's deploy and try again, by itself, only when the hosting
+# provider was briefly unavailable (a 5xx answer, a timeout, a dropped
+# connection). Any other failure ends at once with the command's own exit
+# code, and when the tries run out the last output stays in the log as the
+# provider wrote it, because the service reads the failed job's log to say
+# why a deploy failed. The command is the arguments (default
+# "npx wrangler deploy"); a test hands in a stand-in. The number of tries
+# and the pause live here: DEPLOY_TRIES and DEPLOY_PAUSE (seconds, times
+# the try that just failed), each overridable from the environment.
+DEPLOY_TRIES_DEFAULT=3
+DEPLOY_PAUSE_DEFAULT=15
+deploy_unavailable() {
+  printf '%s\n' "$1" | grep -Eiq '\b5[0-9]{2}\b[[:space:]]+(Service Unavailable|Bad Gateway|Gateway Time-?out|Internal Server Error)|status[: ]+5[0-9]{2}|no healthy upstream|ETIMEDOUT|ECONNRESET|EAI_AGAIN|socket hang up|fetch failed|request timed out|connect timeout'
+}
+deploy_with_retry() {
+  [ "$#" -gt 0 ] || set -- npx wrangler deploy
+  dr_max=${DEPLOY_TRIES:-$DEPLOY_TRIES_DEFAULT}
+  dr_pause=${DEPLOY_PAUSE:-$DEPLOY_PAUSE_DEFAULT}
+  dr_try=1
+  while :; do
+    dr_out=$("$@" 2>&1) && dr_rc=0 || dr_rc=$?
+    printf '%s\n' "$dr_out"
+    [ "$dr_rc" -ne 0 ] || return 0
+    deploy_unavailable "$dr_out" || return "$dr_rc"
+    [ "$dr_try" -lt "$dr_max" ] || return "$dr_rc"
+    dr_code=$(printf '%s\n' "$dr_out" | grep -Eo '\b5[0-9]{2}\b' | head -1)
+    dr_try=$(( dr_try + 1 ))
+    echo "The hosting provider did not answer (${dr_code:-no reply}). Trying again, try $dr_try of $dr_max."
+    sleep $(( dr_pause * (dr_try - 1) ))
+  done
+}
