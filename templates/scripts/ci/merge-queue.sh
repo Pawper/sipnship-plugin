@@ -73,7 +73,7 @@ fi
 . "$here/queue/serial.sh"
 . "$here/queue/batch.sh"
 . "$here/queue/deploy.sh"
-. "$here/queue/attention.sh"
+. "$here/queue/attention.sh"; . "$here/queue/wait.sh"
 rules=$(cat "$here/classes.txt")
 
 mode=""
@@ -189,10 +189,10 @@ have_lock=no
 queue_step="starting"
 # Drain: merge everything that is green, round after round, so nobody
 # writes their own loop. Each round reads every open pull request in one
-# call, merges the green ones (as a batch whenever two or more are green), and waits
-# for the running ones. It stops when nothing is green and nothing is
-# running, when nothing new turned green, after --rounds rounds (default
-# six), or after QUEUE_DRAIN_MINUTES (default ninety).
+# call, merges the green ones (as a batch whenever two or more are green), and,
+# in a terminal, waits for the running ones; on a CI runner it ends instead
+# (queue/wait.sh). It stops when nothing is left, after --rounds rounds
+# (default six), or after QUEUE_DRAIN_MINUTES (default ninety).
 take_lock
 if [ "$mode" = drain ]; then
   rounds=${rounds:-6}
@@ -324,53 +324,28 @@ if [ "$mode" = drain ]; then
     waiting=$(drain_waiting "$open" "$base" "$retried")
     n=$(printf '%s\n' "$pick" | sed '/^$/d' | wc -l | tr -d ' ')
     elapsed=$(( $(date +%s) - d_start ))
-    if [ "$n" -gt 0 ] && [ "$(drain_hold "$n" "$waiting")" = yes ] && [ "$elapsed" -lt $((drain_minutes * 60)) ]; then
-      # A serial merge now would move main under the ones still running
-      # and send them back round CI; the batch after it would be empty.
-      say "round $round: $n green, $waiting still running CI; holding the serial merge until they finish, so it does not send them back round CI."
-      round=$((round - 1))
-      sleep 120
-      continue
-    fi
-    # Waiting on CI or on a machine? When every pending pull request's
-    # checks are queued and no runner is online, waiting is pointless.
-    queued_only=no
-    if [ "$waiting" -gt 0 ]; then
-      statuses=$(printf '%s\n' "$open" | awk -F'\t' -v b="$base" '$2 == "false" && $5 == b && $4 == "pending" { print $1 }' | while read -r w_num; do
-        w_sha=$(printf '%s\n' "$listed" | awk -F'\t' -v n="$w_num" '$1 == n { print $3; exit }')
-        if [ -n "$w_sha" ]; then gh api "repos/{owner}/{repo}/commits/$w_sha/check-runs?per_page=100" --jq '.check_runs[].status' 2>/dev/null; fi
-      done)
-      queued_only=$(checks_queued_only "$statuses")
-      stall=$(runner_stall "$queued_only" "$(online_runners)")
-      printf 'round %s of %s; %s pull request(s) waiting%s\n' "$round" "$rounds" "$waiting" "$( [ "$queued_only" = yes ] && echo ' on queued checks, which no runner has taken')" > "$flaky_dir/drain.state"
-      if [ "$stall" = stop ]; then
-        say "round $round: $waiting pull request(s) wait on checks that are all queued, and no self-hosted runner is online. Start a runner (scripts/ci/RUNNERS.md), then run --drain again; waiting would change nothing."
-        break
-      elif [ "$stall" = unknown ] && [ -z "$said_unknown" ]; then
-        say "round $round: the checks are all queued, and the runners could not be read (set ADMIN_TOKEN to let the queue see them); if none is online, start one."
-        said_unknown=1
-      fi
-    fi
-    if [ "$n" -eq 0 ]; then
-      if [ "$waiting" -gt 0 ] && [ "$elapsed" -lt $((drain_minutes * 60)) ]; then
-        say "round $round: nothing new is green; $waiting pull request(s) still running CI, waiting two minutes."
-        sleep 120
-        continue
-      fi
-      if [ "$waiting" -gt 0 ]; then say "round $round: nothing new is green, and $waiting still running after $drain_minutes minutes; stopping."; break; fi
-      # One more look a minute later before saying nothing is left: a pull
-      # request whose checks turned green just after this round's read, or
-      # had not reported yet, was once left behind with the queue "done".
-      if [ -z "$last_look" ]; then
-        last_look=1
-        say "round $round: nothing green right now; one more look in a minute before stopping."
-        sleep 60
-        round=$((round - 1))
-        continue
-      fi
-      say "round $round: nothing left to merge."
-      break
-    fi
+    # Wait here, or end and free the runner (queue/wait.sh)? On a runner a
+    # hold counts from when the one green pull request turned green.
+    where=$(drain_wait_where); held_for=$elapsed
+    if [ "$where" = end ] && [ "$(drain_hold "$n" "$waiting")" = yes ]; then held_for=$(drain_held_for "$elapsed" "$(green_since "$pick")" "$(date +%s)"); fi
+    step=$(drain_wait_step "$where" "$n" "$waiting" "$held_for" $((drain_minutes * 60)) "$last_look")
+    # A serial merge now would move main under the ones still running
+    # and send them back round CI; the batch after it would be empty.
+    case "$step" in
+      hold) say "round $round: $n green, $waiting still running CI; holding the serial merge until they finish, so it does not send them back round CI."; round=$((round - 1)); sleep 120; continue ;;
+      end-hold) say "round $round: $(drain_end_line hold "$waiting")"; break ;;
+    esac
+    drain_stall || break
+    # One more look a minute later before saying nothing is left (in a
+    # terminal only): a pull request whose checks turned green just after
+    # this round's read was once left behind with the queue "done".
+    case "$step" in
+      wait) say "round $round: nothing new is green; $waiting pull request(s) still running CI, waiting two minutes."; sleep 120; continue ;;
+      end-wait) say "round $round: $(drain_end_line wait "$waiting" "$queued_only")"; break ;;
+      stop) say "round $round: nothing new is green, and $waiting still running after $drain_minutes minutes; stopping."; break ;;
+      look) last_look=1; say "round $round: nothing green right now; one more look in a minute before stopping."; sleep 60; round=$((round - 1)); continue ;;
+      done) say "round $round: nothing left to merge."; break ;;
+    esac
     last_look=""
     queue_step="drain round $round: merging"
     say_round_pick "$round" "$n" "$pick"

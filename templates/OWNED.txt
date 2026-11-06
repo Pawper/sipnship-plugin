@@ -79,6 +79,7 @@ scripts/ci/queue/rules-checkout.sh
 scripts/ci/queue/rules-place.sh
 scripts/ci/queue/rules-rescue.sh
 scripts/ci/queue/rescue.sh
+scripts/ci/queue/wait.sh
 scripts/ci/run-lib.sh
 scripts/ci/run-test-file.mjs
 scripts/ci/QUEUE.md

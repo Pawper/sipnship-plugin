@@ -58,6 +58,9 @@ serial_one() {
           # A job cancelled before a runner took it is not a failure:
           # re-run it and wait, rather than give up.
           gh_write run rerun "$run_id" >/dev/null 2>&1 || true
+          # A drain on a CI runner does not hold it for the re-run: the run's
+          # end starts a drain of its own (queue/wait.sh).
+          if [ -n "$QUEUE_IN_DRAIN" ] && [ "$(drain_wait_where)" = end ]; then batch_line "$pr" "waiting" "$msg; re-ran it, and a drain starts again when it finishes"; return 0; fi
           batch_line "$pr" "waiting" "$msg; re-ran it and waiting for the result"
           if wait_for_run "$pr" "$hb"; then rm -f "$flaky_dir/pr-$pr.tsv"; serial_one "$pr"; return 0; fi
           return 0 ;;

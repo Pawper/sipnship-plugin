@@ -16,12 +16,16 @@
 # label, runs "drain-windows", whose shell is Git's bash by path: on a
 # Windows runner a bare "bash" is the WSL stub, and a shell cannot come
 # from a variable. Any other label runs "drain". Both jobs share one list
-# of steps (the YAML anchor below). A drain holds a runner while it waits
-# for checks, which is why a project keeps three (scripts/ci/RUNNERS.md).
+# of steps (the YAML anchor below). A drain here never holds its runner
+# while it only waits: when nothing is green, or one green change is held
+# for others still in CI, it says what it waits on and ends, and the next
+# pull request run to finish starts it again (scripts/ci/queue/wait.sh). It
+# still waits for a batch's own full run, which only it can finish.
 #
-# A run started by a green check (workflow_run) is never skipped for a
+# A run started by a finished check (workflow_run) is never skipped for a
 # recent drain: the skip applies to the schedule only. A drain already
-# running picks the pull request up at its next round.
+# running picks the pull request up at its next round, or the one queued
+# behind it in the group below does.
 #
 # Each run drains for at most QUEUE_DRAIN_MINUTES (variable, default 25)
 # and skips itself when a drain finished in the last QUEUE_DRAIN_GAP
@@ -42,9 +46,11 @@ on:
   schedule:
     - cron: "7 */2 * * *"
   workflow_dispatch:
-  # A pull request's CI run that finishes green starts a drain at once,
-  # instead of waiting for the next two-hourly one. Only a pull request's
-  # run, and only a success; the group below keeps it to one drain.
+  # A pull request's CI run that finishes starts a drain at once, instead
+  # of waiting for the next two-hourly one: green, so it lands; red or
+  # cancelled too, since a drain that ended while it ran must see the end
+  # (a green change held for it lands, a red one gets its retry). Only a
+  # pull request's run; the group below keeps it to one drain.
   workflow_run:
     workflows: [CI]
     types: [completed]
@@ -64,7 +70,7 @@ concurrency:
 
 jobs:
   drain:
-    if: ${{ vars.QUEUE_RUNS_ON != '' && !contains(vars.QUEUE_RUNS_ON, 'windows') && (github.event_name != 'workflow_run' || (github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion == 'success')) }}
+    if: ${{ vars.QUEUE_RUNS_ON != '' && !contains(vars.QUEUE_RUNS_ON, 'windows') && (github.event_name != 'workflow_run' || (github.event.workflow_run.event == 'pull_request' && contains(fromJSON('["success", "failure", "cancelled", "timed_out"]'), github.event.workflow_run.conclusion))) }}
     runs-on: ${{ vars.QUEUE_RUNS_ON || 'self-hosted' }}
     timeout-minutes: 40
     defaults:
@@ -171,7 +177,7 @@ jobs:
           sh scripts/ci/merge-queue.sh --drain
 
   drain-windows:
-    if: ${{ (vars.QUEUE_RUNS_ON == '' || contains(vars.QUEUE_RUNS_ON, 'windows')) && (github.event_name != 'workflow_run' || (github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion == 'success')) }}
+    if: ${{ (vars.QUEUE_RUNS_ON == '' || contains(vars.QUEUE_RUNS_ON, 'windows')) && (github.event_name != 'workflow_run' || (github.event.workflow_run.event == 'pull_request' && contains(fromJSON('["success", "failure", "cancelled", "timed_out"]'), github.event.workflow_run.conclusion))) }}
     runs-on: [self-hosted, "${{ vars.QUEUE_RUNS_ON || 'windows' }}"]
     timeout-minutes: 40
     defaults:

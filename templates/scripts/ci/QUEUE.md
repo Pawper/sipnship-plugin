@@ -14,7 +14,7 @@ What happens, in order: an integration branch named for the day is cut from main
 
 ## Drain: the queue that keeps going
 
-Most of the time, nobody should pick the numbers. `--drain` reads every open pull request in one call, merges the green ones (as a batch whenever two or more are green, since merging one moves main under the other and sends it back through CI), waits while others are still running CI, and goes round again until nothing is left, nothing new turned green, six rounds have passed, or ninety minutes have:
+Most of the time, nobody should pick the numbers. `--drain` reads every open pull request in one call, merges the green ones (as a batch whenever two or more are green, since merging one moves main under the other and sends it back through CI), waits while others are still running CI (on a CI runner it ends instead, below), and goes round again until nothing is left, nothing new turned green, six rounds have passed, or ninety minutes have:
 
 ```bash
 sh scripts/ci/merge-queue.sh --drain
@@ -22,7 +22,24 @@ sh scripts/ci/merge-queue.sh --drain
 
 That is the command for "merge what is ready", so no agent writes its own loop. A pull request a round could not merge is not tried again in that drain; its line says why. A red pull request gets one retry of its failed jobs. When the drain ends, every pull request that conflicts with main or failed twice is listed under "Needs attention" and the drain exits non-zero, so an agent running it on a timer is woken by the failure instead of reading past a log line.
 
-The drain holds a serial merge while other pull requests are still running CI. One green pull request merged alone moves main under every one of them, they are updated and sent back round CI, and the batch that should have followed has nothing. So with one or two green and others pending, the drain waits two minutes at a time until they finish, then batches; the hold is bounded by `QUEUE_DRAIN_MINUTES`.
+The drain holds a serial merge while other pull requests are still running CI. One green pull request merged alone moves main under every one of them, they are updated and sent back round CI, and the batch that should have followed has nothing. So with one green and others pending, the drain waits two minutes at a time until they finish, then batches; the hold is bounded by `QUEUE_DRAIN_MINUTES`.
+
+### A drain on a runner never holds it to wait
+
+Run by hand in a terminal, the drain waits as above. On one of the project's CI runners (GitHub Actions sets `GITHUB_ACTIONS`) a wait would hold a runner the very checks it waits for need: a project whose runners were all busy once had a drain sitting on one of them in two-minute steps, with a second drain queued behind it. So there the drain ends instead, with one line saying what it waits on, and the next pull request run to finish starts it again (the Queue drain workflow's `workflow_run` trigger, for a green, red or cancelled run; Land now, Land this next and Deploy now start one through the Queue wake workflow). `QUEUE_DRAIN_WAIT=end` or `wait` chooses either way. Every wait, and what became of it:
+
+| Wait | In a terminal | On a runner |
+|---|---|---|
+| Nothing green, others still running CI (two minutes at a time) | waits | ends; a run finishing starts the next drain |
+| One green held for others still running (two minutes at a time) | waits, bounded by `QUEUE_DRAIN_MINUTES` from the drain's start | ends; the bound counts from when that one turned green, so it is held no longer than before |
+| One more look a minute before "nothing left" | waits | none: a change that turns green after the read starts a drain of its own, queued behind this one |
+| A run cancelled before a runner took it, re-run during a serial merge | waits for the re-run | re-runs and moves on; the re-run's end starts a drain |
+| A batch's own full run | waits | waits: only this drain finishes the batch (a cancelled job's one re-run, the members' notes and worktrees, the serial merge of the members it dropped, the deploy) |
+| A quiet main before a merge (at most twenty minutes) | waits | waits: it is about to merge, and a run on main starts no drain |
+| The API budget below `QUEUE_RATE_FLOOR`, and a refused call's back-off | waits | waits: nothing would start a drain when the budget resets |
+| A failed listing (60 seconds, three tries) and an unknown mergeable state (seconds) | waits | waits: part of reading, never a wait on others |
+
+The scheduled run skips itself after a recent drain, but a run started by a finished check never does, and the workflow's one-drain group keeps one run queued behind a running one, so a green change never waits for the two-hourly run. A batch an earlier run left open is settled at a later drain's start: merged when green, closed when red or when a member landed alone.
 
 ## Unsticking, at a drain's end
 
@@ -65,7 +82,7 @@ Either way the comment ends with a mark that closes the wait, and the label goes
 
 A drain started with `/loop` runs only while that session is open; close the app and six green pull requests sit until morning. Two ways to keep it going without a session:
 
-- **A workflow.** `.github/workflows/queue-drain.yml` runs `--drain` every two hours on the project's own runners, as a backstop to the drains agents run after their own work. It never runs hosted by default: in a private repository whose hosted minutes are used up a hosted job is not started, and every scheduled run failed and emailed the owner. With the repository variable `QUEUE_RUNS_ON` unset it runs on a self-hosted Windows runner; set it to a runner's label to choose another (the template sync sets it from `ci.yml`). It holds that runner while it waits for checks, which is one reason a project keeps three. Each run drains for at most `QUEUE_DRAIN_MINUTES` (default 25) and skips itself when a drain finished in the last `QUEUE_DRAIN_GAP` minutes (default 10). It needs a classic token with `repo` as the secret `QUEUE_TOKEN`, because a merge made with the default token does not start the full run on main. Adjust the runner labels and the schedule.
+- **A workflow.** `.github/workflows/queue-drain.yml` runs `--drain` every two hours on the project's own runners, as a backstop to the drains agents run after their own work. It never runs hosted by default: in a private repository whose hosted minutes are used up a hosted job is not started, and every scheduled run failed and emailed the owner. With the repository variable `QUEUE_RUNS_ON` unset it runs on a self-hosted Windows runner; set it to a runner's label to choose another (the template sync sets it from `ci.yml`). It holds that runner only while it works or waits for a batch it opened: with nothing to do now it ends, and a finished pull request run starts it again. Each run drains for at most `QUEUE_DRAIN_MINUTES` (default 25) and skips itself when a drain finished in the last `QUEUE_DRAIN_GAP` minutes (default 10). It needs a classic token with `repo` as the secret `QUEUE_TOKEN`, because a merge made with the default token does not start the full run on main. Adjust the runner labels and the schedule.
 - **An OS task.** On Windows, a scheduled task that runs `sh scripts/ci/merge-queue.sh --drain` from the repository every thirty minutes under the user who is signed in to gh; on macOS or Linux, the same line in cron. The queue's lock keeps a late run from overlapping an early one.
 
 With a session open as well, `/loop 20m sh scripts/ci/merge-queue.sh --drain` still works; the lock refuses the second of two that overlap.
@@ -92,7 +109,7 @@ There are two limits, and the one that bites is not the obvious one. The hourly 
 
 - The queue makes every call through REST (`gh api`), which has its own budget and no points: one record per pull request per round, cached, plus one check-runs read. Nothing in the queue uses `gh pr` or `gh issue`.
 - A refused call backs off, 90 seconds the first time and five minutes the second, and the third stops the queue. A spent hourly quota waits for the reset. The queue never retries at once.
-- Every wait polls every thirty seconds, never faster, and the drain's rounds wait two minutes.
+- Every wait polls every thirty seconds, never faster, and a drain run in a terminal waits two minutes between rounds.
 - Before each round and each wait it reads the budget (that call is free) and, when fewer than `QUEUE_RATE_FLOOR` calls are left (default 500), sleeps until the window resets and says so in one line.
 - A 403 for the rate limit is named: "GitHub API rate limit reached; it resets at HH:MM UTC", and the queue stops.
 - One queue at a time. A drain or a batch takes `.scratch/queue/lock`; a second one is refused with a line naming the first. A lock whose process is gone is taken over. A local queue also asks GitHub, once, whether the Queue drain workflow has a run in progress or queued, and is refused with a line naming it ("the Queue drain on GitHub started 12 minute(s) ago is still running (run 123)"); the workflow already skips while a local drain holds `QUEUE_LOCAL_DRAIN_UNTIL`, so the two never overlap. If that call fails (no network, rate limit) the queue says it could not check and goes on.
@@ -201,7 +218,7 @@ Setting a repository variable needs a token that can administer the repository; 
 
 A green pull request's card has Land now beside Land this next: the same serial merge for that one change, with the same rules (`--serial`, never red, never beside a drain). Land this next also reserves the machines and waits for its checks; Land now is for a change already green and cancels nothing.
 
-Two queue runs cannot go at once, so neither runs beside a drain. A running drain honours the request at its next tick, which comes round every two minutes through a hold for others' CI; that hold is for ordinary green changes, and a land request is served before it. While a batch is being built there are no ticks, so a land request hears `after-drain` ("Next, after the drain that's running"), or `next-after-batch` if it is in that batch, each a step and not an end.
+Two queue runs cannot go at once, so neither runs beside a drain. A running drain honours the request at its next tick, which comes round every two minutes through a hold for others' CI in a terminal, and on a runner, where a drain ends rather than hold, through the drain the request starts; that hold is for ordinary green changes, and a land request is served before it. While a batch is being built there are no ticks, so a land request hears `after-drain` ("Next, after the drain that's running"), or `next-after-batch` if it is in that batch, each a step and not an end.
 
 With no drain running, the request starts one. The service leaves the request's form on the Merge queue issue through its App; `.github/workflows/queue-wake.yml` wakes on that comment and dispatches the Queue drain. A drain already running keeps the new one pending, so it starts the moment the first ends and never beside it.
 

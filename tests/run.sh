@@ -73,7 +73,7 @@ export TMPDIR SUITE_TMP_ROOT GIT_CEILING_DIRECTORIES
 # Blocks that read its text read these two files: the libraries in sourcing
 # order, then the main script (so a function is defined before its call).
 mq_all=$SUITE_TMP_ROOT/merge-queue.all.sh
-cat "$root"/templates/scripts/ci/queue/state.sh "$root"/templates/scripts/ci/queue/requests.sh "$root"/templates/scripts/ci/queue/rush.sh "$root"/templates/scripts/ci/queue/runs.sh "$root"/templates/scripts/ci/queue/choose.sh "$root"/templates/scripts/ci/queue/rerun.sh "$root"/templates/scripts/ci/queue/rescue.sh "$root"/templates/scripts/ci/queue/serial.sh "$root"/templates/scripts/ci/queue/batch.sh "$root"/templates/scripts/ci/queue/deploy.sh "$root"/templates/scripts/ci/queue/attention.sh "$root"/templates/scripts/ci/merge-queue.sh > "$mq_all"
+cat "$root"/templates/scripts/ci/queue/state.sh "$root"/templates/scripts/ci/queue/requests.sh "$root"/templates/scripts/ci/queue/rush.sh "$root"/templates/scripts/ci/queue/runs.sh "$root"/templates/scripts/ci/queue/choose.sh "$root"/templates/scripts/ci/queue/rerun.sh "$root"/templates/scripts/ci/queue/rescue.sh "$root"/templates/scripts/ci/queue/serial.sh "$root"/templates/scripts/ci/queue/batch.sh "$root"/templates/scripts/ci/queue/deploy.sh "$root"/templates/scripts/ci/queue/attention.sh "$root"/templates/scripts/ci/queue/wait.sh "$root"/templates/scripts/ci/merge-queue.sh > "$mq_all"
 bl_all=$SUITE_TMP_ROOT/batch-lib.all.sh
 cat "$root"/templates/scripts/ci/batch-lib.sh "$root"/templates/scripts/ci/queue/rules-*.sh > "$bl_all"
 
@@ -1406,6 +1406,37 @@ eq "three green: batch now" "no" "$(drain_hold 3 4)"
 eq "nothing running: merge" "no" "$(drain_hold 1 0)"
 eq "nothing green: nothing to hold" "no" "$(drain_hold 0 2)"
 
+# A drain on a CI runner that only waits ends and frees the runner, saying
+# what it waits on; one run by hand in a terminal waits as before.
+. "$root/templates/scripts/ci/queue/wait.sh"
+eq "on a runner the drain ends rather than wait" "end" "$(GITHUB_ACTIONS=true QUEUE_DRAIN_WAIT='' drain_wait_where)"
+eq "in a terminal it waits" "wait" "$(GITHUB_ACTIONS='' QUEUE_DRAIN_WAIT='' drain_wait_where)"
+eq "QUEUE_DRAIN_WAIT chooses either way" "wait end" "$(GITHUB_ACTIONS=true QUEUE_DRAIN_WAIT=wait drain_wait_where) $(GITHUB_ACTIONS='' QUEUE_DRAIN_WAIT=end drain_wait_where)"
+eq "on a runner, nothing green and others running: it ends" "end-wait" "$(drain_wait_step end 0 3 0 1500 '')"
+eq "in a terminal: it waits two minutes" "wait" "$(drain_wait_step wait 0 3 0 1500 '')"
+eq "on a runner, one green held for the others: it ends" "end-hold" "$(drain_wait_step end 1 2 60 1500 '')"
+eq "in a terminal the hold waits" "hold" "$(drain_wait_step wait 1 2 60 1500 '')"
+eq "two green: merge now, on a runner too" "merge merge" "$(drain_wait_step end 2 3 0 1500 '') $(drain_wait_step wait 2 3 0 1500 '')"
+eq "one green, nothing running: merge" "merge" "$(drain_wait_step end 1 0 0 1500 '')"
+eq "a hold past its bound merges" "merge" "$(drain_wait_step end 1 2 1500 1500 '')"
+eq "others still running past the bound: stop" "stop stop" "$(drain_wait_step end 0 2 1500 1500 '') $(drain_wait_step wait 0 2 1500 1500 '')"
+eq "nothing at all on a runner: done, with no minute's look" "done" "$(drain_wait_step end 0 0 0 1500 '')"
+eq "in a terminal: one more look, then done" "look done" "$(drain_wait_step wait 0 0 0 1500 '') $(drain_wait_step wait 0 0 0 1500 1)"
+eq "a hold lasts as long as the green one has been green" "1600" "$(drain_held_for 5 1000 2600)"
+eq "or the drain's own time when that is longer" "900" "$(drain_held_for 900 2500 2600)"
+eq "no green time read: the drain's own time" "5" "$(drain_held_for 5 '' 2600)"
+eq "so a green one past the bound is no longer held, on a runner" "merge" "$(drain_wait_step end 1 2 "$(drain_held_for 5 1000 2600)" 1500 '')"
+eq "the end line says what it waits on" "Nothing is green yet; waiting on 3 pull request(s) still running CI, whose checks are all queued for a runner. Ending here to free this runner; a drain starts again when one of their checks finishes." "$(drain_end_line wait 3 yes)"
+eq "and for a hold, why the green one is held" "One pull request is green and 2 still running CI; it is held so a merge alone does not send them back round CI. Ending here to free this runner; a drain starts again when one of their checks finishes." "$(drain_end_line hold 2 no)"
+# The loop reads the step, and ends only between rounds: a batch the drain
+# opened is waited for inside the batch, never left to a later drain.
+mq_tpl="$root/templates/scripts/ci/merge-queue.sh"
+eq "the drain loop takes its step from drain_wait_step and ends on end-hold and end-wait" "1 2" "$(grep -c 'step=\$(drain_wait_step ' "$mq_tpl") $(grep -c 'end-hold)\|end-wait)' "$mq_tpl")"
+eq "the step is read before the round merges, never while its batch runs" "yes" "$(awk '/drain_wait_step /{ s = NR } /sh "\$0" --batch/{ b = NR } END { print (s && b && s < b) ? "yes" : "no" }' "$mq_tpl")"
+eq "the batch still waits for its own full run" "1" "$(grep -c 'if wait_for_run "\$batch_pr" "\$branch" && wait_required "\$batch_sha"; then batch_ok=yes' "$root/templates/scripts/ci/queue/batch.sh")"
+eq "a batch an earlier run left open is settled by the next drain" "1 1" "$(grep -c 'merged batch #\$bp, left green by an earlier run' "$mq_tpl") $(grep -c 'is still running CI; its members' "$mq_tpl")"
+eq "the drain loads its waits" "1" "$(grep -c '\. "\$here/queue/wait.sh"' "$mq_tpl")"
+
 section 'unsticking a pull request at a drain'"'"'s end'
 . "$root/templates/scripts/ci/batch-lib.sh"
 us_fx="$root/tests/fixtures/queue-unstick"
@@ -1877,7 +1908,10 @@ qd_wf="$root/templates/.github/workflows/queue-drain.yml"
 qd_live=$(grep -v '^ *#' "$qd_wf")
 eq "the drain also starts when the CI workflow completes" "1 1" "$(printf '%s\n' "$qd_live" | grep -c '^  workflow_run:') $(printf '%s\n' "$qd_live" | grep -c '^    workflows: \[CI\]$')"
 eq "on completed only" "1" "$(printf '%s\n' "$qd_live" | grep -c '^    types: \[completed\]$')"
-eq "both jobs run for it only when a pull request's run succeeded" "2 2" "$(printf '%s\n' "$qd_live" | grep -c "github.event.workflow_run.event == 'pull_request'") $(printf '%s\n' "$qd_live" | grep -c "github.event.workflow_run.conclusion == 'success'")"
+eq "both jobs run for it only when a pull request's run finished" "2 2" "$(printf '%s\n' "$qd_live" | grep -c "github.event.workflow_run.event == 'pull_request'") $(printf '%s\n' "$qd_live" | grep -c "contains(fromJSON('\[\"success\", \"failure\", \"cancelled\", \"timed_out\"\]'), github.event.workflow_run.conclusion)")"
+# A drain on a runner ends while others run, so a run that ends red starts one
+# too: a green change held for it, or its one retry, never waits for the schedule.
+eq "a red or cancelled run starts a drain as well, never a skipped one" "0" "$(printf '%s\n' "$qd_live" | grep -c "github.event.workflow_run.conclusion == 'success'")"
 eq "the schedule and the manual start stay" "1 1" "$(printf '%s\n' "$qd_live" | grep -c 'cron: "7 \*/2 \* \* \*"') $(printf '%s\n' "$qd_live" | grep -c '^  workflow_dispatch:')"
 eq "the recent-drain skip applies to the schedule only, so a green check is never skipped" "1 1" "$(printf '%s\n' "$qd_live" | grep -c 'if \[ -n "\$last" \] && \[ "\${{ github.event_name }}" = schedule \]') $(printf '%s\n' "$qd_live" | grep -c 'if \[ "\${{ github.event_name }}" = schedule \]; then')"
 eq "the one-drain group still never cancels" "1 1" "$(printf '%s\n' "$qd_live" | grep -c '^  group: queue-drain$') $(printf '%s\n' "$qd_live" | grep -c 'cancel-in-progress: false')"
