@@ -424,6 +424,7 @@ scripts/ci/publish-state.sh d756f05975ec5d44868df70e4f41210db588dc34
 scripts/ci/publish-state.sh e6213adf837d40b4675fed56ef337ca784492c66
 scripts/ci/publish-state.sh ffd67b2557d7d09165e2d40b0ba424bb8d71ee93
 scripts/ci/queue-app-token.sh f7a5df53a0c63238838a19783f5942d7bbf2eb0b
+scripts/ci/queue/batch.sh 1e13586c1c2bd8cadfd91e4d44926e14c89ad5a0
 scripts/ci/queue/batch.sh 4f25a5384a712fddc6a8c73e919bb768121acde1
 scripts/ci/queue/batch.sh 874065faadda4077de6fe619dc5fd98471ac1b7e
 scripts/ci/queue/batch.sh 89fc826daf33b73d1d96c1860094d350e322a762
@@ -465,6 +466,7 @@ scripts/ci/queue/rules-requests.sh f78d260b156acf0761d1200f3fecde44baa022b7
 scripts/ci/queue/rules-rerun.sh 46bada87b630e88a1d214f339d18ce835d50cb03
 scripts/ci/queue/rules-rescue.sh 2553d53ddef38ca0ee458a1e066c72a55f6c3f46
 scripts/ci/queue/rules-serial.sh 367d29dc3143c91ce1d0f4fcb7a5ffa410769f0c
+scripts/ci/queue/rules-serial.sh bc0e925dddfd6f722624120fdc5bdf4f2b80a4cd
 scripts/ci/queue/runs.sh 8b09e164f36aa22ec3a73fe0f1d4f19ec41656bc
 scripts/ci/queue/runs.sh a8ea8a3d859fe95bef28dea870c8241623e2e6ca
 scripts/ci/queue/runs.sh cbd64ef2590fd853ce46aac38fe9767c7c860a62

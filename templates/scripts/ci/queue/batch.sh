@@ -31,7 +31,7 @@ typecheck_ok() {
   tc_root=${2:-.}
   : > "$flaky_dir/typecheck.err"
   if [ -n "$QUEUE_TYPECHECK_COMMAND" ] || [ -z "$ts_roots" ]; then (cd "$tc_root" && sh -c "$typecheck") >"$flaky_dir/typecheck.err" 2>&1; return $?; fi
-  tc_dirs=$(printf '%s\n' "$1" | while IFS= read -r tc_f; do if [ -n "$tc_f" ]; then nearest_root "$tc_f" "$ts_roots"; fi; done | sort -u)
+  tc_dirs=$(nearest_roots "$1" "$ts_roots")
   for tc_d in $tc_dirs; do
     [ -f "$tc_root/$tc_d/tsconfig.json" ] || continue
     (cd "$tc_root/$tc_d" && sh -c "$typecheck") >"$flaky_dir/typecheck.err" 2>&1 || return 1

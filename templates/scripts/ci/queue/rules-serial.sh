@@ -16,6 +16,24 @@ nearest_root() {
     END { if (seen) print best }'
 }
 
+# nearest_roots PATHS ROOTS
+# PATHS is one file per line. Print the distinct nearest roots of all of them,
+# sorted: exactly "nearest_root for each path, then sort -u", in one awk pass
+# instead of six small programs per path (minutes on Windows for a whole
+# repository's files). Same rules as nearest_root, roots read the same way.
+nearest_roots() {
+  { printf '%s\n' "$2" | tr -d '\r' | tr '\\' '/'; printf '\001\n'; printf '%s\n' "$1" | tr '\\' '/'; } | awk '
+    !go { if ($0 == "\001") { go = 1; next }
+      r = $0; sub(/\/$/, "", r); if (r != "") rs[++n] = r; next }
+    $0 == "" { next }
+    { f = $0; best = ""; seen = 0
+      for (i = 1; i <= n; i++) { r = rs[i]
+        if (r == ".") { if (length(best) == 0 && !seen) { best = "."; seen = 1 }; continue }
+        if (substr(f, 1, length(r) + 1) == r "/" && length(r) > length(best)) { best = r; seen = 1 } }
+      if (seen) out[best] = 1 }
+    END { for (k in out) print k }' | sort
+}
+
 # serial_refusal READY BECAUSE
 # READY is the other open pull requests that are green and do not conflict
 # with main, space separated; BECAUSE is the reason given with --because.

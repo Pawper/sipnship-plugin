@@ -2235,6 +2235,31 @@ eq "a file outside every package runs from the root" "." "$(nearest_root 'script
 eq "Windows separators are fine" "web" "$(nearest_root 'web\src\a.test.ts' "$roots")"
 eq "a sibling name is not a prefix" "." "$(nearest_root 'webapp/a.test.ts' "$roots")"
 eq "no root at all, nothing" "" "$(nearest_root 'a.test.ts' 'web')"
+# The whole list in one pass equals the per-file answers, sorted and distinct.
+nr_cr=$(printf '\r')
+nr_paths="garden/web/src/plot.ts
+garden/web/packages/ui/bed.ts
+garden/web\\src\\water.ts
+garden/webapp/a.ts
+garden/api/rain.ts
+scripts/x.ts
+README.md
+
+garden/api/rain.ts$nr_cr"
+nr_roots="$nr_cr
+.
+garden/web/
+garden\\web\\packages\\ui$nr_cr
+garden/api
+tools"
+nr_slow=$(printf '%s\n' "$nr_paths" | while IFS= read -r nr_f; do if [ -n "$nr_f" ]; then nearest_root "$nr_f" "$nr_roots"; fi; done | sort -u)
+eq "one pass gives the per-file answers" "$nr_slow" "$(nearest_roots "$nr_paths" "$nr_roots")"
+eq "the one-pass answer is the expected roots" ".
+garden/api
+garden/web
+garden/web/packages/ui" "$(nearest_roots "$nr_paths" "$nr_roots")"
+eq "one pass, no root at all, nothing" "" "$(nearest_roots 'a.ts' 'web')"
+eq "the type-check finds its packages in one pass, not a program per file" "1 0" "$(grep -c 'tc_dirs=$(nearest_roots "$1" "$ts_roots")' "$mq_all") $(grep -c 'nearest_root "$tc_f"' "$mq_all")"
 
 section 'numbering'
 . "$root/templates/scripts/ci/numbering-lib.sh"
