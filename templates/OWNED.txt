@@ -18,6 +18,7 @@ scripts/ci/classify.sh
 scripts/ci/test-parts.sh
 scripts/ci/failure-report.sh
 scripts/ci/check-log.sh
+scripts/ci/pr-text.sh
 scripts/ci/failure-lib.sh
 scripts/ci/gate.sh
 scripts/ci/gate-lib.sh
