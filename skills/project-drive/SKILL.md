@@ -22,7 +22,21 @@ The drive works the ready list in rounds, so many issues land in little time wit
 - **A unit** is one agent, one worktree, one pull request. It is a bundle of issues that touch the same files,
   or a loose issue that shares files with nothing else. The plan script makes the bundles (step c,
   `dispatch`).
-- **Units in a round share no files**, so their pull requests batch together and land in one pass.
+- **Units in a round share no area**, so their pull requests batch together and land in one pass. An area is
+  a name from the list the project keeps in `.claude/areas.txt`: one area a line, its name and then the paths
+  it covers (its spec folder and source folders; a folder ends in `/`). A unit names its areas from that list,
+  by name or by a path inside one, so two units in the same files are seen as such whatever words they use.
+  `publish-round.sh` refuses two units that share an area, with what to do: bundle them, or hold one behind
+  the other. When two issues in one area must still run side by side, an `apart:` line says why, and the
+  Work tab shows it.
+- **Feedback during a round joins the plan, not a new agent.** When a person brings up a change while a round
+  runs, the coordinator files it as a ready issue (`scripts/issue-open.sh`, State ready) and leaves the
+  planning to the drive. An issue in an area a running unit owns goes to that unit: the same agent, in the
+  same pull request or the one after it, published again with the issue on that unit's line. Otherwise it
+  waits in Ready for the next round, where the plan looks at it beside the others and bundles it. Three
+  exceptions start work at once: the person says to start it now; something is broken and blocks work; or it
+  is a fix to an open pull request that is red or conflicts with main. A round published by hand is held to
+  the same rule: `publish-round.sh` refuses a unit in an area the running round owns.
 - **Bundles rank before loose issues**: a round fills with the units that carry the most issues first, up to
   `unitsPerRound`. Splitting one big issue into parts is not a bundle.
 - **A project's plugin or CI work goes in one bundle.** Issues touching `plugin/`, `scripts/ci/` or
@@ -146,7 +160,7 @@ The goal lines and what each means:
   The plan groups ready issues by the files they are guessed to touch (the paths and specs the body names,
   the project's mocks map, and the files past work on the same spec changed). `dispatch 12 14` with a
   third column "Why together: both change ..." is a bundle: one agent, one worktree, one pull request that
-  closes every issue named, with a `Closes #N` line for each. Units in one proposal never share a file, so
+  closes every issue named, with a `Closes #N` line for each. Units in one proposal never share an area, so
   they run side by side. When the agent starts, note how it started so the machine can report it: append
   `WORKTREE-NAME<TAB>round` (or `next` for a one-off start, `hand` for a terminal) to
   `.scratch/drive/started-with.tsv`. One round runs at a time: propose the next while this one runs, planned
@@ -154,7 +168,9 @@ The goal lines and what each means:
   The dashboard's Work tab draws a round from a comment on the open issue labeled `drive`, so publish the
   round whenever you propose it and again when you dispatch it (also when a coordinator is acting as the
   drive): write the round to `.scratch/drive/round.txt` (one `unit:` line per agent with its issues, `why:`,
-  `files:` and, once its pull request opens, `pr:`; `hold:` lines for work waiting; one `waits:` line in plain
+  `areas:` from the project's list and, once its pull request opens, `pr:`; `hold:` lines for work waiting,
+  with `after:` and `areas:`; an `apart:` line with `why:` for two issues in one area kept apart, which the
+  Work tab shows beside the round; one `waits:` line in plain
 words when the whole proposed round waits for something, such as a usage window or a blocked issue, so the
 tab says it waits and on what instead of saying it starts on its own; `status: proposed` or
   `status: started`; the format is at the top of the script) and run

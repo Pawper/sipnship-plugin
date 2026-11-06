@@ -4007,21 +4007,26 @@ stop: work is in flight; nothing to propose until it lands" "$(apply_units "$(pr
 section 'drive publishes its rounds'
 pr_dir=$(mktemp -d)
 mkdir -p "$pr_dir/bin"
-# The fake gh finds the drive issue (#99), says issue labels, and logs every call.
+# The fake gh finds the drive issue (#99), lists its comments (the file
+# "comments", one body a line) and the issues In progress (the file "inprog"),
+# says issue labels, and logs every call.
 cat > "$pr_dir/bin/gh" <<'FAKE'
 #!/bin/sh
 printf '%s\n' "$*" >> "$PR_DIR/log"
 case "$*" in
   *labels=drive*) echo 99 ;;
-  *comments*) for a in "$@"; do case "$a" in body=@*) cp "${a#body=@}" "$PR_DIR/comment" ;; esac; done ;;
+  *-X\ POST*comments*) for a in "$@"; do case "$a" in body=@*) cp "${a#body=@}" "$PR_DIR/comment" ;; esac; done ;;
+  *comments\?*) cat "$PR_DIR/comments" 2>/dev/null ;;
+  *issues\?state=open*) cat "$PR_DIR/inprog" 2>/dev/null ;;
   *issues/*/labels\ --jq*) printf 'bug\nstate:ready\n' ;;
 esac
 exit 0
 FAKE
 chmod +x "$pr_dir/bin/gh"
-pr_run() { PR_DIR="$pr_dir" PATH="$pr_dir/bin:$PATH" sh "$root/scripts/drive/publish-round.sh" "$@" 2>&1; }
+pr_areas="$fx/drive-round/areas.txt"
+pr_run() { PR_DIR="$pr_dir" PATH="$pr_dir/bin:$PATH" sh "$root/scripts/drive/publish-round.sh" --areas "$pr_areas" "$@" 2>&1; }
 pr_started="$fx/drive-round/started.txt"
-eq "a dry run prints the comment with the marker and posts nothing" "0 1" "$(: > "$pr_dir/log"; pr_run --dry-run "$pr_started" > "$pr_dir/dry"; printf '%s ' "$(wc -l < "$pr_dir/log" | tr -d ' ')"; grep -c '^<!-- sipnship-proposal {"status":"started","units":\[{"issues":\[214,226\],"whyTogether":"both change the watering schedule"' "$pr_dir/dry")"
+eq "a dry run prints the comment with the marker and posts nothing" "0 1" "$(: > "$pr_dir/log"; pr_run --dry-run "$pr_started" > "$pr_dir/dry"; printf '%s ' "$(grep -c -- '-X' "$pr_dir/log")"; grep -c '^<!-- sipnship-proposal {"status":"started","units":\[{"issues":\[214,226\],"whyTogether":"both change the watering schedule","areas":\["watering"\]' "$pr_dir/dry")"
 eq "the comment is plain words above the marker" "Round started: 2 agents at work." "$(sed -n 1p "$pr_dir/dry")"
 eq "a bundle's line names its issues and why" "- #214, #226: both change the watering schedule" "$(sed -n 3p "$pr_dir/dry")"
 eq "a unit with a pull request says so" "- #223 (pull request #531)" "$(sed -n 4p "$pr_dir/dry")"
@@ -4037,14 +4042,40 @@ api -X POST repos/{owner}/{repo}/issues/226/labels -f labels[]=state:in-progress
 eq "an issue whose unit has a pull request is left alone" "0" "$(grep -c 'issues/223/' "$pr_dir/log")"
 eq "the report names the round" "Published the round on #99: 2 agents, started." "$(printf '%s\n' "$pr_out" | sed -n 1p)"
 : > "$pr_dir/log"
-printf 'status: proposed\nunit: 214 226 | why: both change the watering schedule\n' > "$pr_dir/proposed.txt"
+printf 'status: proposed\nunit: 214 226 | why: both change the watering schedule | areas: watering\n' > "$pr_dir/proposed.txt"
 pr_run --issue 12 "$pr_dir/proposed.txt" > /dev/null
-eq "a proposed round posts on the named issue and sets no label" "1 0" "$(grep -c 'issues/12/comments' "$pr_dir/log" | tr '\n' ' ')$(grep -c 'labels -f' "$pr_dir/log")"
+eq "a proposed round posts on the named issue and sets no label" "1 0" "$(grep -c 'POST repos/{owner}/{repo}/issues/12/comments' "$pr_dir/log" | tr '\n' ' ')$(grep -c 'labels -f' "$pr_dir/log")"
 eq "--no-labels leaves the labels alone for a started round" "0" "$(: > "$pr_dir/log"; pr_run --no-labels "$pr_started" >/dev/null; grep -c 'labels -f' "$pr_dir/log")"
-eq "two units sharing a file are refused before anything is posted" "The round was not published: file src/schedule.ts is in two lines; a round keeps its units apart.|0" "$(: > "$pr_dir/log"; pr_run "$fx/drive-round/overlap.txt" | tr '\n' '|' | sed 's/|$//')|$(wc -l < "$pr_dir/log" | tr -d ' ')"
-eq "a line it does not know is refused" "The round was not published: a line this script does not know: garden: beds." "$(printf 'unit: 1\ngarden: beds\n' > "$pr_dir/odd.txt"; pr_run --dry-run "$pr_dir/odd.txt")"
+pr_two="The round was not published: #214 and #223 are two units in one area, watering; bundle them into one unit, or hold one behind the other (hold: 223 | after: 214 | areas: watering); to run them side by side anyway, say why on an apart: line."
+eq "two units sharing a file are refused before anything is posted, saying to bundle or hold" "$pr_two|0" "$(: > "$pr_dir/log"; pr_run "$fx/drive-round/overlap.txt" | tr '\n' '|' | sed 's/|$//')|$(grep -c -- '-X' "$pr_dir/log")"
+# The fault this rule was made for: two units in one area, named in different words, went through.
+eq "two units in one area under different words are refused too" "$pr_two" "$(pr_run --dry-run "$fx/drive-round/other-words.txt")"
+eq "a marker carries the area's name, whatever path named it" '"areas":["watering"]},{"issues":[223],"areas":["seeds"]' "$(grep -o '"areas":\["watering"\]},{"issues":\[223\],"areas":\["seeds"\]' "$pr_dir/dry")"
+eq "an area not on the list is refused with where the list is" "The round was not published: Work card is not an area on the list in $pr_areas; name one of its areas, or a path inside one." "$(printf 'unit: 1 | areas: Work card\n' > "$pr_dir/free.txt"; pr_run --dry-run "$pr_dir/free.txt")"
+eq "a unit that names no area is refused" "The round was not published: the unit 1 names no area; add | areas: NAME, from the list in $pr_areas." "$(printf 'unit: 1 | why: beds\n' > "$pr_dir/none.txt"; pr_run --dry-run "$pr_dir/none.txt")"
+eq "a project with no list is told to keep one" "The round was not published: this project keeps no list of areas at $pr_dir/missing.txt; write one, an area a line: its name, then the paths it covers." "$(PR_DIR="$pr_dir" PATH="$pr_dir/bin:$PATH" sh "$root/scripts/drive/publish-round.sh" --areas "$pr_dir/missing.txt" --dry-run "$pr_started" 2>&1)"
+eq "holding one behind the other in the same area is allowed" "0" "$(printf 'unit: 214 | areas: watering\nhold: 223 | after: 214 | areas: src/water/\n' > "$pr_dir/behind.txt"; pr_run --dry-run "$pr_dir/behind.txt" > /dev/null; echo $?)"
+eq "a hold in a unit's area that waits on something else is refused" "The round was not published: the held #223 shares the area watering with #214 but waits on something else; hold it after that unit (after: 214)." "$(printf 'unit: 214 | areas: watering\nunit: 230 | areas: seeds\nhold: 223 | after: 230 | areas: watering\n' > "$pr_dir/wrong-hold.txt"; pr_run --dry-run "$pr_dir/wrong-hold.txt")"
+printf 'unit: 214 | areas: watering\nunit: 223 | areas: src/water/pump.ts\napart: 214 223 | why: the pump only gets a new name | areas: watering\n' > "$pr_dir/apart.txt"
+pr_apart=$(pr_run --dry-run "$pr_dir/apart.txt")
+eq "two units in one area run apart only with a why, shown as a line and in the marker" "- Left apart: #214, #223: the pump only gets a new name|1" "$(printf '%s\n' "$pr_apart" | grep '^- Left apart')|$(printf '%s\n' "$pr_apart" | grep -cF '"held":[],"apart":[{"issues":[214,223],"why":"the pump only gets a new name","areas":["watering"]}]} -->')"
+eq "an apart line with no why is refused" "The round was not published: the apart line 214 223 gives no why; say why those issues run apart with | why: ...." "$(printf 'unit: 214 | areas: watering\nunit: 223 | areas: watering\napart: 214 223\n' > "$pr_dir/apart-bare.txt"; pr_run --dry-run "$pr_dir/apart-bare.txt")"
+# A round is running: #300 and #301 work the watering area, #301 still In progress.
+printf 'Proposal\nRound started: 1 agent at work. <!-- sipnship-proposal {"status":"started","units":[{"issues":[300,301],"whyTogether":"both water","areas":["watering"]}],"held":[]} -->\n' > "$pr_dir/comments"
+printf '301\n' > "$pr_dir/inprog"
+eq "new work in an area a running unit owns goes to that unit or waits behind it" "The round was not published: the unit #214 is in the area watering, which the running unit #300, #301 owns; give it to that unit (add it to the line of that unit), or hold it after that unit (hold: 214 | after: 300 301 | areas: watering), or say why it runs apart on an apart: line." "$(printf 'status: started\nunit: 214 | areas: src/schedule.ts\n' > "$pr_dir/feedback.txt"; pr_run --dry-run "$pr_dir/feedback.txt")"
+eq "the running unit taking the new issue is allowed" "0" "$(printf 'status: started\nunit: 300 301 214 | why: all water the beds | areas: watering\n' > "$pr_dir/joined.txt"; pr_run --dry-run "$pr_dir/joined.txt" > /dev/null; echo $?)"
+eq "a proposed round holds it behind the running unit" "0" "$(printf 'unit: 230 | areas: seeds\nhold: 214 | after: 300 301 | areas: watering\n' > "$pr_dir/next.txt"; pr_run --dry-run "$pr_dir/next.txt" > /dev/null; echo $?)"
+: > "$pr_dir/inprog"
+eq "once the running unit is no longer in progress its area is free" "0" "$(pr_run --dry-run "$pr_dir/feedback.txt" > /dev/null; echo $?)"
+: > "$pr_dir/comments"
+. "$root/scripts/drive/round-lib.sh"
+eq "running_units names each unit of the latest started round still in progress, with its areas" "300,301	watering,frost" "$(running_units "$(printf '%s\n' 'x <!-- sipnship-proposal {"status":"started","units":[{"issues":[1],"areas":["seeds"]}],"held":[]} -->' 'y <!-- sipnship-proposal {"status":"started","units":[{"issues":[300,301],"whyTogether":"a ] in words","areas":["watering","frost"]},{"issues":[302],"areas":["seeds"],"pr":9}],"held":[{"issues":[303],"waitsOn":[300],"areas":["seeds"]}]} -->')" "$(printf '301\n303\n1\n')")"
+eq "running_units says nothing when no round was started" "" "$(running_units 'a comment' '301')"
+eq "the drive's skill says feedback during a round is filed, not dispatched" "yes" "$(grep -q 'files it as a ready issue' "$root/skills/project-drive/SKILL.md" && grep -q 'files it as a ready issue' "$root/skills/handoff/SKILL.md" && echo yes)"
+eq "a line it does not know is refused" "The round was not published: a line this script does not know: garden: beds." "$(printf 'unit: 1 | areas: seeds\ngarden: beds\n' > "$pr_dir/odd.txt"; pr_run --dry-run "$pr_dir/odd.txt")"
 eq "the skill tells the drive to publish its rounds" "yes" "$(grep -q 'publish-round.sh' "$root/skills/project-drive/SKILL.md" && echo yes)"
-printf 'status: proposed\nunit: 240\nwaits: the seed catalog to "open", about 9 AM\n' > "$pr_dir/waits.txt"
+printf 'status: proposed\nunit: 240 | areas: seeds\nwaits: the seed catalog to "open", about 9 AM\n' > "$pr_dir/waits.txt"
 pr_waits=$(pr_run --dry-run "$pr_dir/waits.txt")
 eq "what a proposed round waits for is a plain line and a field in the marker" "- Waits on: the seed catalog to \"open\", about 9 AM|1" "$(printf '%s\n' "$pr_waits" | grep '^- Waits on' )|$(printf '%s\n' "$pr_waits" | grep -cF '"held":[],"waits":"the seed catalog to \"open\", about 9 AM"} -->')"
 

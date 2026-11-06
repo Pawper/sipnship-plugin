@@ -1,0 +1,4 @@
+# Two units in the watering area, named by two different paths inside it
+status: proposed
+unit: 214 | files: src/schedule.ts
+unit: 223 | files: specs/030-watering/

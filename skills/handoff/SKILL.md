@@ -14,6 +14,12 @@ Run it when asked, or when the session is nearly out of room. Do the five steps 
 
 No new agents, no new merge watchers, no new round. Say so in one line. Work already dispatched keeps going.
 
+The same holds for feedback at any time, not only at the end: a change a person brings up is not dispatched as
+it arrives. The coordinator files it as a ready issue and leaves the planning to the drive, which gives it to the
+running unit in its area or bundles it in the next round. It starts at once only when the person says to start
+it now, when something is broken and blocks work, or when it fixes an open pull request that is red or
+conflicts with main. Say this in the handoff's standing rules, so the next coordinator keeps it.
+
 ## 2. Wait for what is in flight, bounded
 
 Wait for this session's agents to finish and report. The cap is 30 minutes from now; note the clock when you

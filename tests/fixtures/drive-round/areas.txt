@@ -1,0 +1,4 @@
+# The areas of Maya's rooftop-garden app: a name, then the paths it covers.
+watering  specs/030-watering/ src/schedule.ts src/water/
+seeds     specs/032-seeds/ src/seeds/
+frost     specs/033-frost/ src/frost/
