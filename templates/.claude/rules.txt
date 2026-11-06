@@ -80,6 +80,16 @@ catches: An issue filed without a state, and the nightly check for ones that sli
 if-off: Issues can land on the board with no state, and the board stops telling you what is ready.
 row: Every issue has a State | The issue template requires it; the `require-state-label` hook refuses `gh issue create` without `--label state:...` and the REST form without `labels[]=state:...`; the `state-label` workflow keeps the label in step with the field; `sh scripts/state.sh` sets it on the board
 
+id: ask-recommends-one
+words: An ask with choices recommends one
+locked: no
+hook: require-state-label
+refusals: an issue set to waiting on the owner whose ask gives choices and does not recommend exactly one
+protects: Your time when an agent asks you to choose.
+catches: An ask with choices and no recommendation, or more than one, set in front of you; the nightly check names any that slipped by.
+if-off: An agent can hand you a list of choices with no word on which it would pick.
+row: An ask recommends one | The `require-state-label` hook refuses setting an issue to waiting on the owner (`gh issue edit --add-label`, the REST labels call, `sh scripts/state.sh`) while the ask left on it in the last ten minutes gives choices and none, or more than one, ends with "Recommended."; `scripts/ci/ask-lib.sh` reads the ask as the dashboard does, and the nightly `audit` names any that reached the owner another way
+
 id: github-budget
 words: The GitHub budget lasts the hour
 locked: no

@@ -108,6 +108,8 @@ scripts/state.sh
 scripts/ci/workflow-breaks.sh
 scripts/ci/drain-late.sh
 scripts/ci/machine-upkeep.sh
+scripts/ci/ask-lib.sh
+scripts/ci/ask-audit.sh
 feature status
 status/build.sh
 status/check.sh

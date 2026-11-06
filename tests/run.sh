@@ -4393,6 +4393,75 @@ eq "the drain calls the rescue each round" "1" "$(grep -c '^    drain_rescue' "$
 eq "the place workflow runs the place job's script" "1" "$(grep -c 'sh scripts/ci/place.sh' "$root/templates/.github/workflows/place.yml")"
 eq "the rescue workflow is skipped with My machines only" "1" "$(grep -c "if: \${{ vars.SIPNSHIP_PLACE_RUNS_ON != '' }}" "$root/templates/.github/workflows/place-rescue.yml")"
 
+section 'an ask with choices recommends one'
+. "$root/templates/scripts/ci/ask-lib.sh"
+. "$root/hooks/scripts/ask-hook-lib.sh"
+# The shared cases: the dashboard's reader is tested against the same list.
+ak_fx="$fx/ask"
+ak_cases=$(grep -v '^#' "$ak_fx/verdicts.txt" | tr -d '\r')
+eq "the shared list has its cases" "9" "$(printf '%s\n' "$ak_cases" | grep -c .)"
+printf '%s\n' "$ak_cases" | while read -r ak_name ak_want; do
+  [ -n "$ak_name" ] || continue
+  eq "the shared case $ak_name reads $ak_want" "$ak_want" "$(ask_verdict < "$ak_fx/$ak_name.md")"
+done
+eq "the newest comment that asks decides; a later reply that asks nothing does not" "unrecommended" \
+  "$(printf 'Thinking it over.\n%s\n' "$ASK_NEXT" | cat - "$ak_fx/two-unrecommended.md" | ask_verdict)"
+eq "an older comment is read only when the newer ones ask nothing" "one" \
+  "$({ cat "$ak_fx/one-recommended.md"; printf '%s\n' "$ASK_NEXT"; cat "$ak_fx/two-unrecommended.md"; } | ask_verdict)"
+eq "no comments: no ask" "none" "$(printf '' | ask_verdict)"
+eq "a verdict that keeps the rule has nothing to fix" "" "$(ask_fix one)$(ask_fix question)$(ask_fix none)"
+eq "none recommended says what to write" "yes" "$(ask_fix unrecommended | grep -q 'End the one you would pick with "Recommended."' && echo yes)"
+eq "two recommended says to keep one" "yes" "$(ask_fix several | grep -q 'more than one says "Recommended"' && echo yes)"
+
+# Which command sets an issue to waiting on the owner.
+eq "gh issue edit adding the label" "207" "$(waiting_on_owner_issue 'gh issue edit 207 --add-label state:waiting-on-owner --remove-label state:in-progress')"
+eq "the label with a space, quoted" "207" "$(waiting_on_owner_issue 'gh issue edit 207 --add-label "state: waiting-on-owner"')"
+eq "the label in a list, the number after it" "207" "$(waiting_on_owner_issue 'gh issue edit --add-label bug,state:waiting-on-owner 207')"
+eq "removing the label is not setting it" "" "$(waiting_on_owner_issue 'gh issue edit 207 --remove-label state:waiting-on-owner --add-label state:ready')"
+eq "the REST labels call" "207" "$(waiting_on_owner_issue 'gh api repos/{owner}/{repo}/issues/207/labels -f "labels[]=state:waiting-on-owner"')"
+eq "the REST call deleting it" "" "$(waiting_on_owner_issue 'gh api -X DELETE repos/maya/rooftop-garden/issues/207/labels/state:waiting-on-owner')"
+eq "the project's state script" "207" "$(waiting_on_owner_issue 'sh scripts/state.sh 3 maya 207 "Waiting on owner"')"
+eq "the state script with another state" "" "$(waiting_on_owner_issue 'sh scripts/state.sh 3 maya 207 "In progress"')"
+eq "a later command in a chain" "207" "$(waiting_on_owner_issue 'gh issue comment 207 --body-file .scratch/ask.md && gh issue edit 207 --add-label state:waiting-on-owner')"
+eq "filing an issue is the other rule's" "" "$(waiting_on_owner_issue 'gh issue create -t x -l state:waiting-on-owner')"
+
+# The hook, with GitHub answering from a file.
+ak_dir=$(mktemp -d)
+mkdir -p "$ak_dir/bin" "$ak_dir/proj/.claude"
+git -C "$ak_dir/proj" init -q
+cat > "$ak_dir/bin/gh" <<'GH'
+#!/bin/sh
+case "$*" in
+  *"issues?state=open"*) printf '207\n' ;;
+  */events*) printf '2026-11-05T05:00:00Z\n' ;;
+  */comments*) [ -f "$AK_COMMENTS" ] && cat "$AK_COMMENTS" || exit 1 ;;
+esac
+GH
+chmod +x "$ak_dir/bin/gh"
+ak_hook() { printf '{"command":"%s","description":"x"}' "$2" | (cd "$ak_dir/proj" && AK_COMMENTS=$1 PATH="$ak_dir/bin:$PATH" CLAUDE_PROJECT_DIR="$ak_dir/proj" HOOK_LOG=0 sh "$root/hooks/scripts/require-state-label.sh" 2>"$ak_dir/err" >/dev/null; echo $?); }
+ak_set='gh issue edit 207 --add-label state:waiting-on-owner'
+eq "the reproduction: two choices, none recommended, is refused" "2" "$(ak_hook "$ak_fx/two-unrecommended.md" "$ak_set")"
+eq "the refusal says what to fix" "yes" "$(grep -q '^Blocked setting #207 to waiting on the owner, because its ask gives choices and none is recommended. End the one you would pick' "$ak_dir/err" && echo yes)"
+eq "two recommended is refused" "2" "$(ak_hook "$ak_fx/two-recommended.md" "$ak_set")"
+eq "one recommended goes through" "0" "$(ak_hook "$ak_fx/one-recommended.md" "$ak_set")"
+eq "a recommended fifth goes through" "0" "$(ak_hook "$ak_fx/fifth-recommended.md" "$ak_set")"
+eq "a question alone goes through" "0" "$(ak_hook "$ak_fx/question-only.md" "$ak_set")"
+eq "no ask in the last ten minutes goes through" "0" "$(ak_hook "$ak_fx/no-question.md" "$ak_set")"
+eq "GitHub not answering never refuses" "0" "$(ak_hook "$ak_dir/missing.md" "$ak_set")"
+eq "the state script form is refused too" "2" "$(ak_hook "$ak_fx/two-unrecommended.md" 'sh scripts/state.sh 3 maya 207 \"Waiting on owner\"')"
+printf 'ask-recommends-one 2026-11-05\n' > "$ak_dir/proj/.claude/rules-off.txt"
+eq "with the rule off it goes through" "0" "$(ak_hook "$ak_fx/two-unrecommended.md" "$ak_set")"
+mv "$ak_dir/proj/.claude/rules-off.txt" "$ak_dir/proj/.claude/rules-off.aside"
+eq "a filing without a State is still refused" "2" "$(ak_hook "$ak_fx/one-recommended.md" 'gh issue create --title x --body y')"
+
+# The nightly audit, for an agent without hooks.
+eq "the audit names the issue and what to fix" "#207: its ask gives choices and none is recommended. End the one you would pick with \"Recommended.\" and a short reason why, in the same comment." \
+  "$(AK_COMMENTS="$ak_fx/two-unrecommended.md" PATH="$ak_dir/bin:$PATH" GH_REPO=maya/rooftop-garden sh "$root/templates/scripts/ci/ask-audit.sh")"
+eq "the audit is quiet when the ask recommends one" "" \
+  "$(AK_COMMENTS="$ak_fx/one-recommended.md" PATH="$ak_dir/bin:$PATH" GH_REPO=maya/rooftop-garden sh "$root/templates/scripts/ci/ask-audit.sh")"
+eq "the audit workflow runs it and adds its lines" "1 1" "$(grep -c 'asks=\$(sh scripts/ci/ask-audit.sh' "$root/templates/.github/workflows/audit.yml") $(grep -c 'if \[ -n "\$asks" \]' "$root/templates/.github/workflows/audit.yml")"
+eq "the plugin owns both scripts" "2" "$(grep -cE '^scripts/ci/ask-(lib|audit)\.sh$' "$root/templates/OWNED.txt")"
+
 # --- end of blocks: the summary, kept in every part.
 eq "no process started by this suite is still running" "" "$(spawned_alive)"
 block_end

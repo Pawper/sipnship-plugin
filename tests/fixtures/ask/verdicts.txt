@@ -1,0 +1,13 @@
+# One comment per case beside this file, and what it says about its
+# recommendation: none, question, one, unrecommended or several. The
+# plugin's ask_verdict (templates/scripts/ci/ask-lib.sh) and the dashboard's
+# reader are both tested against this list, so they agree on what counts.
+two-unrecommended unrecommended
+one-recommended one
+two-recommended several
+fifth-recommended one
+not-recommended one
+emphasis one
+code-recommendation unrecommended
+question-only question
+no-question none
