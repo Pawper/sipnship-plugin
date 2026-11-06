@@ -59,9 +59,14 @@ base=${1:-origin/main}; head=${2:-}
 # the branch into main as it is now (two parents), the base is that merge's
 # first parent, whatever was passed: a recorded base.sha is main as it was
 # when the pull request last moved, and a line that landed on main since
-# then was once flagged as the pull request's.
+# then was once flagged as the pull request's. A branch here that merged
+# main in is a merge too, but main is its second parent: when where HEAD
+# left BASE is one of the merge's parents, that parent is the base, so what
+# main brought in is never the branch's.
 if [ -n "$head" ] && git rev-parse -q --verify "$head^2" >/dev/null 2>&1; then
-  base=$(git rev-parse "$head^1")
+  mb=$(git merge-base "$base" "$head" 2>/dev/null) || mb=""
+  if [ -n "$mb" ] && git rev-parse "$head^@" | grep -qxF "$mb"; then base=$mb
+  else base=$(git rev-parse "$head^1"); fi
 elif [ -n "$head" ]; then
   # Not a merge commit (a branch tip, a push): diff from where the branch
   # left main, so main's own later changes are never the pull request's.

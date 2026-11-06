@@ -5,6 +5,11 @@
 # generates them, so a change to any one counts as the mock changing.
 #   home     src/app/page.tsx         design/mocks/Home.html design/mocks/HomeDark.html design/mocks/gen_home.py @/
 #   settings src/app/settings/*.tsx   design/mocks/Settings*.html design/mocks/gen_settings.py
+# A stylesheet is a UI file too: tie each sheet to the screens it draws, not
+# one glob over the styles folder to one screen, which blames that screen
+# for every sheet. A sheet every page shares counts against any mock.
+#   settings-style src/styles/settings.css design/mocks/Settings*.html
+#   site-style     src/styles/base.css     design/mocks/*
 # A last word "@/route" is where the built screen lives. The first mock path
 # on a line with a route must be one HTML file: the screens job renders it
 # and the built route side by side on a pull request that touches the
