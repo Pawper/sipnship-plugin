@@ -13,6 +13,7 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 const tokens = require('../tokens');
 const sessions = require('../sessions');
+const { freshLog } = require('./fresh-log');
 
 const hook = path.join(__dirname, '..', '..', 'hooks', 'scripts', 'session-sample.sh');
 const fxDir = path.join(__dirname, '..', '..', 'tests', 'fixtures', 'sessions');
@@ -39,8 +40,7 @@ function machine(url) {
   const user = tmp('sns-ev-user-');
   const logs = path.join(user, '.claude', 'projects', sessions.logFolder(tree));
   fs.mkdirSync(logs, { recursive: true });
-  fs.copyFileSync(path.join(fxDir, 'watering-session.jsonl'), path.join(logs, `${PARENT}.jsonl`));
-  fs.utimesSync(path.join(logs, `${PARENT}.jsonl`), new Date(), new Date());
+  freshLog(path.join(fxDir, 'watering-session.jsonl'), path.join(logs, `${PARENT}.jsonl`));
   const home = tmp('sns-ev-home-');
   tokens.put({ repoId: 42, fullName: 'acme/shop', token: T, machine: 'desk' }, { SIPNSHIP_HOME: home });
   const env = { ...process.env, HOME: user, USERPROFILE: user, SIPNSHIP_HOME: home, SIPNSHIP_URL: url, CLAUDE_PROJECT_DIR: project, SIPNSHIP_SAMPLE_DELAY: '0', SIPNSHIP_SAMPLE_GAP: '0' };
@@ -51,8 +51,7 @@ function machine(url) {
 function dispatch(m) {
   const sub = path.join(m.logs, PARENT, 'subagents');
   fs.mkdirSync(sub, { recursive: true });
-  fs.copyFileSync(path.join(fxDir, 'subagent-session.jsonl'), path.join(sub, `agent-${AGENT}.jsonl`));
-  fs.utimesSync(path.join(sub, `agent-${AGENT}.jsonl`), new Date(), new Date());
+  freshLog(path.join(fxDir, 'subagent-session.jsonl'), path.join(sub, `agent-${AGENT}.jsonl`));
   fs.writeFileSync(path.join(sub, `agent-${AGENT}.meta.json`), JSON.stringify({ description: 'Watering reminders skip rained beds' }));
 }
 
@@ -250,13 +249,13 @@ test('an agent resumed after its stop is working again: its log moved on past th
   const sub = path.join(logs, sessions.logFolder(tree), PARENT, 'subagents');
   fs.mkdirSync(sub, { recursive: true });
   const log = path.join(sub, `agent-${AGENT}.jsonl`);
-  fs.copyFileSync(path.join(fxDir, 'subagent-session.jsonl'), log);
   const endedFile = path.join(logs, 'agents-ended.tsv');
   const stop = Math.floor(Date.now() / 1000) - 60;
+  // Its last entry five seconds before the stop was seen.
+  freshLog(path.join(fxDir, 'subagent-session.jsonl'), log, (stop - 5) * 1000);
   fs.writeFileSync(endedFile, `other\t${stop}\n${AGENT}\t${stop}\n`);
   const read = () => sessions.readSessions({ root: tree, logsDir: logs, worktrees: [tree], endedFile })[0];
-  fs.utimesSync(log, new Date((stop - 5) * 1000), new Date((stop - 5) * 1000));
-  assert.strictEqual(read().endedAt, new Date(stop * 1000).toISOString(), 'stopped, log untouched since');
-  fs.utimesSync(log, new Date(), new Date());
+  assert.strictEqual(read().endedAt, new Date(stop * 1000).toISOString(), 'stopped, log not written since');
+  fs.appendFileSync(log, '\n' + JSON.stringify({ type: 'assistant', timestamp: new Date().toISOString(), message: { model: 'claude-sonnet-5-5', role: 'assistant', content: [{ type: 'text', text: 'Back on the reminder tests.' }] } }) + '\n');
   assert.strictEqual(read().endedAt, undefined, 'resumed: written a minute after its stop');
 });

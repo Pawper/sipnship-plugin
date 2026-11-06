@@ -6,6 +6,7 @@ const os = require('os');
 const path = require('path');
 const sessions = require('../sessions');
 const send = require('../brief-send');
+const { freshLog } = require('./fresh-log');
 
 const fx = path.join(__dirname, '..', '..', 'tests', 'fixtures', 'sessions', 'watering-session.jsonl');
 const log = fs.readFileSync(fx, 'utf8');
@@ -42,7 +43,7 @@ test('recent sessions of the repository\'s worktrees are sampled, with how they 
   const tree = '/work/rooftop-garden/worktrees/watering';
   const folder = path.join(home, sessions.logFolder(tree));
   fs.mkdirSync(folder, { recursive: true });
-  fs.writeFileSync(path.join(folder, 'abc.jsonl'), log);
+  freshLog(fx, path.join(folder, 'abc.jsonl'));
   fs.mkdirSync(path.join(root, '.scratch', 'drive'), { recursive: true });
   fs.writeFileSync(path.join(root, '.scratch', 'drive', 'started-with.tsv'), 'watering\tround\n');
   const got = sessions.readSessions({ root, logsDir: home, worktrees: [tree] });
@@ -105,7 +106,7 @@ test('the kind of work comes from the drive note, only when it is one of the kno
   const tree = '/work/rooftop-garden/worktrees/watering';
   const folder = path.join(home, sessions.logFolder(tree));
   fs.mkdirSync(folder, { recursive: true });
-  fs.writeFileSync(path.join(folder, 'abc.jsonl'), log);
+  freshLog(fx, path.join(folder, 'abc.jsonl'));
   fs.mkdirSync(path.join(root, '.scratch', 'drive'), { recursive: true });
   const note = path.join(root, '.scratch', 'drive', 'started-with.tsv');
   fs.writeFileSync(note, 'watering\tround\tfixing-check\n');
@@ -118,18 +119,20 @@ test('the kind of work comes from the drive note, only when it is one of the kno
   assert.ok(sessions.CATEGORIES.includes('releasing-plugin'));
 });
 
-test('a session carries when its log last changed, as a UTC time', () => {
+test('a session carries its log\'s latest entry\'s own time as its last activity, as a UTC time', () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'sns-active-home-'));
   const tree = '/work/rooftop-garden/worktrees/watering';
   const folder = path.join(home, sessions.logFolder(tree));
   fs.mkdirSync(folder, { recursive: true });
   const file = path.join(folder, 'abc.jsonl');
-  fs.writeFileSync(file, log);
   const when = new Date(Date.now() - 60 * 60 * 1000);
-  fs.utimesSync(file, when, when);
+  freshLog(fx, file, when.getTime());
+  // The file's date says a minute ago; the entries say an hour: the entries win.
+  fs.utimesSync(file, new Date(Date.now() - 60000), new Date(Date.now() - 60000));
   const got = sessions.readSessions({ root: home, logsDir: home, worktrees: [tree] });
   assert.strictEqual(got[0].lastActiveAt, when.toISOString());
   assert.strictEqual(got[0]._at, undefined);
+  assert.strictEqual(sessions.readSession(log, 'abc').lastActiveAt, '2026-10-30T22:20:02.000Z');
 });
 
 test('an agent a session started is sampled from the subagents folder, with its own issue and branch', () => {
@@ -139,9 +142,8 @@ test('an agent a session started is sampled from the subagents folder, with its 
   // The runtime files an agent's log under the session that started it, in that session's folder.
   const sub = path.join(home, sessions.logFolder(main), 'parent-session', 'subagents');
   fs.mkdirSync(sub, { recursive: true });
-  fs.copyFileSync(path.join(fxDir, 'subagent-session.jsonl'), path.join(sub, 'agent-a1b2c3d4e5f6a7b8c.jsonl'));
-  // A copy keeps the fixture's old time, and a log older than two hours is skipped; this agent is running now.
-  fs.utimesSync(path.join(sub, 'agent-a1b2c3d4e5f6a7b8c.jsonl'), new Date(), new Date());
+  // A log whose latest entry is older than two hours is skipped; this agent is running now.
+  freshLog(path.join(fxDir, 'subagent-session.jsonl'), path.join(sub, 'agent-a1b2c3d4e5f6a7b8c.jsonl'));
   fs.writeFileSync(path.join(sub, 'agent-a1b2c3d4e5f6a7b8c.meta.json'), JSON.stringify({ worktreeBranch: 'worktree-agent-a1b2c3d4e5f6a7b8c' }));
   const got = sessions.readSessions({ root, logsDir: home, worktrees: [main] });
   assert.strictEqual(got.length, 1);

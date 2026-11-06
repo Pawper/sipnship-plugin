@@ -29,7 +29,7 @@ Nothing here is sent until you run `npx sipnship connect --repo` on a machine an
 - the names of the runners on this machine (a runner's name is lowercase letters, numbers and dashes, so "Remove one" can pick from them), and one word from the runner check, "present" or "missing", for whether the antivirus is told to skip the runner folders;
 - one flag saying this plugin reports what agents did after a rule stopped them;
 - the lines of your manual's "Steps for the owner" list, as written;
-- a sample of the agent sessions on that machine in the last two hours: when each started, the model's name, the branch and worktree folder name, the issue numbers its first message names, the first twelve words of its last message, and the token counts the agent runtime reported, with the kind of work when the drive noted one;
+- a sample of the agent sessions on that machine in the last two hours: when each started, when it was last active and, for an agent, when it finished, the model's name and the effort level the runtime recorded, the branch and worktree folder name, the issue numbers its first message names, each issue or pull request number it touched with the first and last time it touched it (numbers and times only), the first twelve words of its last message, and the token counts the agent runtime reported, with the kind of work when the drive noted one;
 - the models you declared as local in your services file, by name;
 - the answers your agent gave to questions the dashboard asked it, in one sentence each;
 - which kinds of request this machine's listener carries out, while the listener is on (see below).

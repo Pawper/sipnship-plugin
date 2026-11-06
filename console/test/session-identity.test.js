@@ -8,17 +8,16 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const sessions = require('../sessions');
+const { freshLog } = require('./fresh-log');
 
 const fxDir = path.join(__dirname, '..', '..', 'tests', 'fixtures', 'sessions');
 const tmp = (p) => fs.mkdtempSync(path.join(os.tmpdir(), p));
 
-/** A log folder holding one log for the worktree, touched now so it counts as recent. */
+/** A log folder holding one log for the worktree, written as now so it counts as recent. */
 function placeLog(home, tree, fixture, file, sub) {
   const folder = path.join(home, sessions.logFolder(tree), ...(sub ? [sub, 'subagents'] : []));
   fs.mkdirSync(folder, { recursive: true });
-  const at = path.join(folder, file);
-  fs.copyFileSync(path.join(fxDir, fixture), at);
-  fs.utimesSync(at, new Date(), new Date());
+  freshLog(path.join(fxDir, fixture), path.join(folder, file));
   return folder;
 }
 

@@ -8,11 +8,12 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const sessions = require('../sessions');
-const { digest, lastLineIn, TAIL_BYTES } = require('../sample-digest');
+const { digest, lastLineIn, lastTimeIn, TAIL_BYTES } = require('../sample-digest');
+const { freshLog } = require('./fresh-log');
 
 const fx = path.join(__dirname, '..', '..', 'tests', 'fixtures', 'sessions', 'watering-session.jsonl');
-const said = (text) => JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text }] } }) + '\n';
-const tool = (n) => JSON.stringify({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', content: 'x'.repeat(n) }] } }) + '\n';
+const said = (text) => JSON.stringify({ type: 'assistant', timestamp: new Date().toISOString(), message: { role: 'assistant', content: [{ type: 'text', text }] } }) + '\n';
+const tool = (n) => JSON.stringify({ type: 'user', timestamp: new Date().toISOString(), message: { role: 'user', content: [{ type: 'tool_result', content: 'x'.repeat(n) }] } }) + '\n';
 
 function folder() {
   const tree = fs.mkdtempSync(path.join(os.tmpdir(), 'sns-dg-tree-'));
@@ -20,9 +21,8 @@ function folder() {
   const dir = path.join(logs, sessions.logFolder(tree));
   fs.mkdirSync(dir, { recursive: true });
   const log = path.join(dir, 'garden.jsonl');
-  fs.copyFileSync(fx, log);
-  // A copy keeps the checkout's time, which may be hours old: written now, as a working session's is.
-  fs.utimesSync(log, new Date(), new Date());
+  // Written as now, as a working session's is: the fixture's own times are days old.
+  freshLog(fx, log);
   const endedFile = path.join(logs, 'ended.tsv');
   return { log, dir, at: () => digest({ worktrees: [tree], logsDir: logs, endedFile }), endedFile };
 }
@@ -42,6 +42,23 @@ test('the digest moves with a new line and an agent ending, not with a tool resu
   assert.notStrictEqual(third, second, 'an agent starting moves it');
   fs.writeFileSync(f.endedFile, `a1b2\t${Math.floor(Date.now() / 1000) + 5}\n`);
   assert.notStrictEqual(f.at(), third, 'the agent ending moves it');
+});
+
+test('an old log whose date was rewritten does not move it, and an agent the runtime marks finished does', () => {
+  const f = folder();
+  const first = f.at();
+  const sub = path.join(f.dir, 'garden', 'subagents');
+  fs.mkdirSync(sub, { recursive: true });
+  const old = path.join(sub, 'agent-c3d4.jsonl');
+  freshLog(fx, old, Date.now() - 10 * 24 * 3600 * 1000);
+  fs.utimesSync(old, new Date(), new Date());
+  assert.strictEqual(f.at(), first, 'its last entry is days old: not in the digest');
+  freshLog(fx, path.join(sub, 'agent-e5f6.jsonl'));
+  const running = f.at();
+  assert.notStrictEqual(running, first);
+  fs.writeFileSync(path.join(sub, 'agent-e5f6.meta.json'), JSON.stringify({ finished: true }));
+  assert.notStrictEqual(f.at(), running, 'the runtime marking it finished moves it');
+  assert.strictEqual(lastTimeIn('{"timestamp":"2026-11-05T21:00:00.000Z"}\n{"type":"tools-used"}\n', true), Date.parse('2026-11-05T21:00:00.000Z'));
 });
 
 test('only the end of a log is read: a line said before a long tool result is not found, and the cut line is dropped', () => {
