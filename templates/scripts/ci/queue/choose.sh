@@ -140,6 +140,7 @@ ready_others() {
       case " $1 " in *" $r_num "*) continue ;; esac
       [ "$(pr_rollup "$r_sha")" = green ] || continue
       [ "$(mergeable_word "$(pr_field "$r_num" 5)")" != CONFLICTING ] || continue
+      [ -z "$(pr_held "$r_num")" ] || continue
       printf '%s ' "$r_num"
     done
 }

@@ -2082,6 +2082,15 @@ section 'serial merges, enforced by the queue'
 eq "alone with nothing else ready may go" "" "$(serial_refusal '' '')"
 eq "a reason always may go" "" "$(serial_refusal '81 82 83' migration)"
 eq "others ready and no reason is refused, naming them" "3 other green pull request(s) are ready to land with it (#81 #82 #83); merge them together with --drain (or --batch), or give the reason this one must land alone: --serial N --because migration|conflict|must-land-alone|\"why\"" "$(serial_refusal '81 82 83 ' '')"
+ro_out=$( ( base=main; tab=$(printf '	'); . "$root/templates/scripts/ci/queue/rules-serial.sh"; . "$root/templates/scripts/ci/queue/choose.sh"
+  gh() { case "$*" in
+    *"pulls?state=open"*) printf '82\tfalse\tsha82\tmain\n83\tfalse\tsha83\tmain\n' ;;
+    *"issues/82/labels"*) printf 'queue:hold\n' ;;
+    *"issues/83/labels"*) printf 'bug\n' ;;
+    *) return 0 ;; esac; }
+  pr_rollup() { echo green; }; pr_field() { echo MERGEABLE; }; mergeable_word() { echo "$1"; }
+  ready_others "81" ) 2>&1 )
+eq "serial counts only the green pull requests that are not held" "83" "$(printf '%s' "$ro_out" | tr -d ' ')"
 eq "the reason goes in the squash title" "Fix the chime (#79) [serial: migration]" "$(serial_title 'Fix the chime' 79 migration)"
 eq "no reason is alone" "Fix it (#80) [serial: alone]" "$(serial_title 'Fix it' 80 '')"
 eq "three serial merges in an hour are a burst" "Main took 3 serial merges within an hour (reasons: alone, alone, migration). Pull requests that are ready together should land as one batch: sh scripts/ci/merge-queue.sh --drain." "$(serial_bursts "$(printf '3000\tC (#3) [serial: migration]\n2000\tB (#2) [serial: alone]\n1000\tA (#1) [serial: alone]\n500\tMerge pull request #9 from x/batch-1\n')")"
