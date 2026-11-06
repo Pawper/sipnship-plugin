@@ -71,6 +71,29 @@ async function heard(f, n, ms = 15000) {
 }
 
 const agentIn = (body) => (body.sessions || []).find((s) => s.session === `agent-${AGENT}`);
+const lineOf = (body, name = PARENT) => ((body.sessions || []).find((s) => s.session === name) || {}).lastLine;
+
+/** A tool call as the runtime makes it: each PostToolUse hook whose matcher takes the tool runs the sample's script, with its arguments. */
+function toolCall(m, tool, extra = {}) {
+  const groups = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'hooks', 'hooks.json'), 'utf8')).hooks.PostToolUse || [];
+  const input = JSON.stringify({ session_id: PARENT, hook_event_name: 'PostToolUse', cwd: m.project, tool_name: tool, tool_input: {}, ...extra });
+  for (const g of groups) {
+    if (!(g.matcher === '*' || new RegExp(`^(?:${g.matcher})$`).test(tool))) continue;
+    for (const h of g.hooks) {
+      const args = /session-sample\.sh"?((?:\s+\w+)*)\s*$/.exec(h.command);
+      if (args) execFileSync('sh', [hook, ...args[1].trim().split(/\s+/).filter(Boolean)], { input, env: m.env, encoding: 'utf8', timeout: 20000 });
+    }
+  }
+}
+
+/** The agent says something new: one more assistant line in its log. */
+function say(file, text) {
+  fs.appendFileSync(file, JSON.stringify({ type: 'assistant', timestamp: new Date().toISOString(), message: { model: 'claude-sonnet-5-5', role: 'assistant', content: [{ type: 'text', text }] } }) + '\n');
+}
+
+/** The interval as gone by: the repository's mark set back past it. */
+const sinceLast = (m, s) => fs.writeFileSync(path.join(m.home, 'brief-send', 'sample-at-acme-shop'), `${Math.floor(Date.now() / 1000) - s}\n`);
+const quiet = () => new Promise((r) => setTimeout(r, 1500));
 
 test('a dispatched agent reaches the service when it starts, and is said to have ended when it stops', async () => {
   const f = await fake();
@@ -97,7 +120,80 @@ test('a dispatched agent reaches the service when it starts, and is said to have
   } finally { f.server.close(); }
 });
 
-test('the dispatching tool call sends too, and a turn ending close behind a send waits for the minute', async () => {
+test('during a long turn of tool calls a changed line is sent, at most once in twenty seconds, and an unchanged one never', async () => {
+  const f = await fake();
+  try {
+    const m = machine(f.url);
+    // The real twenty seconds, set back by hand; a short spacing so the turn's end is not waited for.
+    m.env.SIPNSHIP_SAMPLE_GAP = '1';
+    const log = path.join(m.logs, `${PARENT}.jsonl`);
+    run(m, 'SessionStart');
+    assert.strictEqual(await heard(f, 1), 1, 'the session start sends at once');
+
+    say(log, 'Reading the rain gauge readings for the last week.');
+    toolCall(m, 'Bash');
+    await quiet();
+    assert.strictEqual(f.seen.length, 1, 'a tool call within twenty seconds of a send sends nothing');
+
+    sinceLast(m, 21);
+    toolCall(m, 'Read');
+    assert.strictEqual(await heard(f, 2), 2, 'twenty seconds on, the changed line is sent after a tool call');
+    assert.strictEqual(lineOf(f.seen[1]), 'Reading the rain gauge readings for the last week.');
+
+    sinceLast(m, 21);
+    toolCall(m, 'Grep');
+    await quiet();
+    assert.strictEqual(f.seen.length, 2, 'nothing changed since that send: nothing is sent');
+
+    say(log, 'Skipping reminders for beds that got rain since the morning.');
+    toolCall(m, 'Edit');
+    await quiet();
+    assert.strictEqual(f.seen.length, 2, 'the check just made counts against the twenty seconds');
+
+    dispatch(m);
+    sinceLast(m, 21);
+    toolCall(m, 'Bash', { agent_id: AGENT });
+    assert.strictEqual(await heard(f, 3), 3, 'a tool call in an agent sends the same way');
+    assert.strictEqual(lineOf(f.seen[2]), 'Skipping reminders for beds that got rain since the morning.');
+    assert.ok(agentIn(f.seen[2]), 'the agent its session started is in it');
+
+    say(path.join(m.logs, PARENT, 'subagents', `agent-${AGENT}.jsonl`), 'Rain check written; running the reminder tests now.');
+    sinceLast(m, 21);
+    toolCall(m, 'Bash', { agent_id: AGENT });
+    assert.strictEqual(await heard(f, 4), 4, "an agent's own line changing is sent");
+    assert.strictEqual(agentIn(f.seen[3]).lastLine, 'Rain check written; running the reminder tests now.');
+
+    say(log, 'Done: reminders skip the beds that rain watered.');
+    run(m, 'Stop');
+    assert.strictEqual(await heard(f, 5), 5, 'a turn ending close behind a send still sends its changed line');
+    assert.strictEqual(lineOf(f.seen[4]), 'Done: reminders skip the beds that rain watered.');
+    assert.ok(!f.seen.some((b) => JSON.stringify(b).includes(T)), 'no token rides in a body');
+  } finally { f.server.close(); }
+});
+
+test('after a tool call within the twenty seconds, the hook starts no program and returns at once', () => {
+  const m = machine('http://127.0.0.1:9');
+  delete m.env.SIPNSHIP_SAMPLE_GAP;
+  run(m, 'SessionStart');
+  // Each program the hook could start is shadowed by one that leaves a mark; none may run.
+  const bin = tmp('sns-ev-bin-');
+  const ran = path.join(bin, 'ran');
+  for (const p of ['git', 'node', 'date', 'cat', 'tr', 'awk', 'sed', 'mkdir', 'timeout', 'sleep']) {
+    fs.writeFileSync(path.join(bin, p), `#!/bin/sh\necho ${p} >> "${ran.replace(/\\/g, '/')}"\nexit 1\n`, { mode: 0o755 });
+  }
+  const env = { ...m.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` };
+  const times = [];
+  for (let i = 0; i < 5; i++) {
+    const started = process.hrtime.bigint();
+    const out = execFileSync('sh', [hook, 'tool'], { input: '{"hook_event_name":"PostToolUse","tool_name":"Bash"}', env, encoding: 'utf8' });
+    times.push(Number(process.hrtime.bigint() - started) / 1e6);
+    assert.strictEqual(out, '');
+  }
+  assert.strictEqual(fs.existsSync(ran) ? fs.readFileSync(ran, 'utf8') : '', '', 'no program ran');
+  console.log(`# the no-send path took ${times.map((t) => t.toFixed(0)).join(', ')} ms, the shell's own start included`);
+});
+
+test('the dispatching tool call sends too, and a turn ending close behind a send with nothing changed sends nothing', async () => {
   const f = await fake();
   try {
     const m = machine(f.url);
@@ -107,7 +203,7 @@ test('the dispatching tool call sends too, and a turn ending close behind a send
     assert.ok(agentIn(f.seen[0]));
     run(m, 'Stop');
     await new Promise((r) => setTimeout(r, 1500));
-    assert.strictEqual(f.seen.length, 1, 'a turn ending within the minute of a send sends nothing');
+    assert.strictEqual(f.seen.length, 1, 'a turn ending within the minute of a send, its lines unchanged, sends nothing');
   } finally { f.server.close(); }
 });
 

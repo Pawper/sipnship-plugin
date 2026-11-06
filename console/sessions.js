@@ -288,4 +288,4 @@ function readSessions({ root, logsDir, worktrees, localModels, now = Date.now(),
   return out.sort((a, b) => b._at - a._at).slice(0, SESSIONS_MAX).map(({ _at, ...s }) => s);
 }
 
-module.exports = { lastLine, readSession, readSessions, issuesInBranch, issuesInBody, logFolder, modelId, isLocal, CATEGORIES, WORDS_MAX };
+module.exports = { lastLine, readSession, readSessions, issuesInBranch, issuesInBody, logFolder, logsIn, worktreesOf, endedAgents, modelId, isLocal, CATEGORIES, WORDS_MAX, SESSIONS_MAX, RECENT_MS, ENDED_SLACK_MS };

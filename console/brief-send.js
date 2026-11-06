@@ -28,6 +28,7 @@ const sessions = require('./sessions');
 const questions = require('./questions');
 const refusals = require('./refusal-report');
 const designUse = require('./design-use');
+const sampleDigest = require('./sample-digest');
 
 const SEND_MAX_BYTES = 64 * 1024;
 const TIMEOUT_MS = 3000;
@@ -280,7 +281,7 @@ function keepBlock(env, repoId, text) {
  * Send the brief; returns the line to print ('' for none). With sampleOnly,
  * the block is the last one kept and the send is about the session sample.
  */
-async function sendBrief({ text, session = '', repo, env = process.env, now = new Date(), runners, sessions: agents, ownerSteps: steps, localModels, sampleOnly = false, root = process.cwd() }) {
+async function sendBrief({ text, session = '', repo, env = process.env, now = new Date(), runners, sessions: agents, ownerSteps: steps, localModels, sampleOnly = false, root = process.cwd(), digest }) {
   const entry = tokens.find(repo, env);
   if (!entry || !tokens.looksLikeToken(entry.token)) return '';
   if (sampleOnly) text = lastBlock(env, entry.repoId);
@@ -299,6 +300,7 @@ async function sendBrief({ text, session = '', repo, env = process.env, now = ne
   const outcome = body === undefined ? 'too_large' : await post(`${base(env)}/v1/repos/${entry.repoId}/brief`, entry.token, body, TIMEOUT_MS, (r) => { reply = r; });
   if (outcome === 'ok') {
     remember(env, entry.repoId, { session, said: same ? mem.said : '', lastOk: now.getTime() });
+    if (digest) sampleDigest.keep(digest.file, digest.value);
     questions.clearAnswers(env, entry.repoId, answers);
     questions.receive(env, entry.repoId, reply && reply.questions, agents, now.getTime());
     refusals.acknowledge(root, sent, reply);
@@ -332,11 +334,18 @@ async function main() {
     const sibling = (file) => { try { return fs.readFileSync(path.join(path.dirname(machineFile), file), 'utf8'); } catch { return ''; } };
     try { runners = runnerSample(fs.readFileSync(machineFile, 'utf8'), timingsText, { namesText: sibling('names.tsv'), antivirusText: sibling('antivirus.txt') }); } catch { /* no sample */ }
   }
+  // A sample's digest, kept after it is sent; with --if-changed, nothing more is read or sent when it is the same.
+  let trees;
+  let digest;
+  if (sampleOnly && arg('--digest-file')) {
+    try { trees = sessions.worktreesOf(process.cwd()); digest = { file: arg('--digest-file'), value: sampleDigest.digest({ worktrees: trees }) }; } catch { /* sent as before */ }
+    if (digest && argv.includes('--if-changed') && digest.value === sampleDigest.last(digest.file)) return;
+  }
   let agents;
   let local = [];
   try { local = require('./config').localModels(require('./config').loadConfig(process.cwd())); } catch { /* no services file */ }
-  try { agents = sessions.readSessions({ root: process.cwd(), localModels: local.map((m) => m.model) }); } catch { /* no sample */ }
-  const line = await sendBrief({ text, session: arg('--session') || '', repo: arg('--repo'), runners, sessions: agents, ownerSteps: ownerSteps(process.cwd()), localModels: local, sampleOnly });
+  try { agents = sessions.readSessions({ root: process.cwd(), worktrees: trees, localModels: local.map((m) => m.model) }); } catch { /* no sample */ }
+  const line = await sendBrief({ text, session: arg('--session') || '', repo: arg('--repo'), runners, sessions: agents, ownerSteps: ownerSteps(process.cwd()), localModels: local, sampleOnly, digest });
   if (line) process.stdout.write(line + '\n');
 }
 

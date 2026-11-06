@@ -36,11 +36,15 @@ function connectedHome(mark) {
   return home;
 }
 
-test('a turn ending sends when the last send was over a minute ago, and not again within the minute', () => {
+test('a turn ending sends when the last send was over a minute ago, and within the minute only behind the spacing', () => {
   const home = connectedHome(1000);
   const first = run(home, 'Stop');
   assert.notStrictEqual(first, '1000', 'a send over a minute after the last goes ahead');
-  assert.strictEqual(run(home, 'Stop'), first, 'a second within the minute waits');
+  // Within the minute it reads the logs six seconds after the last and sends only a changed line (session-sample-events.test.js).
+  assert.ok(Number(run(home, 'Stop')) >= Number(first) + 6, 'a second within the minute is set behind the first');
+  const set = Math.floor(Date.now() / 1000) + 30;
+  fs.writeFileSync(path.join(home, 'brief-send', 'sample-at-acme-shop'), `${set}\n`);
+  assert.strictEqual(Number(run(home, 'Stop')), set, 'and one while a send is set is covered by it');
 });
 
 test('a session starting always sends', () => {
