@@ -13,6 +13,9 @@
 # Where design/copy/ exists, the copy files must be current against the
 # mocks and a UI file may not gain words as a literal; scripts/ci/
 # copy-allow.txt names the user-facing calls and the literals allowed.
+# Where scripts/ci/tooltip-allow.txt exists, a web UI file may not gain the
+# browser's own tooltip (a title attribute, or .title set on an element);
+# that file holds one regex per line of lines to allow (a page's <title>).
 # Each step says when it starts, so a long run is visibly a slow step and
 # not a hang, and the whole check gives up after DESIGN_CHECK_SECONDS
 # (default 90), naming the step it was in.
@@ -147,6 +150,36 @@ if [ -n "$mults" ]; then
     echo "Rule sizes-by-name: a stylesheet names a size by its token, never as a multiple of a general token (a calc on var(--space-...)), so a second screen that draws the same part shares it. These lines add one:" >&2
     printf '%s\n' "$mults" | sed 's/^/  /' >&2
     echo "Add the size to design/tokens.json as parts.<part>.<property> with a one-line \"\$description\" (or a spacing name when it is general, such as spacing.tight), run node scripts/design/generate.mjs and use its var(--...); or say why it must stay with a line \"Design: <reason>\" in the pull request body." >&2
+    fail=1
+  fi
+fi
+
+# 2d. the browser's own tooltip, only where scripts/ci/tooltip-allow.txt exists:
+# it looks different on every screen and never shows on a phone, so every
+# hint is the app's styled tip. Web files only; comment lines pass.
+if [ -f scripts/ci/tooltip-allow.txt ]; then
+  step "browser tooltips added to web UI files (scripts/ci/tooltip-allow.txt)"
+  t_allow='^[[:space:]]*(//|/\\*|\\*|#)'
+  t_more=$(sed '/^[[:space:]]*#/d; /^[[:space:]]*$/d' scripts/ci/tooltip-allow.txt | paste -sd'|' -)
+  [ -z "$t_more" ] || t_allow="$t_allow|$t_more"
+  # :(glob) so src/**/*.ts reads a file at the top of src/ too, as step 2a does.
+  t_specs=$(printf '%s\n' "$ui_globs" | sed 's/^/:(glob)/')
+  set -f
+  # shellcheck disable=SC2086
+  t_diff=$(git diff -U0 $diff_args -- $t_specs ':(exclude,glob)design/**' ':(exclude,glob)**/node_modules/**' ':(exclude,glob)**/build/**' $excl 2>/dev/null)
+  set +f
+  tips=$(printf '%s\n' "$t_diff" | tr -d '\r' | awk -v allow="$t_allow" '
+    /^\+\+\+ / { f = $0; sub(/^\+\+\+ b\//, "", f); sub(/^\+\+\+ /, "", f); next }
+    /^@@/ { n = $0; sub(/^@@ -[0-9,]+ \+/, "", n); sub(/[ ,].*/, "", n); line = n + 0; next }
+    /^\+/ {
+      t = substr($0, 2); cur = line; line++
+      if (f !~ /\.(tsx?|jsx?|mjs|cjs|html?|css|vue|svelte|astro)$/ || f ~ /\.(test|spec)\./ || t ~ allow) next
+      if (t ~ "(^|[^-a-zA-Z0-9_.])title=([\"\x27]|[$][{])" || t ~ "[.]title[[:space:]]*=([^=]|$)" || t ~ "setAttribute[(][[:space:]]*[\"\x27]title[\"\x27]") printf "%s:%d: %s\n", f, cur, t
+    }')
+  if [ -n "$tips" ]; then
+    echo "Every hint in the app is its styled tip, never the browser's own tooltip, which looks different on every screen and never shows on a phone. These lines add one:" >&2
+    printf '%s\n' "$tips" | sed 's/^/  /' >&2
+    echo "Use the app's styled tip (the part named in the first comment of scripts/ci/tooltip-allow.txt), drop the hint where the control's own words already say it, or, for a line that is not a control's hint (a page's <title>), add a regex to scripts/ci/tooltip-allow.txt." >&2
     fail=1
   fi
 fi

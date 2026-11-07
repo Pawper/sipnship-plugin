@@ -3106,6 +3106,31 @@ if command -v node >/dev/null 2>&1; then
   eq "the check fails a new multiple of a general token, naming the rule sizes-by-name" "1" "$(sed -n 4p "$tn.out")"
   eq "a Design: line lets it through" "0" "$(sed -n 5p "$tn.out")"
   eq "the part's own token by name passes" "0" "$(sed -n 6p "$tn.out")"
+  # The browser's own tooltip, only where the project keeps scripts/ci/tooltip-allow.txt.
+  tt=$(mktemp -d)
+  (
+    cd "$tt" && git init -q -b main && git config user.email t@t && git config user.name t && git config core.autocrlf false
+    mkdir -p design scripts/ci scripts/design src/parts android
+    cp "$root/templates/scripts/ci/design-check.sh" "$root/templates/scripts/ci/design-allow.txt" scripts/ci/
+    cp "$root/templates/scripts/design/design-lib.sh" scripts/design/
+    printf '{}\n' > design/tokens.json
+    printf 'src/**/*.ts\nandroid/**/*.kt\n' > scripts/ci/design-ui.txt
+    printf 'export const a = 1;\n' > src/top.ts && printf 'export const b = 1;\n' > src/parts/deep.ts && printf 'val c = 1\n' > android/A.kt
+    git add -A && git commit -qm base && git tag start
+    git checkout -q -b without && printf 'export const t = `<b title="Bed 3">3</b>`;\n' >> src/top.ts && git commit -qam without
+    sh scripts/ci/design-check.sh start HEAD >/dev/null 2>&1; echo $?
+    git checkout -q -b attr start && printf '# A page title stays.\n<title>\n' > scripts/ci/tooltip-allow.txt && git add -A && git commit -qm allow && git tag allowed
+    printf 'export const t = `<b title="Bed 3">3</b>`;\n' >> src/top.ts && git commit -qam attr
+    sh scripts/ci/design-check.sh allowed HEAD 2>&1 | grep -c 'src/top.ts:2: '
+    git checkout -q -b deep allowed && printf 'export const t = `<b title=${x}>3</b>`;\nexport const u = (e: HTMLElement) => { e.title = "Bed 3"; };\n' >> src/parts/deep.ts && git commit -qam deep
+    sh scripts/ci/design-check.sh allowed HEAD 2>&1 | grep -c 'src/parts/deep.ts:[23]: '
+    git checkout -q -b fine allowed && printf 'export const p = `<title>Garden</title><b data-title="Bed 3">3</b>`;\n// never a title="x"\nexport const q = (r: { title: string }) => r.title === "x";\n' >> src/top.ts && printf 'toolbar.title = "Beds"\n' >> android/A.kt && git commit -qam fine
+    sh scripts/ci/design-check.sh allowed HEAD >/dev/null 2>&1; echo $?
+  ) > "$tt.out" 2>&1
+  eq "without the allow file a title passes, the step is the project's choice" "0" "$(sed -n 1p "$tt.out")"
+  eq "a title attribute added to a UI file fails, named by file and line" "1" "$(sed -n 2p "$tt.out")"
+  eq "a file deeper in the folder and .title set from script fail too" "2" "$(sed -n 3p "$tt.out")"
+  eq "a page title, a data attribute, a comment, a comparison and a native file pass" "0" "$(sed -n 4p "$tt.out")"
 else
   printf 'skip  node is not installed, so the design check did not run\n'
 fi
