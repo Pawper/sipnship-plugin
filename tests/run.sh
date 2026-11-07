@@ -2990,6 +2990,23 @@ eq "a branch that only merged main in passes with no Mock: line" "0" "$(sed -n 1
 eq "its own screen change is still judged after a merge of main" "1" "$(sed -n 2p "$mm.out")"
 eq "CI's merge into main judges the branch's own lines" "1" "$(sed -n 3p "$mm.out")"
 eq "and against an older recorded base, main's own changes are not the branch's" "1" "$(sed -n 4p "$mm.out")"
+# A mock draws the styled tip, never the browser's own tooltip, where the project keeps scripts/ci/mock-tooltip-allow.txt.
+mt=$(mktemp -d)
+(
+  cd "$mt" && git init -q -b main && git config user.email t@t && git config user.name t && git config core.autocrlf false
+  cp -r "$root/tests/fixtures/mocks/." . && cp "$root/templates/scripts/ci/mock-check.sh" "$root/templates/scripts/ci/mock-lib.sh" scripts/ci/
+  git add -A && git commit -qm base && git tag start
+  git checkout -q -b without && printf '<button title="Water the beds">Water</button>\n' >> design/mocks/Home.dc.html && git commit -qam without
+  sh scripts/ci/mock-check.sh start HEAD >/dev/null 2>&1; echo $?
+  git checkout -q -b attr start && printf '# A page title stays.\n<title>\n' > scripts/ci/mock-tooltip-allow.txt && git add -A && git commit -qm allow && git tag allowed
+  printf '<button title="Water the beds">Water</button>\n' >> design/mocks/Home.dc.html && git commit -qam attr
+  sh scripts/ci/mock-check.sh allowed HEAD 2>&1 | grep -c 'design/mocks/Home.dc.html:[0-9]*: '
+  git checkout -q -b fine allowed && printf '<title>Garden</title><span data-title="x">3</span><span class="tipwrap"><button>Water</button><span class="tip" role="tooltip">Water the beds</span></span>\n<!-- never a title="x" -->\n' >> design/mocks/Home.dc.html && git commit -qam fine
+  sh scripts/ci/mock-check.sh allowed HEAD >/dev/null 2>&1; echo $?
+) > "$mt.out" 2>&1
+eq "without the allow file a mock title passes, the step is the project's choice" "0" "$(sed -n 1p "$mt.out")"
+eq "a title attribute added to a mock fails, named by file and line" "1" "$(sed -n 2p "$mt.out")"
+eq "a page title, a data attribute, the styled tip and a comment pass" "0" "$(sed -n 3p "$mt.out")"
 # Stylesheets: one glob over the folder tied to one screen blamed that
 # screen for every sheet; each sheet tied to its own screens asks only them.
 st_glob=$(printf 'home-style src/styles/* design/mocks/Home*\nsettings src/app/settings/*.tsx design/mocks/Settings*\n')
@@ -3126,11 +3143,18 @@ if command -v node >/dev/null 2>&1; then
     sh scripts/ci/design-check.sh allowed HEAD 2>&1 | grep -c 'src/parts/deep.ts:[23]: '
     git checkout -q -b fine allowed && printf 'export const p = `<title>Garden</title><b data-title="Bed 3">3</b>`;\n// never a title="x"\nexport const q = (r: { title: string }) => r.title === "x";\n' >> src/top.ts && printf 'toolbar.title = "Beds"\n' >> android/A.kt && git commit -qam fine
     sh scripts/ci/design-check.sh allowed HEAD >/dev/null 2>&1; echo $?
+    # a file sitting directly in the source folder is read for literals too (a plain pathspec skipped it)
+    git checkout -q -b literal start && printf 'export const bg = "#ff0000";\n' >> src/top.ts && git commit -qam literal
+    sh scripts/ci/design-check.sh start HEAD >/dev/null 2>&1; echo $?
+    git checkout -q -b literal-deep start && printf 'export const bg = "#ff0000";\n' >> src/parts/deep.ts && git commit -qam literal-deep
+    sh scripts/ci/design-check.sh start HEAD >/dev/null 2>&1; echo $?
   ) > "$tt.out" 2>&1
   eq "without the allow file a title passes, the step is the project's choice" "0" "$(sed -n 1p "$tt.out")"
   eq "a title attribute added to a UI file fails, named by file and line" "1" "$(sed -n 2p "$tt.out")"
   eq "a file deeper in the folder and .title set from script fail too" "2" "$(sed -n 3p "$tt.out")"
   eq "a page title, a data attribute, a comment, a comparison and a native file pass" "0" "$(sed -n 4p "$tt.out")"
+  eq "a raw colour in a file directly under the web source folder fails" "1" "$(sed -n 5p "$tt.out")"
+  eq "and one in a deeper folder still does" "1" "$(sed -n 6p "$tt.out")"
 else
   printf 'skip  node is not installed, so the design check did not run\n'
 fi

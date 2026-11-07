@@ -70,5 +70,17 @@ if [ -n "$unmapped" ]; then
   echo "These UI files sit beside mocked screens, but no line in scripts/ci/mocks.txt names them: $(printf '%s' "$unmapped" | paste -sd' ' - | sed 's/ /, /g'). Map each to its mock (NAME UI_PATH MOCK_PATH), or declare it with a line: unmocked PATH" >&2
   fail=1
 fi
+# The browser's own tooltip, only where scripts/ci/mock-tooltip-allow.txt
+# exists: a mock draws the app's styled tip, never a title attribute.
+if [ -f scripts/ci/mock-tooltip-allow.txt ]; then
+  mt_re=$(sed '/^[[:space:]]*#/d; /^[[:space:]]*$/d' scripts/ci/mock-tooltip-allow.txt | paste -sd'|' -)
+  tips=$(mock_tooltips "$(git diff -U0 "$base" "$head" -- design/mocks 2>/dev/null)" "$mt_re")
+  if [ -n "$tips" ]; then
+    echo "A mock draws the app's styled tip where the app draws one, never the browser's own tooltip. These lines add one:" >&2
+    printf '%s\n' "$tips" | sed 's/^/  /' >&2
+    echo "Draw the tip as the neighbouring boards do (a tip wrap around the face, a tip card beside it), say it in the face's own words, or allow a line with a regex in scripts/ci/mock-tooltip-allow.txt." >&2
+    fail=1
+  fi
+fi
 [ "$fail" -ne 0 ] || echo "Mock check passed."
 exit "$fail"

@@ -107,3 +107,21 @@ mock_escape() {
 stale_mocks() {
   printf '%s\n' "$1" | awk -F'\t' -v n="$2" 'NF >= 2 && $2 + 0 > n + 0 { printf "%s\t%s: %s commits\n", $2, $1, $2 }' | sort -t'	' -k1,1nr | cut -f2-
 }
+
+# mock_tooltips DIFF [ALLOW_RE]: DIFF is a zero-context unified diff over the
+# mocks. Print each added line that gives the browser's own tooltip (a title
+# attribute, or .title set on an element) as "path:line: text". A mock draws
+# the app's styled tip instead, as the app does. Comment lines, markdown and
+# JSON pass, as do lines matching ALLOW_RE (a page's <title> is no attribute).
+mock_tooltips() {
+  mt_allow='^[[:space:]]*(//|/\\*|\\*|#|<!--)'
+  [ -z "$2" ] || mt_allow="$mt_allow|$2"
+  printf '%s\n' "$1" | tr -d '\r' | awk -v allow="$mt_allow" '
+    /^\+\+\+ / { f = $0; sub(/^\+\+\+ b\//, "", f); sub(/^\+\+\+ /, "", f); next }
+    /^@@/ { n = $0; sub(/^@@ -[0-9,]+ \+/, "", n); sub(/[ ,].*/, "", n); line = n + 0; next }
+    /^\+/ {
+      t = substr($0, 2); cur = line; line++
+      if (f ~ /\.(md|json|png|jpe?g|svg|woff2?)$/ || t ~ allow) next
+      if (t ~ "(^|[^-a-zA-Z0-9_.])title=([\"\x27]|[$][{])" || t ~ "[.]title[[:space:]]*=([^=]|$)" || t ~ "setAttribute[(][[:space:]]*[\"\x27]title[\"\x27]") printf "%s:%d: %s\n", f, cur, t
+    }'
+}
