@@ -7,7 +7,9 @@
 #   Maya answered on the dashboard: Yes, let it land.
 #   Builder answer: #214 choice 1 by maya
 #
-# A changed answer ends the second line with "changes <comment id>". A person
+# The second line may name the ask it answers and the decision inside it
+# ("ask <comment id> decision <n>"), and a changed answer ends it with
+# "changes <comment id>", in that order. A person
 # may write the same line by hand on GitHub, and it counts the same. The
 # form's words are the dashboard's own; a test holds the two in step. Pure;
 # sourced by answers.sh and the plugin's tests.
@@ -30,11 +32,13 @@ answer_line() {
       for (i = 1; i <= n; i++) {
         raw = L[i]; line = raw; gsub(/^[ \t]+|[ \t]+$/, "", line)
         if (substr(line, 1, 1) == ">") continue
-        if (line !~ /^Builder answer: #[0-9]+ choice [0-9][0-9]? by [A-Za-z0-9][A-Za-z0-9-]*( changes [0-9]+)?$/) continue
-        split(line, w, " ")
-        if (length(w[6]) > 39) continue
+        if (line !~ /^Builder answer: #[0-9]+ choice [0-9][0-9]? by [A-Za-z0-9][A-Za-z0-9-]*( ask [0-9]+)?( decision [0-9]{1,2})?( changes [0-9]+)?$/) continue
+        nw = split(line, w, " ")
+        if (length(w[7]) > 39) continue
         issue = w[3]; sub(/^#/, "", issue)
-        print issue + 0, w[5] + 0, w[7], (w[9] == "" ? 0 : w[9] + 0)
+        chg = 0
+        for (t = 8; t < nw; t += 2) if (w[t] == "changes") chg = w[t + 1] + 0
+        print issue + 0, w[5] + 0, w[7], chg
         exit
       }
     }'

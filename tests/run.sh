@@ -4727,6 +4727,8 @@ section 'the drive reads answers'
 an_t=$(printf '\t')
 eq "the dashboard's two lines: the second is the answer" "214 1 maya 0" "$(answer_line 'Maya answered on the dashboard: Yes, let it land.\nBuilder answer: #214 choice 1 by maya')"
 eq "a changed answer names the one it changes" "214 2 maya 9001" "$(answer_line 'Builder answer: #214 choice 2 by maya changes 9001')"
+eq "an answer may name its ask and its decision, and still read" "214 2 maya 9001" "$(answer_line 'Builder answer: #214 choice 2 by maya ask 8801 decision 2 changes 9001')"
+eq "an answer that names only its ask reads" "214 1 maya 0" "$(answer_line 'Builder answer: #214 choice 1 by maya ask 8801')"
 eq "a quoted answer is not one" "" "$(answer_line '> Builder answer: #214 choice 1 by maya')"
 eq "an answer in a code block is not one" "" "$(answer_line 'For example:\n```\nBuilder answer: #214 choice 1 by maya\n```')"
 eq "a near miss is not an answer" "" "$(answer_line 'Builder answer: #214 choice 1 by maya.')$(answer_line 'Builder answer: 214 choice 1 by maya')$(answer_line 'builder answer: #214 choice 1 by maya')"
