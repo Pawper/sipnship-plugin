@@ -4188,10 +4188,17 @@ hold 16	Tint the bed cards by moisture	After: Frost alerts show the night's low
 stop: proposal ready for approval" "$(apply_units "$db_round" "$db_held" 2)"
 eq "units beyond the free runners are deferred" "dispatch 12 14 17	Water the beds on a schedule | Remind me before a frost night | Name the reminder screen	Why together: all 3 change src/schedule.ts
 hold 16	Tint the bed cards by moisture	After: Frost alerts show the night's low
-defer 1 unit(s): no free runner this round
+defer 1 unit(s): no free runner this round (#15)
 stop: proposal ready for approval" "$(apply_units "$db_round" "$db_held" 1)"
 eq "when everything is held the round says work is in flight" "hold 16	Tint the bed cards by moisture	After: Frost alerts show the night's low
 stop: work is in flight; nothing to propose until it lands" "$(apply_units "$(printf 'dispatch 16\tTint\nstop: proposal ready for approval')" "$(plan_units "$(printf '16\tTint the bed cards by moisture\tsrc/beds/list.ts\n')" "$(cat "$db/running.tsv")")" 2)"
+# A ready issue that says it comes after another is held back, naming what it waits on in the builder's words;
+# one that names an issue no longer open holds nothing, since its reason ended (read afresh every run).
+db_facts=$(cat "$db/held-facts.tsv")
+eq "a ready issue behind a question or other work is held, saying what it waits on" "hold	31	The bed map shows the soil type	Waits on your answer on “How long may a reminder wait?” (after: 22)
+hold	33	Compost reminders repeat until done	Waits for “Bed photos show the date” to land (after: 30)" "$(hold_reasons "$db_facts")"
+eq "everything held with reasons says so, never work in flight" "hold 31	The bed map shows the soil type	Waits on your answer on “How long may a reminder wait?” (after: 22)
+stop: everything left waits on what its hold line names; publish the round with each hold and its reason" "$(apply_units "$(printf 'dispatch 31\tSoil\nstop: proposal ready for approval')" "$(hold_reasons "$db_facts" | sed -n 1p)" 2)"
 
 
 section 'drive publishes its rounds'
@@ -4268,6 +4275,22 @@ eq "the skill tells the drive to publish its rounds" "yes" "$(grep -q 'publish-r
 printf 'status: proposed\nunit: 240 | areas: seeds\nwaits: the seed catalog to "open", about 9 AM\n' > "$pr_dir/waits.txt"
 pr_waits=$(pr_run --dry-run "$pr_dir/waits.txt")
 eq "what a proposed round waits for is a plain line and a field in the marker" "- Waits on: the seed catalog to \"open\", about 9 AM|1" "$(printf '%s\n' "$pr_waits" | grep '^- Waits on' )|$(printf '%s\n' "$pr_waits" | grep -cF '"held":[],"waits":"the seed catalog to \"open\", about 9 AM"} -->')"
+# A run that starts nothing says why: each held issue carries its reason and what it names, and the round when the drive looked.
+printf 'unit: 214 | areas: watering\nhold: 223 | after: 240 | why: Waits on your read of the bed map design | pr: 560 | areas: seeds\nlooked: 2026-11-06T19:00:00-08:00\n' > "$pr_dir/why.txt"
+pr_why=$(pr_run --dry-run "$pr_dir/why.txt")
+eq "a held issue's reason and the pull request it names are a plain line and fields of the marker" "- Waiting: #223: Waits on your read of the bed map design (pull request #560)|1" "$(printf '%s\n' "$pr_why" | grep '^- Waiting')|$(printf '%s\n' "$pr_why" | grep -cF '"looked":"2026-11-06T19:00:00-08:00","held":[{"issues":[223],"waitsOn":[240],"areas":["seeds"],"why":"Waits on your read of the bed map design","pr":560}]} -->')"
+printf 'hold: 223 | why: Your drive held it back: its spec still asks a question | areas: seeds\n' > "$pr_dir/nothing.txt"
+eq "a proposed round of holds only is published, saying nothing starts yet" "Proposed next round: nothing starts yet, 1 held back.|1" "$(pr_run --dry-run "$pr_dir/nothing.txt" | sed -n 1p)|$(pr_run --dry-run "$pr_dir/nothing.txt" | grep -c '"units":\[\],"looked":"[0-9-]*T[0-9:]*Z","held":\[{"issues":\[223\]')"
+eq "a started round still needs a unit" "The round was not published: the round has no unit line." "$(printf 'status: started\n' | cat - "$pr_dir/nothing.txt" > "$pr_dir/started-nothing.txt"; pr_run --dry-run "$pr_dir/started-nothing.txt")"
+eq "a look time without its zone is refused" "The round was not published: looked is a time with its zone, as 2026-11-06T19:00:00-08:00: looked: 7 PM." "$(printf 'unit: 214 | areas: watering\nlooked: 7 PM\n' > "$pr_dir/badlook.txt"; pr_run --dry-run "$pr_dir/badlook.txt")"
+eq "a started round carries no look time" "0" "$(pr_run --dry-run "$pr_started" | grep -c '"looked"')"
+# The drive looks again and the round is the same but for the look: the comment it posted is updated, never a new one.
+printf '555\tProposed next round: 1 agent. <!-- sipnship-proposal {"status":"proposed","units":[{"issues":[214],"areas":["watering"]}],"looked":"2026-11-06T18:40:00-08:00","held":[{"issues":[223],"waitsOn":[240],"areas":["seeds"],"why":"Waits on your read of the bed map design","pr":560}]} -->\n' > "$pr_dir/comments"
+: > "$pr_dir/log"
+eq "the same round looked at again updates its comment in place" "Updated the round on #99: the same round, looked at again.|1|0" "$(pr_run "$pr_dir/why.txt")|$(grep -c '^api -X PATCH repos/{owner}/{repo}/issues/comments/555 -F body=@' "$pr_dir/log")|$(grep -c -- '-X POST' "$pr_dir/log")"
+: > "$pr_dir/log"
+eq "a round that changed is posted as a new comment" "1|0" "$(pr_run "$pr_dir/nothing.txt" > /dev/null; grep -c -- '-X POST' "$pr_dir/log")|$(grep -c -- '-X PATCH' "$pr_dir/log")"
+: > "$pr_dir/comments"
 
 section 'drive reads Auto Drive'
 . "$root/scripts/drive/drive-lib.sh"
@@ -4356,7 +4379,7 @@ eq "the skill documents every round key" "yes" "$(for k in unitsPerRound dispatc
 rd_units=$(printf 'unit\t15\tPhotos\t\tsrc/photos.ts\nunit\t12 14\tWater | Frost\tboth change src/schedule.ts\tsrc/schedule.ts\nunit\t16\tTint\t\tsrc/tint.ts\n')
 eq "bundles rank before loose issues" "dispatch 12 14	Water | Frost	Why together: both change src/schedule.ts
 dispatch 15	Photos
-defer 1 unit(s): no free runner this round
+defer 1 unit(s): no free runner this round (#16)
 stop: proposal ready for approval" "$(apply_units "$(printf 'dispatch 15\tPhotos\nstop: proposal ready for approval')" "$rd_units" 2)"
 eq "plugin and CI issues go in one bundle, even with no file in common" "unit	31 32	Hook fix | Queue fix	both are plugin or CI work, which shares one test suite	plugin/hooks/a.sh,scripts/ci/b.sh" "$(plan_units "$(printf '31\tHook fix\tplugin/hooks/a.sh\n32\tQueue fix\tscripts/ci/b.sh\n')" "" | sed -n 1p)"
 eq "plugin work waits on a running plugin unit" "hold	33	Brief fix	After: Hook fix" "$(plan_units "$(printf '33\tBrief fix\tplugin/brief.sh\n')" "$(printf 'Hook fix\tplugin/hooks/a.sh\n')")"

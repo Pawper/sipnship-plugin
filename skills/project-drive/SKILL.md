@@ -195,8 +195,14 @@ tab says it waits and on what instead of saying it starts on its own; `status: p
   again with `pr:` filled in when an agent opens its pull request. Name the issues in the agent's brief
   or its branch (`issue-538`) so the machine's session report finds the unit.
   The next round is always on the Work tab: while a round runs, publish the proposed next round (`status:
-  proposed`) beside the started one, and publish it again only when it changes. The service keeps the
-  started round and the proposed one apart, so both show.
+  proposed`) beside the started one. The service keeps the started round and the proposed one apart, so
+  both show.
+  Every run publishes the proposed round, even one that starts nothing: a `hold:` line for each issue you
+  hold back, with `why:` its reason in the builder's words ("Waits on your read of the bed map design",
+  never "nothing buildable") and `after:` or `pr:` naming what it waits on, read afresh this run; a round of
+  holds only is a round. When your judgement declines what the plan proposed, that issue is a hold whose
+  `why:` says so, so the builder can overrule it with Start this next. An unchanged round is updated in
+  place with the time of this look, so the tab shows when you last looked apart from when the round changed.
 - **`start-next N by LOGIN`.** Start this issue now if a runner is free and nothing running touches its files:
   dispatch it as a one-off, set `state:in-progress` (from Parked or another set-aside State too, since the person
   asked for it by name), note `next` in `started-with.tsv`, and answer `Queue answer: start-next #N: started-next`.
@@ -212,6 +218,9 @@ tab says it waits and on what instead of saying it starts on its own; `status: p
 - **`hold N TITLE After: RUNNING TITLE`.** The issue touches files a running bundle touches. Do not start it;
   it is shown as waiting after that bundle and is planned again in the next proposal. It needs no approval
   and does nothing.
+- **`hold N TITLE Waits on ... (after: M)`.** The issue says it comes after #M, which waits on the owner or is
+  still open. Do not start it; publish it as `hold: N | after: M | why: <those words>`. A hold the plan no
+  longer prints has ended: start it like any ready issue.
 - **`ask-owner N`.** A ready issue whose words touch something the owner has said is theirs. Put one comment
   on it with the question, the options and a recommendation, and set `state:waiting-on-owner`. This is a
   proposal line so the person sees it, but it is the one goal that may run without approval, since it asks

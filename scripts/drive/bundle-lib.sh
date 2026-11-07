@@ -183,9 +183,12 @@ units_disjoint() {
 # apply_units ROUND UNITS SLOTS
 # Swap the "dispatch N TITLE" goals of a propose_round result for the
 # units: one goal per unit, bundles ranked before loose issues (more issues
-# first), at most SLOTS of them (the rest deferred), and
-# one "hold" line per issue that waits on running work. A bundle reads
+# first), at most SLOTS of them (the rest deferred, named by their issues),
+# and one "hold" line per issue that waits, each saying on what: running
+# work, or what hold_reasons (below) found. A bundle reads
 # "dispatch 12 14<TAB>Title | Title<TAB>Why together: both change ...".
+# When everything is held the stop line says so: work in flight when only
+# running work holds it, else what each hold line names.
 apply_units() {
   printf '%s\n' "$1" | awk -v slots="${3:-2}" -v units="$2" '
     BEGIN {
@@ -201,8 +204,8 @@ apply_units() {
             line = "dispatch " f[2] "\t" f[3]
             if (f[4] != "") line = line "\tWhy together: " f[4]
             goals[++g] = line
-          } else deferred++
-        } else if (f[1] == "hold") holds[++h] = "hold " f[2] "\t" f[3] "\t" f[4]
+          } else { deferred++; piece = "#" f[2]; gsub(/ /, " #", piece); dn = dn (dn == "" ? "" : ", ") piece }
+        } else if (f[1] == "hold") { holds[++h] = "hold " f[2] "\t" f[3] "\t" f[4]; if (f[4] !~ /^After: /) reasoned++ }
       }
     }
     /^dispatch / { if (!done) { for (i = 1; i <= g; i++) print goals[i]; done = 1 } next }
@@ -210,9 +213,39 @@ apply_units() {
     /^stop:/ {
       if (!done) { for (i = 1; i <= g; i++) print goals[i]; done = 1 }
       for (i = 1; i <= h; i++) print holds[i]
-      if (deferred > 0) print "defer " deferred " unit(s): no free runner this round"
+      if (deferred > 0) print "defer " deferred " unit(s): no free runner this round (" dn ")"
+      if (g == 0 && other == 0 && h > 0 && reasoned) { print "stop: everything left waits on what its hold line names; publish the round with each hold and its reason"; next }
       if (g == 0 && other == 0 && h > 0) { print "stop: work is in flight; nothing to propose until it lands"; next }
     }
     !/^(stop:|defer )/ { other++ }
     { print }'
+}
+
+# hold_reasons FACTS
+# FACTS are board-now.sh's lines. A ready issue whose title or body says it
+# comes after another open issue ("after #N", "behind #N", "depends on #N",
+# "blocked by #N", "waits on #N") is held back, naming what it waits on, in
+# the builder's words:
+#   hold  NUMBER  TITLE  Waits on your answer on “TITLE” (after: N)
+#                        when #N waits on the owner
+#   hold  NUMBER  TITLE  Waits for “TITLE” to land (after: N)
+#                        when #N is open and not waiting on the owner
+# An issue named that is not open (closed, or landed) holds nothing: the
+# reason ended with it. Read afresh from the facts on every run; nothing kept.
+hold_reasons() {
+  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' '
+    $1 == "issue" { n++; num[n] = $2; title[n] = $3; labels[n] = "," $4 ","; text[n] = $3 " " $6; open[$2] = n }
+    END {
+      for (i = 1; i <= n; i++) {
+        if (labels[i] !~ /,(state: ?)?ready,/) continue
+        s = tolower(text[i])
+        if (!match(s, /(after|behind|depends on|blocked by|waits on|waiting on) #[0-9]+/)) continue
+        ref = substr(s, RSTART, RLENGTH); sub(/.*#/, "", ref)
+        if (!(ref in open) || ref == num[i]) continue
+        j = open[ref]
+        if (labels[j] ~ /,(state: ?)?waiting-on-owner,/) why = "Waits on your answer on “" title[j] "”"
+        else why = "Waits for “" title[j] "” to land"
+        printf "hold\t%s\t%s\t%s (after: %s)\n", num[i], title[i], why, ref
+      }
+    }'
 }

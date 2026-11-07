@@ -178,11 +178,14 @@ round=$(propose_round "$snapshot" "$runners" "$max_agents" "$aside_after")
 mocks_text=""; [ -f scripts/ci/mocks.txt ] && mocks_text=$(cat scripts/ci/mocks.txt)
 past=$(past_spec_files "$(git log -n 300 --name-only --format='@@ %s' main 2>/dev/null || git log -n 300 --name-only --format='@@ %s' 2>/dev/null)")
 guesses=""; running=""
+# A ready issue that says it comes after another open one is held, naming what it waits on, read afresh each run.
+reasons=$(hold_reasons "$facts")
 while IFS="$tab" read -r kind num title a b c d e; do
   [ "$kind" = issue ] || continue
   case "$(state_of_labels "$a")" in
     ready)
       case "$(printf '%s\n' "$snapshot" | awk -F'\t' -v n="$num" '$1 == "issue" && $2 == n { print $5 }')" in yes) continue ;; esac
+      printf '%s\n' "$reasons" | grep -q "^hold	$num	" && continue
       g=$(guess_files "$title $c" "$mocks_text" "$past")
       guesses="${guesses}${num}${tab}${title}${tab}${g}
 " ;;
@@ -194,8 +197,9 @@ while IFS="$tab" read -r kind num title a b c d e; do
 done <<EOF_FACTS
 $facts
 EOF_FACTS
-if [ -n "$guesses" ]; then
+if [ -n "$guesses" ] || [ -n "$reasons" ]; then
   units=$(plan_units "$guesses" "$running")
+  [ -n "$reasons" ] && units=$(printf '%s\n%s\n' "$units" "$reasons" | sed '/^$/d')
   # The proposal is the next round: up to unitsPerRound units (within
   # maxAgents), planned against the running round's files. It starts only
   # once the running round lands (approval.sh holds its dispatches).

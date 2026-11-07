@@ -20,9 +20,21 @@
 #                             older word for it), "pr" is the pull request once
 #                             the agent opens it (the unit then belongs to the
 #                             Queue and leaves Work)
-#   hold: 16 | after: 12 14 | areas: beds
-#                             work that waits on a running unit, named by that
-#                             unit's issues
+#   hold: 16 | after: 12 14 | why: Waits on your read of the bed map design | pr: 560 | areas: beds
+#                             work held back: "after" names the issues it waits
+#                             on (a running unit's, a held design's, an issue
+#                             whose question waits); "why" is the reason in the
+#                             builder's words, shown on the Work tab, and a
+#                             decline of what the plan proposed is a hold with
+#                             a why; "pr" is a pull request the reason names.
+#                             The tab drops the reason once what it names has
+#                             landed or closed. A round may be holds only: one
+#                             that starts nothing still says why
+#   looked: 2026-11-06T19:00:00-08:00
+#                             when the drive looked (default: now); a proposed
+#                             round the same as the one on the drive issue but
+#                             for this is updated in place, so the tab shows
+#                             the last look apart from when the round changed
 #   apart: 12 18 | why: 18 only renames the screen's title | areas: watering
 #                             two issues in one area that run apart anyway, and
 #                             why; the Work tab shows the reason
@@ -77,11 +89,13 @@ fi
 running=""
 if [ -n "$issue" ]; then
   [ -n "$count" ] || count=$(gh api "repos/{owner}/{repo}/issues/$issue" --jq '.comments' 2>/dev/null | tr -d '\r')
-  bodies=""
+  rows=""
   for page in $(comment_pages "$count"); do
-    bodies="${bodies}$(gh api "repos/{owner}/{repo}/issues/$issue/comments?per_page=100&page=$page" --jq '.[].body | gsub("[\r\n]+"; " ")' 2>/dev/null)
+    rows="${rows}$(gh api "repos/{owner}/{repo}/issues/$issue/comments?per_page=100&page=$page" --jq '.[] | "\(.id)\t" + (.body | gsub("[\r\n]+"; " "))' 2>/dev/null)
 "
   done
+  # Each comment's id, a tab, then its body on one line; the bodies alone for the running round.
+  bodies=$(printf '%s' "$rows" | sed 's/^[0-9][0-9]*	//')
   if printf '%s' "$bodies" | grep -qF 'sipnship-proposal {"status":"started"'; then
     inprog=$(gh api "repos/{owner}/{repo}/issues?state=open&labels=state:in-progress&per_page=100" --jq '.[].number' 2>/dev/null)
     inprog="$inprog
@@ -93,7 +107,7 @@ err=$(area_problem "$round" "$running")
 if [ -n "$err" ]; then echo "The round was not published: $err." >&2; exit 1; fi
 
 # The round as JSON and as a plain comment, or the first thing wrong with it.
-out=$(printf '%s\n' "$round" | awk '
+out=$(printf '%s\n' "$round" | awk -v now="$(date -u +%Y-%m-%dT%H:%M:%SZ)" '
 function esc(s) { gsub(/\\/, "\\\\", s); gsub(/"/, "\\\"", s); gsub(/>/, "\\u003e", s); gsub(/<!/, "\\u003c!", s); gsub(/[\t\r]/, " ", s); return s }
 function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s); return s }
 function numlist(s,   n, a, i, out) {
@@ -107,8 +121,13 @@ function arealist(s,   n, a, i, out) {
   return out
 }
 function bad(msg) { print "error\t" msg; failed = 1; exit }
-BEGIN { status = "proposed"; units = ""; held = ""; apart = ""; waits = ""; nu = 0 }
+BEGIN { status = "proposed"; units = ""; held = ""; apart = ""; waits = ""; looked = ""; nu = 0; nh = 0 }
 /^[ \t]*(#|$)/ { next }
+/^looked:/ {
+  looked = trim(substr($0, 8))
+  if (looked !~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9](:[0-9][0-9])?(\.[0-9]+)?(Z|[+-][0-9][0-9]:?[0-9][0-9])$/) bad("looked is a time with its zone, as 2026-11-06T19:00:00-08:00: " $0)
+  next
+}
 /^waits:/ { waits = substr(trim(substr($0, 7)), 1, 200); next }
 /^status:/ { v = trim(substr($0, 8)); if (v != "proposed" && v != "started") bad("status is proposed or started, not " v); status = v; next }
 /^(unit|hold|apart):/ {
@@ -143,9 +162,12 @@ BEGIN { status = "proposed"; units = ""; held = ""; apart = ""; waits = ""; nu =
     issues = issues (issues == "" ? "" : ",") nums
     if (pr == "") open = open (open == "" ? "" : ",") nums
   } else {
-    j = "{\"issues\":[" nums "],\"waitsOn\":[" after "],\"areas\":[" files "]}"
-    held = held (held == "" ? "" : ",") j
+    why = substr(why, 1, 200)
+    j = "{\"issues\":[" nums "],\"waitsOn\":[" after "],\"areas\":[" files "]" (why != "" ? ",\"why\":\"" esc(why) "\"" : "") (pr != "" ? ",\"pr\":" pr : "") "}"
+    held = held (held == "" ? "" : ",") j; nh++
     line = "- Waiting: "; for (i = 1; i <= ni; i++) line = line (i > 1 ? ", " : "") "#" ns[i]
+    if (why != "") line = line ": " why
+    if (pr != "") line = line " (pull request #" pr ")"
     lines = lines line "\n"
   }
   next
@@ -153,12 +175,15 @@ BEGIN { status = "proposed"; units = ""; held = ""; apart = ""; waits = ""; nu =
 { bad("a line this script does not know: " $0) }
 END {
   if (failed) exit
-  if (nu == 0) { print "error\tthe round has no unit line"; exit }
+  # A proposed round may start nothing and still say why: holds only. A started round has a unit.
+  if (nu == 0 && (nh == 0 || status == "started")) { print "error\tthe round has no unit line"; exit }
   if (waits != "") lines = lines "- Waits on: " waits "\n"
-  print "json\t{\"status\":\"" status "\",\"units\":[" units "],\"held\":[" held "]" (apart != "" ? ",\"apart\":[" apart "]" : "") (waits != "" ? ",\"waits\":\"" esc(waits) "\"" : "") "}"
+  if (looked == "") looked = now
+  print "json\t{\"status\":\"" status "\",\"units\":[" units "]" (status == "proposed" ? ",\"looked\":\"" esc(looked) "\"" : "") ",\"held\":[" held "]" (apart != "" ? ",\"apart\":[" apart "]" : "") (waits != "" ? ",\"waits\":\"" esc(waits) "\"" : "") "}"
   print "open\t" open
   print "status\t" status
   print "count\t" nu
+  print "held\t" nh
   printf "lines\t%s", lines
 }') || exit 1
 
@@ -170,8 +195,11 @@ count=$(printf '%s\n' "$out" | sed -n 's/^count\t//p')
 open=$(printf '%s\n' "$out" | sed -n 's/^open\t//p')
 list=$(printf '%s\n' "$out" | sed -n '/^lines\t/,$p' | sed '1s/^lines\t//')
 
+nheld=$(printf '%s\n' "$out" | sed -n 's/^held\t//p')
 agents="$count agent"; [ "$count" = 1 ] || agents="${agents}s"
-if [ "$status" = started ]; then head="Round started: $agents at work."; else head="Proposed next round: $agents."; fi
+if [ "$status" = started ]; then head="Round started: $agents at work."
+elif [ "$count" = 0 ]; then head="Proposed next round: nothing starts yet, $nheld held back."
+else head="Proposed next round: $agents."; fi
 body_file="${TMPDIR:-/tmp}/publish-round.$$.md"
 {
   printf '%s\n\n%s\n\n' "$head" "$list"
@@ -189,6 +217,26 @@ if [ -z "$issue" ]; then
   rm -f "$body_file"
   echo "The round was not published: no open issue is labeled drive. Pass --issue N to name the drive issue." >&2
   exit 1
+fi
+
+# The same proposed round as the latest on the drive issue but for when the drive looked: that comment is
+# updated in place, so the tab keeps when the round last changed and shows when the drive last looked.
+same=""
+if [ "$status" = proposed ] && [ -n "$rows" ]; then
+  bare() { printf '%s' "$1" | sed 's/.*sipnship-proposal //; s/ -->.*//; s/,"looked":"[^"]*"//'; }
+  last=$(printf '%s\n' "$rows" | grep -F 'sipnship-proposal {' | grep -vF 'sipnship-proposal {"status":"started"' | tail -n 1)
+  [ -n "$last" ] && [ "$(bare "$last")" = "$(bare "<!-- sipnship-proposal $json -->")" ] && same=$(printf '%s' "$last" | cut -f1)
+  case "$same" in *[!0-9]*) same="" ;; esac
+fi
+if [ -n "$same" ]; then
+  if ! gh api -X PATCH "repos/{owner}/{repo}/issues/comments/$same" -F "body=@$body_file" >/dev/null 2>"$body_file.err"; then
+    echo "The round was not updated: GitHub refused the edit on #$issue ($(head -n 1 "$body_file.err"))." >&2
+    rm -f "$body_file" "$body_file.err"
+    exit 1
+  fi
+  rm -f "$body_file" "$body_file.err"
+  echo "Updated the round on #$issue: the same round, looked at again."
+  exit 0
 fi
 
 if ! gh api -X POST "repos/{owner}/{repo}/issues/$issue/comments" -F "body=@$body_file" >/dev/null 2>"$body_file.err"; then

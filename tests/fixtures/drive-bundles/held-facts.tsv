@@ -1,0 +1,6 @@
+issue	22	How long may a reminder wait?	state:waiting-on-owner	2026-11-06T20:06:00Z	Ten minutes, an hour, or a day?
+issue	30	Bed photos show the date	state:in-progress	2026-11-06T20:00:00Z	The date under each photo.
+issue	31	The bed map shows the soil type	state:ready	2026-11-06T19:00:00Z	Behind #22: the soil type colours wait on how long a reminder may wait.
+issue	33	Compost reminders repeat until done	state:ready	2026-11-06T19:10:00Z	Comes after #30, which changes the same screen.
+issue	35	Harvest notes can be exported	state:ready	2026-11-06T19:20:00Z	Depends on #29, the export button, now landed.
+issue	36	Seed packets list their sowing month	state:ready	2026-11-06T19:30:00Z	Nothing it waits on.
