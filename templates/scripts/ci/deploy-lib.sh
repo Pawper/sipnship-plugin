@@ -10,7 +10,7 @@
 # (runner); a scheduled deploy that Vercel builds (vercel); Git deploys from
 # main only, guarded and throttled (guard).
 
-# ships_path PATH APP_ROOT [EXTRA]
+# ships_path PATH APP_ROOT [EXTRA] [ALSO]
 # Print "yes" when a change to PATH (relative to the repository root) can
 # change what the app ships, "no" when it cannot. APP_ROOT is the app's
 # folder ("." for the root). Outside APP_ROOT nothing ships. Inside it, the
@@ -20,11 +20,16 @@
 # template sync that touched only those once started a web build and two
 # Android builds.
 # EXTRA is the project's own, space separated folders inside the app
-# ("packs scripts"), from "neverShips" in .claude/deploy.json.
+# ("packs scripts"), from "neverShips" in .claude/deploy.json. ALSO is the
+# paths, anywhere in the repository, the app imports or generates from
+# ("design/tokens.json design/generated/"), from "alsoShips": a change to one
+# ships, even under a home that otherwise never ships.
 ships_path() {
-  printf '%s\n' "$1" | tr '\\' '/' | awk -v root="$2" -v extra="$3" '
+  printf '%s\n' "$1" | tr '\\' '/' | awk -v root="$2" -v extra="$3" -v also="$4" '
     {
       p = $0; r = root; sub(/\/$/, "", r)
+      na = split(also, y, /[ \t,]+/)
+      for (i = 1; i <= na; i++) { a = y[i]; sub(/^\.\//, "", a); sub(/\/$/, "", a); if (a != "" && (p == a || substr(p, 1, length(a) + 1) == a "/")) { print "yes"; exit } }
       if (r != "" && r != ".") { if (substr(p, 1, length(r) + 1) != r "/") { print "no"; exit } p = substr(p, length(r) + 2) }
       n = split(extra, x, /[ \t,]+/)
       for (i = 1; i <= n; i++) { e = x[i]; sub(/^\.\//, "", e); sub(/\/$/, "", e); if (e != "" && (p == e || substr(p, 1, length(e) + 1) == e "/")) { print "no"; exit } }
@@ -39,13 +44,13 @@ ships_path() {
 # deploy_skip PATHS APP_ROOT [EXTRA]
 # PATHS is one changed path per line since the last deployed commit. Print
 # "skip" when none of them ships, "build" when one does. No paths at all is
-# "skip": nothing changed. EXTRA as for ships_path.
+# "skip": nothing changed. EXTRA and ALSO as for ships_path.
 deploy_skip() {
   ds_any=no
   ds_list=$(printf '%s\n' "$1" | tr -d '\r')
   while IFS= read -r ds_p; do
     [ -n "$ds_p" ] || continue
-    if [ "$(ships_path "$ds_p" "$2" "$3")" = yes ]; then ds_any=yes; break; fi
+    if [ "$(ships_path "$ds_p" "$2" "$3" "$4")" = yes ]; then ds_any=yes; break; fi
   done <<EOF
 $ds_list
 EOF

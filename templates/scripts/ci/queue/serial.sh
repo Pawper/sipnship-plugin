@@ -13,6 +13,7 @@ sync_worktree() {
 
 serial_one() {
   pr=$1
+  if [ "$(pr_already_merged "$pr")" = yes ]; then batch_line "$pr" "already on main" "it was merged earlier, by this queue or another run; nothing to merge now"; return 0; fi
   # Held: not merged, unless a person ran --serial with a reason.
   hw=$(pr_held "$pr")
   if [ -n "$hw" ] && { [ -n "$QUEUE_IN_DRAIN" ] || [ -z "$because" ]; }; then batch_line "$pr" "not merged" "$hw; remove the hold, or merge it with --serial $pr --because \"why\""; return 0; fi

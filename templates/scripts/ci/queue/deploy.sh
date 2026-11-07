@@ -85,7 +85,7 @@ deploy_if_due() {
   d_from=$(git ls-remote origin refs/deploy/production 2>/dev/null | cut -f1)
   if [ -z "$d_from" ] || ! git cat-file -e "$d_from^{commit}" 2>/dev/null; then d_from=$1; fi
   if [ "$(ships_since "$d_from" "$d_end")" = skip ]; then
-    say "deploy: skipped, nothing that ships changed since $(printf '%s' "$d_from" | cut -c1-7)"
+    say "deploy: skipped, nothing that ships changed since $(printf "%s" "$d_from" | cut -c1-7) ($(skip_rule_said))"
     return 0
   fi
   say "$gate"

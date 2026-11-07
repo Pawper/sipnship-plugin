@@ -11,7 +11,7 @@
 # Usage: sh scripts/ci/deploy-gate.sh [--last] [BASE]
 #        sh scripts/ci/deploy-gate.sh --ships FROM TO
 #   --ships prints "build" when a path changed between FROM and TO ships
-#   (deploy-lib.sh's ships_path, with appRoot and neverShips from
+#   (deploy-lib.sh's ships_path, with appRoot, neverShips and alsoShips from
 #   .claude/deploy.json), "skip" when none does; the queue asks it before
 #   starting Deploy, so a scripts-only landing starts no build.
 #   Prints one line, "deploy: due; ..." (exit 0) or "deploy: held, ..."
@@ -28,7 +28,7 @@ mode=full; base=main
 if [ "$1" = --ships ]; then
   cfg=$(cat .claude/deploy.json 2>/dev/null || true)
   app=$(json_string "$cfg" appRoot); app=${app:-.}
-  deploy_skip "$(git diff --name-only "$2" "$3" 2>/dev/null)" "$app" "$(json_words "$cfg" neverShips)" | sed 's/^build$/build/'
+  deploy_skip "$(git diff --name-only "$2" "$3" 2>/dev/null)" "$app" "$(json_words "$cfg" neverShips)" "$(json_words "$cfg" alsoShips)" | sed 's/^build$/build/'
   exit 0
 fi
 for a in "$@"; do case "$a" in --last) mode=last ;; *) base=$a ;; esac; done

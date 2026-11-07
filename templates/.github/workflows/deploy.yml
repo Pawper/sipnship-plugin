@@ -103,6 +103,7 @@ jobs:
           cfg=$(cat .claude/deploy.json 2>/dev/null || true)
           app=$(json_string "$cfg" appRoot); app=${app:-.}
           extra=$(json_words "$cfg" neverShips)
+          also=$(json_words "$cfg" alsoShips)
           interval=$(deploy_interval "$DEPLOY_INTERVAL_MINUTES" "$cfg")
           path=${DEPLOY_PATH:-$(json_string "$cfg" path)}; path=${path:-vercel}
           target=$(json_string "$cfg" target); target=${target:-vercel}
@@ -134,7 +135,7 @@ jobs:
           deployed=$(git ls-remote origin refs/deploy/production | cut -f1)
           if [ "$deployed" = "$sha" ]; then echo "main ($sha) is already in production."; no; fi
           if [ -n "$deployed" ] && git cat-file -e "$deployed^{commit}" 2>/dev/null; then
-            if [ "$(deploy_skip "$(git diff --name-only "$deployed" "$sha")" "$app" "$extra")" = skip ]; then
+            if [ "$(deploy_skip "$(git diff --name-only "$deployed" "$sha")" "$app" "$extra" "$also")" = skip ]; then
               echo "Nothing the app ships changed since $deployed; recording $sha as deployed without a build."
               gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/deploy/production" -f sha="$sha" -F force=true > /dev/null
               no

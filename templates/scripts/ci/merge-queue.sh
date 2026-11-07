@@ -73,7 +73,7 @@ fi
 . "$here/queue/serial.sh"
 . "$here/queue/batch.sh"
 . "$here/queue/deploy.sh"
-. "$here/queue/attention.sh"; . "$here/queue/wait.sh"
+. "$here/queue/attention.sh"; . "$here/queue/wait.sh"; . "$here/queue/rules-said.sh"
 rules=$(cat "$here/classes.txt")
 
 mode=""
@@ -340,7 +340,7 @@ if [ "$mode" = drain ]; then
     # terminal only): a pull request whose checks turned green just after
     # this round's read was once left behind with the queue "done".
     case "$step" in
-      wait) say "round $round: nothing new is green; $waiting pull request(s) still running CI, waiting two minutes."; sleep 120; continue ;;
+      wait) say "round $round: nothing new is green; $waiting pull request(s) still running CI, waiting two minutes."; late_wait_note "$round"; sleep 120; continue ;;
       end-wait) say "round $round: $(drain_end_line wait "$waiting" "$queued_only")"; break ;;
       stop) say "round $round: nothing new is green, and $waiting still running after $drain_minutes minutes; stopping."; break ;;
       look) last_look=1; say "round $round: nothing green right now; one more look in a minute before stopping."; sleep 60; round=$((round - 1)); continue ;;
@@ -348,7 +348,7 @@ if [ "$mode" = drain ]; then
     esac
     last_look=""
     queue_step="drain round $round: merging"
-    say_round_pick "$round" "$n" "$pick"
+    say_round_pick "$round" "$n" "$pick"; late_lands_say "$round" "$pick"
     QUEUE_IN_DRAIN=1; export QUEUE_IN_DRAIN
     : > "$flaky_dir/untried" 2>/dev/null || true
     : > "$flaky_dir/batch.why" 2>/dev/null || true

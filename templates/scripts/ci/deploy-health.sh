@@ -43,6 +43,7 @@ app=$(json_string "$cfg" appRoot); [ -n "$app" ] || app=.
 interval_var=${DEPLOY_INTERVAL_MINUTES-$(gh api "repos/{owner}/{repo}/actions/variables/DEPLOY_INTERVAL_MINUTES" --jq '.value' 2>/dev/null | tr -d '\r' || true)}
 interval=$(deploy_interval "$interval_var" "$cfg")
 extra=$(json_words "$cfg" neverShips)
+also=$(json_words "$cfg" alsoShips)
 
 main=$(git rev-parse -q --verify origin/main 2>/dev/null || git rev-parse HEAD)
 deployed=$1
@@ -54,7 +55,7 @@ fi
 oldest=""
 if [ -n "$deployed" ] && [ "$deployed" != "$main" ] && git cat-file -e "$deployed^{commit}" 2>/dev/null; then
   for c in $(git rev-list --reverse "$deployed..$main" 2>/dev/null); do
-    if [ "$(deploy_skip "$(git diff-tree --no-commit-id --name-only -r -m "$c" 2>/dev/null)" "$app" "$extra")" = build ]; then
+    if [ "$(deploy_skip "$(git diff-tree --no-commit-id --name-only -r -m "$c" 2>/dev/null)" "$app" "$extra" "$also")" = build ]; then
       oldest=$(git log -1 --format=%ct "$c"); break
     fi
   done

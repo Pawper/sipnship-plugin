@@ -29,7 +29,8 @@ app=$(git rev-parse --show-prefix 2>/dev/null); app=${app%/}; [ -n "$app" ] || a
 top=$(git rev-parse --show-toplevel)
 paths=$(cd "$top" && git diff --name-only "$prev" HEAD)
 extra=$(json_words "$(cat "$top/.claude/deploy.json" 2>/dev/null)" neverShips)
-if [ "$(deploy_skip "$paths" "$app" "$extra")" = skip ]; then
+also=$(json_words "$(cat "$top/.claude/deploy.json" 2>/dev/null)" alsoShips)
+if [ "$(deploy_skip "$paths" "$app" "$extra" "$also")" = skip ]; then
   echo "Nothing the app ships changed since $prev: skipped."
   exit 0
 fi
