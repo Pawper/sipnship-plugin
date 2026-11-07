@@ -27,10 +27,11 @@
 # running picks the pull request up at its next round, or the one queued
 # behind it in the group below does.
 #
-# Each run drains for at most QUEUE_DRAIN_MINUTES (variable, default 25)
-# and skips itself when a drain finished in the last QUEUE_DRAIN_GAP
-# minutes (default 10), so runs never stack and hosted minutes stay low:
-# a run with nothing to merge ends in about a minute.
+# Each run drains for at most QUEUE_DRAIN_MINUTES (variable, default 25),
+# holds a green pull request for a batch at most QUEUE_HOLD_MINUTES
+# (variable, default 10), and skips itself when a drain finished in the
+# last QUEUE_DRAIN_GAP minutes (default 10), so runs never stack and hosted
+# minutes stay low: a run with nothing to merge ends in about a minute.
 #
 # Who the drain signs in as, best first: the queue's own GitHub App
 # (secrets QUEUE_APP_ID and QUEUE_APP_KEY, made by npx sipnship
@@ -170,6 +171,7 @@ jobs:
           QUEUE_OWN_TOKEN: ${{ steps.app.outputs.token == '' && 'yes' || 'no' }}
           GH_REPO: ${{ github.repository }}
           QUEUE_DRAIN_MINUTES: ${{ vars.QUEUE_DRAIN_MINUTES || '25' }}
+          QUEUE_HOLD_MINUTES: ${{ vars.QUEUE_HOLD_MINUTES || '10' }}
           DEPLOY_INTERVAL_MINUTES: ${{ vars.DEPLOY_INTERVAL_MINUTES }}
         run: |
           git config user.name "merge-queue"

@@ -1443,6 +1443,10 @@ eq "a hold lasts as long as the green one has been green" "1600" "$(drain_held_f
 eq "or the drain's own time when that is longer" "900" "$(drain_held_for 900 2500 2600)"
 eq "no green time read: the drain's own time" "5" "$(drain_held_for 5 '' 2600)"
 eq "so a green one past the bound is no longer held, on a runner" "merge" "$(drain_wait_step end 1 2 "$(drain_held_for 5 1000 2600)" 1500 '')"
+# The hold has its own bound (QUEUE_HOLD_MINUTES, ten), apart from the drain's
+# length: a batch's full run can outlast ten minutes, so it never cuts a drain.
+eq "a hold past its own ten minutes merges, inside the drain's longer bound" "merge end-hold" "$(drain_wait_step end 1 2 600 1500 '' 600) $(drain_wait_step end 1 2 599 1500 '' 600)"
+eq "the hold's bound never stops a wait for others" "end-wait stop" "$(drain_wait_step end 0 2 600 1500 '' 600) $(drain_wait_step end 0 2 1500 1500 '' 600)"
 eq "the end line says what it waits on" "Nothing is green yet; waiting on 3 pull request(s) still running CI, whose checks are all queued for a runner. Ending here to free this runner; a drain starts again when one of their checks finishes." "$(drain_end_line wait 3 yes)"
 eq "and for a hold, why the green one is held" "One pull request is green and 2 still running CI; it is held so a merge alone does not send them back round CI. Ending here to free this runner; a drain starts again when one of their checks finishes." "$(drain_end_line hold 2 no)"
 # The loop reads the step, and ends only between rounds: a batch the drain
@@ -1453,18 +1457,20 @@ eq "the step is read before the round merges, never while its batch runs" "yes" 
 eq "the batch still waits for its own full run" "1" "$(grep -c 'if wait_for_run "\$batch_pr" "\$branch" && wait_required "\$batch_sha"; then batch_ok=yes' "$root/templates/scripts/ci/queue/batch.sh")"
 eq "a batch an earlier run left open is settled by the next drain" "1 1" "$(grep -c 'merged batch #\$bp, left green by an earlier run' "$mq_tpl") $(grep -c 'is still running CI; its members' "$mq_tpl")"
 eq "the drain loads its waits" "1" "$(grep -c '\. "\$here/queue/wait.sh"' "$mq_tpl")"
+eq "the hold is ten minutes by default, its own number, and bounds the hold, its words and its published limit" "1 1 1" "$(grep -c 'hold_minutes=\${QUEUE_HOLD_MINUTES:-10}' "$mq_tpl") $(grep -c '"$last_look" \$((hold_minutes \* 60)))' "$mq_tpl") $(grep -c 'hold_bound_said "$where" "$held_for" \$((hold_minutes \* 60)) .*drain_hold_note "$step" "$pick" "$held_for" \$((hold_minutes \* 60))$' "$mq_tpl")"
+eq "the drain workflow sets the hold from a variable, ten by default" "1" "$(grep -c "QUEUE_HOLD_MINUTES: \${{ vars.QUEUE_HOLD_MINUTES || '10' }}" "$root/templates/.github/workflows/queue-drain.yml")"
 
 # A green change held for a batch says so: the time it is held until at the
 # latest, as a log line and as the published "holds" (spec 001). The rule that
 # holds it and the limit are unchanged; these only say it.
 . "$root/templates/scripts/ci/publish-lib.sh"
 hd_open=$(printf '188\tDates follow the builder time zone\tgreen\tgreen and waiting to merge\n189\tReminders for each bed\twaiting\tstill running CI\n190\tThe harvest chart loads faster\twaiting\tstill running CI\n191\tSign-in with Google\tred\tred\n')
-hd_line=$(printf '188\t1793984400\t1500\n')
-eq "the bound is said in UTC, from when the change turned green, not as a promise of a minute" "no later than 17:25 UTC (25 minutes after it turned green)" "$(hold_bound_said end 300 1500 1793984700)"
+hd_line=$(printf '188\t1793984400\t600\n')
+eq "the bound is said in UTC, from when the change turned green, not as a promise of a minute" "no later than 17:10 UTC (10 minutes after it turned green)" "$(hold_bound_said end 300 600 1793984700)"
 eq "in a terminal it counts from the drain's start" "no later than 18:25 UTC (90 minutes after this drain began)" "$(hold_bound_said wait 600 5400 1793984700)"
-eq "the end line names the bound, and that the next drain lands it alone" "One pull request is green and 2 still running CI; it is held so a merge alone does not send them back round CI. It is held no later than 17:25 UTC (25 minutes after it turned green); once that time has passed, the next drain that runs lands it alone. Ending here to free this runner; a drain starts again when one of their checks finishes." "$(drain_end_line hold 2 no "$(hold_bound_said end 300 1500 1793984700)")"
+eq "the end line names the bound, and that the next drain lands it alone" "One pull request is green and 2 still running CI; it is held so a merge alone does not send them back round CI. It is held no later than 17:10 UTC (10 minutes after it turned green); once that time has passed, the next drain that runs lands it alone. Ending here to free this runner; a drain starts again when one of their checks finishes." "$(drain_end_line hold 2 no "$(hold_bound_said end 300 600 1793984700)")"
 eq "the end line is as before when no bound is given" "One pull request is green and 2 still running CI; it is held so a merge alone does not send them back round CI. Ending here to free this runner; a drain starts again when one of their checks finishes." "$(drain_end_line hold 2 no)"
-eq "the published hold: who, since when, until when at the latest, the limit, what it waits for" '[{"number":188,"heldSince":"2026-11-06T17:00:00Z","endsAt":"2026-11-06T17:25:00Z","limitMinutes":25,"waitingFor":[189,190]}]' "$(hold_json "$hd_open" "$hd_line")"
+eq "the published hold: who, since when, until when at the latest, the limit, what it waits for" '[{"number":188,"heldSince":"2026-11-06T17:00:00Z","endsAt":"2026-11-06T17:10:00Z","limitMinutes":10,"waitingFor":[189,190]}]' "$(hold_json "$hd_open" "$hd_line")"
 eq "the held row says it is held, and keeps its state" "188	Dates follow the builder time zone	green	green, held for a batch so a merge alone does not send the 2 changes still running CI back round CI" "$(hold_open_say "$hd_open" "$hd_line" | sed -n 1p)"
 eq "the others' rows are as they were" "189	Reminders for each bed	waiting	still running CI" "$(hold_open_say "$hd_open" "$hd_line" | sed -n 2p)"
 eq "green with nothing else running is not held: no hold is published" "[]" "$(hold_json "$(printf '188\tDates follow the builder time zone\tgreen\tg\n191\tSign-in with Google\tred\tred\n')" "$hd_line")"

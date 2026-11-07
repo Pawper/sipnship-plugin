@@ -19,15 +19,16 @@ drain_wait_where() {
   if [ -n "${GITHUB_ACTIONS:-}" ]; then echo end; else echo wait; fi
 }
 
-# drain_wait_step WHERE GREEN WAITING HELD LIMIT LOOKED (needs batch-lib.sh)
+# drain_wait_step WHERE GREEN WAITING HELD LIMIT LOOKED [HOLD] (needs batch-lib.sh)
 # What a drain round does once it has read the open pull requests. WHERE is
 # drain_wait_where; GREEN how many it may merge now; WAITING how many are
 # still running CI; HELD how many seconds the wait has lasted (the drain's
 # own time, or on a runner how long the one green pull request has been
-# green); LIMIT the bound in seconds (QUEUE_DRAIN_MINUTES); LOOKED is set
-# after the one more look. Print one word:
+# green); LIMIT the drain's bound in seconds (QUEUE_DRAIN_MINUTES); LOOKED is
+# set after the one more look; HOLD the hold's bound in seconds
+# (QUEUE_HOLD_MINUTES), LIMIT when not given. Print one word:
 #   merge     merge what is green now
-#   hold      one green, others running: wait two minutes, then look again
+#   hold      one green, others running, under HOLD: wait two minutes, then look again
 #   end-hold  the same, on a runner: end; a drain starts when one finishes
 #   wait      nothing green, others running: wait two minutes
 #   end-wait  the same, on a runner: end; a drain starts when one finishes
@@ -38,7 +39,7 @@ drain_wait_where() {
 # just after this read starts a drain of its own, which runs after this one.
 drain_wait_step() {
   # The hold itself is drain_hold's rule (queue/rules-drain.sh).
-  if [ "$(drain_hold "${2:-0}" "${3:-0}")" = yes ] && [ "${4:-0}" -lt "${5:-0}" ]; then
+  if [ "$(drain_hold "${2:-0}" "${3:-0}")" = yes ] && [ "${4:-0}" -lt "${7:-${5:-0}}" ]; then
     [ "$1" = end ] && echo end-hold || echo hold
     return 0
   fi
@@ -134,7 +135,7 @@ drain_held_now() {
   echo "$dhn_for"
 }
 
-# hold_bound_said WHERE HELD_FOR LIMIT NOW: "no later than 16:40 UTC (25
+# hold_bound_said WHERE HELD_FOR LIMIT NOW: "no later than 16:40 UTC (10
 # minutes after it turned green)", the time the hold ends at the latest.
 hold_bound_said() {
   hbs_end=$(( ${4:-0} - ${2:-0} + ${3:-0} ))

@@ -191,12 +191,12 @@ queue_step="starting"
 # writes their own loop. Each round reads every open pull request in one
 # call, merges the green ones (as a batch whenever two or more are green), and,
 # in a terminal, waits for the running ones; on a CI runner it ends instead
-# (queue/wait.sh). It stops when nothing is left, after --rounds rounds
-# (default six), or after QUEUE_DRAIN_MINUTES (default ninety).
+# (queue/wait.sh). It stops when nothing is left, after --rounds (six), or
+# after QUEUE_DRAIN_MINUTES (ninety); one green waits QUEUE_HOLD_MINUTES (ten).
 take_lock
 if [ "$mode" = drain ]; then
   rounds=${rounds:-6}
-  drain_minutes=${QUEUE_DRAIN_MINUTES:-90}
+  drain_minutes=${QUEUE_DRAIN_MINUTES:-90}; hold_minutes=${QUEUE_HOLD_MINUTES:-10}
   # A drain started in a session says so, so the scheduled drain skips
   # instead of racing it. The window is QUEUE_DRAIN_MINUTES (default 25),
   # renewed each round and cleared by the exit trap however the drain
@@ -327,8 +327,8 @@ if [ "$mode" = drain ]; then
     # Wait here, or end and free the runner (queue/wait.sh)? On a runner a
     # hold counts from when the one green pull request turned green.
     where=$(drain_wait_where); held_for=$(drain_held_now "$where" "$n" "$waiting" "$elapsed" "$pick")
-    step=$(drain_wait_step "$where" "$n" "$waiting" "$held_for" $((drain_minutes * 60)) "$last_look")
-    bound=$(hold_bound_said "$where" "$held_for" $((drain_minutes * 60)) "$(date +%s)"); drain_hold_note "$step" "$pick" "$held_for" $((drain_minutes * 60))
+    step=$(drain_wait_step "$where" "$n" "$waiting" "$held_for" $((drain_minutes * 60)) "$last_look" $((hold_minutes * 60)))
+    bound=$(hold_bound_said "$where" "$held_for" $((hold_minutes * 60)) "$(date +%s)"); drain_hold_note "$step" "$pick" "$held_for" $((hold_minutes * 60))
     # A serial merge now would move main under the ones still running
     # and send them back round CI; the batch after it would be empty.
     case "$step" in
