@@ -22,6 +22,7 @@
 .github/workflows/audit.yml e42827b4537fda48a3f43fe2251a1779a4439fa3
 .github/workflows/audit.yml ea4adebf7c365374629b47a8657d0ee67bdc9177
 .github/workflows/audit.yml f772a264163a59635a2f6c26f3e621a184ce9e6f
+.github/workflows/audit.yml fda0ddd362193e2a9678fec72c045336ac986c43
 .github/workflows/board-sync.yml 0272d78fe5cccf3795dad1977624d22b2cb5d0dc
 .github/workflows/board-sync.yml 5196fb6426867032fc2c06f139be4805e9c1f8bd
 .github/workflows/board-sync.yml dc4bf330601188b95eebf7346bf97dbc49c2d1a7
@@ -276,6 +277,7 @@ scripts/ci/gate.sh d923fb458576efe7c408d00513c65bc60cc9fcb4
 scripts/ci/hotspots-check.sh 22aa834cdfc90ad8525c5145629e3340dca547b9
 scripts/ci/hotspots-check.sh 2929ddea85c0eec715a6dabf3fbfc4baa5c06a4e
 scripts/ci/hotspots-lib.sh 2a6a2017b45fb37b20e2bda6829a69790691eb5c
+scripts/ci/jobs-audit.sh 0ebf0de9acec02ea5c0f28989323d774fde39932
 scripts/ci/lib.sh 03c38a2b06a071db2523f57540a0bfd3a2859c6a
 scripts/ci/lib.sh 09b4a522ca57989528abddfada64ec50213e6ad1
 scripts/ci/lib.sh 281c2eb4f83ed40b6fa35d9e455bbdc9d8e50d96

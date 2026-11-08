@@ -104,4 +104,5 @@ shell-2 temp files stay in the run, and nothing it starts outlives it
 shell-4 hotspots: size limits, overlaps and job time
 shell-4 quick checks before a push
 shell-3 an ask with choices recommends one
+shell-3 a job says what it is for
 shell-3 the drive reads answers

@@ -45,6 +45,7 @@ scripts/rules.sh
 # they sit under, never replaced.
 default .claude/generated-pages.txt
 default .github/pull_request_template.md
+default .github/jobs.txt
 default .claude/numbering.txt
 default scripts/ci/classes.txt
 default scripts/ci/setup-paths.txt
@@ -112,6 +113,7 @@ scripts/ci/drain-late.sh
 scripts/ci/machine-upkeep.sh
 scripts/ci/ask-lib.sh
 scripts/ci/ask-audit.sh
+scripts/ci/jobs-audit.sh
 feature status
 status/build.sh
 status/check.sh

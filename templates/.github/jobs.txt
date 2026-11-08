@@ -1,0 +1,44 @@
+# What each job does, in plain words, for the dashboard. One line per job:
+# the job's name exactly as its workflow gives it (a job with a "name:" is
+# named by it; a part of the tests is "tests (part)"), then " | ", then the
+# words. First what the job is, then what it does for a change. A project
+# adds its own lines below the ones it ships with. A job with no line is
+# shown as a check whose workflow does not say what for yet, and the nightly
+# audit names it.
+gate | Decides whether the whole set of tests is due on main, so machines are not kept busy when nothing has changed.
+checks | The quick checks every change gets: that it names the design it follows, keeps its numbers in step, uses the shared look and says what it deleted.
+classify | Looks at which files a change touches, so only the tests that matter for it are run.
+app | Builds the app from this change and runs its tests, so a change that would break the live app is caught before it lands.
+tests | One part of the project's tests. They are split into parts that run side by side, so a broken one is found sooner.
+tests (shell-1) | Checks that the plugin's scripts still work, the first of four parts, so one broken rule check cannot reach main.
+tests (shell-2) | Checks that the plugin's scripts still work, the second of four parts, so one broken rule check cannot reach main.
+tests (shell-3) | Checks that the plugin's scripts still work, the third of four parts, so one broken rule check cannot reach main.
+tests (shell-4) | Checks that the plugin's scripts still work, the last of four parts, so one broken rule check cannot reach main.
+tests (queue) | The queue's own tests: landing, batching and holding changes, so a change to it cannot stop other changes from landing.
+tests (console) | Tests the owner's console, the window that shows what the agents are doing, so a change cannot leave it blank.
+tests (service-types) | Checks the service's code for mistakes in how its pieces fit together, before it can break the dashboard.
+tests (service-tests) | Runs the service's tests: how it reads GitHub and keeps each project's state, so the dashboard stays right.
+tests (core-types) | Checks the shared rules' code for mistakes in how its pieces fit together, before the dashboard and service use them.
+tests (core-tests) | Runs the tests of the shared rules, the words and counts every screen uses, so a screen cannot say something different.
+screens | Draws the screens beside their mocks, so a change to how something looks is seen before it lands.
+CI passed | The one final check the merge rule waits on. It turns green once every other job on the change has passed.
+full | Runs every test on main after a quiet hour, to be sure that what already landed still works together.
+report-red | Opens a note for the owner when the full tests on main fail, so a broken main is seen.
+report-green | Closes that note when the full tests on main pass again.
+plan | Decides whether what landed needs to go live, and by which road, before anything is put out.
+deploy-cloudflare | Puts what landed on main live for the people who use the app.
+build-on-runner | Builds what landed on one of your own machines, so it can go live without a paid build.
+build-on-vercel | Builds what landed on the host that serves the app, then puts it live.
+migrate | Changes the shape of the stored data to match what landed, once the owner has said to.
+smoke | Opens the live app after it is put out and checks it answers, so a broken release is noticed at once.
+drain | Lands the changes that passed their checks, as a batch.
+drain-windows | Lands the changes that passed their checks, as a batch, on one of your Windows machines.
+wake | Starts the landing at once when a comment asks for it, so a change does not wait for the next scheduled pass.
+audit | Looks over the project each night for work left behind, a stuck run or a runner that is off, and says so on one note.
+windows | Checks that a Windows machine is on and set up to take a build, so a change never waits for one that is not there.
+sync | Keeps the project's copy of its rules, or its board, in step with the source, so every agent works from the same ones.
+label | Keeps each task's State label matching what the task is doing, so the dashboard groups it correctly.
+live | Reads what is live and compares it to main, so a release that did not go out is seen.
+place | Chooses which machine takes a build, so work goes where it is cheapest and free.
+rescue | Moves a build stuck on a machine that went off to another, so it does not wait forever.
+publish | Publishes the plugin's new version when a change to it lands, so every project can take it.

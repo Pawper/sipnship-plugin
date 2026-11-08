@@ -190,8 +190,17 @@ jobs:
             [ -z "$asks" ] || asks=$(printf 'Issues waiting on you whose ask does not recommend exactly one choice:\n%s' "$asks")
           fi
 
+          # A job with no line in .github/jobs.txt shows on the dashboard as a check
+          # its workflow does not explain; this names each one.
+          jobs=""
+          if [ -f scripts/ci/jobs-audit.sh ]; then
+            jobs=$(sh scripts/ci/jobs-audit.sh | sed "s/^/- /")
+            [ -z "$jobs" ] || jobs=$(printf "Jobs with no line in .github/jobs.txt saying what they are for:\n%s" "$jobs")
+          fi
+
           body=$(audit_comment "$missing" "$stale" "$red" "$branches")
           if [ -n "$asks" ]; then body=$(printf '%s\n\n%s' "$body" "$asks" | sed '/./,$!d'); fi
+          if [ -n "$jobs" ]; then body=$(printf "%s\n\n%s" "$body" "$jobs" | sed "/./,\$!d"); fi
           if [ -n "$runner" ]; then body=$(printf '%s\n\n%s' "$body" "$runner" | sed '/./,$!d'); fi
           if [ -n "$serial" ]; then body=$(printf '%s\n\n- %s' "$body" "$serial" | sed '/./,$!d'); fi
           if [ -n "$deploy" ]; then body=$(printf '%s\n\n- %s' "$body" "$deploy" | sed '/./,$!d'); fi

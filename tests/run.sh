@@ -4808,6 +4808,19 @@ eq "the audit is quiet when the ask recommends one" "" \
 eq "the audit workflow runs it and adds its lines" "1 1" "$(grep -c 'asks=\$(sh scripts/ci/ask-audit.sh' "$root/templates/.github/workflows/audit.yml") $(grep -c 'if \[ -n "\$asks" \]' "$root/templates/.github/workflows/audit.yml")"
 eq "the plugin owns both scripts" "2" "$(grep -cE '^scripts/ci/ask-(lib|audit)\.sh$' "$root/templates/OWNED.txt")"
 
+section 'a job says what it is for'
+ja_dir=$(mktemp -d "$root/../.scratch/ja.XXXXXX")
+mkdir -p "$ja_dir/.github/workflows"
+printf 'tests | One part of the tests.\nplant | Waters the beds.\n' > "$ja_dir/.github/jobs.txt"
+printf 'name: CI\njobs:\n  plant:\n    runs-on: x\n  water:\n    runs-on: x\n  tests:\n    name: tests\n  done:\n    name: Done now\n' > "$ja_dir/.github/workflows/ci.yml"
+eq "the audit names jobs with no line, and a job's key or name both count" "water (ci.yml)
+Done now (ci.yml)" "$(sh "$root/templates/scripts/ci/jobs-audit.sh" "$ja_dir/.github")"
+eq "every job of the shipped workflows has a line in the shipped jobs file" "" "$(sh "$root/templates/scripts/ci/jobs-audit.sh" "$root/templates/.github")"
+eq "the repository's own copy of the audit script is the template's" "same" "$([ -f "$root/../scripts/ci/jobs-audit.sh" ] || { echo same; exit 0; }; cmp -s "$root/templates/scripts/ci/jobs-audit.sh" "$root/../scripts/ci/jobs-audit.sh" && echo same)"
+eq "the audit workflow runs it" "1" "$(grep -c 'sh scripts/ci/jobs-audit.sh' "$root/templates/.github/workflows/audit.yml")"
+eq "the plugin owns the script and ships the jobs file" "2" "$(grep -cE '^(scripts/ci/jobs-audit\.sh|default \.github/jobs\.txt)$' "$root/templates/OWNED.txt")"
+mv "$ja_dir" "$ja_dir.done"
+
 section 'the drive reads answers'
 . "$root/scripts/drive/answers-lib.sh"
 an_t=$(printf '\t')
