@@ -46,6 +46,13 @@ The drive works the ready list in rounds, so many issues land in little time wit
   it is changing, and started only when the current one has landed (its units merged or set aside).
   `approval.sh` holds an approved `dispatch` while the latest started round still has issues In progress, and
   says so on a `held:` line; landing, fixing and asking go ahead meanwhile.
+- **In progress is not taken on faith.** An issue is In progress only while an agent is on it. Before it judges
+  whether the round has landed, the plan checks each In progress issue: with no open pull request and nothing
+  touched in two hours (no comment, no commit on a branch named for it), or with its pull request held for the
+  person, it is not a running unit. The plan prints a `stale:` line naming it and sets it right over REST: back
+  to Ready, or to Waiting on you when its pull request is held, with the hold's ask on it (one question,
+  numbered choices, exactly one recommended). The queue does the same at a merge: an issue a merged pull request
+  left In progress returns to Ready. Never leave an issue In progress with nobody on it.
 - **Every open pull request keeps moving**, not only the round's own. The plan reads each open pull request
   over REST and its `mergeable_state`: one that conflicts with main and is not held by the queue is a
   `merge-main` goal, and a red one no unit owns is a `fix-pr` or `set-aside` goal like any other. Nobody has

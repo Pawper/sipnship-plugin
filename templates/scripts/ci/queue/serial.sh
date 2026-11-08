@@ -134,7 +134,7 @@ serial_one() {
   record_flaky "$pr" "" passed
   wait_quiet_main
   gh_write api -X PUT "repos/{owner}/{repo}/pulls/$pr/merge" -f merge_method=squash -f commit_title="$(serial_title "$(pr_field "$pr" 3)" "$pr" "${because:-alone}")" >/dev/null 2>"$gh_err" || { rate_stop; batch_line "$pr" "not merged" "GitHub refused the merge: $(head -n 1 "$gh_err" 2>/dev/null)$(workflow_wait_note "$gh_err")"; return 0; }
-  batch_line "$pr" "merged serially" "$merged_why"; ci_dispatch "$base"
+  batch_line "$pr" "merged serially" "$merged_why"; ci_dispatch "$base"; settle_merged "$pr"
   tidy_worktree "$head_branch"
 }
 

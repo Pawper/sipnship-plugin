@@ -1385,6 +1385,50 @@ body
 EOF
 )"')"
 
+section 'the queue leaves no issue In progress behind'
+. "$root/templates/scripts/ci/queue/settle.sh"
+. "$root/templates/scripts/ci/ask-lib.sh"
+st=$(mktemp -d); mkdir -p "$st/bin" "$st/q"
+cat > "$st/bin/gh" <<'GH'
+#!/bin/sh
+num() { printf '%s' "$*" | head -n 1 | sed 's|.*/issues/\([0-9]*\).*|\1|'; }
+# A fake GitHub: pull requests 500 (names issue 226) and 501 (names issue 230); issues kept as files "STATE<TAB>LABELS".
+case "$*" in
+  *"-X PUT"*"/issues/"*"/labels"*) n=$(num "$@"); j=$(cat); printf 'PUT %s %s\n' "$n" "$j" >> "$ST_LOG"; printf 'open\t%s\n' "$(printf '%s' "$j" | sed 's/.*\[//;s/\].*//;s/"//g;s/,/|/g')" > "$ST_DIR/issue-$n" ;;
+  *"-X POST"*"/issues/"*"/comments"*) n=$(num "$@"); printf 'POST %s %s\n' "$n" "$(printf '%s' "$*" | sed 's/.*-f body=//' | tr '\n' ' ')" >> "$ST_LOG" ;;
+  *"pulls/500"*) printf 'issue-226\nMakes the shed list sortable.\n\nCloses #226\n' ;;
+  *"pulls/501"*) printf 'issue-230\nMakes the shed list sortable.\n\nCloses #230\n' ;;
+  *"pulls/502"*) printf 'bed-photos\nNo issue is named here.\n' ;;
+  *"/issues/"*"/labels"*) n=$(num "$@"); cut -f2 "$ST_DIR/issue-$n" | tr '|' '\n' ;;
+  *"/issues/"*) n=$(num "$@"); cat "$ST_DIR/issue-$n" ;;
+esac
+exit 0
+GH
+chmod +x "$st/bin/gh"
+st_run() { ( PATH="$st/bin:$PATH"; export PATH; ST_LOG="$st/log"; ST_DIR="$st"; export ST_LOG ST_DIR; flaky_dir="$st/q"; SETTLE_WAIT=0; export SETTLE_WAIT; say() { :; }; gh_write() { gh "$@"; }; project_label_form() { echo compact; }; "$@" ) >/dev/null 2>&1; }
+st_in_progress() { for n in "$@"; do [ "$(PATH="$st/bin:$PATH" ST_DIR="$st" settle_in_progress "$n")" = yes ] && printf '%s ' "$n"; done; printf '.'; }
+printf 'open\tstate:in-progress|task\n' > "$st/issue-226"; : > "$st/log"
+st_run settle_merged 500
+eq "a merged pull request that did not close its issue leaves no In progress issue behind" ". 1" "$(st_in_progress 226) $(grep -c '^PUT 226 {"labels":\["task","state:ready"\]}' "$st/log")"
+eq "and says so on the issue" "1" "$(grep -c '^POST 226 Pull request #500 merged without closing this issue' "$st/log")"
+printf 'closed\tstate:in-progress|task\n' > "$st/issue-226"; : > "$st/log"
+st_run settle_merged 500
+eq "an issue GitHub closed is left alone" "0" "$(grep -c '^PUT' "$st/log")"
+printf 'open\tstate:ready\n' > "$st/issue-226"; : > "$st/log"
+st_run settle_merged 500
+eq "an issue already Ready is left alone" "0" "$(grep -c '^PUT' "$st/log")"
+: > "$st/log"; st_run settle_merged 502
+eq "a pull request naming no issue touches none" "0" "$(wc -l < "$st/log" | tr -d ' ')"
+printf 'open\tstate:in-progress\n' > "$st/issue-230"; : > "$st/log"; rm -f "$st/q/settled-held"
+st_run settle_held 501
+eq "a held pull request moves its issue to Waiting on you" ". 1" "$(st_in_progress 230) $(grep -c '^PUT 230 {"labels":\["state:waiting-on-owner"\]}' "$st/log")"
+eq "with an ask: one question, numbered choices, exactly one recommended" "one" "$(grep '^POST 230 ' "$st/log" | sed 's/^POST 230 //;s/ 1\. /\n1. /;s/ 2\. /\n2. /' | ask_verdict)"
+: > "$st/log"; printf 'open\tstate:in-progress\n' > "$st/issue-230"
+st_run settle_held 501
+eq "a held pull request is asked about once" "0" "$(wc -l < "$st/log" | tr -d ' ')"
+eq "the queue settles after a serial merge, a batch merge and a hold" "1 1 1" "$(grep -c 'settle_merged' "$root/templates/scripts/ci/queue/serial.sh") $(grep -c 'settle_merged' "$root/templates/scripts/ci/queue/batch.sh") $(grep -c 'settle_held' "$root/templates/scripts/ci/queue/choose.sh")"
+eq "the copies under the templates are the queue's own" "yes" "$(for f in settle choose serial batch; do cmp -s "$root/../scripts/ci/queue/$f.sh" "$root/templates/scripts/ci/queue/$f.sh" || { echo "no $f"; exit; }; done; echo yes)"
+
 section 'merging only through the queue'
 eq "a direct merge" "gh pr merge" "$(direct_merge_reason 'gh pr merge 41 --squash')"
 eq "a direct merge after cd" "gh pr merge" "$(direct_merge_reason 'cd ../wt && gh pr merge 41 --merge --delete-branch')"
@@ -4396,6 +4440,34 @@ sr_text='2026-11-04T01:40:00Z	maya-drive	Proposal for Tuesday\n1. merge 51\n2. d
 '
 eq "a published round that repeats the numbered proposal keeps that proposal's numbers" "dispatch 223 240 Seed list
 approved by maya" "$(printf '%s' "$sr_text$sr_proposed" > "$sr_dir/comments"; printf '2026-11-04T02:00:00Z\tmaya\t3\n' >> "$sr_dir/comments"; sed -i 's/drive,drive:auto/drive/' "$sr_dir/bin/gh"; SR_DIR="$sr_dir" PATH="$sr_dir/bin:$PATH" sh "$root/scripts/drive/approval.sh" 2>&1)"
+
+section 'drive sets right an In progress issue nobody works'
+. "$root/scripts/drive/drive-lib.sh"
+. "$root/scripts/drive/round-lib.sh"
+. "$root/scripts/drive/stale-lib.sh"
+sl_now=1793926800
+sl_old=$(date -u -d "@$(( sl_now - 18000 ))" +%Y-%m-%dT%H:%M:%SZ)
+sl_new=$(date -u -d "@$(( sl_now - 1800 ))" +%Y-%m-%dT%H:%M:%SZ)
+sl_facts=$(printf 'issue\t796\tSeed packets list their sowing month\tstate:in-progress\t%s\tbody\nissue\t1022\tWatering follows the season\tstate:in-progress,task\t%s\tbody\nissue\t1069\tBed photos in the list\tstate:in-progress\t%s\tbody\nissue\t1106\tReview drawer\tstate:in-progress\t%s\tbody\nissue\t1110\tFrost alerts\tstate:in-progress\t%s\tbody\nissue\t1112\tCompost reminders\tstate:ready\t%s\tbody\n' "$sl_old" "$sl_old" "$sl_old" "$sl_old" "$sl_new" "$sl_old")
+sl_pulls=$(printf '1201\tyes\t1106\n1203\tno\t1110\n')
+eq "an In progress issue with no pull request and nothing touched for two hours is stale and goes back to Ready" "stale	796	ready		Seed packets list their sowing month
+stale	1022	ready		Watering follows the season" "$(stale_lines "$sl_facts" "$sl_pulls" '' "$sl_now" 2 | sed -n 1,2p)"
+eq "one whose pull request is held for the owner waits on the owner, however recent" "stale	1106	waiting	1201	Review drawer" "$(stale_lines "$sl_facts" "$sl_pulls" '' "$sl_now" 2 | grep '	1106	')"
+eq "one with an open pull request, or touched in the last two hours, is a running unit" "0" "$(stale_lines "$sl_facts" "$sl_pulls" '' "$sl_now" 2 | grep -c '	1110	')"
+eq "a ready issue is never touched" "0" "$(stale_lines "$sl_facts" "$sl_pulls" '' "$sl_now" 2 | grep -c '	1112	')"
+eq "a commit on a branch named for the issue in the last two hours keeps it running" "0" "$(stale_lines "$sl_facts" "$sl_pulls" "$(printf '%s\tissue-796\n' "$(( sl_now - 600 ))")" "$sl_now" 2 | grep -c '	796	')"
+eq "the plan says so on a stale line, in plain words" "stale: #796 \"Seed packets list their sowing month\" was In progress with no open pull request and nothing touched in 2 hours, so nobody is on it; it is back to Ready." "$(stale_say "$(stale_lines "$sl_facts" "$sl_pulls" '' "$sl_now" 2)" 2 | sed -n 1p)"
+eq "the held one's line names the pull request" "stale: #1106 \"Review drawer\" was In progress, but its pull request #1201 is held for you; it is moved to Waiting on you, with the question on it." "$(stale_say "$(stale_lines "$sl_facts" "$sl_pulls" '' "$sl_now" 2)" 2 | grep 1106)"
+. "$root/templates/scripts/ci/ask-lib.sh"
+eq "the hold's ask is one question with numbered choices and exactly one recommended" "one" "$(stale_ask 1201 | ask_verdict)"
+eq "the ask is one question line, then the choices" "Pull request #1201 is held for you, and this issue was marked In progress, so nothing started the next work. Should it land?|1|2" "$(stale_ask 1201 | awk 'NR == 1 { printf "%s", $0 } /^[0-9]\. / { printf "|%s", substr($0, 1, 1) }')"
+eq "the facts and the snapshot read the stale issues as they now are" "state:ready,task|ready|state:waiting-on-owner" "$(sl_stale=$(stale_lines "$sl_facts" "$sl_pulls" '' "$sl_now" 2); sl_f=$(stale_facts "$sl_facts" "$sl_stale"); sl_s=$(stale_snapshot "$(printf 'issue\t796\tSeed\tin-progress\tno\nissue\t1106\tDrawer\tin-progress\tno\n')" "$sl_stale"); printf '%s|%s|%s' "$(printf '%s\n' "$sl_f" | awk -F'\t' '$2 == 1022 { print $4 }')" "$(printf '%s\n' "$sl_s" | awk -F'\t' '$2 == 796 { print $4 }')" "$(printf '%s\n' "$sl_f" | awk -F'\t' '$2 == 1106 { print $4 }')")"
+eq "a spaced state label stays spaced" "state: ready" "$(stale_facts "$(printf 'issue\t5\tT\tstate: in progress\tx\n')" "$(printf 'stale\t5\tready\t\tT')" | cut -f4)"
+eq "the labels PUT drops the old State, keeps the rest and adds the new one" '{"labels":["task","state:ready"]}' "$(stale_labels_json "$(printf 'task\nstate:in-progress\n')" ready)"
+sl_blocked=$(printf 'issue\t796\tSeed packets list their sowing month\tin-progress\tno\nqueue\tnone\n')
+eq "before: an In progress issue nobody works stops the plan, for hours" "stop: work is in flight; nothing to propose until it lands" "$(propose_round "$sl_blocked" 2 4)"
+eq "after: the same board with idle runners proposes a dispatch" "dispatch 796	Seed packets list their sowing month" "$(sl_stale=$(stale_lines "$sl_facts" "$sl_pulls" '' "$sl_now" 2); propose_round "$(stale_snapshot "$sl_blocked" "$sl_stale")" 2 4 | sed -n 1p)"
+eq "plan.sh runs the stale step before it judges the round, and the skill says so" "1 1" "$(grep -c 'stale_apply' "$root/scripts/drive/plan.sh") $(grep -q "stale" "$root/skills/project-drive/SKILL.md" && echo 1 || echo 0)"
 
 section 'drive runs rounds of units'
 . "$root/scripts/drive/drive-lib.sh"

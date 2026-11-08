@@ -366,6 +366,7 @@ scripts/ci/merge-queue.sh 91bf780ead74536215a88c87e2050591179e0d51
 scripts/ci/merge-queue.sh 9dc786fd9fca68b371ea216686a699fe00d393be
 scripts/ci/merge-queue.sh a4baa2f4b68e0f059e1c24f02643cae3933ac7d6
 scripts/ci/merge-queue.sh a58a044dd88ccd661bd45f28c65d32e46793e518
+scripts/ci/merge-queue.sh a66164fac440f418fb4550bc48cb4cfdf0a08e9d
 scripts/ci/merge-queue.sh a8e37230789e788e4ba99ef56fa46235e9994ce6
 scripts/ci/merge-queue.sh aa4c4a71da24ca57dd1539fa33afe223f8d9a85a
 scripts/ci/merge-queue.sh ab0f502422fcdad0f3a30dd0fd98b071b3bdd815
@@ -437,12 +438,14 @@ scripts/ci/publish-state.sh d756f05975ec5d44868df70e4f41210db588dc34
 scripts/ci/publish-state.sh e6213adf837d40b4675fed56ef337ca784492c66
 scripts/ci/publish-state.sh ffd67b2557d7d09165e2d40b0ba424bb8d71ee93
 scripts/ci/queue-app-token.sh f7a5df53a0c63238838a19783f5942d7bbf2eb0b
+scripts/ci/queue/batch.sh 118b57959d66764579b4f02374f2d07a5ebc671a
 scripts/ci/queue/batch.sh 1e13586c1c2bd8cadfd91e4d44926e14c89ad5a0
 scripts/ci/queue/batch.sh 4f25a5384a712fddc6a8c73e919bb768121acde1
 scripts/ci/queue/batch.sh 874065faadda4077de6fe619dc5fd98471ac1b7e
 scripts/ci/queue/batch.sh 89fc826daf33b73d1d96c1860094d350e322a762
 scripts/ci/queue/batch.sh d93afc5f3c9d0e36c1d31038932b7ef603087b81
 scripts/ci/queue/choose.sh 07685d9f7e7578b472bc5d3d6b4c20b9646b0a60
+scripts/ci/queue/choose.sh 187bc0f2650e51a40db19baf4fb700ac1fb92518
 scripts/ci/queue/choose.sh 1a73b2e703cdfa23474ad4bcf42973ce77494767
 scripts/ci/queue/choose.sh 64e01a00fbcd8724c0bef2e66fbb3ec44c52f6c3
 scripts/ci/queue/choose.sh ee4d8afffc5ad8edb609c94dd17a81b1e9ece95d
@@ -487,9 +490,11 @@ scripts/ci/queue/runs.sh cbd64ef2590fd853ce46aac38fe9767c7c860a62
 scripts/ci/queue/runs.sh e893c4052ec550c538804740dae0dcfec86c8ea5
 scripts/ci/queue/rush.sh 211680f93762d8485c993fbe6d9d0041237f1c22
 scripts/ci/queue/serial.sh 04dacd52db5a2bcf2634bdc6ebd54c4209668a2b
+scripts/ci/queue/serial.sh 309361e6465f70ac565635eaf5b2be2b5c985bd3
 scripts/ci/queue/serial.sh 87e72347dacfdab43be8481dc44f096c09b895dc
 scripts/ci/queue/serial.sh f28a33c1f8e0b04047cae76aa20a3368788906cc
 scripts/ci/queue/serial.sh f67518a0dd6a77254f79d9c5e3a0410bc8e9cfec
+scripts/ci/queue/settle.sh 02d64c5f769241e3761e22f700f7dd1323b8fea8
 scripts/ci/queue/state.sh 40cf87c66ba7f3e01bae1a501ffb7bd225408937
 scripts/ci/queue/state.sh 4863a0697509815eef9d4959c83c9f995dd72727
 scripts/ci/queue/state.sh 6562f452bd8fc8ad6ff666dca1fc96aa3c526861

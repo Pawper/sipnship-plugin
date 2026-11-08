@@ -185,7 +185,7 @@ elif ! git worktree add -q -B "$branch" "$wt" "origin/$base"; then
   echo "Nothing merged: the batch folder $wt could not be made."
   exit 1
 fi
-ensure_modules
+bt=$(date +%s); ensure_modules; b_lap "linking or installing packages"
 echo "batch branch $branch in $wt from origin/$base"
 
 # The base is checked before anything is merged. A red base (packages not
@@ -206,8 +206,7 @@ if [ -n "$typecheck" ] && ! typecheck_ok "$(git -C "$wt" ls-files)" "$wt"; then
   esac
   echo "Nothing was dropped for it. Fix the checkout at $wt (install the packages, regenerate the types) and run the batch again."
   exit 1
-fi
-
+fi; b_lap "checking main's type-check"
 carried=""
 refs=""
 dropped=""
@@ -323,7 +322,7 @@ for pr in $prs; do
   # A merge that joins template changes makes a version nobody hashed:
   # derive the known-hashes list again and commit it before the run.
   kr_line=$(known_refresh "$wt" "$good")
-  [ -z "$kr_line" ] || batch_line "$pr" "merged" "$kr_line"
+  [ -z "$kr_line" ] || batch_line "$pr" "merged" "$kr_line";   b_lap "#$pr: merge and bookkeeping"
   changed=$(git -C "$wt" diff --name-only "origin/$base...$head")
   # a member that changes dependencies gets them installed before its check
   case "
@@ -335,7 +334,7 @@ package.json"*|*"/package.json"*) ensure_modules ;; esac
     batch_out "$pr" "dropped" "the type-check went red after merging it: $(head -n 1 "$flaky_dir/typecheck.err" 2>/dev/null | tr -d '\r')"
     dropped="$dropped $pr"
     continue
-  fi
+  fi;   b_lap "#$pr: type-check"
   red=""; not_run=""
   for f in $(tests_for_diff "$changed"); do
     [ -f "$wt/$f" ] || continue
@@ -364,7 +363,7 @@ package.json"*|*"/package.json"*) ensure_modules ;; esac
     batch_out "$pr" "dropped" "$red went red after merging it"
     dropped="$dropped $pr"
     continue
-  fi
+  fi;   b_lap "#$pr: its test files"
   [ -z "$not_run" ] || batch_line "$pr" "kept" "not run here:$not_run (its test runner could not be told; the batch's full run covers it)"
   # Cancel the PR's own CI run; the batch's one run covers it.
   # Queued runs too: a queued member run still takes a runner the moment
@@ -376,7 +375,7 @@ package.json"*|*"/package.json"*) ensure_modules ;; esac
       gh_write run cancel "$id" >/dev/null 2>&1 || true
       sleep 5
       [ "$(gh api "repos/{owner}/{repo}/actions/runs/$id" --jq .status 2>/dev/null)" = completed ] || gh_write api -X POST "repos/{owner}/{repo}/actions/runs/$id/force-cancel" >/dev/null 2>&1 || true
-    done
+    done;   b_lap "#$pr: cancelling its own CI run"
   good=$(git -C "$wt" rev-parse HEAD)
   carried="$carried$pr	$title
 "
@@ -458,7 +457,7 @@ batch_moment landed
 # reads as abandoned. Say on each where it went.
 for pr in $(printf '%s' "$carried" | cut -f1); do
   gh_write api -X POST "repos/{owner}/{repo}/issues/$pr/comments" -f body="Merged into $base in batch #$batch_pr (commit ${merged_sha:-unknown}), with its history kept. GitHub may show this pull request as closed rather than merged; its changes are on $base." >/dev/null 2>&1 || true
-  echo "#$pr merged via batch #$batch_pr"
+  echo "#$pr merged via batch #$batch_pr"; settle_merged "$pr"
 done
 for pr in $(printf '%s' "$carried" | cut -f1); do
   tidy_worktree "$(pr_field "$pr" 1)"

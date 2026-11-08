@@ -24,6 +24,7 @@ here=$(dirname "$0")
 . "$here/drive-lib.sh"
 . "$here/bundle-lib.sh"
 . "$here/round-lib.sh"
+. "$here/stale-lib.sh"
 
 show_snapshot=no; fast=no; facts_file=""
 while [ $# -gt 0 ]; do
@@ -129,9 +130,12 @@ snapshot=$(cat "$tmp")
 # main; a red one also gets how many times it was red. One call for the
 # list, one per pull request, one more per red one; all REST.
 rest_lines=""
-pr_list=$(gh api "repos/{owner}/{repo}/pulls?state=open&per_page=100" --jq '.[] | [(.number | tostring), .head.ref, ([.labels[].name] | join(",")), ((.body // "") | [splits("\r?\n")] | map(select(test("^Queue: hold"; "i"))) | first // "")] | @tsv' 2>/dev/null | tr -d '\r')
-while IFS="$tab" read -r p_num p_ref p_labels p_hold; do
+pr_list=$(gh api "repos/{owner}/{repo}/pulls?state=open&per_page=100" --jq '.[] | [(.number | tostring), .head.ref, ([.labels[].name] | join(",")), ((.body // "") | [splits("\r?\n")] | map(select(test("^Queue: hold"; "i"))) | first // ""), ((.body // "") | [scan("(?i)(?:closes|fixes|resolves) #([0-9]+)") | .[0]] | join(","))] | @tsv' 2>/dev/null | tr -d '\r')
+pull_links=""
+while IFS="$tab" read -r p_num p_ref p_labels p_hold p_closes; do
   [ -n "$p_num" ] || continue
+  pull_links="${pull_links}${p_num}${tab}$(held_by "$p_labels" "$p_hold")${tab}${p_closes}
+"
   p_info=$(gh api "repos/{owner}/{repo}/pulls/$p_num" --jq '[(.mergeable_state // ""), .head.sha] | @tsv' 2>/dev/null | tr -d '\r')
   p_state=$(printf '%s' "$p_info" | cut -f1); p_sha=$(printf '%s' "$p_info" | cut -f2)
   p_reds=0; p_ci=$(printf '%s\n' "$snapshot" | awk -F'\t' -v n="$p_num" '$1 == "pr" && $2 == n { print $4 }')
@@ -169,6 +173,13 @@ else
 fi
 
 echo "proposal for $(date '+%A %Y-%m-%d'), the owner's local day (runners $runners, at most $max_agents agents, at most $max_minutes minutes; $note):"
+# In progress is not taken on faith: an issue nobody works, or whose pull request is held for the owner, is set right first (./stale-lib.sh).
+stale=$(stale_lines "$facts" "$pull_links" "$(git for-each-ref --format='%(committerdate:unix)%09%(refname:short)' refs/heads refs/remotes 2>/dev/null)" "$(date +%s)" 2)
+if [ -n "$stale" ]; then
+  stale_say "$stale" 2
+  stale_apply "$stale" "$facts"
+  facts=$(stale_facts "$facts" "$stale"); snapshot=$(stale_snapshot "$snapshot" "$stale")
+fi
 units_per_round=$(setting "$settings" unitsPerRound)
 aside_after=$(setting "$settings" setAsideAfterReds)
 round=$(propose_round "$snapshot" "$runners" "$max_agents" "$aside_after")

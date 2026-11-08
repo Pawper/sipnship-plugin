@@ -62,6 +62,7 @@ scripts/ci/queue-app-token.sh
 scripts/ci/service-auth.sh
 scripts/ci/queue/requests.sh
 scripts/ci/queue/rule-issues.sh
+scripts/ci/queue/settle.sh
 scripts/ci/queue/rush.sh
 scripts/ci/queue/runs.sh
 scripts/ci/queue/choose.sh

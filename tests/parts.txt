@@ -12,6 +12,7 @@ queue the queue runs a test file with its own runner
 queue reading a run
 queue the queue on the service road (spec 006)
 queue the drain files rule requests (spec 016)
+queue the queue leaves no issue In progress behind
 queue merging only through the queue
 queue drain
 queue unsticking a pull request at a drain's end
@@ -84,6 +85,7 @@ shell-3 drive release goal
 shell-3 drive bundles issues by the files they touch
 shell-3 drive publishes its rounds
 shell-3 drive reads Auto Drive
+shell-3 drive sets right an In progress issue nobody works
 shell-3 drive runs rounds of units
 shell-3 hook counterparts
 shell-3 rule switches in the hooks
