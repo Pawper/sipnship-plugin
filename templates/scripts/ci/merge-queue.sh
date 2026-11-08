@@ -73,7 +73,7 @@ fi
 . "$here/queue/serial.sh"
 . "$here/queue/batch.sh"
 . "$here/queue/deploy.sh"
-. "$here/queue/attention.sh"; . "$here/queue/wait.sh"; . "$here/queue/rules-said.sh"; . "$here/queue/settle.sh"
+. "$here/queue/attention.sh"; . "$here/queue/wait.sh"; . "$here/queue/rules-said.sh"; . "$here/queue/settle.sh"; . "$here/queue/tc-cache.sh"
 rules=$(cat "$here/classes.txt")
 
 mode=""

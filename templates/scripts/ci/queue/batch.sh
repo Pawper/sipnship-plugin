@@ -192,7 +192,7 @@ echo "batch branch $branch in $wt from origin/$base"
 # installed, generated types stale) made every pull request look red
 # after its merge, and all of them were dropped for a fault none of them
 # had. Nothing is dropped for that; the batch stops and says what is red.
-if [ -n "$typecheck" ] && ! typecheck_ok "$(git -C "$wt" ls-files)" "$wt"; then
+if [ -n "$typecheck" ] && ! tc_base_ok "$wt" "$(git -C "$wt" ls-files)"; then
   tc_first=$(grep -v '^[[:space:]]*$' "$flaky_dir/typecheck.err" 2>/dev/null | head -n 1 | tr -d '\r')
   case "$tc_first" in
     *"not the tsc command"*|*"Cannot find module"*|*"ENOENT"*|*"command not found"*)

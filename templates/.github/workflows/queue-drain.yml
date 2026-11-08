@@ -73,7 +73,7 @@ jobs:
   drain:
     if: ${{ vars.QUEUE_RUNS_ON != '' && !contains(vars.QUEUE_RUNS_ON, 'windows') && (github.event_name != 'workflow_run' || (github.event.workflow_run.event == 'pull_request' && contains(fromJSON('["success", "failure", "cancelled", "timed_out"]'), github.event.workflow_run.conclusion))) }}
     runs-on: ${{ vars.QUEUE_RUNS_ON || 'self-hosted' }}
-    timeout-minutes: 40
+    timeout-minutes: 60
     defaults:
       run:
         shell: bash --noprofile --norc -eo pipefail {0} # "bash" written out, so the sync never takes it for a filled line
@@ -171,6 +171,7 @@ jobs:
           QUEUE_OWN_TOKEN: ${{ steps.app.outputs.token == '' && 'yes' || 'no' }}
           GH_REPO: ${{ github.repository }}
           QUEUE_DRAIN_MINUTES: ${{ vars.QUEUE_DRAIN_MINUTES || '25' }}
+          QUEUE_WAIT_MINUTES: ${{ vars.QUEUE_WAIT_MINUTES || '30' }}
           QUEUE_HOLD_MINUTES: ${{ vars.QUEUE_HOLD_MINUTES || '10' }}
           DEPLOY_INTERVAL_MINUTES: ${{ vars.DEPLOY_INTERVAL_MINUTES }}
         run: |
@@ -181,7 +182,7 @@ jobs:
   drain-windows:
     if: ${{ (vars.QUEUE_RUNS_ON == '' || contains(vars.QUEUE_RUNS_ON, 'windows')) && (github.event_name != 'workflow_run' || (github.event.workflow_run.event == 'pull_request' && contains(fromJSON('["success", "failure", "cancelled", "timed_out"]'), github.event.workflow_run.conclusion))) }}
     runs-on: [self-hosted, "${{ vars.QUEUE_RUNS_ON || 'windows' }}"]
-    timeout-minutes: 40
+    timeout-minutes: 60
     defaults:
       run:
         shell: 'C:\PROGRA~1\Git\bin\bash.exe --noprofile --norc -eo pipefail {0}'

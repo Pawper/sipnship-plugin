@@ -192,3 +192,6 @@ place_outputs() {
     }
     END { print "{" r "}"; print "{" w "}" }'
 }
+
+# b_lap WHAT: say how long the step since the last lap took (bt holds its start).
+b_lap() { b_now=$(date +%s); echo "  timing: $1 took $((b_now - bt))s"; bt=$b_now; }

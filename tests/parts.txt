@@ -13,6 +13,7 @@ queue reading a run
 queue the queue on the service road (spec 006)
 queue the drain files rule requests (spec 016)
 queue the queue leaves no issue In progress behind
+queue the batch checks main once per state of main
 queue merging only through the queue
 queue drain
 queue unsticking a pull request at a drain's end

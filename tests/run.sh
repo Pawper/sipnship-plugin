@@ -1429,6 +1429,22 @@ eq "a held pull request is asked about once" "0" "$(wc -l < "$st/log" | tr -d ' 
 eq "the queue settles after a serial merge, a batch merge and a hold" "1 1 1" "$(grep -c 'settle_merged' "$root/templates/scripts/ci/queue/serial.sh") $(grep -c 'settle_merged' "$root/templates/scripts/ci/queue/batch.sh") $(grep -c 'settle_held' "$root/templates/scripts/ci/queue/choose.sh")"
 eq "the copies under the templates are the queue's own" "yes" "$(for f in settle choose serial batch; do cmp -s "$root/../scripts/ci/queue/$f.sh" "$root/templates/scripts/ci/queue/$f.sh" || { echo "no $f"; exit; }; done; echo yes)"
 
+section 'the batch checks main once per state of main'
+. "$root/templates/scripts/ci/queue/tc-cache.sh"
+tc=$(mktemp -d); mkdir -p "$tc/q"; git init -q "$tc/wt"; git -C "$tc/wt" -c user.name=t -c user.email=t@t commit -q --allow-empty -m one
+tc_run() { ( flaky_dir="$tc/q"; typecheck_ok() { echo run >> "$tc/runs"; return "${TC_RC:-0}"; }; tc_base_ok "$tc/wt" "a.ts" >/dev/null; echo $? ); }
+: > "$tc/runs"
+eq "the first batch type-checks main" "0 1" "$(tc_run) $(wc -l < "$tc/runs" | tr -d ' ')"
+eq "a second batch on the same main does not type-check it again" "0 1" "$(tc_run) $(wc -l < "$tc/runs" | tr -d ' ')"
+: > "$tc/q/modules.stale"; echo "x: older" > "$tc/q/modules.stale"
+eq "stale installed packages are checked again" "0 2" "$(tc_run) $(wc -l < "$tc/runs" | tr -d ' ')"
+: > "$tc/q/modules.stale"; git -C "$tc/wt" -c user.name=t -c user.email=t@t commit -q --allow-empty -m two; echo two > "$tc/wt/f"; git -C "$tc/wt" add f; git -C "$tc/wt" -c user.name=t -c user.email=t@t commit -q -m three
+eq "a main that moved is checked again" "0 3" "$(tc_run) $(wc -l < "$tc/runs" | tr -d ' ')"
+rm -f "$tc/q/base-checked"
+eq "a red base is reported and not remembered" "1 4 no" "$(TC_RC=1 tc_run | tr -d '\n') $(wc -l < "$tc/runs" | tr -d ' ') $([ -f "$tc/q/base-checked" ] && echo yes || echo no)"
+eq "the queue loads it and batch.sh calls it" "1 1" "$(grep -c 'queue/tc-cache.sh' "$root/templates/scripts/ci/merge-queue.sh") $(grep -c 'tc_base_ok' "$root/templates/scripts/ci/queue/batch.sh")"
+eq "the drain job outlasts its window plus the wait for a batch's run" "2 1" "$(grep -c "timeout-minutes: 60" "$root/templates/.github/workflows/queue-drain.yml") $(grep -c "QUEUE_WAIT_MINUTES: .*30" "$root/templates/.github/workflows/queue-drain.yml")"
+
 section 'merging only through the queue'
 eq "a direct merge" "gh pr merge" "$(direct_merge_reason 'gh pr merge 41 --squash')"
 eq "a direct merge after cd" "gh pr merge" "$(direct_merge_reason 'cd ../wt && gh pr merge 41 --merge --delete-branch')"
