@@ -10,12 +10,9 @@ checks | The quick checks every change gets: that it names the design it follows
 classify | Looks at which files a change touches, so only the tests that matter for it are run.
 app | Builds the app from this change and runs its tests, so a change that would break the live app is caught before it lands.
 tests | One part of the project's tests. They are split into parts that run side by side, so a broken one is found sooner.
-tests (shell-1) | Checks that the plugin's scripts still work, the first of four parts, so one broken rule check cannot reach main.
-tests (shell-2) | Checks that the plugin's scripts still work, the second of four parts, so one broken rule check cannot reach main.
-tests (shell-3) | Checks that the plugin's scripts still work, the third of four parts, so one broken rule check cannot reach main.
-tests (shell-4) | Checks that the plugin's scripts still work, the last of four parts, so one broken rule check cannot reach main.
-tests (queue) | The queue's own tests: landing, batching and holding changes, so a change to it cannot stop other changes from landing.
-tests (console) | Tests the owner's console, the window that shows what the agents are doing, so a change cannot leave it blank.
+tests (shell-1-2) | Checks that the plugin's scripts still work, the first half, so one broken rule check cannot reach main.
+tests (shell-3-4) | Checks that the plugin's scripts still work, the second half, so one broken rule check cannot reach main.
+tests (queue-console) | The queue's own tests and the owner's console tests: landing, batching and holding changes, and the window that shows what the agents are doing, so a change to either cannot stop other changes from landing.
 tests (service-types) | Checks the service's code for mistakes in how its pieces fit together, before it can break the dashboard.
 tests (service-tests) | Runs the service's tests: how it reads GitHub and keeps each project's state, so the dashboard stays right.
 tests (core-types) | Checks the shared rules' code for mistakes in how its pieces fit together, before the dashboard and service use them.

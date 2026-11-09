@@ -2521,8 +2521,8 @@ eq "a script tested for first is optional" "" "$(sourced_scripts "$(printf '    
 km_known="$(printf 'a/x.yml %s\n' "$(norm_hash "$(printf '    runs-on: RUNS_ON')")")"
 eq "a filled workflow matches its released version" "yes" "$(known_match "$km_known" a/x.yml '    runs-on: [self-hosted]' '[self-hosted]' '')"
 eq "a project's own file matches none" "no" "$(known_match "$km_known" a/x.yml '    runs-on: [mine]' '[self-hosted]' '')"
-km_missing=$(for p in $(owned_paths "$(cat "$root/templates/OWNED.txt")"); do grep -qxF "$p $(norm_hash "$(cat "$root/templates/$p")")" "$root/templates/KNOWN.txt" || echo "$p"; done)
-eq "every current template is in KNOWN.txt (run scripts/sync/known-hashes.sh before a release)" "" "$km_missing"
+km_missing=$(known_missing "$root/templates")
+eq "every current template is in KNOWN.txt (run scripts/sync/known-hashes.sh before a release)" "" "$(known_missing_words "$km_missing")"
 # The local checks refuse a push that changes a template and leaves KNOWN.txt behind.
 if [ -f "$root/../scripts/ci/known-hashes-check.sh" ]; then
   kc=$(mktemp -d)
@@ -2547,8 +2547,9 @@ if [ -f "$root/../scripts/ci/known-hashes-check.sh" ]; then
   kc_run() { (cd "$kc" && git checkout -q "$1" && CHECKS_LOCAL_OFFLINE=1 sh scripts/ci/checks-local.sh main HEAD 2>&1; echo "rc=$?"); }
   kc_stale=$(kc_run stale)
   eq "a template changed without KNOWN.txt refuses the push" "rc=1" "$(printf '%s\n' "$kc_stale" | tail -n 1)"
-  eq "and names the template in plain words" "1" "$(printf '%s\n' "$kc_stale" | grep -c 'does not hold its new version:')"
+  eq "and names the template in plain words" "1" "$(printf '%s\n' "$kc_stale" | grep -c 'Every current template must be in KNOWN.txt')"
   eq "and the command that fixes it" "1" "$(printf '%s\n' "$kc_stale" | grep -c 'sh plugin/scripts/sync/known-hashes.sh origin/main..HEAD')"
+  eq "and says which template, and the command as bump.sh runs it" "1 1" "$(printf '%s\n' "$kc_stale" | grep -c "water.sh") $(printf '%s\n' "$kc_stale" | grep -c "cat plugin/templates/KNOWN.txt.new > plugin/templates/KNOWN.txt")"
   eq "a template changed with KNOWN.txt refreshed passes" "rc=0" "$(kc_run fresh | tail -n 1)"
   eq "a change touching no template passes without a word" "Quick checks passed:" "$(kc_run quiet | head -n 1 | cut -c1-20)"
   rm -rf "$kc"
@@ -4242,11 +4243,11 @@ eq "the tests job has a plain name, the part in its step" "1 0 1" "$(printf '%s\
 pj_repo="$root/../scripts/ci/classes.txt"
 if [ -f "$pj_repo" ] && grep -q '^!parts plugin' "$pj_repo"; then
   pj_rc=$(cat "$pj_repo")
-  for pj_case in web-only:'[]' plugin:'["shell-1","shell-2","shell-3","shell-4","queue","console"]' ci:'["shell-1","shell-2","shell-3","shell-4","queue","console"]' unclassified:'["shell-1","shell-2","shell-3","shell-4","queue","console","service-types","service-tests","core-types","core-tests"]'; do
+  for pj_case in web-only:'[]' plugin:'["shell-1-2","shell-3-4","queue-console"]' ci:'["shell-1-2","shell-3-4","queue-console"]' unclassified:'["shell-1-2","shell-3-4","queue-console","service-types","service-tests","core-types","core-tests"]'; do
     pj_name=${pj_case%%:*}
     eq "this repository's suite for a $pj_name change" "${pj_case#*:}" "$(parts_matrix "$(class_parts "$(classify_paths "$(cat "$pj_fx/paths-$pj_name.txt")" "$pj_rc")" "$pj_rc")")"
   done
-  eq "each of this repository's parts stops at the first red" "6" "$(class_parts plugin "$pj_rc" | grep -c 'run.sh --fail-fast --part')"
+  eq "each of this repository's plugin parts stops at the first red, and a pull request asks for three machines, not six" "3 6" "$(class_parts plugin "$pj_rc" | grep -c 'run.sh --fail-fast --part') $(class_parts plugin "$pj_rc" | grep -o 'run.sh --fail-fast --part' | wc -l | tr -d ' ')"
   pj_repo_matrix() { parts_matrix "$(class_parts "$(classify_paths "$(cat "$pj_fx/paths-$1.txt")" "$pj_rc")" "$pj_rc")"; }
   eq "a service change is the service class and runs only the service's two parts" 'service ["service-types","service-tests"]' "$(classify_paths "$(cat "$pj_fx/paths-service.txt")" "$pj_rc") $(pj_repo_matrix service)"
   eq "a core change is the core class and runs core's and the service's parts, since the service imports core" 'core ["service-types","service-tests","core-types","core-tests"]' "$(classify_paths "$(cat "$pj_fx/paths-core.txt")" "$pj_rc") $(pj_repo_matrix core)"
@@ -4272,7 +4273,7 @@ eq "a block the file names nowhere belongs to no part" "beds||wet" "$(PARTS_FILE
 eq "a block named nowhere runs in none of the parts" "0" "$(for p in beds wet console; do PARTS_FILE=$pj_pf part_script $p < "$pj_fx/suite.sh"; done | grep -c "section 'watering schedule'")"
 eq "each part keeps the prelude and the summary, and only its own blocks" "1 1 1 0" "$(t=$(PARTS_FILE=$pj_pf part_script wet < "$pj_fx/suite.sh"); { printf '%s\n' "$t" | grep -c '^pass=0'; printf '%s\n' "$t" | grep -c 'stop_if_red'; printf '%s\n' "$t" | grep -c "section 'drain'"; printf '%s\n' "$t" | grep -c "section 'garden beds'"; } | tr '\n' ' ' | sed 's/ $//')"
 if [ -f "$pj_repo" ] && grep -q '^!parts plugin' "$pj_repo"; then
-  eq "the matrix lists the parts of tests/parts.txt, each run by its own name" "$(part_names | sort | tr '\n' ' ')" "$(class_parts plugin "$pj_rc" | while IFS="	" read -r n c; do [ "$c" = "cd plugin && sh tests/run.sh --fail-fast --part $n" ] && echo "$n"; done | sort | tr '\n' ' ')"
+  eq "the matrix runs every part of tests/parts.txt, once, grouped into fewer jobs" "$(part_names | sort | tr '\n' ' ')" "$(class_parts plugin "$pj_rc" | grep -o -e '--part [a-z0-9-]*' | sed 's/^--part //' | sort | tr '\n' ' ')"
 fi
 eq "every block of the suite falls in a part the file lists" "" "$(printf '%s\n' "$pj_blocks" | while IFS= read -r b; do part_names | grep -qxF -- "$(part_of "$b")" || echo "$b"; done)"
 eq "the queue part keeps the prelude, its block and the summary" "1 0 1 0 1" "$(PARTS_LIB=x; t=$(part_script queue < "$pj_fx/suite.sh"); for s in '^pass=0' "garden beds" "section 'drain'" 'owner console' 'stop_if_red'; do printf '%s\n' "$t" | grep -c "$s"; done | tr '\n' ' ' | sed 's/ $//')"

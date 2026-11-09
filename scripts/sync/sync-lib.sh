@@ -276,6 +276,29 @@ known_match() {
   if printf '%s\n' "$1" | grep -qxF -e "$2 $km_a" -e "$2 $km_b" -e "$2 $km_c"; then echo yes; else echo no; fi
 }
 
+# known_missing TEMPLATES_DIR
+# The owned templates under TEMPLATES_DIR whose current content is not a
+# "PATH HASH" line of its KNOWN.txt, one per line, indented. The suite and
+# scripts/ci/known-hashes-check.sh (so the local checks and CI) ask this one
+# question.
+known_missing() {
+  km_list=$(tr -d '\r' < "$1/KNOWN.txt")
+  for km_p in $(owned_paths "$(cat "$1/OWNED.txt")"); do
+    [ -f "$1/$km_p" ] || continue
+    printf '%s\n' "$km_list" | grep -qxF "$km_p $(norm_hash "$(cat "$1/$km_p")")" || printf '  %s\n' "$km_p"
+  done
+}
+
+# known_missing_words MISSING
+# The one wording for a stale list, with the one command that regenerates it,
+# written as bump.sh runs it. Nothing for an empty MISSING.
+known_missing_words() {
+  [ -n "$1" ] || return 0
+  printf '%s\n' "Every current template must be in KNOWN.txt (the list of known template hashes), and these are not:" "$1" \
+    "Run scripts/sync/known-hashes.sh before a release, and commit plugin/templates/KNOWN.txt:" \
+    "  sh plugin/scripts/sync/known-hashes.sh origin/main..HEAD > plugin/templates/KNOWN.txt.new && cat plugin/templates/KNOWN.txt.new > plugin/templates/KNOWN.txt && rm -f plugin/templates/KNOWN.txt.new"
+}
+
 # unfill_comments TEXT NAME VALUE
 # TEXT with VALUE put back to NAME on its comment lines only. Syncs before
 # 0.23.3 filled the placeholders wherever they stood, comments included,
