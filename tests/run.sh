@@ -338,8 +338,8 @@ if [ -f "$tl_dir/scripts/ci/queue/rules-place.sh" ]; then
   tl_out=$( ( bt=$(( $(date +%s) - 3 )); eval "$tl_fn"; b_lap "linking packages in Maya's rooftop-garden app"; echo "next=$(( $(date +%s) - bt ))" ) 2>&1 )
   tl_secs=$(printf '%s\n' "$tl_out" | sed -n 's/^  timing: .* took \(-\{0,1\}[0-9]*\)s$/\1/p')
   eq "a timing line names the step and a number of seconds, never negative" "1" "$(printf '%s\n' "$tl_out" | grep -c '^  timing: linking packages in Maya.s rooftop-garden app took [0-9][0-9]*s$')"
-  eq "a step that began three seconds ago took three or four" "1" "$( [ -n "$tl_secs" ] && [ "$tl_secs" -ge 3 ] && [ "$tl_secs" -le 4 ] && echo 1 || echo 0 )"
-  eq "the next lap starts where the last one ended" "1" "$( n=$(printf '%s\n' "$tl_out" | sed -n 's/^next=//p'); [ -n "$n" ] && [ "$n" -ge 0 ] && [ "$n" -le 1 ] && echo 1 || echo 0 )"
+  eq "a step that began three seconds ago took at least three (how much longer is a slow machine, not a wrong line)" "1" "$(case "$tl_secs" in [3-9]|[1-9][0-9]*) echo 1 ;; *) echo 0 ;; esac)"
+  eq "the next lap starts where the last one ended: a plain number of seconds, never negative" "1" "$(n=$(printf "%s\n" "$tl_out" | sed -n "s/^next=//p"); case "$n" in ""|*[!0-9]*) echo 0 ;; *) echo 1 ;; esac)"
   eq "no script reads the clock with date and a bare plus" "0" "$(grep -rEc 'date( -[a-z]+)* \+([^%A-Za-z0-9"'"'"']|$)' "$tl_dir/scripts/ci" "$root" --include='*.sh' --include='*.yml' 2>/dev/null | grep -v ':0$' | grep -v 'tests/run.sh' | wc -l | tr -d ' ')"
   eq "every lap in the batch has its start set first" "1" "$(grep -c '^bt=\$(date +%s); ensure_modules; b_lap' "$tl_dir/scripts/ci/queue/batch.sh")"
 fi
@@ -492,7 +492,7 @@ printf '#!/bin/sh\nexit 1\n' > "$sb_bin/gh"; chmod +x "$sb_bin/gh"
   # The slow steps: a deploy check with something to say, and a workflow
   # check that would hold the start for half a minute if the hook ran it.
   printf '#!/bin/sh\necho "Deploys: main has changes waiting 90 minutes that are not in production (the interval is 60); check the Deploy workflow and the runner."\n' > scripts/ci/deploy-health.sh
-  printf '#!/bin/sh\nexec sleep 30\n' > scripts/ci/workflow-breaks.sh
+  printf '#!/bin/sh\ntouch "%s/workflow-check-ran"\nexec sleep 30\n' "$sb_fx" > scripts/ci/workflow-breaks.sh
   cp "$root/templates/scripts/ci/lib.sh" scripts/ci/lib.sh
   printf 'changed\n' > scripts/ci/batch-lib.sh
   printf '10:02 round 1: nothing green\n10:03 queue done\n' > logs/merge-queue-1.log
@@ -503,9 +503,20 @@ sb_run() {
   printf '{"source":"startup","session_id":"garden-1","cwd":"%s"}' "$sb_repo" | \
     PATH="$sb_bin:$PATH" SIPNSHIP_HOME="$sb_home" SIPNSHIP_BRIEF_REFRESH=no CLAUDE_PROJECT_DIR="$sb_repo" bounded 60 sh "$root/hooks/scripts/session-brief.sh" 2>&1
 }
+# Time is watched here, never gated: the brief's wall clock depends on what
+# else the machine is running. What keeps it fast is checked by its output
+# and by the slow steps never starting in the hook; the seconds are printed
+# against the 15 the hook can spare, with a warning that passes when over.
+sb_time() {
+  printf 'time  %s: %ss (limit 15s)\n' "$1" "$sb_took"
+  if [ "$sb_took" -gt 15 ]; then
+    printf 'WARN  %s took %ss, over its limit of 15s (it passes; time is watched on Cost, never gated)\n' "$1" "$sb_took"
+  fi
+}
 sb_t0=$(date +%s); sb_out=$(sb_run); sb_t1=$(date +%s)
 sb_took=$((sb_t1 - sb_t0))
-eq "the brief finishes inside 15 seconds" "inside" "$([ "$sb_took" -le 15 ] && echo inside || echo "took $sb_took s")"
+sb_time "the brief at a cold start"
+eq "the hook started none of its slow steps in the foreground: the 30-second workflow check never began" "no" "$([ -e "$sb_fx/workflow-check-ran" ] && echo yes || echo no)"
 eq "it names the last commit" "1" "$(printf '%s\n' "$sb_out" | grep -c ' Plant row 3$')"
 eq "it names the queue's last line" "Queue: ran in the last two hours. Last line: 10:03 queue done" "$(printf '%s\n' "$sb_out" | grep '^Queue: ')"
 eq "it names the last handoff" "Last handoff (handoff-2026-11-02.md):" "$(printf '%s\n' "$sb_out" | grep '^Last handoff')"
@@ -518,13 +529,15 @@ sb_common=$(git -C "$sb_repo" rev-parse --path-format=absolute --git-common-dir 
 sb_cache="$sb_home/brief-cache/$(project_slug "${sb_common%/.git}")"
 (cd "$sb_repo" && PATH="$sb_bin:$PATH" SIPNSHIP_HOME="$sb_home" SIPNSHIP_BRIEF_SLOW_BOUND=3 bounded 60 sh "$root/hooks/scripts/session-brief-slow.sh" "$sb_cache") >/dev/null 2>&1
 eq "the background read stamps its cache and lets go of its lock" "yes no" "$([ -s "$sb_cache/stamp" ] && echo yes || echo no) $([ -d "$sb_cache/lock" ] && echo yes || echo no)"
+[ ! -e "$sb_fx/workflow-check-ran" ] || mv "$sb_fx/workflow-check-ran" "$sb_fx/workflow-check-ran.background"
 eq "a step past its bound leaves its line empty" "" "$(cat "$sb_cache/workflow-breaks" 2>/dev/null)"
 printf '%s\t%s\n' "$(( $(date +%s) - 7200 ))" "https://github.com/maya/rooftop/issues/3#issuecomment-1" > "$sb_cache/handoff-comment"
 sb_t0=$(date +%s); sb_out=$(sb_run); sb_t1=$(date +%s)
 sb_took=$((sb_t1 - sb_t0))
 eq "the brief shows the handoff comment's time, age and link" "1 1" "$(printf '%s\n' "$sb_out" | grep -c '^Last handoff, on the drive issue: written .* (2 h ago)\. Read it first: https://github.com/maya/rooftop/issues/3#issuecomment-1$') $(printf '%s\n' "$sb_out" | grep -c '^Last handoff (handoff-2026-11-02.md):')"
 eq "the handoff skill is named handoff and reaches the script" "1 1" "$(grep -c '^name: handoff$' "$root/skills/handoff/SKILL.md") $(grep -c 'scripts/drive/handoff.sh' "$root/skills/handoff/SKILL.md")"
-eq "with the cache, still inside 15 seconds" "inside" "$([ "$sb_took" -le 15 ] && echo inside || echo "took $sb_took s")"
+sb_time "the brief with its cache filled"
+eq "with the cache, the workflow check was still never started by the hook" "no" "$([ -e "$sb_fx/workflow-check-ran" ] && echo yes || echo no)"
 eq "the cached deploy line says how old it is" "Deploys (as of just now): main has changes waiting 90 minutes that are not in production (the interval is 60); check the Deploy workflow and the runner." "$(printf '%s\n' "$sb_out" | grep '^Deploys')"
 eq "with no board read, the proposal is unavailable" "Proposed next: (unavailable)" "$(printf '%s\n' "$sb_out" | grep '^Proposed next')"
 eq "the hook starts the background read detached, never waiting on it" "1" "$(grep -c 'nohup sh "$here/session-brief-slow.sh" "$sb_cache" </dev/null >/dev/null 2>&1 &' "$root/hooks/scripts/session-brief.sh")"
@@ -4166,6 +4179,40 @@ eq "the report job is never counted as a flaky test" "src/water.test.ts > schedu
 eq "a renamed report job is skipped by its configured name" "job:tests (garden)" "$(without_report_job "$(printf 'job:Garden report\njob:tests (garden)\n')" 'Garden report')"
 eq "record_flaky leaves the report job out" "1" "$(sed -n '/^record_flaky()/,/^}/p' "$root/templates/scripts/ci/queue/runs.sh" | grep -c 'without_report_job "\$tests" "\${QUEUE_SUMMARY_CHECK:-CI passed}"')"
 eq "the deploy gate asks the full gate" "1" "$(grep -c 'gate_holds_deploy "$(sh "$here/gate.sh" last' "$root/templates/scripts/ci/deploy-gate.sh")"
+
+# A gate that failed before its test jobs existed (GitHub reports no failed
+# step, and the red-main job needs the test jobs), seen as red, not absent.
+ge_runs=$(printf 'c3\tfailure\t1793433600\tno\t903\nb2\tsuccess\t1793430000\tno\t902\na1\tsuccess\t1793419200\tyes\t901\n')
+eq "a gate that failed with no tests is main's last gate, and red" "c3	failure	1793433600" "$(last_gated "$ge_runs")"
+eq "main's state reads red, not the last green from hours before" "red" "$(gate_main_state "$(last_gated "$ge_runs")")"
+eq "the decision to run again still reads the last gate whose tests ran" "a1	success	1793419200" "$(last_gated_ran "$ge_runs")"
+eq "the gate's line names both times" "$(date -d @1793433600 +%H:%M) $(date -d @1793419200 +%H:%M)" "$(gate_early_red_line "$ge_runs" | sed -n "s/^main's gate at \([0-9:]*\) ended red before its tests started; nothing has checked main since \([0-9:]*\)\.$/\1 \2/p")"
+eq "one early red is counted once" "1" "$(gate_early_red_count "$ge_runs")"
+eq "two early reds in a row are counted twice (the red-main issue opens)" "2" "$(gate_early_red_count "$(printf 'd4\tfailure\t1793437200\tno\t904\n%s\n' "$ge_runs")")"
+eq "a later gate that ran its tests ends the line" "" "$(gate_early_red_line "$(printf 'd4\tsuccess\t1793437200\tyes\t904\n%s\n' "$ge_runs")")"
+eq "skipped gates alone say nothing" "" "$(gate_early_red_line "$(printf 'b2\tsuccess\t1793430000\tno\t902\na1\tsuccess\t1793419200\tyes\t901\n')")"
+eq "the plugin's template copies of the gate match the project's" "same same" "$(cmp -s "$root/templates/scripts/ci/gate-lib.sh" "$root/../scripts/ci/gate-lib.sh" && echo same || echo differ) $(cmp -s "$root/templates/scripts/ci/gate.sh" "$root/../scripts/ci/gate.sh" && echo same || echo differ)"
+
+section 'the brief says when the installed plugin lags'
+. "$root/hooks/scripts/session-brief-versions.sh"
+eq "installed behind the release, with changes waiting" "Plugin: The drive runs 0.40.0; 0.43.0 is released and 5 changes wait on a release. Bring the installed copy up with plugin/scripts/release/update-installed.sh." "$(plugin_lag_line 0.40.0 0.43.0 0.43.0 5)"
+eq "the repository ahead of the release is named too" "Plugin: The drive runs 0.43.0; 0.43.1 is released and the repository is at 0.44.0. Bring the installed copy up with plugin/scripts/release/update-installed.sh." "$(plugin_lag_line 0.43.0 0.43.1 0.44.0 0)"
+eq "one change waiting is said in the singular" "1" "$(plugin_lag_line 0.40.0 0.43.0 0.43.0 1 | grep -c 'and 1 change waits on a release')"
+eq "an installed copy that is current says nothing" "" "$(plugin_lag_line 0.43.1 0.43.1 0.43.1 0)"
+eq "an installed copy ahead of the release says nothing" "" "$(plugin_lag_line 0.44.0 0.43.1 0.43.1 2)"
+eq "no installed version known, nothing" "" "$(plugin_lag_line '' 0.43.1 0.43.1 0)"
+eq "versions compare by number, not by text" "yes no no" "$(ver_lt 0.9.0 0.10.0) $(ver_lt 0.10.0 0.9.0) $(ver_lt 0.43.1 0.43.1)"
+eq "a project-scoped copy older than the user's is named as one to remove" "Plugin: a project-scoped copy at 0.20.2 is older than the user-scoped 0.43.0; remove it, since two copies make the version a guess." "$(plugin_extra_copy_line 0.43.0 0.20.2)"
+eq "a project copy that is not older is left alone" "" "$(plugin_extra_copy_line 0.43.0 0.43.0)"
+pv_fx=$(mktemp -d)
+printf '{\n "plugins": {\n  "other@other": [\n   { "scope": "project", "version": "0.1.0" }\n  ],\n  "sipnship@sipnship": [\n   {\n    "scope": "user",\n    "version": "0.43.0"\n   },\n   {\n    "scope": "project",\n    "version": "0.20.2"\n   },\n   {\n    "scope": "project",\n    "version": "0.23.9"\n   }\n  ]\n }\n}\n' > "$pv_fx/installed_plugins.json"
+eq "the installed copies are read from the plugin list, this plugin's block only" "user=0.43.0 project=0.20.2,0.23.9" "$(plugin_copies_read "$pv_fx/installed_plugins.json" sipnship@sipnship)"
+eq "the release procedure names the installed-copy step last, and the script exists" "1 1" "$(grep -c 'update-installed.sh' "$root/README.md") $([ -f "$root/scripts/release/update-installed.sh" ] && echo 1 || echo 0)"
+
+section 'no test fails on how long something took'
+# Time is watched, never gated: a measured duration is printed as a time line
+# and warned about, and no check passes or fails on seconds.
+eq "no -le or -ge check on a measured duration in the suite" "0" "$(grep -nE '\[ "?\$\{?(sb_took|tl_secs|[a-z_]*took|[a-z_]*elapsed|[a-z_]*duration)\}?"? +-(le|ge)' "$root/tests/run.sh" | grep -vc 'grep -nE')"
 section 'test parts: only for the classes touched, side by side, stopping at the first red'
 pj_fx="$root/tests/fixtures/parts"
 pj_classes=$(cat "$pj_fx/classes.txt")

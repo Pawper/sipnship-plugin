@@ -22,6 +22,7 @@ here=$(dirname "$0")
 . "$here/lib.sh"
 . "$here/session-brief-lib.sh"
 . "$here/session-brief-fast.sh"
+. "$here/session-brief-versions.sh"
 
 input=$(cat)
 source=$(json_field "$input" source)

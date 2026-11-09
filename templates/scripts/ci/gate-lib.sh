@@ -16,12 +16,52 @@ gate_decide() {
   echo run
 }
 
-# last_gated RUNS: the newest gate that ran its tests, from lines of
+# last_gated RUNS: the newest gate that ran its tests, or failed before its
+# tests existed, from lines of
 #   head-sha  conclusion  created-epoch  tests-ran(yes|no)
 # newest first; prints "head-sha<TAB>conclusion<TAB>created-epoch", or
-# nothing. A run whose gate skipped is not a gate.
+# nothing. A run whose gate skipped is not a gate. A run that failed with no
+# test job at all counts as red, not as absent: GitHub reports no failed
+# step for it, and main was not checked.
 last_gated() {
+  printf '%s\n' "$1" | awk -F '\t' '($4 == "yes" && ($2 == "success" || $2 == "failure")) || ($4 == "no" && $2 == "failure") { print $1 "\t" $2 "\t" $3; exit }'
+}
+
+# last_gated_ran RUNS: as last_gated, but only a gate whose tests ran. The
+# decision to run again reads this, so a head whose gate failed before its
+# tests is tried again.
+last_gated_ran() {
   printf '%s\n' "$1" | awk -F '\t' '$4 == "yes" && ($2 == "success" || $2 == "failure") { print $1 "\t" $2 "\t" $3; exit }'
+}
+
+# gate_early_red_count RUNS: how many of the newest runs in a row failed
+# before their test jobs existed (conclusion failure, tests-ran "no"), from
+# the same lines as last_gated. A run whose tests ran ends the count; a
+# skipped or cancelled run is passed over. The job that opens the red-main
+# issue needs the test jobs, so nothing else says it.
+gate_early_red_count() {
+  printf '%s\n' "$1" | tr -d '\r' | awk -F '\t' '
+    NF < 4 || done { next }
+    $2 == "failure" && $4 == "no" { n++; next }
+    $2 == "cancelled" || ($4 == "no" && $2 == "success") { next }
+    { done = 1 }
+    END { print n + 0 }'
+}
+
+# gate_early_red_line RUNS: "main's gate at HH:MM ended red before its tests
+# started; nothing has checked main since HH:MM", or nothing when no gate
+# failed early since the last one whose tests ran. Times are the machine's
+# local clock.
+gate_early_red_line() {
+  [ "$(gate_early_red_count "$1")" -gt 0 ] || return 0
+  ge_red=$(printf '%s\n' "$1" | tr -d '\r' | awk -F '\t' 'NF >= 4 && $2 == "failure" && $4 == "no" { print $3; exit }')
+  ge_ok=$(last_gated_ran "$(printf '%s\n' "$1" | tr -d '\r')" | cut -f3)
+  ge_at() { date -d "@$1" +%H:%M 2>/dev/null || date -r "$1" +%H:%M 2>/dev/null; }
+  if [ -n "$ge_ok" ]; then
+    echo "main's gate at $(ge_at "$ge_red") ended red before its tests started; nothing has checked main since $(ge_at "$ge_ok")."
+  else
+    echo "main's gate at $(ge_at "$ge_red") ended red before its tests started; no gate has checked main on record."
+  fi
 }
 
 # gate_holds_deploy GATED LANDED_EPOCH: the reason a deploy is held, or

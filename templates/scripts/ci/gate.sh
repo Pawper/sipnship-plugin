@@ -4,6 +4,8 @@
 #       prints "run" or "skip: <why>"; GATE_QUIET_MINUTES is the quiet time
 #   sh scripts/ci/gate.sh last            the last gate that ran its tests:
 #       "head-sha<TAB>conclusion<TAB>created-epoch", or nothing
+#   sh scripts/ci/gate.sh early-red       the line for a gate that failed before its
+#       tests started (nothing when none did); early-red-count: how many in a row
 #   sh scripts/ci/gate.sh failing         the last gate's failing tests, when it
 #       failed: "part: test" per line, at most five, read from the failed
 #       jobs' annotations; nothing when it passed or named none
@@ -25,6 +27,8 @@ runs_tsv() {
 }
 case "$1" in
   last) last_gated "$(runs_tsv)" ;;
+  early-red) gate_early_red_line "$(runs_tsv)" ;;
+  early-red-count) gate_early_red_count "$(runs_tsv)" ;;
   failing)
     runs=$(runs_tsv)
     [ "$(last_gated "$runs" | cut -f2)" = failure ] || exit 0
@@ -37,7 +41,7 @@ case "$1" in
   decide)
     head=$(gh api "repos/{owner}/{repo}/commits/main" --jq '.sha + "\t" + .commit.committer.date' 2>/dev/null | tr -d '\r')
     [ -n "$head" ] || { echo "skip: main cannot be read"; exit 0; }
-    gated=$(last_gated "$(runs_tsv)")
+    gated=$(last_gated_ran "$(runs_tsv)")
     gate_decide "${head%%	*}" "$(printf '%s' "$gated" | cut -f1)" "$(to_epoch "${head#*	}")" "$(date +%s)" "${GATE_QUIET_MINUTES:-60}" "${2:-}" ;;
-  *) echo "usage: gate.sh decide [EVENT] | last | failing" >&2; exit 2 ;;
+  *) echo "usage: gate.sh decide [EVENT] | last | early-red | early-red-count | failing" >&2; exit 2 ;;
 esac

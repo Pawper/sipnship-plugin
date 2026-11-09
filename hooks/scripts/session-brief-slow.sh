@@ -14,6 +14,8 @@
 #   hotspots         the hotspot line
 #   handoff-comment  the newest handoff on the drive issue, epoch and link
 #   answers          the builder's answers still owed, from the drive's answers.sh
+#   plugin-versions  released version and the installed copies' versions
+#   main-gate        the line for a gate on main that ended red before its tests
 #   plan             the drive's plan, from CACHE_DIR/facts.tsv (the board
 #                    the hook read)
 #   stamp            when the last read ended, epoch seconds
@@ -101,6 +103,28 @@ fi
 # The builder's answers to what was asked, still owed; the brief names the new ones.
 if [ -f .claude/project-drive.json ] && [ -f "$here/../../scripts/drive/answers.sh" ] && [ "$have_gh" = yes ]; then
   (run_bounded "$bound" sh "$here/../../scripts/drive/answers.sh" --all 2>/dev/null | keep answers) &
+fi
+
+# A scheduled gate on main that failed before its test jobs existed: GitHub
+# shows no failed step and no red-main issue opens, so this says it.
+if [ -f scripts/ci/gate.sh ] && [ -f scripts/ci/gate-lib.sh ] && [ "$have_gh" = yes ]; then
+  (run_bounded "$bound" sh scripts/ci/gate.sh early-red 2>/dev/null | head -n 1 | keep main-gate) &
+fi
+
+# The plugin's versions: the other installed copies (from the plugin's own
+# path under a plugin cache) and the newest release. REST only. One line:
+# "released=X user=A project=B,C".
+if [ "$have_gh" = yes ]; then
+  (
+    . "$here/session-brief-versions.sh"
+    pr=$(cd "$here/../.." && pwd)
+    pname=$(basename "$(dirname "$pr")"); pmkt=$(basename "$(dirname "$(dirname "$pr")")")
+    pcache=$(dirname "$(dirname "$(dirname "$pr")")")
+    copies=""
+    [ "$(basename "$pcache")" = cache ] && copies=$(plugin_copies_read "$(dirname "$pcache")/installed_plugins.json" "$pname@$pmkt")
+    rel=$(run_bounded "$bound" gh api repos/Pawper/sipnship-plugin/releases/latest --jq .tag_name 2>/dev/null | tr -d '\r' | sed 's/^plugin-//; s/^v//')
+    [ -z "$rel$copies" ] || printf 'released=%s %s\n' "$rel" "$copies"
+  ) | keep plugin-versions &
 fi
 
 wait

@@ -203,6 +203,9 @@ s_workflows() {
     wb=$(cached workflow-breaks)
     [ -z "$wb" ] || add "Workflows ($sb_age): $wb. Open its last run; if the change was a template sync, say so on the plugin's issue."
   fi
+  # A scheduled gate on main that ended red before its tests started.
+  mg=$(cached main-gate)
+  [ -z "$mg" ] || add "Main ($sb_age): $mg"
   # Whether the live app works: one line from the latest Live run, read in the background.
   if [ -f .github/workflows/live.yml ]; then
     la=$(with_age "$(cached live-app)" "$sb_age")

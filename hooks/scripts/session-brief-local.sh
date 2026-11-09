@@ -152,9 +152,24 @@ s_plan() {
 
 # Unreleased plugin work, only when there is some.
 s_unreleased() {
-  [ -f plugin/.claude-plugin/plugin.json ] && [ -f "$here/../../scripts/drive/drive-lib.sh" ] || return 0
-  . "$here/../../scripts/drive/drive-lib.sh"
-  unrel=$(plugin_unreleased_count)
-  case "$unrel" in ''|0|*[!0-9]*) ;; *) add "Plugin: $unrel unreleased commit(s) on main since the last version bump." ;; esac
+  unrel=""; repo_ver=""
+  if [ -f plugin/.claude-plugin/plugin.json ] && [ -f "$here/../../scripts/drive/drive-lib.sh" ]; then
+    . "$here/../../scripts/drive/drive-lib.sh"
+    unrel=$(plugin_unreleased_count)
+    repo_ver=$(sed -n 's/^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' plugin/.claude-plugin/plugin.json | head -n 1)
+    case "$unrel" in ''|0|*[!0-9]*) ;; *) add "Plugin: $unrel unreleased commit(s) on main since the last version bump." ;; esac
+  fi
+  # The copy the drive runs, from the plugin's own path under a plugin cache
+  # (nothing when run from a source checkout), against the released version
+  # the background read cached.
+  pv=$(cached plugin-versions)
+  if [ "$(basename "$(dirname "$(dirname "$(dirname "$(cd "$here/../.." && pwd)")")")")" = cache ]; then
+    inst=$(basename "$(cd "$here/../.." && pwd)")
+    rel_ver=$(printf '%s\n' "$pv" | sed -n 's/.*released=\([0-9.]*\).*/\1/p')
+    plugin_lag_line "$inst" "$rel_ver" "$repo_ver" "$unrel"
+    user_ver=$(printf '%s\n' "$pv" | sed -n 's/.*user=\([0-9.]*\).*/\1/p')
+    proj_vers=$(printf '%s\n' "$pv" | sed -n 's/.*project=\([0-9.,]*\).*/\1/p')
+    plugin_extra_copy_line "${user_ver:-$inst}" "$proj_vers"
+  fi
   return 0
 }
