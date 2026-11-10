@@ -5,13 +5,12 @@
 #       lines. It never cancels the run. GitHub has no call to cancel one
 #       job, so a failed test part stops its sibling parts through the
 #       matrix's fail-fast, and the other jobs finish.
-#   sh scripts/ci/failure-report.sh cancel      in its own job, which runs
-#       only after the checks job has ended failed: a failed check means the
-#       run cannot merge, so the run is cancelled and its jobs still waiting
-#       for a runner leave the line. The checks job is already recorded as
-#       failed with its step named, since the cancel comes after it ended
-#       and never from inside it; "run" still reports an older run's
-#       cancelled job with a failed step as failed.
+#   sh scripts/ci/failure-report.sh cancel      in the checks job, after
+#       "job": a failed check means the run cannot merge, so the run is
+#       cancelled and its jobs still waiting for a runner leave the line.
+#       The cancel marks the checks job cancelled; "job" has already named
+#       its failed step, and "run" reports a cancelled job with a failed
+#       step as failed.
 #   sh scripts/ci/failure-report.sh run         in the report job: each
 #       failed job, its step and its lines, in the job summary, and the
 #       jobs cancelled because of it
