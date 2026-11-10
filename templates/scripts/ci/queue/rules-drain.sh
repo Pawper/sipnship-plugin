@@ -145,7 +145,7 @@ mergeable_word() {
 # nothing. Hold until they finish, then batch. Print "no" when nothing is
 # waiting, nothing is green, or there are enough green ones to batch now.
 drain_hold() {
-  if [ "${1:-0}" -eq 1 ] && [ "${2:-0}" -gt 0 ]; then echo yes; else echo no; fi
+  if [ "${2:-0}" -gt 0 ] && { [ "${1:-0}" -eq 1 ] || { [ "${1:-0}" -gt 1 ] && [ "${round_hold:-}" = yes ]; }; }; then echo yes; else echo no; fi
 }
 
 # rate_wait RATE NOW [FLOOR]

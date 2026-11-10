@@ -522,6 +522,7 @@ jobs:
     permissions:
       contents: read
       issues: write
+      actions: write
     steps:
       - uses: actions/checkout@v4
       - name: Open the red-main issue, or add this run to the open one

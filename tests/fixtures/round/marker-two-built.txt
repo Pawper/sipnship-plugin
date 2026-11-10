@@ -1,0 +1,2 @@
+Round 3 started.
+<!-- sipnship-proposal {"status":"started","units":[{"issues":[301],"areas":["watering schedule"],"pr":411},{"issues":[302],"areas":["bed photos"],"pr":412}],"held":[{"issues":[303],"waitsOn":[301],"areas":["frost alerts"]}]} -->

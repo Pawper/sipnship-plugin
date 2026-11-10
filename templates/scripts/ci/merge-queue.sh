@@ -73,7 +73,7 @@ fi
 . "$here/queue/serial.sh"
 . "$here/queue/batch.sh"
 . "$here/queue/deploy.sh"
-. "$here/queue/halve.sh"; . "$here/queue/attention.sh"; . "$here/queue/wait.sh"; . "$here/queue/rules-said.sh"; . "$here/queue/settle.sh"; . "$here/queue/tc-cache.sh"
+. "$here/queue/halve.sh"; . "$here/queue/round.sh"; . "$here/queue/attention.sh"; . "$here/queue/wait.sh"; . "$here/queue/rules-said.sh"; . "$here/queue/settle.sh"; . "$here/queue/tc-cache.sh"
 rules=$(cat "$here/classes.txt")
 
 mode=""
@@ -318,10 +318,10 @@ if [ "$mode" = drain ]; then
     printf '%s\n' "$open" > "$flaky_dir/open.tsv" 2>/dev/null || true
     printf '%s\n' "$attention" | sed '/^$/d' | awk -F'\t' '{ w = ($2 != "" ? $2 : "failed CI twice"); printf "%s\t%s\t%s\t\n", $1, w, (w ~ /cancelled/ ? "every job was cancelled again" : "its checks stay red") }' > "$flaky_dir/attention.tsv" 2>/dev/null || true
     publish_now draining "$flaky_dir/open.tsv"
-    queue_step="drain round $round: choosing what to merge"
-    pick=$(drain_candidates "$open" "$base" "$tried")
+    queue_step="drain round $round: choosing what to merge"; round_read "$open"
+    pick=$(drain_candidates "$round_pool_list" "$base" "$tried")
     if [ -n "$(printf '%s' "$rush_now" | tr -d ' ')" ]; then pick=$(printf '%s\n' "$pick" | grep -x "$(printf '%s' "$rush_now" | awk '{print $1}')"); fi
-    waiting=$(drain_waiting "$open" "$base" "$retried")
+    waiting=$(( $(drain_waiting "$round_pool_list" "$base" "$retried") + round_out ))
     n=$(printf '%s\n' "$pick" | sed '/^$/d' | wc -l | tr -d ' ')
     elapsed=$(( $(date +%s) - d_start ))
     # Wait here, or end and free the runner (queue/wait.sh)? On a runner a
@@ -348,7 +348,7 @@ if [ "$mode" = drain ]; then
     esac
     last_look=""
     queue_step="drain round $round: merging"
-    say_round_pick "$round" "$n" "$pick"; late_lands_say "$round" "$pick"
+    say_round_pick "$round" "$n" "$pick"; late_lands_say "$round" "$pick"; round_alone_say "$n" "$pick"
     QUEUE_IN_DRAIN=1; export QUEUE_IN_DRAIN
     : > "$flaky_dir/untried" 2>/dev/null || true
     : > "$flaky_dir/batch.why" 2>/dev/null || true

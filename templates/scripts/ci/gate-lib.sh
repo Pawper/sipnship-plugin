@@ -100,6 +100,23 @@ red_kind() {
   case "$1$2$3" in *cancelled*) echo unfinished ;; esac
 }
 
+# rerun_note SHA: the line left on the red-main issue when the check is
+# started again for a commit; rerun_due looks for it.
+rerun_note() {
+  printf 'Started the check again for %s, once; it is not started again for this commit.' "$(printf '%s' "$1" | cut -c1-7)"
+}
+
+# rerun_due KIND SHA COMMENTS: "yes" when a red main run of kind "nostart"
+# (the check could not start its jobs: nothing wrong with main's code) may be
+# started again: once per commit. COMMENTS are the red-main issue's comments;
+# one that already says the check was started again for this commit makes it
+# "no". Any other kind is "no": a failed test is the builder's, and is not
+# run again to see if it passes.
+rerun_due() {
+  [ "$1" = nostart ] || { echo no; return; }
+  if printf '%s\n' "$3" | tr -d '\r' | grep -qF "$(rerun_note "$2")"; then echo no; else echo yes; fi
+}
+
 # red_words KIND: the kind in plain words, as the Main card says it.
 red_words() {
   case "$1" in

@@ -1,0 +1,1 @@
+<!-- sipnship-proposal {"status":"started","units":[{"issues":[301],"areas":["watering schedule"],"pr":411},{"issues":[302,304],"areas":["bed photos"]}],"held":[{"issues":[303],"waitsOn":[301],"areas":["frost alerts"],"pr":999}]} -->

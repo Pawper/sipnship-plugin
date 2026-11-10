@@ -393,6 +393,28 @@ eq "a red half that is one pull request is the culprit" "culprit 41" "$(halving_
 eq "a green half sends the search to the other half" "other 45 47" "$(halving_next green '41 42' '45 47')"
 eq "a green half beside a lone member names that member" "culprit 47" "$(halving_next green '41 42 45' '47')"
 eq "a member dropped by halving is told which test" "#42 was dropped from the batch: the full run went red with it and green without it (the watering test). It goes through the serial queue." "$(halving_say 42 'the watering test')"
+# The round is the batch: the drain batches exactly the running round's pull requests.
+. "$root/templates/scripts/ci/queue/round.sh"
+rd_fx="$root/tests/fixtures/round"
+rd_tab=$(printf '\t')
+rd_marker() { round_parse "$(round_marker "$(cat "$rd_fx/$1")")"; }
+eq "a round whose units all have pull requests names them" "411 412${rd_tab}0" "$(rd_marker marker-two-built.txt)"
+eq "a unit still without a pull request is counted, and held work is not" "411${rd_tab}1" "$(rd_marker marker-one-unbuilt.txt)"
+eq "the newest started marker is the running round" "411 412${rd_tab}0" "$(rd_marker markers-two-rounds.txt)"
+eq "no started marker is no round" "" "$(rd_marker marker-none.txt)"
+rd_pool() { round_pool "$(cat "$rd_fx/$1")" "$2" | cut -f1 | tr '\n' ' '; }
+eq "with the round running, only its members are in the pool" "411 412 " "$(rd_pool open-members-green.tsv '411 412')"
+eq "a member still running its checks keeps the pool narrowed" "411 412 " "$(rd_pool open-one-pending.tsv '411 412')"
+eq "members that are red or in conflict are set aside, so the rest flows" "411 412 420 " "$(rd_pool open-members-set-aside.tsv '411 412')"
+eq "a round whose members have all landed narrows nothing" "420 421 " "$(rd_pool open-round-done.tsv '411 412')"
+rd_out() { round_outstanding "$(round_pool "$(cat "$rd_fx/$1")" "$2")" "$2" "$3"; }
+eq "all members green and built: nothing is waited on" "0" "$(rd_out open-members-green.tsv '411 412' 0)"
+eq "a member running its checks is waited on" "1" "$(rd_out open-one-pending.tsv '411 412' 0)"
+eq "a unit not yet built is waited on beside it" "2" "$(rd_out open-one-pending.tsv '411 412' 1)"
+eq "a unit not yet built holds a green member" "1" "$(rd_out open-members-green.tsv '411 412' 1)"
+eq "nothing of the round left to land: nothing is waited on" "0" "$(rd_out open-round-done.tsv '411 412' 1)"
+eq "one member that goes ahead says its round is still being built" "Landing alone: the rest of its round is still being built." "$(round_alone_line 411 1)"
+eq "no line when nothing of the round is outstanding" "" "$(round_alone_line 411 0)"
 
 section 'timing lines of the drain'
 # The drain's "timing:" lines once said a step "took -1793971983s" and every
@@ -4324,6 +4346,12 @@ eq "a failed full job is a red test" "test" "$(red_kind success failure success)
 eq "a run red with no failed job could not start its jobs" "nostart" "$(red_kind failure '' '')"
 eq "a gate green but nothing started, with a failed gate, is nostart" "nostart" "$(red_kind failure skipped skipped)"
 eq "a cancelled job and no failure did not finish" "unfinished" "$(red_kind success '' cancelled)"
+rd_said="Main's check on abc1234def was red: the check could not start its jobs. Run: x.
+Started the check again for abc1234, once; it is not started again for this commit."
+eq "a nostart run not yet started again may be" "yes" "$(rerun_due nostart abc1234def 'Main check was red.')"
+eq "a nostart run already started again for the commit is not, again" "no" "$(rerun_due nostart abc1234def "$rd_said")"
+eq "a nostart run on a new commit may be started again" "yes" "$(rerun_due nostart fff9999aaa "$rd_said")"
+eq "a failed test is never started again to see" "no" "$(rerun_due test abc1234def '')"
 eq "a green run is not red" "" "$(red_kind success success success)"
 eq "a failed test is the owner's to fix" "Main's check on abc1234 was red: a test failed. Run: https://example.test/run/9. Fix it before merging anything else." "$(red_note test abc1234 https://example.test/run/9 no)"
 eq "a run that could not start says nothing is asked of the owner and when it tries again" "Main's check on abc1234 was red: the check could not start its jobs. Run: https://example.test/run/9. No test failed, and nothing is asked of the owner. The check is run once more by itself at the next hour." "$(red_note nostart abc1234 https://example.test/run/9 no)"
