@@ -50,10 +50,11 @@ case "$1" in
   decide)
     head=$(gh api "repos/{owner}/{repo}/commits/main" --jq '.sha + "\t" + .commit.committer.date' 2>/dev/null | tr -d '\r')
     [ -n "$head" ] || { echo "skip: main cannot be read"; exit 0; }
+    quiet=${GATE_QUIET_MINUTES:-60}
     # Not due on the quiet time alone: no run is read.
-    early=$(gate_skip_early "${head%%	*}" "$(to_epoch "${head#*	}")" "$(date +%s)" "${GATE_QUIET_MINUTES:-60}" "${2:-}")
+    early=$(gate_skip_early "${head%%	*}" "$(to_epoch "${head#*	}")" "$(date +%s)" "$quiet" "${2:-}")
     [ -z "$early" ] || { echo "$early"; exit 0; }
     gated=$(last_gated_ran "$(runs_tsv "${head%%	*}")")
-    gate_decide "${head%%	*}" "$(printf '%s' "$gated" | cut -f1)" "$(to_epoch "${head#*	}")" "$(date +%s)" "${GATE_QUIET_MINUTES:-60}" "${2:-}" ;;
+    gate_decide "${head%%	*}" "$(printf '%s' "$gated" | cut -f1)" "$(to_epoch "${head#*	}")" "$(date +%s)" "$quiet" "${2:-}" ;;
   *) echo "usage: gate.sh decide [EVENT] | last | early-red | early-red-count | failing | why" >&2; exit 2 ;;
 esac

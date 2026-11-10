@@ -1,1 +1,1 @@
-scripts/sync/sync-templates.sh
+.claude/rules.txt
