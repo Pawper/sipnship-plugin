@@ -2449,6 +2449,7 @@ eq "two passwords differ" "no" "$([ "$(random_password)" = "$(random_password)" 
 section 'template refresh'
 . "$root/scripts/sync/sync-lib.sh"
 . "$root/scripts/sync/known-lib.sh"
+. "$root/scripts/sync/sync-deps.sh"
 owned='# comment
 scripts/ci/merge-queue.sh
 .github/workflows/audit.yml
