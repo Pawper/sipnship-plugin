@@ -201,3 +201,34 @@ gate_failing_tests() {
 last_gated_run() {
   printf '%s\n' "$1" | awk -F '\t' '$4 == "yes" && ($2 == "success" || $2 == "failure") { print $5; exit }'
 }
+
+# full_run_decide HEAD_REF LABELS CLASSES
+# "yes" when a pull request's own run is a full run, otherwise "no". Batch
+# first: a pull request's own CI is the cheap gate (the checks job and
+# classify), and its test parts and app run once, in the batch, current with
+# main. A full run of its own: a batch or rush head (the batch's one run is
+# the full one), a "ci:full" label (read when the run starts), or a change
+# to CI itself (.github/ or scripts/ci/, the class "ci"), since it changes
+# the gate and nothing else proves it. LABELS is comma separated and CLASSES
+# space separated.
+full_run_decide() {
+  case "$1" in batch-*|rush-*) echo yes; return ;; esac
+  case ",$2," in *,ci:full,*) echo yes; return ;; esac
+  case " $3 " in *" ci "*) echo yes; return ;; esac
+  echo no
+}
+
+# cheap_gate_say: what a green pull request that has run only its rule
+# checks is told, in the words a person reads (the Queue and Work cards).
+cheap_gate_say() { echo "Its rule checks passed; it lands with the next batch"; }
+
+# cheap_gate_held CHECKS: "yes" when a pull request's check lines show the
+# cheap gate and no test jobs: the "checks" job passed and every "tests",
+# "app" and "screens" job is skipped or absent. CHECKS is the text of
+# scripts/pr-checks.sh, one "  name   outcome" line per check run.
+cheap_gate_held() {
+  printf '%s\n' "$1" | awk '
+    $1 == "checks" && $2 == "success" { c = 1 }
+    $1 == "tests" || $1 == "app" || $1 == "screens" { if ($2 != "skipped") other = 1 }
+    END { print (c && !other) ? "yes" : "no" }'
+}

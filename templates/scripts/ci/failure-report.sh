@@ -27,9 +27,10 @@ case "$1" in
     name=$(printf '%s' "$me" | cut -f2)
     step=$(printf '%s' "$me" | cut -f6)
     lines=
-    [ -z "$2" ] || [ ! -f "$2" ] || lines=$(tail -n 30 "$2")
-    failure_summary "${name:-${GITHUB_JOB:-this job}}" "$step" "$lines" >> "$summary"
-    failure_annotation "${name:-${GITHUB_JOB:-this job}}" "$step" "$lines" ;;
+    slow=
+    [ -z "$2" ] || [ ! -f "$2" ] || { lines=$(tail -n 30 "$2"); slow=$(slow_say "$(cat "$2")"); }
+    failure_summary "${name:-${GITHUB_JOB:-this job}}" "$step" "$lines" "$slow" >> "$summary"
+    failure_annotation "${name:-${GITHUB_JOB:-this job}}" "$step" "$lines" "$slow" ;;
   cancel)
     if gh api -X POST "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/cancel" >/dev/null 2>&1; then
       echo "A check failed, so this run cannot merge: cancelled its jobs still waiting for a runner."

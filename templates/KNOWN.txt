@@ -112,6 +112,7 @@ scripts/ci/QUEUE.md 09e1625f478854e050567ff3b24780e091def685
 scripts/ci/QUEUE.md 0b88e5e5c709f03d723da368b47d1b91507391cb
 scripts/ci/QUEUE.md 0dc048ba9dc5ba8c6c5889227c0e84c0839b60c1
 scripts/ci/QUEUE.md 114835f1e6974c70553bc233e9e92f2b9ddedeb1
+scripts/ci/QUEUE.md 13ecca783a85e104f09f6872a223b1f8906d0f67
 scripts/ci/QUEUE.md 161773f25c7b1930a94fed36c55a5a7db0eab886
 scripts/ci/QUEUE.md 199b6db33a98f5f87380d5ef2e8242aecc899b81
 scripts/ci/QUEUE.md 2370474768f7f2215d83d78f0607d0d0c9317339
@@ -273,9 +274,11 @@ scripts/ci/design-check.sh daee1df873e27cd8ef9eb3baf10d8df3da3ad04e
 scripts/ci/doctor-lib.sh bd826051735cd01e1cd98586d812dd446401ef37
 scripts/ci/doctor-lib.sh f17ef9b2528b34a2df0a9dc0da84a3b9c82a4888
 scripts/ci/drain-late.sh 0f94a6a4fdd2e8f30117cbbff59713b718e53bfc
+scripts/ci/failure-lib.sh 3c47f7cdd980a091dcc4d437bfc62b044ac0659e
 scripts/ci/failure-lib.sh 9c080e6aa2178c7a865eac769975a14eb3d87550
 scripts/ci/failure-lib.sh b8e82ebafe18a8303dd315f72410a1e6e19c2048
 scripts/ci/failure-report.sh 0cc2380b15156856af9c3a3a695b6eccbc293809
+scripts/ci/failure-report.sh 1cd3706b70a7aae34fea8218fa15a5701c953118
 scripts/ci/failure-report.sh 83addfaecd490577926db622eaed797ea200f419
 scripts/ci/failure-report.sh c0b689751b744df98a15ef56e2e9ff737762fa5b
 scripts/ci/gate-lib.sh 5037d13ddcebe96c993c7ac502e960532e88e793
@@ -284,6 +287,7 @@ scripts/ci/gate-lib.sh 839bdae237b67b18fae36acd5cee5095766f5940
 scripts/ci/gate-lib.sh 94b5a21cac3fea541858e37ded2c80af51eef53f
 scripts/ci/gate-lib.sh bf0f239354bf0c19b9c8fafa95e4bc62b5fddabd
 scripts/ci/gate-lib.sh cd1564df09265d9de0244332bca1f5ec9d159844
+scripts/ci/gate-lib.sh f49a9902bfaa066237f931e48cceeb4ed6abb976
 scripts/ci/gate.sh 0607f765dfb34d66accf90f57badbe3df99f382b
 scripts/ci/gate.sh 2308500ed6444244a351abe0dc9fcf706e1c293a
 scripts/ci/gate.sh 24ac66e08d6c3a679048319c2facb6b91e1d0989
@@ -486,6 +490,7 @@ scripts/ci/queue/requests.sh f73fabdf22193bd75131df060663bd46ccefa4a8
 scripts/ci/queue/rerun.sh 0061016aad77b0ac0b94004eeb23d2da0731d1ba
 scripts/ci/queue/rescue.sh d09f82e8d2885b27b3cc5c30fa8579f39b122afd
 scripts/ci/queue/rule-issues.sh 4b69ca7942f9a4c5cdfb8f9ec673df0cb8e869b2
+scripts/ci/queue/rules-batch.sh 124e3d168f13442accefe05f03dc9dfacd68467e
 scripts/ci/queue/rules-batch.sh 535aa494031d3291ad4ea46a64bac00194903088
 scripts/ci/queue/rules-batch.sh a31d3fe468610454c7b888568b5d54e9db65575f
 scripts/ci/queue/rules-checkout.sh ec0d3af86c16d373f8c032ef06b16f1ee2918910

@@ -194,3 +194,38 @@ clash_with_rounds() {
     NF == 0 { next }
     { line = $1 "\t" $2 "\t" $3 "\t" $4 "\t" $5; if ($1 in r) line = line "\t" r[$1] "\t" s[$1]; print line }'
 }
+
+# batch_halves MEMBERS...
+# A red batch finds its member by halving, not by running each alone: print
+# the first half of the members on one line (the larger half when the count
+# is odd), then the second half on the next, numbers separated by spaces.
+# With one member there is nothing to halve: the first line is that member
+# and the second is empty.
+batch_halves() {
+  bh_n=$#; bh_first=$(( (bh_n + 1) / 2 )); bh_a=""; bh_b=""; bh_i=0
+  for bh_m in "$@"; do
+    bh_i=$((bh_i + 1))
+    if [ "$bh_i" -le "$bh_first" ]; then bh_a="${bh_a:+$bh_a }$bh_m"; else bh_b="${bh_b:+$bh_b }$bh_m"; fi
+  done
+  printf '%s\n%s\n' "$bh_a" "$bh_b"
+}
+
+# halving_next RESULT FIRST SECOND
+# What to do after a half's one full run. RESULT is the word the half that
+# was re-run came back with (green or red); FIRST is the half that was run
+# and SECOND the other. Prints "culprit N" when a red half is a single pull
+# request, "again <members>" when a red half still holds several (run it
+# halved), and "other <members>" when the run half was green (the red one is
+# in the other half: halve that).
+halving_next() {
+  case "$1" in
+    red) case "$2" in *" "*) printf 'again %s\n' "$2" ;; *) printf 'culprit %s\n' "$2" ;; esac ;;
+    *) case "$3" in *" "*) printf 'other %s\n' "$3" ;; *) printf 'culprit %s\n' "$3" ;; esac ;;
+  esac
+}
+
+# halving_say PR WHERE: the one line a member dropped by halving gets, with
+# the failing test named when it is known.
+halving_say() {
+  printf '#%s was dropped from the batch: the full run went red with it and green without it%s. It goes through the serial queue.\n' "$1" "${2:+ ($2)}"
+}

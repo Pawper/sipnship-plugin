@@ -256,3 +256,33 @@ agent_runners_say() {
       print s
     }'
 }
+
+# deferred_holds ROUND
+# ROUND is the plan's lines. For the plan's "defer N unit(s): ... (#5, #6 #7)"
+# line, print the round file's lines for the units it left out, one
+# "hold: 5 | why: No free runner this round" each, so the Work tab says
+# why a unit is not in the round instead of saying nothing. A unit with
+# several issues is one hold line naming all of them.
+deferred_holds() {
+  printf '%s\n' "$1" | awk '
+    /^defer [0-9]+ unit\(s\):/ {
+      s = $0; i = match(s, /\(#[^)]*\)$/); if (!i) next
+      s = substr(s, RSTART + 1, RLENGTH - 2)
+      n = split(s, pieces, /, /)
+      for (k = 1; k <= n; k++) { p = pieces[k]; gsub(/#/, "", p); print "hold: " p " | why: No free runner this round" }
+    }'
+}
+
+# sized_line SAID: the round file's line for how the plan sized the round,
+# from the plan's own words ("5 runners online, 4 free for agents"); empty
+# when it said nothing. The Work tab's "Why this many" tip reads it.
+sized_line() {
+  [ -n "$1" ] || return 0
+  printf 'sized: %s\n' "$(printf '%s' "$1" | tr -d '\r' | cut -c1-160)"
+}
+
+# mark_waiting_ok VERDICT
+# VERDICT is ask_verdict's word for the issue's latest ask (scripts/ci/ask-lib.sh, the one reader).
+# "yes" only for an ask in the shape (choices, exactly one recommended): the
+# plan's mark-waiting then runs without approval, like ask-owner.
+mark_waiting_ok() { if [ "$1" = one ]; then echo yes; else echo no; fi; }

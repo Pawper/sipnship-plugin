@@ -42,6 +42,10 @@
 #                             what the whole proposed round waits for, in
 #                             plain words; the Work tab says it waits, and on
 #                             what, instead of saying it starts on its own
+#   sized: 5 runners online, 4 free for agents
+#                             how the plan sized the round, in its words (the
+#                             plan prints it as its "sized:" line); the Work
+#                             band's "Why this many" tip says it
 # No two units may share an issue, and no two may share an area of the list
 # the project keeps (.claude/areas.txt, or --areas FILE; scripts/drive/
 # areas-lib.sh gives its form) unless an apart line says why: the script says
@@ -121,7 +125,7 @@ function arealist(s,   n, a, i, out) {
   return out
 }
 function bad(msg) { print "error\t" msg; failed = 1; exit }
-BEGIN { status = "proposed"; units = ""; held = ""; apart = ""; waits = ""; looked = ""; nu = 0; nh = 0 }
+BEGIN { status = "proposed"; units = ""; held = ""; apart = ""; waits = ""; sized = ""; looked = ""; nu = 0; nh = 0 }
 /^[ \t]*(#|$)/ { next }
 /^looked:/ {
   looked = trim(substr($0, 8))
@@ -129,6 +133,7 @@ BEGIN { status = "proposed"; units = ""; held = ""; apart = ""; waits = ""; look
   next
 }
 /^waits:/ { waits = substr(trim(substr($0, 7)), 1, 200); next }
+/^sized:/ { sized = substr(trim(substr($0, 7)), 1, 160); next }
 /^status:/ { v = trim(substr($0, 8)); if (v != "proposed" && v != "started") bad("status is proposed or started, not " v); status = v; next }
 /^(unit|hold|apart):/ {
   kind = $0; sub(/:.*/, "", kind)
@@ -179,7 +184,7 @@ END {
   if (nu == 0 && (nh == 0 || status == "started")) { print "error\tthe round has no unit line"; exit }
   if (waits != "") lines = lines "- Waits on: " waits "\n"
   if (looked == "") looked = now
-  print "json\t{\"status\":\"" status "\",\"units\":[" units "]" (status == "proposed" ? ",\"looked\":\"" esc(looked) "\"" : "") ",\"held\":[" held "]" (apart != "" ? ",\"apart\":[" apart "]" : "") (waits != "" ? ",\"waits\":\"" esc(waits) "\"" : "") "}"
+  print "json\t{\"status\":\"" status "\",\"units\":[" units "]" (status == "proposed" ? ",\"looked\":\"" esc(looked) "\"" : "") ",\"held\":[" held "]" (apart != "" ? ",\"apart\":[" apart "]" : "") (waits != "" ? ",\"waits\":\"" esc(waits) "\"" : "") (sized != "" ? ",\"sized\":\"" esc(sized) "\"" : "") "}"
   print "open\t" open
   print "status\t" status
   print "count\t" nu

@@ -256,6 +256,7 @@ jobs:
     outputs:
       classes: ${{ steps.classes.outputs.classes }}
       parts: ${{ steps.classes.outputs.parts }}
+      full: ${{ steps.classes.outputs.full }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -263,13 +264,25 @@ jobs:
           fetch-depth: 2
       - id: classes
         name: Classify the change
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
         run: |
           classes=$(sh scripts/ci/classify.sh "HEAD^1" "${{ github.sha }}")
           echo "classes=$classes" >> "$GITHUB_OUTPUT"
           echo "Classes: $classes"
+          # Batch first: a pull request's own run is the cheap gate (the
+          # checks job and this one); its test parts, "app" and "screens"
+          # run once, in the batch, current with main. A full run of its own
+          # only for a batch or rush head, a "ci:full" label read when the
+          # run starts, or a change to CI itself (the gate changed).
+          . scripts/ci/gate-lib.sh
+          full=$(full_run_decide "$HEAD_REF" "$LABELS" "$classes")
+          echo "full=$full" >> "$GITHUB_OUTPUT"
+          if [ "$full" = yes ]; then echo "Full run: yes"; else echo "Full run: no; its tests run in the batch, current with main."; fi
           # The test parts of those classes (the "!parts" lines of
           # classes.txt), as the "tests" job's matrix; [] when none.
-          parts=$(sh scripts/ci/test-parts.sh matrix "$classes")
+          if [ "$full" = yes ]; then parts=$(sh scripts/ci/test-parts.sh matrix "$classes"); else parts='[]'; fi
           echo "parts=$parts" >> "$GITHUB_OUTPUT"
           echo "Test parts: $parts"
 
@@ -280,7 +293,7 @@ jobs:
     # tests and the type-check once passed on a client bug only the build
     # would show.
     needs: classify
-    if: github.event_name == 'pull_request' && (contains(needs.classify.outputs.classes, 'app') || contains(needs.classify.outputs.classes, 'core') || contains(needs.classify.outputs.classes, 'deps') || contains(needs.classify.outputs.classes, 'tests') || contains(needs.classify.outputs.classes, 'other'))
+    if: github.event_name == 'pull_request' && needs.classify.outputs.full == 'yes' && (contains(needs.classify.outputs.classes, 'app') || contains(needs.classify.outputs.classes, 'core') || contains(needs.classify.outputs.classes, 'deps') || contains(needs.classify.outputs.classes, 'tests') || contains(needs.classify.outputs.classes, 'other'))
     runs-on: RUNS_ON
     permissions:
       # The workflow's own, plus actions: read so a failure can name its step.
@@ -374,7 +387,7 @@ jobs:
     # screen cannot be rendered. It records nothing: a person runs
     # "sh scripts/design/screens.sh compare --mock NAME" after looking.
     needs: classify
-    if: github.event_name == 'pull_request' && (contains(needs.classify.outputs.classes, 'app') || contains(needs.classify.outputs.classes, 'other'))
+    if: github.event_name == 'pull_request' && needs.classify.outputs.full == 'yes' && (contains(needs.classify.outputs.classes, 'app') || contains(needs.classify.outputs.classes, 'other'))
     runs-on: RUNS_ON
     permissions:
       # The workflow's own, plus actions: read so a failure can name its step.

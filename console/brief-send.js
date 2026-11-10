@@ -130,6 +130,8 @@ function briefBody(text, opts = {}) {
   }
   const body = { version: 1, sentAt: (opts.now || new Date()).toISOString(), machine: opts.machine || os.hostname(), cards: out };
   if (opts.runners) body.runners = opts.runners;
+  // The plugin's installed, released and repository versions (spec 006), so the System tab can say a copy lags.
+  if (opts.plugin) body.plugin = opts.plugin;
   // This plugin reports what agents did after a rule stopped them (spec 013); the Rules tab says "older" without it.
   body.reports = true;
   // The kinds of request this machine's listener carries out, only while the listener is on and running (spec 012).
@@ -292,7 +294,7 @@ async function sendBrief({ text, session = '', repo, env = process.env, now = ne
   if (same && mem.said === 'not_connected') return '';
   const answers = questions.pendingAnswers(env, entry.repoId);
   const can = require('./listen').briefCan(env, now.getTime());
-  const built = briefBody(text, { now, machine: entry.machine, runners, sessions: agents, ownerSteps: steps, localModels, answers, can, design: sampleOnly ? undefined : designUse.designUse({ root, now }) });
+  const built = briefBody(text, { now, machine: entry.machine, runners, sessions: agents, ownerSteps: steps, localModels, answers, can, design: sampleOnly ? undefined : designUse.designUse({ root, now }), plugin: require('./plugin-versions').read({ root, env }) });
   // Rule reports not yet acknowledged ride along (spec 013), fewer when the whole would pass the limit.
   const sent = refusals.attach(built, { root, repoId: entry.repoId, env, now: now.getTime(), maxBytes: SEND_MAX_BYTES });
   const body = fit(built);

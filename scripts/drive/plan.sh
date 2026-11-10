@@ -180,6 +180,8 @@ machines=no
 if [ -n "$runners_line" ]; then machines=yes; runners=${runners_line%%	*}; runners_say=$(agent_runners_say "$runners_line" "$runners_cap")
 else [ "$runners_cap" -gt 0 ] && runners=$runners_cap; runners_say="runners not readable from GitHub, so $runners"; fi
 echo "proposal for $(date '+%A %Y-%m-%d'), the owner's local day (${runners_say}, at most $max_agents agents, at most $max_minutes minutes; $note):"
+# The round file's own line for it (publish-round.sh's "sized:"), so the Work band says how many agents and why.
+echo "sized: ${runners_say}"
 # In progress is not taken on faith: an issue nobody works, or whose pull request is held for the owner, is set right first (./stale-lib.sh).
 stale=$(stale_lines "$facts" "$pull_links" "$(git for-each-ref --format='%(committerdate:unix)%09%(refname:short)' refs/heads refs/remotes 2>/dev/null)" "$(date +%s)" 2)
 if [ -n "$stale" ]; then

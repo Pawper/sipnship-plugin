@@ -204,6 +204,11 @@ tab says it waits and on what instead of saying it starts on its own; `status: p
   The next round is always on the Work tab: while a round runs, publish the proposed next round (`status:
   proposed`) beside the started one. The service keeps the started round and the proposed one apart, so
   both show.
+  The round file also carries how the plan sized it and what it left out: one `sized:` line with the plan's
+  own `sized:` words ("5 runners online, 4 free for agents"), which the Work band's "Why this many" tip says,
+  and a `hold:` line for each unit the plan deferred, with `why: No free runner this round`
+  (`deferred_holds` in `scripts/drive/round-lib.sh` prints them from the plan's `defer` line; `sized_line`
+  prints the `sized:` line; add each unit's `areas:` to its hold line, which the script requires), so a small round is explained and a deferred unit says why it waits.
   Every run publishes the proposed round, even one that starts nothing: a `hold:` line for each issue you
   hold back, with `why:` its reason in the builder's words ("Waits on your read of the bed map design",
   never "nothing buildable") and `after:` or `pr:` naming what it waits on, read afresh this run; a round of
@@ -243,7 +248,12 @@ tab says it waits and on what instead of saying it starts on its own; `status: p
 - **`set-ready N`.** The digest says the owner has answered an issue still labeled waiting on owner. Confirm it
   by having one reader re-read that issue, then set it to ready with `scripts/state.sh`.
 - **`mark-waiting N`.** The digest says a question to the owner is open on an issue labeled ready or in
-  progress. Confirm the same way, then set `state:waiting-on-owner`.
+  progress. Confirm the same way, then set `state:waiting-on-owner`. Like `ask-owner`, it runs without approval,
+  since it only moves an issue to where the question already is, and only for an ask in the shape: the latest
+  comment gives the question and numbered choices, exactly one ending "Recommended." (`scripts/ci/ask-lib.sh` is
+  the one reader, and the state-label hook refuses the change otherwise). An open question that is not in that
+  shape is not marked: ask the agent that wrote it to put it in the shape, and mark it then, so Ready holds only
+  what can start.
 - **`release X.Y.Z`.** Merged plugin changes sit unshipped. File a release issue first
   (`sh scripts/issue-open.sh`, State ready). In a worktree run `sh plugin/scripts/release/bump.sh X.Y.Z`, run
   the plugin suite (`sh tests/run.sh` from `plugin/`), commit, open the pull request with `Closes #N` for that

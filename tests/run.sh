@@ -358,6 +358,42 @@ eq "batch PR body" "- #41 Add retries. Closes #41
 eq "one line per PR" "#13 dropped: conflicts with the batch so far" "$(batch_line 13 dropped 'conflicts with the batch so far')"
 eq "one line without a reason" "#12 merged into the batch" "$(batch_line 12 'merged into the batch')"
 
+# Batch first (#1273): a pull request's own run is the cheap gate; its tests
+# run once, in the batch, current with main.
+. "$root/templates/scripts/ci/gate-lib.sh"
+eq "an ordinary pull request's own run is the cheap gate" "no" "$(full_run_decide pr-rooftop-watering 'state:ready,queue:hold' 'app core')"
+eq "a ci:full label asks for its own full run" "yes" "$(full_run_decide pr-rooftop-watering 'state:ready,ci:full' 'app')"
+eq "a label that only contains the words does not" "no" "$(full_run_decide pr-rooftop-watering 'ci:fuller,notci:full' 'app')"
+eq "a change to CI itself gets its own full run before batching" "yes" "$(full_run_decide pr-rooftop-watering '' 'app ci')"
+eq "a class that only begins with ci does not" "no" "$(full_run_decide pr-rooftop-watering '' 'circuit docs')"
+eq "a batch head runs the full run" "yes" "$(full_run_decide batch-2026-11-10 '' 'app')"
+eq "a rush head runs the full run" "yes" "$(full_run_decide rush-beds-fix '' 'docs')"
+eq "the words a green pull request on its rule checks is told" "Its rule checks passed; it lands with the next batch" "$(cheap_gate_say)"
+eq "rule checks green, test jobs skipped: the cheap gate" "yes" "$(cheap_gate_held '  checks      success
+  classify    success
+  app         skipped
+  tests       skipped
+  CI passed   success')"
+eq "a test job that ran is not the cheap gate" "no" "$(cheap_gate_held '  checks      success
+  tests       success
+  CI passed   success')"
+eq "rule checks not green is not the cheap gate" "no" "$(cheap_gate_held '  checks      failure
+  app         skipped')"
+eq "the classify job reads the label, the branch and the class" "1 1 1" "$(grep -c 'LABELS: \${{ join(github.event.pull_request.labels.\*.name' "$root/templates/.github/workflows/ci.yml") $(grep -c 'full=$(full_run_decide "$HEAD_REF" "$LABELS" "$classes")' "$root/templates/.github/workflows/ci.yml") $(grep -c 'if \[ "\$full" = yes \]; then parts=' "$root/templates/.github/workflows/ci.yml")"
+eq "app and screens wait on the full run; tests get no parts without it" "2" "$(grep -c "needs.classify.outputs.full == 'yes'" "$root/templates/.github/workflows/ci.yml")"
+# A red batch finds its member by halving.
+. "$root/templates/scripts/ci/queue/rules-batch.sh"
+eq "five members halve into three and two" "41 42 45
+47 48" "$(batch_halves 41 42 45 47 48)"
+eq "four members halve in two and two" "41 42
+45 47" "$(batch_halves 41 42 45 47)"
+eq "one member has no second half" "41" "$(batch_halves 41)"
+eq "a red half with several members is halved again" "again 41 42" "$(halving_next red '41 42' '45 47')"
+eq "a red half that is one pull request is the culprit" "culprit 41" "$(halving_next red '41' '42 45')"
+eq "a green half sends the search to the other half" "other 45 47" "$(halving_next green '41 42' '45 47')"
+eq "a green half beside a lone member names that member" "culprit 47" "$(halving_next green '41 42 45' '47')"
+eq "a member dropped by halving is told which test" "#42 was dropped from the batch: the full run went red with it and green without it (the watering test). It goes through the serial queue." "$(halving_say 42 'the watering test')"
+
 section 'timing lines of the drain'
 # The drain's "timing:" lines once said a step "took -1793971983s" and every
 # other "took 0s": the clock was read with `date +` where `date +%s` was
@@ -1653,6 +1689,20 @@ eq "the check keeps its exit code" "3" "$cl_code"
 eq "the check still prints its lines" "packages/web/src/app.ts is over its limit" "$cl_said"
 eq "the lines are kept for the failure report" "packages/web/src/app.ts is over its limit" "$(cat "$cl_tmp/check.log")"
 eq "the failure report names the failed step's own lines" "1" "$(failure_annotation checks 'Fail when a change grows a source file past its size limit' "$(cat "$cl_tmp/check.log")" | grep -c 'over its limit')"
+
+# A block over its time limit is named as slow beside the real cause (#1243).
+fl_log='ok   the watering plan
+time  the bed map: 9s (limit 60s)
+WARN  the block "the rooftop frost alert" took 72s, over its limit of 60s (it passes; time is watched on Cost, never gated)
+FAIL  the planter count: wanted 4, got 3'
+eq "an over-limit block is named, with how much over" "the rooftop frost alert was slow: it took 72s, 12s over its limit of 60s. Nothing fails on time; the cause is the failed step." "$(slow_say "$fl_log")"
+eq "the brief's own form is read too" "session brief was slow: it took 20s, 5s over its limit of 15s. Nothing fails on time; the cause is the failed step." "$(slow_say 'WARN  session brief took 20s, over its limit of 15s (it passes; time is watched on Cost, never gated)')"
+eq "a log with no over-limit line says nothing" "" "$(slow_say 'time  the bed map: 9s (limit 60s)
+FAIL  the planter count: wanted 4, got 3')"
+eq "the summary names the slow block beside the failed step" "1 1" "$(failure_summary 'tests' 'Run the shell-1 part' 'FAIL  the planter count' "$(slow_say "$fl_log")" | grep -c 'Also slow, and not the cause') $(failure_summary 'tests' 'Run the shell-1 part' 'FAIL  the planter count' "$(slow_say "$fl_log")" | grep -c 'The step that failed: Run the shell-1 part')"
+eq "the annotation carries it too" "1" "$(failure_annotation tests 'Run the shell-1 part' 'FAIL  the planter count' "$(slow_say "$fl_log")" | grep -c 'Also slow, and not the cause')"
+eq "no slow block, no extra words" "0" "$(failure_summary 'tests' 'Run the shell-1 part' 'FAIL  the planter count' '' | grep -c 'Also slow')"
+eq "the report reads the whole log, not its last lines" "1" "$(grep -c 'slow=$(slow_say "$(cat "$2")")' "$root/templates/scripts/ci/failure-report.sh")"
 eq "every check step of the checks job keeps its output" "yes" "$(for n in line-endings numbering-check spec-check setup-check shared-check hotspots-check delete-check client-env-check design-check mock-check; do grep -q "check-log.sh sh scripts/ci/$n.sh" "$root/templates/.github/workflows/ci.yml" || echo no; done | grep -q no && echo no || echo yes)"
 eq "the failing job's annotation is fed the check log" "1" "$(grep -c 'failure-report.sh job "\$RUNNER_TEMP/check.log"' "$root/templates/.github/workflows/ci.yml")"
 eq "red outside the code, up to date: CI again" "rerun" "$(unstick_action "$(us_row MERGEABLE red fff999 0 yes 'an install error (EPERM)' done)" "" no)"
@@ -4334,7 +4384,7 @@ if [ -f "$pj_repo" ] && grep -q '^!parts plugin' "$pj_repo"; then
   pj_pr_on=$(for pj_j in checks app tests screens ci-passed; do awk -v j="  $pj_j:" '$0 == j {f=1; next} /^  [a-z-]*:$/ {f=0} f && /^    runs-on:/' "$pj_ci_repo"; done)
   eq "every pull-request job asks for the kept-runner label by one expression, and batch, rush and main take any runner" "5 1 1" "$(printf '%s\n' "$pj_pr_on" | grep -c "vars.CI_KEEP_RUNNER == 'on' && '\[\"self-hosted\",\"windows\",\"pr\"\]' || '\[\"self-hosted\",\"windows\"\]'") $(printf '%s\n' "$pj_pr_on" | sort -u | grep -c .) $(printf '%s\n' "$pj_pr_on" | sort -u | grep -c "github.event_name == 'pull_request' && !startsWith(github.head_ref, 'batch-') && !startsWith(github.head_ref, 'rush-')")"
   eq "the gate, classify and main's jobs take any runner" "0" "$(for pj_j in gate classify full report-red report-green; do awk -v j="  $pj_j:" '$0 == j {f=1; next} /^  [a-z-]*:$/ {f=0} f && /^    runs-on:/' "$pj_ci_repo"; done | grep -c 'CI_KEEP_RUNNER')"
-  eq "a core change also runs the web job, and the tests job carries the Mote's token" "1 1" "$(grep -c "^    if: github.event_name == 'pull_request' && (.*classes, 'core')" "$pj_ci_repo") $(awk '$0 == "  tests:" {f=1; next} /^  [a-z-]*:$/ {f=0} f' "$pj_ci_repo" | grep -c 'GH_PACKAGES_TOKEN')"
+  eq "a core change also runs the web job, and the tests job carries the Mote's token" "1 1" "$(grep -c "^    if: github.event_name == 'pull_request' && needs.classify.outputs.full == 'yes' && (.*classes, 'core')" "$pj_ci_repo") $(awk '$0 == "  tests:" {f=1; next} /^  [a-z-]*:$/ {f=0} f' "$pj_ci_repo" | grep -c 'GH_PACKAGES_TOKEN')"
 fi
 eq "a web-only change is app and docs" "app docs" "$(classify_paths "$(cat "$pj_fx/paths-web-only.txt")" "$pj_classes" | tr ' ' '\n' | sort | tr '\n' ' ' | sed 's/ $//')"
 pj_blocks=$(suite_blocks < "$root/tests/run.sh")
@@ -4637,6 +4687,27 @@ rd_sixteen=$(i=1; while [ $i -le 16 ]; do printf 'unit\t%d\tTask %d\t\tsrc/f%d.t
 rd_planned=$(apply_units "$(printf 'dispatch 1\tTask 1\nstop: proposal ready for approval')" "$rd_sixteen" 4 yes)
 eq "sixteen ready units with four free runners propose four" "4" "$(printf '%s\n' "$rd_planned" | grep -c '^dispatch ')"
 eq "the rest are deferred, naming the free runners" "defer 12 unit(s): only 4 free runners this round (#5, #6, #7, #8, #9, #10, #11, #12, #13, #14, #15, #16)" "$(printf '%s\n' "$rd_planned" | grep '^defer ')"
+
+# The round the drive publishes says how it was sized and why a unit waits (#1257).
+eq "each deferred unit becomes a hold with the reason" "hold: 5 | why: No free runner this round
+hold: 6 7 | why: No free runner this round
+hold: 8 | why: No free runner this round" "$(deferred_holds "$(printf 'dispatch 1\tWater the beds\ndefer 3 unit(s): only 4 free runners this round (#5, #6 #7, #8)\nstop: proposal ready\n')")"
+eq "no deferral, no hold lines" "" "$(deferred_holds "$(printf 'dispatch 1\tWater the beds\nstop: proposal ready\n')")"
+eq "a deferral without its issues names none" "" "$(deferred_holds 'defer 2 ready issue(s): no free runner this round')"
+eq "the sized line carries the plan's words" "sized: 5 runners online, 4 free for agents" "$(sized_line '5 runners online, 4 free for agents')"
+eq "no words, no sized line" "" "$(sized_line '')"
+eq "an ask with one recommended choice may be marked without approval" "yes no no no" "$(mark_waiting_ok one) $(mark_waiting_ok none) $(mark_waiting_ok question) $(mark_waiting_ok many)"
+eq "the plan prints its own sized line" "1" "$(grep -c '^echo "sized: ${runners_say}"' "$root/scripts/drive/plan.sh")"
+eq "the skill says mark-waiting runs without approval, in the shape" "1 1" "$(grep -c 'Like .ask-owner., it runs without approval' "$root/skills/project-drive/SKILL.md") $(grep -c 'scripts/ci/ask-lib.sh. is' "$root/skills/project-drive/SKILL.md")"
+printf 'status: proposed
+sized: 5 runners online, 4 free for agents
+unit: 214 | areas: watering
+hold: 16 | why: No free runner this round | areas: frost
+' > "$pr_dir/sized.txt"
+rd_out=$(pr_run --dry-run --issue 12 "$pr_dir/sized.txt")
+eq "the marker carries the sized words and the hold with its reason" "1 1" "$(printf '%s
+' "$rd_out" | grep -c '"sized":"5 runners online, 4 free for agents"') $(printf '%s
+' "$rd_out" | grep -c '"why":"No free runner this round"')"
 eq "plugin and CI issues go in one bundle, even with no file in common" "unit	31 32	Hook fix | Queue fix	both are plugin or CI work, which shares one test suite	plugin/hooks/a.sh,scripts/ci/b.sh" "$(plan_units "$(printf '31\tHook fix\tplugin/hooks/a.sh\n32\tQueue fix\tscripts/ci/b.sh\n')" "" | sed -n 1p)"
 eq "plugin work waits on a running plugin unit" "hold	33	Brief fix	After: Hook fix" "$(plan_units "$(printf '33\tBrief fix\tplugin/brief.sh\n')" "$(printf 'Hook fix\tplugin/hooks/a.sh\n')")"
 rd_snap=$(printf 'pr\t51\tBeds page\tgreen\tmergeable\tapp\npr\t52\tFrost alert\tpending\tmergeable\tapp\npr\t53\tSeed list\tred\tmergeable\tapp\npr\t54\tWatering copy\tgreen\tmergeable\tapp\nissue\t9\tReady thing\tready\tno\n')
