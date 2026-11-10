@@ -2037,10 +2037,11 @@ qd_wf="$root/templates/.github/workflows/queue-drain.yml"
 qd_live=$(grep -v '^ *#' "$qd_wf")
 eq "the drain also starts when the CI workflow completes" "1 1" "$(printf '%s\n' "$qd_live" | grep -c '^  workflow_run:') $(printf '%s\n' "$qd_live" | grep -c '^    workflows: \[CI\]$')"
 eq "on completed only" "1" "$(printf '%s\n' "$qd_live" | grep -c '^    types: \[completed\]$')"
-eq "both jobs run for it only when a pull request's run finished" "2 2" "$(printf '%s\n' "$qd_live" | grep -c "github.event.workflow_run.event == 'pull_request'") $(printf '%s\n' "$qd_live" | grep -c "contains(fromJSON('\[\"success\", \"failure\", \"cancelled\", \"timed_out\"\]'), github.event.workflow_run.conclusion)")"
-# A drain on a runner ends while others run, so a run that ends red starts one
-# too: a green change held for it, or its one retry, never waits for the schedule.
-eq "a red or cancelled run starts a drain as well, never a skipped one" "0" "$(printf '%s\n' "$qd_live" | grep -c "github.event.workflow_run.conclusion == 'success'")"
+eq "both jobs run for it only when a pull request's run finished" "2 2" "$(printf '%s\n' "$qd_live" | grep -c "github.event.workflow_run.event == 'pull_request'") $(printf '%s\n' "$qd_live" | grep -c "contains(fromJSON('\[\"failure\", \"cancelled\", \"timed_out\"\]'), github.event.workflow_run.conclusion)")"
+# A red or cancelled pull request run starts no drain (each took a runner to
+# be cancelled by the group); a green one does, and so does a batch's run
+# whatever it ended as, since only the drain finishes a batch. Never a skipped one.
+eq "a green run, or a batch's run ending, starts a drain; red, cancelled and skipped start none" "2 2 0" "$(printf '%s\n' "$qd_live" | grep -c "github.event.workflow_run.conclusion == 'success'") $(printf '%s\n' "$qd_live" | grep -c "startsWith(github.event.workflow_run.head_branch, 'batch-')") $(printf '%s\n' "$qd_live" | grep -c "skipped")"
 eq "the schedule and the manual start stay" "1 1" "$(printf '%s\n' "$qd_live" | grep -c 'cron: "7 \*/2 \* \* \*"') $(printf '%s\n' "$qd_live" | grep -c '^  workflow_dispatch:')"
 eq "the recent-drain skip applies to the schedule only, so a green check is never skipped" "1 1" "$(printf '%s\n' "$qd_live" | grep -c 'if \[ -n "\$last" \] && \[ "\${{ github.event_name }}" = schedule \]') $(printf '%s\n' "$qd_live" | grep -c 'if \[ "\${{ github.event_name }}" = schedule \]; then')"
 eq "the one-drain group still never cancels" "1 1" "$(printf '%s\n' "$qd_live" | grep -c '^  group: queue-drain$') $(printf '%s\n' "$qd_live" | grep -c 'cancel-in-progress: false')"
