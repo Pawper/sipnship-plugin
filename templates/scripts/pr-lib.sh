@@ -28,3 +28,19 @@ pr_stray_closers() {
       }
     }'
 }
+
+# pr_red_say JOB STEP LINE
+# One plain line for a failed check run: the job, then what broke. LINE is
+# the failing step's error line as the run's annotation carries it. A size
+# failure from the hotspots check is said as the file and its count; any
+# other says its step and the line.
+pr_red_say() {
+  prs_size=$(printf '%s\n' "$3" | sed 's/ is new and has / has /' | sed -n 's/^\(.*[^ ]\) has \([0-9][0-9]*\) lines, over the limit of \([0-9][0-9]*\).*$/\1|\2|\3/p' | head -n 1)
+  if [ -n "$prs_size" ]; then
+    printf '%s: a file grew past its size limit: %s, %s of %s lines\n' "$1" "${prs_size%%|*}" "$(printf '%s' "$prs_size" | cut -d'|' -f2)" "${prs_size##*|}"
+  elif [ -n "$3" ]; then
+    printf '%s: %s failed: %s\n' "$1" "${2:-a step}" "$3"
+  else
+    printf '%s: %s failed\n' "$1" "${2:-a step}"
+  fi
+}

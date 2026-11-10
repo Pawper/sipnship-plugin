@@ -216,6 +216,7 @@ scripts/ci/batch-lib.sh f5da59099c390faae56dada5e9a47919c649560e
 scripts/ci/batch-lib.sh fa567389e19b830ba7a2c13fad6c6172d591f001
 scripts/ci/check-log.sh e2947cd7ff3d689ac4e7490f47c678ee0c14d844
 scripts/ci/checks-local.sh 0de4e30803de74e2b200396a73d0b338de867fc8
+scripts/ci/checks-local.sh 688ee8f6b024ecf143408faaad7cddd7b646bf6a
 scripts/ci/checks-local.sh 853432bce94f776f8e07237686dd47da9e04f22a
 scripts/ci/checks-local.sh 8abaa5c57585a6855d780f90ab9484fd2ffaf340
 scripts/ci/checks-local.sh 9b7835fdacbe3393860e7bfc906e4b5c62d2b287
@@ -270,6 +271,7 @@ scripts/ci/failure-lib.sh 9c080e6aa2178c7a865eac769975a14eb3d87550
 scripts/ci/failure-lib.sh b8e82ebafe18a8303dd315f72410a1e6e19c2048
 scripts/ci/failure-report.sh 0cc2380b15156856af9c3a3a695b6eccbc293809
 scripts/ci/failure-report.sh 83addfaecd490577926db622eaed797ea200f419
+scripts/ci/failure-report.sh c0b689751b744df98a15ef56e2e9ff737762fa5b
 scripts/ci/gate-lib.sh 5037d13ddcebe96c993c7ac502e960532e88e793
 scripts/ci/gate-lib.sh 839bdae237b67b18fae36acd5cee5095766f5940
 scripts/ci/gate-lib.sh 94b5a21cac3fea541858e37ded2c80af51eef53f
@@ -610,8 +612,10 @@ scripts/next-number.sh 25a9c914e4a91af87c18d25466ef4fb622cac192
 scripts/next-number.sh 2f8e51f5a480a0981bab508f0206f787b3872f85
 scripts/next-number.sh 3ccca8b1bd669a4afac98448647057dbc1acb92b
 scripts/next-number.sh 5e9fdef5b7f1842f267f536ccabb661fb04e4380
+scripts/pr-checks.sh 13e9843fa33f80d250faf4b6fdeb4083730e358e
 scripts/pr-checks.sh 6cbf720a5ae97ea72317b15d945dcd105cd6d32a
 scripts/pr-lib.sh ce954175d5752c901d13da4634d087735c1967cc
+scripts/pr-lib.sh fba9800f546d10f54caf45adf1645f7f636d13cd
 scripts/pr-open.sh 372ca20ab21a6abfaba666d5f7f0a3d462490b46
 scripts/pr-open.sh 8f647415b4a7c73c371acfa7986b1ae15a026654
 scripts/protect-main.sh df091fbb0c5b4d9ff6346cd62e759acd8caf7dda

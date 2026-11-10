@@ -2012,7 +2012,7 @@ eq "CI may read pull requests" "1" "$(grep -c '^  pull-requests: read' "$root/te
 ci_job() { awk -v j="  $1:" '$0 == j {f=1; next} /^  [a-z-]*:$/ {f=0} f' "$root/templates/.github/workflows/ci.yml"; }
 ci_says() { ci_job "$1" | grep -c -e '^      actions: read$' -e '^        if: failure()$' -e 'run: sh scripts/ci/failure-report.sh job'; }
 eq "a failed job says what failed; only checks then cancels its run" "3 3 3 0" "$(ci_says checks) $(ci_says app) $(ci_says screens) $(grep -c 'gh run cancel' "$root/templates/.github/workflows/ci.yml")"
-eq "checks names the failure, then cancels its run, with actions: write" "1 1 1" "$(ci_job checks | grep -c 'run: sh scripts/ci/failure-report.sh job "\$RUNNER_TEMP/check.log"$') $(ci_job checks | grep -c 'run: sh scripts/ci/failure-report.sh cancel$') $(ci_job checks | grep -c '^      actions: write$')"
+eq "checks names the failure and never cancels its own run; its own job after it does, with actions: write" "1 0 0 1 1 needs-checks" "$(ci_job checks | grep -c 'run: sh scripts/ci/failure-report.sh job "\$RUNNER_TEMP/check.log"$') $(ci_job checks | grep -c 'run: sh scripts/ci/failure-report.sh cancel$') $(ci_job checks | grep -c '^      actions: write$') $(ci_job stop-the-rest | grep -c 'run: sh scripts/ci/failure-report.sh cancel$') $(ci_job stop-the-rest | grep -c '^      actions: write$') $(ci_job stop-the-rest | grep -q '^    needs: checks$' && echo needs-checks)"
 eq "no other job cancels the run" "0 0 0" "$(ci_job app | grep -c 'failure-report.sh cancel') $(ci_job tests | grep -c 'failure-report.sh cancel') $(ci_job screens | grep -c 'failure-report.sh cancel')"
 eq "main's full job is never stopped" "0" "$(ci_says full)"
 eq "the spec, design and mock checks read the live body" "3" "$(grep -c 'SPEC_TEXT=$(sh scripts/ci/pr-text.sh' "$root/templates/.github/workflows/ci.yml")"
@@ -4125,6 +4125,12 @@ eq "a job cancelled after its own step failed is reported failed, not cancelled 
 eq "and the one cancelled with no step failed is cancelled because of it" "1" "$(run_report "$(printf '11\tchecks\tcompleted\tcancelled\tgarden-1\tFail when STATUS.md is stale\n12\ttests (watering)\tcompleted\tcancelled\tgarden-2\t')" "" | grep -c '^- tests (watering)$')"
 eq "every job that can fail says what failed, the tests job with its part's log" "4 1" "$(grep -c 'run: sh scripts/ci/failure-report.sh job' "$fr_ci") $(grep -c 'failure-report.sh job "$RUNNER_TEMP/part.log"' "$fr_ci")"
 eq "the report job names the failed job" "1" "$(grep -c 'run: sh scripts/ci/failure-report.sh run' "$fr_ci")"
+. "$root/templates/scripts/pr-lib.sh"
+eq "a size failure beside cancelled jobs reads as the file and its count, never as cancelled" "checks: a file grew past its size limit: packages/service/src/picture.ts, 703 of 400 lines" "$(pr_red_say checks 'Fail when a change grows a source file past its size limit' 'packages/service/src/picture.ts has 703 lines, over the limit of 400, and this change adds to it (it had 702). Split before you add: move one unit.')"
+eq "a new file over its limit reads the same way" "checks: a file grew past its size limit: lib/beds.ts, 90 of 40 lines" "$(pr_red_say checks 'size' 'lib/beds.ts is new and has 90 lines, over the limit of 40. Split before you add.')"
+eq "any other failed step is named with its line" "checks: Fail when STATUS.md is stale failed: STATUS.md is out of date" "$(pr_red_say checks 'Fail when STATUS.md is stale' 'STATUS.md is out of date')"
+eq "pr-checks reads the annotations through REST only" "0 1" "$(grep -c '^[^#]*\(gh pr \|gh project\|graphql\)' "$root/templates/scripts/pr-checks.sh") $(grep -c 'check-runs/\$id/annotations' "$root/templates/scripts/pr-checks.sh")"
+eq "the cancel script says the checks job ends failed because the cancel is its own job" "1" "$(grep -c 'in its own job, which runs' "$root/templates/scripts/ci/failure-report.sh")"
 eq "the failing job finds itself by its runner" "102" "$(own_job "$(cat "$fr_fx/jobs-running.tsv")" garden-2 | cut -f1)"
 fr_lines=$(tail -n 3 "$fr_fx/part.txt")
 fr_sum=$(failure_summary 'tests (watering)' 'Run the watering part' "$fr_lines")
@@ -4792,6 +4798,9 @@ qc_size=$(qc_push size)
 eq "a file grown past its limit refuses the push" "rc=2" "$(printf '%s\n' "$qc_size" | head -n 1)"
 eq "the refusal carries the size check's own words" "1" "$(printf '%s\n' "$qc_size" | grep -c 'lib/watering.ts has 50 lines, over the limit of 40')"
 eq "and names the CI step that would fail" "1" "$(printf '%s\n' "$qc_size" | grep -c '^Failed: Fail when a change grows a source file past its size limit')"
+qc_budget=$(cd "$qc" && git checkout -q size && CHECKS_LOCAL_SECONDS=0 CHECKS_LOCAL_OFFLINE=1 sh scripts/ci/checks-local.sh 2>&1)
+eq "the size check runs first and never under the time budget: it still refuses at a budget of 0" "Failed: Fail when a change grows" "$(printf '%s\n' "$qc_budget" | head -n 1 | cut -c1-32)"
+eq "and in its own words, with no timeout beside it" "1 0" "$(printf '%s\n' "$qc_budget" | grep -c 'lib/watering.ts has 50 lines, over the limit of 40') $(printf '%s\n' "$qc_budget" | grep -c 'still running after')"
 qc_mock=$(qc_push mock)
 eq "a screen changed without its mock refuses the push" "rc=2" "$(printf '%s\n' "$qc_mock" | head -n 1)"
 eq "the refusal carries the mock check's own words" "1" "$(printf '%s\n' "$qc_mock" | grep -c 'These screens changed but their mocks did not: beds')"

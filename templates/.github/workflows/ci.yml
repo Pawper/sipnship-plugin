@@ -22,7 +22,7 @@
 # A run's jobs join the runner line together. "app", "tests" and "screens"
 # wait only on "classify" (seconds), never on "checks", so they queue
 # beside it in GitHub's arrival order instead of behind other pull
-# requests' runs. When a check fails, "checks" cancels its own run, so a
+# requests' runs. When a check fails, "stop-the-rest" cancels the run once "checks" has ended, so a
 # doomed run costs only the jobs already started.
 #
 # On self-hosted runners, one runner can be kept for the batch and main:
@@ -103,12 +103,11 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: RUNS_ON
     permissions:
-      # The workflow's own, plus actions: write so a failure can name its
-      # step and then cancel the rest of its own run.
+      # The workflow's own, plus actions: read so a failure can name its step.
       contents: read
       issues: write
       pull-requests: read
-      actions: write
+      actions: read
     env:
       # On a pull request github.sha is the merge of the branch into main as
       # it is now, and its first parent is that main. The recorded base.sha
@@ -230,10 +229,20 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: sh scripts/ci/failure-report.sh job "$RUNNER_TEMP/check.log"
+
+  stop-the-rest:
+    # A run whose checks failed cannot merge: its jobs still waiting for a
+    # runner leave the line. This is its own job, after "checks" has ended,
+    # so "checks" is recorded as failed with its step named; cancelling from
+    # inside "checks" marked it cancelled, and nobody saw the rule.
+    needs: checks
+    if: failure() && github.event_name == 'pull_request'
+    runs-on: RUNS_ON
+    permissions:
+      contents: read
+      actions: write
+    steps:
       - name: Cancel the rest of this run
-        # A run whose checks failed cannot merge: its jobs still waiting
-        # for a runner leave the line, and only those already started run on.
-        if: failure()
         env:
           GH_TOKEN: ${{ github.token }}
         run: sh scripts/ci/failure-report.sh cancel
