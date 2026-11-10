@@ -191,14 +191,6 @@ queue_lock_reason() {
     }'
 }
 
-# drain_over_budget START NOW MINUTES
-# "yes" when a drain begun at START (epoch) has run MINUTES or more at NOW,
-# so its end does only what is quick: the held steps, the unsticking and
-# the re-read of failures are left to the next drain, which is short.
-drain_over_budget() {
-  if [ $(( $2 - $1 )) -ge $(( $3 * 60 )) ]; then echo yes; else echo no; fi
-}
-
 # remote_drain_reason RUNS NOW
 # RUNS is one line per Queue drain run on GitHub that is in progress or
 # queued: "id<TAB>status<TAB>created_epoch". Print why a local queue must not
