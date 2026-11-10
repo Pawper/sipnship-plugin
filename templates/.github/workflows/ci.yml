@@ -102,12 +102,13 @@ jobs:
           echo "$why"
           if [ "$why" = run ]; then parts=$(sh scripts/ci/test-parts.sh matrix all); else parts='[]'; fi
           echo "parts=$parts" >> "$GITHUB_OUTPUT"
+          echo "early_read=$(. scripts/ci/gate-lib.sh; gate_early_read_due "$why")" >> "$GITHUB_OUTPUT"
           echo "Test parts: $parts"
       - name: Say when the last gate ended red before its tests started
         # A run red with no failed job has no job of its own to say so. This
         # run is the check run once more; the red-main issue says which kind
         # it was. Never fails the gate.
-        if: github.event_name == 'schedule'
+        if: github.event_name == 'schedule' && steps.decide.outputs.early_read != 'no'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}

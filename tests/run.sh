@@ -1605,6 +1605,14 @@ eq "a hold past its bound merges" "merge" "$(drain_wait_step end 1 2 1500 1500 '
 eq "others still running past the bound: stop" "stop stop" "$(drain_wait_step end 0 2 1500 1500 '') $(drain_wait_step wait 0 2 1500 1500 '')"
 eq "nothing at all on a runner: done, with no minute's look" "done" "$(drain_wait_step end 0 0 0 1500 '')"
 eq "in a terminal: one more look, then done" "look done" "$(drain_wait_step wait 0 0 0 1500 '') $(drain_wait_step wait 0 0 0 1500 1)"
+# On a runner a drain never sleeps: whatever the counts and the round's hold, no step is a wait, a hold or a look.
+dw_bad=""
+for dw_g in 0 1 2 3; do for dw_w in 0 1 4; do for dw_h in 0 300 599 600 1500; do for dw_l in "" 1; do for dw_r in "" yes; do
+  dw_s=$(round_hold=$dw_r drain_wait_step end $dw_g $dw_w $dw_h 1500 "$dw_l" 600)
+  case "$dw_s" in wait|hold|look) dw_bad="$dw_bad $dw_g/$dw_w/$dw_h:$dw_s" ;; esac
+done; done; done; done; done
+eq "on a runner no combination of green, running and round hold sleeps" "" "$dw_bad"
+eq "the round's hold ends a runner's drain too, and a member past the bound lands" "end-hold merge" "$(round_hold=yes drain_wait_step end 2 1 60 1500 '' 600) $(round_hold=yes drain_wait_step end 2 1 600 1500 '' 600)"
 eq "a hold lasts as long as the green one has been green" "1600" "$(drain_held_for 5 1000 2600)"
 eq "or the drain's own time when that is longer" "900" "$(drain_held_for 900 2500 2600)"
 eq "no green time read: the drain's own time" "5" "$(drain_held_for 5 '' 2600)"
@@ -4341,6 +4349,9 @@ eq "main moved inside the quiet time: the gate stands aside early" "skip: main m
 eq "main's landing time unknown: the gate stands aside early" "skip: main's last landing time is not known" "$(gate_skip_early abc1234 '' 1793430600 60 schedule)"
 eq "a quiet main needs the past runs read, so no early skip" "" "$(gate_skip_early abc1234 1793419200 1793430600 60 schedule)"
 eq "a run started by hand is never skipped early" "" "$(gate_skip_early abc1234 1793430000 1793430600 60 workflow_dispatch)"
+eq "a gate that stood aside on the one call that read main reads no past runs" "no no no" "$(gate_early_read_due "skip: main moved 10 minutes ago; the gate waits for 60 quiet minutes") $(gate_early_read_due "skip: main's last landing time is not known") $(gate_early_read_due "skip: main cannot be read")"
+eq "a gate that ran or compared runs still reads them" "yes yes" "$(gate_early_read_due run) $(gate_early_read_due "skip: main has not moved since the last gate")"
+eq "the gate's early-red step is conditioned on that, in the template ci.yml" "1 1" "$(grep -c "steps.decide.outputs.early_read != 'no'" "$root/templates/.github/workflows/ci.yml") $(grep -c "gate_early_read_due" "$root/templates/.github/workflows/ci.yml")"
 eq "a failed test job is a red test" "test" "$(red_kind success success failure)"
 eq "a failed full job is a red test" "test" "$(red_kind success failure success)"
 eq "a run red with no failed job could not start its jobs" "nostart" "$(red_kind failure '' '')"

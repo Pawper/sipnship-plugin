@@ -249,3 +249,14 @@ cheap_gate_held() {
     $1 == "tests" || $1 == "app" || $1 == "screens" { if ($2 != "skipped") other = 1 }
     END { print (c && !other) ? "yes" : "no" }'
 }
+
+# gate_early_read_due WHY: "no" when the gate decision WHY (gate.sh decide) stood
+# aside on the one call that read main (main moved inside the quiet time, its
+# landing time or itself unreadable): the run then ends in seconds and reads no
+# past runs. "yes" for any other decision.
+gate_early_read_due() {
+  case "$1" in
+    "skip: main moved "*|"skip: main's last landing time is not known"|"skip: main cannot be read") echo no ;;
+    *) echo yes ;;
+  esac
+}

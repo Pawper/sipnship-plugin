@@ -281,6 +281,7 @@ scripts/ci/failure-report.sh 0cc2380b15156856af9c3a3a695b6eccbc293809
 scripts/ci/failure-report.sh 1cd3706b70a7aae34fea8218fa15a5701c953118
 scripts/ci/failure-report.sh 83addfaecd490577926db622eaed797ea200f419
 scripts/ci/failure-report.sh c0b689751b744df98a15ef56e2e9ff737762fa5b
+scripts/ci/gate-lib.sh 4a22155a53279da1624f4eea8f2e0183d592f314
 scripts/ci/gate-lib.sh 5037d13ddcebe96c993c7ac502e960532e88e793
 scripts/ci/gate-lib.sh 6bd90c7ee3b856b10ae85230d6cbeb2c3e900af3
 scripts/ci/gate-lib.sh 839bdae237b67b18fae36acd5cee5095766f5940
