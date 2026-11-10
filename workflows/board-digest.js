@@ -44,7 +44,7 @@ const prompt = (paths) => `Read each of these files in full. Each holds one issu
 ${paths.map((p) => '- ' + p).join('\n')}
 
 For each file, say where the item stands right now, from what the text says, not from its title or labels:
-- ball: who must act next. "owner" if a question or decision for the project owner is open and unanswered. "agent" if the work can proceed, including when the owner has answered. "reviewer" if a pull request waits on review. "service" if it waits on something outside the project. "nobody" if nothing is asked of anyone.
+- ball: who must act next. "owner" only if an ask in the ask shape is open and unanswered (a question line, then the choices as a numbered list, one ending "Recommended."), or an Instructions item. A question mark inside a quotation or blockquote, or anywhere but that shape, is the owner's own words, never a question to them. "agent" if the work can proceed, including when the owner has answered. "reviewer" if a pull request waits on review. "service" if it waits on something outside the project. "nobody" if nothing is asked of anyone.
 - next: the next concrete step, in at most twelve words.
 - blocker: what stops it, in at most ten words, or "-" if nothing does.
 - summary: one sentence: what is asked, what was decided, and the latest thing that happened with who said it.

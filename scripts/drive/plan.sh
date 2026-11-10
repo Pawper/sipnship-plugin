@@ -11,7 +11,8 @@
 # --fast skips the one extra call for the audit issue's latest comment.
 #
 # The whole board comes from one GraphQL call (hooks/scripts/board-now.sh).
-# Reads .claude/project-drive.json when present: runners (default 2),
+# Reads .claude/project-drive.json when present: runners (an optional cap on
+# the agents at once; with none, the runners GitHub lists online and free decide),
 # maxAgents (4), maxMinutes (90), queueLogGlob, ownerDecisions, and the
 # round's choices drive_settings reads (round-lib.sh): unitsPerRound (2),
 # dispatchModel, setAsideAfterReds (2), summaryAt, healthNote.
@@ -36,11 +37,11 @@ while [ $# -gt 0 ]; do
   shift
 done
 
-runners=2; max_agents=4; max_minutes=90; queue_glob=""; owner_phrases=""
+runners=2; runners_cap=0; max_agents=4; max_minutes=90; queue_glob=""; owner_phrases=""
 settings=$(drive_settings '{}')
 if [ -f .claude/project-drive.json ]; then
   cfg=$(cat .claude/project-drive.json)
-  n=$(json_number "$cfg" runners); [ -n "$n" ] && runners=$n
+  n=$(json_number "$cfg" runners); [ -n "$n" ] && runners_cap=$n
   n=$(json_number "$cfg" maxAgents); [ -n "$n" ] && max_agents=$n
   n=$(json_number "$cfg" maxMinutes); [ -n "$n" ] && max_minutes=$n
   queue_glob=$(json_field "$cfg" queueLogGlob)
@@ -172,7 +173,13 @@ else
   note="digest: none yet; run /project-status so the proposal reads bodies and comments, not only labels"
 fi
 
-echo "proposal for $(date '+%A %Y-%m-%d'), the owner's local day (runners $runners, at most $max_agents agents, at most $max_minutes minutes; $note):"
+# How many agents may work at once is what GitHub's registered runners say: online and not busy, less one kept for the queue.
+listing=$(gh api 'repos/{owner}/{repo}/actions/runners?per_page=100' --jq '.runners[] | [.status, (.busy | tostring)] | @tsv' 2>/dev/null | tr -d '\r')
+runners_line=$(agent_runners "$listing" "$runners_cap")
+machines=no
+if [ -n "$runners_line" ]; then machines=yes; runners=${runners_line%%	*}; runners_say=$(agent_runners_say "$runners_line" "$runners_cap")
+else [ "$runners_cap" -gt 0 ] && runners=$runners_cap; runners_say="runners not readable from GitHub, so $runners"; fi
+echo "proposal for $(date '+%A %Y-%m-%d'), the owner's local day (${runners_say}, at most $max_agents agents, at most $max_minutes minutes; $note):"
 # In progress is not taken on faith: an issue nobody works, or whose pull request is held for the owner, is set right first (./stale-lib.sh).
 stale=$(stale_lines "$facts" "$pull_links" "$(git for-each-ref --format='%(committerdate:unix)%09%(refname:short)' refs/heads refs/remotes 2>/dev/null)" "$(date +%s)" 2)
 if [ -n "$stale" ]; then
@@ -214,8 +221,8 @@ if [ -n "$guesses" ] || [ -n "$reasons" ]; then
   # The proposal is the next round: up to unitsPerRound units (within
   # maxAgents), planned against the running round's files. It starts only
   # once the running round lands (approval.sh holds its dispatches).
-  slots=$units_per_round; [ "$max_agents" -lt "$slots" ] && slots=$max_agents
-  round=$(apply_units "$round" "$units" "$slots")
+  slots=$units_per_round; [ "$max_agents" -lt "$slots" ] && slots=$max_agents; [ "$runners" -lt "$slots" ] && slots=$runners
+  round=$(apply_units "$round" "$units" "$slots" "$machines")
 fi
 # A project whose queue lands green work by itself: rely on it, and
 # propose one drain only when green work has sat 15 minutes.

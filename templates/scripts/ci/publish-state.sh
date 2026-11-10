@@ -151,6 +151,8 @@ main_sha=$(gh api "repos/{owner}/{repo}/commits/$base" --jq '.sha[0:7]' 2>/dev/n
 main_gate=$(sh "$here/gate.sh" last 2>/dev/null | tr -d '\r')
 main_state=$(gate_main_state "$main_gate")
 main_checked=$(gate_checked_at "$main_gate")
+main_why=""
+[ "$main_state" = red ] && main_why=$(sh "$here/gate.sh" why 2>/dev/null | tr -d '\r')
 # A red main names its failing tests (at most five), joined by the unit separator so the tab-separated main field holds them.
 main_failing=""
 [ "$main_state" = red ] && main_failing=$(sh "$here/gate.sh" failing 2>/dev/null | tr -d '\r' | head -n 5 | tr '\n' '\037')
@@ -198,7 +200,7 @@ say=$(publish_say "$open_tsv" "$batch_tsv" "$building" "$clashes_tsv" "$attentio
 # A token that cannot keep a runner for the batch and main (runs.sh, runner_labels_keep).
 say=$(say_with_need "$say" "$(head -n 1 "$flaky_dir/runner-labels" 2>/dev/null | cut -f2)")
 now_iso=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-json=$(publish_json "$open_tsv" "$batch_tsv" "$building" "$clashes_tsv" "$landed_tsv" "$runners_tsv" "$attention_tsv" "$(printf '%s\t%s\t%s\t%s\t%s' "$main_sha" "$main_state" "$main_checked" "$main_waiting" "$main_failing")" "$deploy_line" "$mode" "$paused_until" "$checking" "$say" "$now_iso" "$rush_tsv" "$waits_tsv")
+json=$(publish_json "$open_tsv" "$batch_tsv" "$building" "$clashes_tsv" "$landed_tsv" "$runners_tsv" "$attention_tsv" "$(printf '%s\t%s\t%s\t%s\t%s\t%s' "$main_sha" "$main_state" "$main_checked" "$main_waiting" "$main_failing" "$main_why")" "$deploy_line" "$mode" "$paused_until" "$checking" "$say" "$now_iso" "$rush_tsv" "$waits_tsv")
 json=$(hold_json_add "$json" "$(hold_json "$open_tsv" "$hold_tsv")")
 
 # 5. Only a change worth a write: the time stamp and the two numbers that

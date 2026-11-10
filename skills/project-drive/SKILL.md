@@ -384,7 +384,7 @@ first round finds the reply and pursues it.
 
 `.claude/project-drive.json` in the project, all keys optional:
 
-- `runners`: how many agents may work at once (default 2)
+- `runners`: an optional cap on how many agents work at once; with no key the plan reads the runners GitHub lists, online and not busy, less one kept for the queue, and names that number on its heading line
 - `maxAgents`: the most one round dispatches (default 4)
 - `maxMinutes`: the most one round runs (default 90)
 - `queueLogGlob`: where the merge queue writes its logs

@@ -190,7 +190,7 @@ units_disjoint() {
 # When everything is held the stop line says so: work in flight when only
 # running work holds it, else what each hold line names.
 apply_units() {
-  printf '%s\n' "$1" | awk -v slots="${3:-2}" -v units="$2" '
+  printf '%s\n' "$1" | awk -v slots="${3:-2}" -v units="$2" -v machines="${4:-}" '
     BEGIN {
       n = split(units, raw, "\n")
       # Bundles first: units carrying more issues rank ahead, in plan order
@@ -213,7 +213,7 @@ apply_units() {
     /^stop:/ {
       if (!done) { for (i = 1; i <= g; i++) print goals[i]; done = 1 }
       for (i = 1; i <= h; i++) print holds[i]
-      if (deferred > 0) print "defer " deferred " unit(s): no free runner this round (" dn ")"
+      if (deferred > 0) print "defer " deferred " unit(s): " (machines == "yes" ? "only " slots " free runner" (slots == 1 ? "" : "s") " this round" : "no free runner this round") " (" dn ")"
       if (g == 0 && other == 0 && h > 0 && reasoned) { print "stop: everything left waits on what its hold line names; publish the round with each hold and its reason"; next }
       if (g == 0 && other == 0 && h > 0) { print "stop: work is in flight; nothing to propose until it lands"; next }
     }

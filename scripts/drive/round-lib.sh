@@ -226,3 +226,33 @@ hold_dispatch() {
     NF > 0 { print }
     END { if (held) { gsub(/ /, ", #", r); print "held: " held " dispatch goal(s) wait for the running round (#" r ") to land" } }'
 }
+
+# agent_runners LISTING [CAP]
+# How many agents may work at once, from the machines GitHub lists: LISTING
+# is one "STATUS<TAB>BUSY(true|false)" line per registered runner. The count
+# is the runners online and not busy, less one kept for the queue and its
+# checks (never below one while any is free); CAP, when above 0, is the most
+# the project's config allows. Prints "AGENTS<TAB>ONLINE<TAB>FREE", or
+# nothing when GitHub listed no runner (the caller falls back to the config).
+agent_runners() {
+  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v cap="${2:-0}" '
+    NF >= 2 { seen++; if ($1 == "online") { online++; if ($2 != "true") free++ } }
+    END {
+      if (!seen) exit
+      a = free - 1; if (free > 0 && a < 1) a = 1; if (a < 0) a = 0
+      if (cap + 0 > 0 && a > cap + 0) a = cap + 0
+      printf "%d\t%d\t%d\n", a, online + 0, free + 0
+    }'
+}
+
+# agent_runners_say LINE [CAP]
+# LINE is agent_runners' output: the plan's heading words, naming the number
+# used and where it came from ("5 runners online, 4 free for agents").
+agent_runners_say() {
+  printf '%s\n' "$1" | awk -F'\t' -v cap="${2:-0}" '
+    NF >= 3 {
+      s = $2 " runner" ($2 == 1 ? "" : "s") " online, " $1 " free for agents"
+      if (cap + 0 > 0 && $3 - 1 > cap + 0) s = s " (the config caps it at " cap ")"
+      print s
+    }'
+}

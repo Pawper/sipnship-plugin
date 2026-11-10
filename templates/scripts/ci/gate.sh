@@ -4,6 +4,8 @@
 #       prints "run" or "skip: <why>"; GATE_QUIET_MINUTES is the quiet time
 #   sh scripts/ci/gate.sh last            the last gate that ran its tests:
 #       "head-sha<TAB>conclusion<TAB>created-epoch", or nothing
+#   sh scripts/ci/gate.sh why             "nostart" when the last gate was red with no test job
+#       started (GitHub did not start the jobs); nothing otherwise
 #   sh scripts/ci/gate.sh early-red       the line for a gate that failed before its
 #       tests started (nothing when none did); early-red-count: how many in a row
 #   sh scripts/ci/gate.sh failing         the last gate's failing tests, when it
@@ -27,6 +29,7 @@ runs_tsv() {
 }
 case "$1" in
   last) last_gated "$(runs_tsv)" ;;
+  why) gate_last_why "$(runs_tsv)" ;;
   early-red) gate_early_red_line "$(runs_tsv)" ;;
   early-red-count) gate_early_red_count "$(runs_tsv)" ;;
   failing)
@@ -43,5 +46,5 @@ case "$1" in
     [ -n "$head" ] || { echo "skip: main cannot be read"; exit 0; }
     gated=$(last_gated_ran "$(runs_tsv)")
     gate_decide "${head%%	*}" "$(printf '%s' "$gated" | cut -f1)" "$(to_epoch "${head#*	}")" "$(date +%s)" "${GATE_QUIET_MINUTES:-60}" "${2:-}" ;;
-  *) echo "usage: gate.sh decide [EVENT] | last | early-red | early-red-count | failing" >&2; exit 2 ;;
+  *) echo "usage: gate.sh decide [EVENT] | last | early-red | early-red-count | failing | why" >&2; exit 2 ;;
 esac

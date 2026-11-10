@@ -27,6 +27,14 @@ last_gated() {
   printf '%s\n' "$1" | awk -F '\t' '($4 == "yes" && ($2 == "success" || $2 == "failure")) || ($4 == "no" && $2 == "failure") { print $1 "\t" $2 "\t" $3; exit }'
 }
 
+# gate_last_why RUNS: "nostart" when the gate last_gated names failed with no
+# test job started: a red run with no failed job, which is not a failed test
+# (the Main card says the check could not start its jobs, and it is the
+# machines' turn); nothing otherwise.
+gate_last_why() {
+  printf '%s\n' "$1" | awk -F '\t' '($4 == "yes" && ($2 == "success" || $2 == "failure")) || ($4 == "no" && $2 == "failure") { if ($4 == "no") print "nostart"; exit }'
+}
+
 # last_gated_ran RUNS: as last_gated, but only a gate whose tests ran. The
 # decision to run again reads this, so a head whose gate failed before its
 # tests is tried again.

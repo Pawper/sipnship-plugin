@@ -950,6 +950,10 @@ docs/new.md" "$(dirty_non_scratch "$status")"
 eq "only scratch is clean" "" "$(dirty_non_scratch '?? .scratch/notes.md
 ?? .scratch/')"
 eq "a clean tree is clean" "" "$(dirty_non_scratch '')"
+eq "a shell crash dump is not a stray file" "docs/new.md" "$(dirty_non_scratch '?? sh.exe.stackdump
+?? packages/web/bash.exe.stackdump
+?? docs/new.md')"
+eq "the git ignore names stackdump files" "1" "$(grep -c '^\*\.stackdump$' "$root/templates/.gitignore")"
 eq "images and build output counted" "3" "$(stray_media 'shots/a.png
 shots/b.JPG
 src/a.ts
@@ -4217,6 +4221,9 @@ eq "main's state reads red, not the last green from hours before" "red" "$(gate_
 eq "the decision to run again still reads the last gate whose tests ran" "a1	success	1793419200" "$(last_gated_ran "$ge_runs")"
 eq "the gate's line names both times" "$(date -d @1793433600 +%H:%M) $(date -d @1793419200 +%H:%M)" "$(gate_early_red_line "$ge_runs" | sed -n "s/^main's gate at \([0-9:]*\) ended red before its tests started; nothing has checked main since \([0-9:]*\)\.$/\1 \2/p")"
 eq "one early red is counted once" "1" "$(gate_early_red_count "$ge_runs")"
+eq "a gate red with no test job started says nostart" "nostart" "$(gate_last_why "$ge_runs")"
+eq "a gate whose tests ran says nothing of why" "" "$(gate_last_why "$(printf 'e5\tfailure\t1793437200\tyes\t905\n')")"
+eq "a published red main carries why" "nostart" "$(. "$root/templates/scripts/ci/publish-lib.sh"; publish_json "" "" "" "" "" "" "" "$(printf 'abc1234\tred\t2026-11-09T18:24:00Z\t\t\tnostart')" "" idle "" "" "" 2026-11-09T19:00:00Z | grep -o '"why":"[a-z]*"' | cut -d'"' -f4)"
 eq "two early reds in a row are counted twice (the red-main issue opens)" "2" "$(gate_early_red_count "$(printf 'd4\tfailure\t1793437200\tno\t904\n%s\n' "$ge_runs")")"
 eq "a later gate that ran its tests ends the line" "" "$(gate_early_red_line "$(printf 'd4\tsuccess\t1793437200\tyes\t904\n%s\n' "$ge_runs")")"
 eq "skipped gates alone say nothing" "" "$(gate_early_red_line "$(printf 'b2\tsuccess\t1793430000\tno\t902\na1\tsuccess\t1793419200\tyes\t901\n')")"
@@ -4572,11 +4579,25 @@ rd_set=$(drive_settings "$rd_cfg")
 eq "a project's choices are read" "5|sonnet|3|07:00|echo 9.5|free disk (GB)|8" "$(for k in unitsPerRound dispatchModel setAsideAfterReds summaryAt healthCommand healthName healthAbove; do printf '%s|' "$(setting "$rd_set" $k)"; done | sed 's/|$//')"
 eq "the template's example config names every round key" "yes" "$(t=$(cat "$root/templates/.claude/project-drive.json"); for k in unitsPerRound dispatchModel setAsideAfterReds summaryAt healthNote; do printf '%s' "$t" | grep -q "\"$k\"" || { echo "no $k"; exit; }; done; echo yes)"
 eq "the skill documents every round key" "yes" "$(for k in unitsPerRound dispatchModel setAsideAfterReds summaryAt healthNote; do grep -q "\`$k\`" "$root/skills/project-drive/SKILL.md" || { echo "no $k"; exit; }; done; echo yes)"
+eq "a quoted question is never read as a question to the owner" "1" "$(grep -c 'inside a quotation or blockquote.*never a question to them' "$root/workflows/board-digest.js")"
+eq "the plan's runner count is documented as a cap" "1" "$(grep -c 'an optional cap on how many agents work at once' "$root/skills/project-drive/SKILL.md")"
 rd_units=$(printf 'unit\t15\tPhotos\t\tsrc/photos.ts\nunit\t12 14\tWater | Frost\tboth change src/schedule.ts\tsrc/schedule.ts\nunit\t16\tTint\t\tsrc/tint.ts\n')
 eq "bundles rank before loose issues" "dispatch 12 14	Water | Frost	Why together: both change src/schedule.ts
 dispatch 15	Photos
 defer 1 unit(s): no free runner this round (#16)
 stop: proposal ready for approval" "$(apply_units "$(printf 'dispatch 15\tPhotos\nstop: proposal ready for approval')" "$rd_units" 2)"
+rd_listing=$(printf 'online\tfalse\nonline\ttrue\nonline\tfalse\nonline\tfalse\nonline\tfalse\noffline\tfalse\n')
+eq "five runners online, one busy: three agents (one kept for the queue)" "3	5	4" "$(agent_runners "$rd_listing")"
+eq "the config cap only lowers it" "2	5	4" "$(agent_runners "$rd_listing" 2)"
+eq "a cap above the machines changes nothing" "3	5	4" "$(agent_runners "$rd_listing" 9)"
+eq "one free runner still allows one agent" "1	2	1" "$(agent_runners "$(printf 'online\ttrue\nonline\tfalse\n')")"
+eq "no runner free means no agent" "0	1	0" "$(agent_runners "$(printf 'online\ttrue\n')")"
+eq "a listing with no runners says nothing, so the config decides" "" "$(agent_runners '')"
+eq "the heading names the number and where it came from" "5 runners online, 4 free for agents" "$(agent_runners_say "$(agent_runners "$(printf 'online\tfalse\nonline\tfalse\nonline\tfalse\nonline\tfalse\nonline\tfalse\n')")")"
+rd_sixteen=$(i=1; while [ $i -le 16 ]; do printf 'unit\t%d\tTask %d\t\tsrc/f%d.ts\n' $i $i $i; i=$((i + 1)); done)
+rd_planned=$(apply_units "$(printf 'dispatch 1\tTask 1\nstop: proposal ready for approval')" "$rd_sixteen" 4 yes)
+eq "sixteen ready units with four free runners propose four" "4" "$(printf '%s\n' "$rd_planned" | grep -c '^dispatch ')"
+eq "the rest are deferred, naming the free runners" "defer 12 unit(s): only 4 free runners this round (#5, #6, #7, #8, #9, #10, #11, #12, #13, #14, #15, #16)" "$(printf '%s\n' "$rd_planned" | grep '^defer ')"
 eq "plugin and CI issues go in one bundle, even with no file in common" "unit	31 32	Hook fix | Queue fix	both are plugin or CI work, which shares one test suite	plugin/hooks/a.sh,scripts/ci/b.sh" "$(plan_units "$(printf '31\tHook fix\tplugin/hooks/a.sh\n32\tQueue fix\tscripts/ci/b.sh\n')" "" | sed -n 1p)"
 eq "plugin work waits on a running plugin unit" "hold	33	Brief fix	After: Hook fix" "$(plan_units "$(printf '33\tBrief fix\tplugin/brief.sh\n')" "$(printf 'Hook fix\tplugin/hooks/a.sh\n')")"
 rd_snap=$(printf 'pr\t51\tBeds page\tgreen\tmergeable\tapp\npr\t52\tFrost alert\tpending\tmergeable\tapp\npr\t53\tSeed list\tred\tmergeable\tapp\npr\t54\tWatering copy\tgreen\tmergeable\tapp\nissue\t9\tReady thing\tready\tno\n')

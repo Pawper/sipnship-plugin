@@ -13,6 +13,8 @@ coverage/
 next-env.d.ts
 supabase/.temp/
 *.log
+# A crash dump Git Bash writes when a shell dies (sh.exe.stackdump)
+*.stackdump
 
 # Local settings and secrets
 .env

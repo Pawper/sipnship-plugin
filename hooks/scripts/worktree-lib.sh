@@ -13,6 +13,7 @@ dirty_non_scratch() {
       if (p ~ / -> /) sub(/^.* -> /, "", p)
       gsub(/^"|"$/, "", p)
       if (index(p, scratch "/") == 1 || p == scratch) next
+      if (p ~ /(^|\/)[^\/]*\.stackdump$/) next
       print p
     }'
 }
