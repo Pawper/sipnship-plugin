@@ -16,6 +16,7 @@
 #   --print  sample and print the verdicts; write and comment nothing
 here=$(dirname "$0")
 . "$here/run-lib.sh"
+. "$here/pool-lib.sh"
 print_only=no; [ "$1" = --print ] && print_only=yes
 command -v gh >/dev/null 2>&1 || { echo "gh is not installed; the watch needs it to read the runners." >&2; exit 2; }
 repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null || git remote get-url origin 2>/dev/null | sed 's#.*github.com[:/]##; s#\.git$##')
@@ -159,6 +160,14 @@ printf '%s\t%s\n' "$now" "$status" > "$dir/$key.latest"
 # The machine line, for the session brief and the console; one per machine.
 # The measures follow the line, tab-separated, in the order sample_measures gives them.
 printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$now" "${cores:-0}" "${here:-0}" "${busy:-0}" "$mline" "$meas" > "$dir/machine.tsv" 2>/dev/null || true
+
+# The kernel's pools once an hour, thirty days kept, so the trend shows
+# (columns: epoch, uptime h, paged GB, non-paged GB, handles, processes).
+last_pool=$(tail -n 1 "$dir/pool.tsv" 2>/dev/null | cut -f1)
+if [ "$(pool_record_due "$last_pool" "$now")" = yes ]; then
+  pool_record "$now" "$meas" >> "$dir/pool.tsv" 2>/dev/null || true
+  pool_record_keep "$dir/pool.tsv"
+fi
 
 # The runners here by name and the scan check's one word, for the brief.
 local_runner_names | sed '/^$/d' > "$dir/names.tsv" 2>/dev/null || true

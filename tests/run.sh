@@ -897,6 +897,13 @@ eq "low disk is urgent under five" "disk-urgent|only 4 GB free on the runners' d
 eq "too many runners for the cores" "overcommit|20 runners on 32 cores across the projects on this machine; past one runner per two cores each job slows the others" "$(load_verdicts "$(printf '10\t40\t100\t0\t0\t20\t32')")"
 eq "the watch says a condition once when it starts" "started: b" "$(watch_changes "$(printf 'x|a')" "$(printf 'x|a\ny|b')")"
 eq "and once when it ends" "ended: a" "$(watch_changes "$(printf 'x|a')" '')"
+. "$root/templates/scripts/ci/pool-lib.sh"
+pl_meas=$(printf '412\t96.5\t22.6\t1.2\t336655\t683\t3\t0')
+eq "no record yet is due" "yes" "$(pool_record_due '' 1000000)"
+eq "a record ten minutes old is not due" "no" "$(pool_record_due 1000000 1000600)"
+eq "a record fifty-six minutes old is due" "yes" "$(pool_record_due 1000000 1003360)"
+eq "the hourly line carries time, uptime, both pools, handles and processes" "$(printf '1000000\t96.5\t22.6\t1.2\t336655\t683')" "$(pool_record 1000000 "$pl_meas")"
+eq "a machine that gave no paged pool records nothing" "" "$(pool_record 1000000 "$(printf '412\t96.5\t\t\t\t\t\t')")"
 eq "every thirty minutes is 1,440 a month" "1440" "$(cron_runs_month '*/30 * * * *')"
 eq "every two hours is 360" "360" "$(cron_runs_month '17 */2 * * *')"
 eq "nightly is 30" "30" "$(cron_runs_month '17 3 * * *')"

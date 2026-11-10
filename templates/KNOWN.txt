@@ -435,6 +435,7 @@ scripts/ci/numbering-lib.sh c8556f1cfe46123506cbf822c8bb31775171a546
 scripts/ci/numbering-lib.sh eba4ec8f44cd31094238da6c0487ccf3dc6d5304
 scripts/ci/place-rescue.sh 8ccd66d60880891d1be21814e583a96b75d0757f
 scripts/ci/place.sh c411a9c2dcdd719de3416493f6aba1792da81602
+scripts/ci/pool-lib.sh 7e9aad475ffb3e64ff6fbbddf1cb563c27e49e01
 scripts/ci/pr-text.sh e44b567664decd505f35309620561875fae6b27a
 scripts/ci/publish-lib.sh 0188733f153b1328b00168a108ae9c1707a27db2
 scripts/ci/publish-lib.sh 124a6fc4fa2041fc18cc9abf6e90ffb27ffa9707
@@ -583,6 +584,7 @@ scripts/ci/runner-watch-install.ps1 6ea45a33723679fe8264fcbc764730a2b71c3b33
 scripts/ci/runner-watch.sh 0971b6cb0d3ad8d5707ec3bdd3f05ef128cbf0d6
 scripts/ci/runner-watch.sh 09743e1e906792813ac1e3a546962538ad7042c8
 scripts/ci/runner-watch.sh 394cf3af2e1af5c3b7ad8c8db467ccabc0027c13
+scripts/ci/runner-watch.sh 45899c0e7f87e201c79074bdf18090690290b02b
 scripts/ci/runner-watch.sh 70f5748f7f632e244917f24cc238f944ea29d1b1
 scripts/ci/runner-watch.sh 81f61853d1b735ea757d50f5e9b4a0e23a2a84e9
 scripts/ci/runner-watch.sh 9bf864adf766c5d12471dc6aea059d77e1c38de5

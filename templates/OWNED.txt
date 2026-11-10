@@ -131,6 +131,7 @@ scripts/ci/runner-watch.sh
 scripts/ci/runner-watch-install.ps1
 default .claude/runners.json
 scripts/ci/doctor-lib.sh
+scripts/ci/pool-lib.sh
 scripts/ci/runner-doctor.sh
 .github/workflows/runner-check.yml
 feature deploy
