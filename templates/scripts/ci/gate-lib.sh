@@ -16,6 +16,16 @@ gate_decide() {
   echo run
 }
 
+# gate_skip_early HEAD PUSHED_EPOCH NOW_EPOCH QUIET_MINUTES [EVENT]
+# The skip that needs no look at past runs: main moved inside the quiet time,
+# or its landing time is not known. Prints "skip: <why>", or nothing when the
+# past runs must be read to decide. The gate asks this first, so a main that
+# is not due ends in seconds, on the one call that read main.
+gate_skip_early() {
+  gse=$(gate_decide "$1" "" "$2" "$3" "$4" "${5:-}")
+  case "$gse" in skip*) echo "$gse" ;; esac
+}
+
 # last_gated RUNS: the newest gate that ran its tests, or failed before its
 # tests existed, from lines of
 #   head-sha  conclusion  created-epoch  tests-ran(yes|no)
@@ -70,6 +80,49 @@ gate_early_red_line() {
   else
     echo "main's gate at $(ge_at "$ge_red") ended red before its tests started; no gate has checked main on record."
   fi
+}
+
+# gate_early_red_run RUNS: the id of the newest run that ended red before its
+# test jobs existed, from RUNS' fifth column; nothing when none did.
+gate_early_red_run() {
+  printf '%s\n' "$1" | tr -d '\r' | awk -F '\t' 'NF >= 5 && $2 == "failure" && $4 == "no" { print $5; exit }'
+}
+
+# red_kind GATE FULL TESTS: what kind of red a main run was, from the results
+# of its jobs (success, failure, cancelled, skipped, or empty for a job that
+# was never created): "test" when a test job failed, "nostart" when the run
+# is red and no test job failed (GitHub did not start them, or the gate
+# itself failed), "unfinished" when a job was cancelled and none failed;
+# nothing when the run is not red.
+red_kind() {
+  case "$2$3" in *failure*) echo test; return ;; esac
+  case "$1" in failure) echo nostart; return ;; esac
+  case "$1$2$3" in *cancelled*) echo unfinished ;; esac
+}
+
+# red_words KIND: the kind in plain words, as the Main card says it.
+red_words() {
+  case "$1" in
+    test) echo "a test failed" ;;
+    nostart) echo "the check could not start its jobs" ;;
+    unfinished) echo "the check did not finish" ;;
+    *) echo "the check was red" ;;
+  esac
+}
+
+# red_note KIND SHA URL SECOND: the comment on the red-main issue for one red
+# run. A run that is not a failed test is the machines' turn and says so;
+# SECOND is "yes" when the run before it was red the same way, which the
+# runner watch is told by this line.
+red_note() {
+  rn_head="Main's check on ${2} was red: $(red_words "$1"). Run: $3."
+  case "$1" in
+    test) printf '%s Fix it before merging anything else.\n' "$rn_head" ;;
+    *)
+      printf '%s No test failed, and nothing is asked of the owner.' "$rn_head"
+      if [ "$4" = yes ]; then printf ' This is the second run in a row that was red this way, so the runner watch is told: the machines need a look.\n'
+      else printf ' The check is run once more by itself at the next hour.\n'; fi ;;
+  esac
 }
 
 # gate_holds_deploy GATED LANDED_EPOCH: the reason a deploy is held, or

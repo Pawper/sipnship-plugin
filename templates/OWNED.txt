@@ -22,6 +22,7 @@ scripts/ci/pr-text.sh
 scripts/ci/failure-lib.sh
 scripts/ci/gate.sh
 scripts/ci/gate-lib.sh
+scripts/ci/report-red.sh
 scripts/ci/line-endings.sh
 scripts/ci/spec-check.sh
 scripts/ci/setup-check.sh

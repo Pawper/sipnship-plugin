@@ -18,10 +18,15 @@ here=$(dirname "$0")
 . "$here/gate-lib.sh"
 wf=${QUEUE_CI_WORKFLOW:-ci.yml}
 to_epoch() { date -u -d "$1" +%s 2>/dev/null || date -u -j -f %Y-%m-%dT%H:%M:%SZ "$1" +%s 2>/dev/null; }
+# runs_tsv [HEAD]: with HEAD, the scan ends at the first run on another head
+# (the decision only asks whether HEAD was gated), so it costs one call a run
+# on main's own head, never one for every run of the day.
 runs_tsv() {
+  only=${1:-}
   gh api "repos/{owner}/{repo}/actions/workflows/$wf/runs?branch=main&event=schedule&status=completed&per_page=24" \
     --jq '.workflow_runs[] | [.id, .head_sha, (.conclusion // ""), .created_at] | @tsv' 2>/dev/null | tr -d '\r' \
     | while IFS="	" read -r id sha conc at; do
+        [ -z "$only" ] || [ "$sha" = "$only" ] || break
         ran=$(gh api "repos/{owner}/{repo}/actions/runs/$id/jobs?per_page=100" --jq '[.jobs[] | select(.name | startswith("tests")) | select(.conclusion != "skipped")] | if length > 0 then "yes" else "no" end' 2>/dev/null | tr -d '\r')
         printf '%s\t%s\t%s\t%s\t%s\n' "$sha" "$conc" "$(to_epoch "$at")" "${ran:-no}" "$id"
         if [ "$ran" = yes ]; then [ "$conc" = cancelled ] || break; fi
@@ -32,6 +37,7 @@ case "$1" in
   why) gate_last_why "$(runs_tsv)" ;;
   early-red) gate_early_red_line "$(runs_tsv)" ;;
   early-red-count) gate_early_red_count "$(runs_tsv)" ;;
+  early-red-run) gate_early_red_run "$(runs_tsv)" ;;
   failing)
     runs=$(runs_tsv)
     [ "$(last_gated "$runs" | cut -f2)" = failure ] || exit 0
@@ -44,7 +50,10 @@ case "$1" in
   decide)
     head=$(gh api "repos/{owner}/{repo}/commits/main" --jq '.sha + "\t" + .commit.committer.date' 2>/dev/null | tr -d '\r')
     [ -n "$head" ] || { echo "skip: main cannot be read"; exit 0; }
-    gated=$(last_gated_ran "$(runs_tsv)")
+    # Not due on the quiet time alone: no run is read.
+    early=$(gate_skip_early "${head%%	*}" "$(to_epoch "${head#*	}")" "$(date +%s)" "${GATE_QUIET_MINUTES:-60}" "${2:-}")
+    [ -z "$early" ] || { echo "$early"; exit 0; }
+    gated=$(last_gated_ran "$(runs_tsv "${head%%	*}")")
     gate_decide "${head%%	*}" "$(printf '%s' "$gated" | cut -f1)" "$(to_epoch "${head#*	}")" "$(date +%s)" "${GATE_QUIET_MINUTES:-60}" "${2:-}" ;;
   *) echo "usage: gate.sh decide [EVENT] | last | early-red | early-red-count | failing | why" >&2; exit 2 ;;
 esac

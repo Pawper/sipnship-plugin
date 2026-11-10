@@ -1,0 +1,4 @@
+checks	success
+classify	success
+tests	success
+CI passed	failure	Report once for every job

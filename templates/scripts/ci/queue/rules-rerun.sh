@@ -28,6 +28,35 @@ rule_step_failed() {
   printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' 'NF >= 3 && $3 ~ /^Fail when / { f = 1 } END { print f ? "yes" : "no" }'
 }
 
+# rule_failed_what JOBS: which rule check failed, in the check's own words:
+# "a change grows a source file past its size limit", then its first line of
+# text in brackets when the job kept one worth reading. Nothing when no rule
+# check failed. JOBS as rule_step_failed reads them.
+rule_failed_what() {
+  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' '
+    NF >= 3 && $3 ~ /^Fail when / {
+      s = $3; sub(/^Fail when /, "", s); t = $4
+      if (t ~ /[Cc]ancel+ed/) t = ""
+      gsub(/^[ ]+|[ ]+$/, "", t); if (length(t) > 140) t = substr(t, 1, 140)
+      print s (t != "" ? " (" t ")" : ""); exit
+    }'
+}
+
+# run_unfinished JOBS [SUMMARY]: "yes" when the run did not finish and no job
+# failed in its own right: every job but the summary job passed, was skipped
+# or was cancelled, and the summary job failed or a job was cancelled. That
+# is a run that never got to say, not a failed check or a failed test.
+run_unfinished() {
+  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v sum="${2:-CI passed}" '
+    NF == 0 { next }
+    { c = tolower($2) }
+    $1 == sum { if (c == "failure" || c == "cancelled" || c == "canceled") u = 1; next }
+    c == "failure" { bad = 1; next }
+    ($3 != "") && (c == "cancelled" || c == "canceled") { bad = 1; next }
+    c == "cancelled" || c == "canceled" { u = 1 }
+    END { print (u && !bad) ? "yes" : "no" }'
+}
+
 # rerun_seen RECORDS HEAD [MARK]
 # RECORDS is the drain's own record of past re-runs, "head<TAB>mark" per
 # line. Print "same" when HEAD was re-run or looked at with this MARK,
@@ -55,6 +84,13 @@ rerun_seen() {
 #                                                   have flaked
 red_rerun() {
   rr_rule=$(rule_step_failed "$1")
+  if [ "$rr_rule" = no ] && [ "$(run_unfinished "$1" "${QUEUE_SUMMARY_CHECK:-CI passed}")" = yes ]; then
+    case $(rerun_seen "$2" "$3" "$4") in
+      new) echo "rerun the run did not finish, so it is run once more" ;;
+      *) echo "skip the run did not finish and was run once more already" ;;
+    esac
+    return
+  fi
   rr_cause=""
   if [ "$rr_rule" = no ]; then rr_cause=$(outside_cause "$1" "${QUEUE_SUMMARY_CHECK:-CI passed}"); fi
   if [ -n "$rr_cause" ]; then echo "rerun $rr_cause"; return; fi
@@ -64,7 +100,7 @@ red_rerun() {
   esac
   if [ "$rr_rule" = yes ]; then
     if [ "$5" = yes ]; then echo "rerun the pull request was edited since the failed run"
-    else echo "skip a rule check failed and nothing it reads has changed"; fi
+    else echo "skip a rule check failed: $(rule_failed_what "$1"); nothing it reads has changed"; fi
     return
   fi
   echo "rerun one retry of a failure on a new commit"
