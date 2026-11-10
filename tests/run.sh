@@ -4135,6 +4135,25 @@ eq "a job cancelled after its own step failed is reported failed, not cancelled 
 eq "and the one cancelled with no step failed is cancelled because of it" "1" "$(run_report "$(printf '11\tchecks\tcompleted\tcancelled\tgarden-1\tFail when STATUS.md is stale\n12\ttests (watering)\tcompleted\tcancelled\tgarden-2\t')" "" | grep -c '^- tests (watering)$')"
 eq "every job that can fail says what failed, the tests job with its part's log" "4 1" "$(grep -c 'run: sh scripts/ci/failure-report.sh job' "$fr_ci") $(grep -c 'failure-report.sh job "$RUNNER_TEMP/part.log"' "$fr_ci")"
 eq "the report job names the failed job" "1" "$(grep -c 'run: sh scripts/ci/failure-report.sh run' "$fr_ci")"
+. "$root/templates/scripts/pr-lib.sh"
+eq "a size failure beside cancelled jobs reads as the file and its count, never as cancelled" "checks: a file grew past its size limit: packages/service/src/picture.ts, 703 of 400 lines" "$(pr_red_say checks 'Fail when a change grows a source file past its size limit' 'packages/service/src/picture.ts has 703 lines, over the limit of 400, and this change adds to it (it had 702). Split before you add: move one unit.')"
+eq "a new file over its limit reads the same way" "checks: a file grew past its size limit: lib/beds.ts, 90 of 40 lines" "$(pr_red_say checks 'size' 'lib/beds.ts is new and has 90 lines, over the limit of 40. Split before you add.')"
+eq "any other failed step is named with its line" "checks: Fail when STATUS.md is stale failed: STATUS.md is out of date" "$(pr_red_say checks 'Fail when STATUS.md is stale' 'STATUS.md is out of date')"
+eq "pr-checks reads the annotations through REST only" "0 1" "$(grep -c '^[^#]*\(gh pr \|gh project\|graphql\)' "$root/templates/scripts/pr-checks.sh") $(grep -c 'check-runs/\$id/annotations' "$root/templates/scripts/pr-checks.sh")"
+pc_dir=$(mktemp -d); mkdir -p "$pc_dir/bin"
+cat > "$pc_dir/bin/gh" <<'GH'
+#!/bin/sh
+case "$*" in
+  *pulls/*) echo abc123 ;;
+  *check-runs/11/annotations*) printf 'checks failed at Fail when a change grows a source file past its size limit\tpackages/service/src/picture.ts has 703 lines, over the limit of 400, and this change adds to it (it had 702). Split before you add.\n' ;;
+  *annotations*) ;;
+  *check-runs*) printf 'checks\tcancelled\t11\ntests\tcancelled\t12\nCI passed\tfailure\t13\n' ;;
+esac
+GH
+chmod +x "$pc_dir/bin/gh"
+pc_out=$(cd "$pc_dir" && PATH="$pc_dir/bin:$PATH" sh "$root/templates/scripts/pr-checks.sh" 7 2>&1)
+eq "a checks job cancelled with an error annotation reads as that failure, with the rule and file" "checks: a file grew past its size limit: packages/service/src/picture.ts, 703 of 400 lines" "$(printf '%s\n' "$pc_out" | grep '^checks: ')"
+eq "and the rollup is red, with checks shown failed and a bare cancel still cancelled" "red 1 1" "$(printf '%s\n' "$pc_out" | tail -n 1) $(printf '%s\n' "$pc_out" | grep -c '^  checks  *failure$') $(printf '%s\n' "$pc_out" | grep -c '^  tests  *cancelled$')"
 eq "the failing job finds itself by its runner" "102" "$(own_job "$(cat "$fr_fx/jobs-running.tsv")" garden-2 | cut -f1)"
 fr_lines=$(tail -n 3 "$fr_fx/part.txt")
 fr_sum=$(failure_summary 'tests (watering)' 'Run the watering part' "$fr_lines")
@@ -4802,6 +4821,9 @@ qc_size=$(qc_push size)
 eq "a file grown past its limit refuses the push" "rc=2" "$(printf '%s\n' "$qc_size" | head -n 1)"
 eq "the refusal carries the size check's own words" "1" "$(printf '%s\n' "$qc_size" | grep -c 'lib/watering.ts has 50 lines, over the limit of 40')"
 eq "and names the CI step that would fail" "1" "$(printf '%s\n' "$qc_size" | grep -c '^Failed: Fail when a change grows a source file past its size limit')"
+qc_budget=$(cd "$qc" && git checkout -q size && CHECKS_LOCAL_SECONDS=0 CHECKS_LOCAL_OFFLINE=1 sh scripts/ci/checks-local.sh 2>&1)
+eq "the size check runs first and never under the time budget: it still refuses at a budget of 0" "Failed: Fail when a change grows" "$(printf '%s\n' "$qc_budget" | head -n 1 | cut -c1-32)"
+eq "and in its own words, with no timeout beside it" "1 0" "$(printf '%s\n' "$qc_budget" | grep -c 'lib/watering.ts has 50 lines, over the limit of 40') $(printf '%s\n' "$qc_budget" | grep -c 'still running after')"
 qc_mock=$(qc_push mock)
 eq "a screen changed without its mock refuses the push" "rc=2" "$(printf '%s\n' "$qc_mock" | head -n 1)"
 eq "the refusal carries the mock check's own words" "1" "$(printf '%s\n' "$qc_mock" | grep -c 'These screens changed but their mocks did not: beds')"

@@ -17,8 +17,9 @@
 # screen file no line maps, a raw colour, a private name) no body line can
 # allow. A failure of one of them then says a body line might allow it.
 # CHECKS_LOCAL_BODY names another body file; CHECKS_LOCAL_OFFLINE=1 skips
-# the REST read. The steps run side by side; the whole run gives up after
-# CHECKS_LOCAL_SECONDS (default 60).
+# the REST read. The size check runs first, alone and outside the time
+# budget, and its failure ends the run; the other steps run side by side
+# and the whole run gives up after CHECKS_LOCAL_SECONDS (default 60).
 # Exit: 0 when every step that ran passed, 1 when one failed.
 top=$(git rev-parse --show-toplevel 2>/dev/null) || { echo "checks-local: not inside a git repository." >&2; exit 1; }
 cd "$top" || exit 1
@@ -95,6 +96,9 @@ steps=$(awk '
   }
   END { if (injob) flush() }
 ' "$wf")
+# The size check goes first: it reads line counts only, so it is quick, and
+# it is the failure that most often reaches CI. Its block leads the list.
+steps=$(printf '%s\n' "$steps" | awk 'function f() { if (b == "") return; if (b ~ /hotspots-check\.sh/) h = h b; else o = o b; b = "" } /^S/ { f() } { b = b $0 "\n" } END { f(); printf "%s%s", h, o }')
 
 # cond_holds IF: whether a step's "if:" holds here. A pull request event,
 # the classes above and the files present; failure() and the like never
@@ -161,6 +165,17 @@ launch() {
   elif ! cond_holds "$cond"; then :
   else
     n=$((n + 1)); run_step "$n" "$name" "$cmds"
+    case "$cmds" in *hotspots-check.sh*)
+      # Waited for here, outside the budget below, and a failure ends the
+      # run at once in the check's own words.
+      hs=$!; wait "$hs" 2>/dev/null; pids=${pids% "$hs"}
+      if [ "$(cat "$tmp/$n.rc" 2>/dev/null || echo 1)" != 0 ]; then
+        printf 'Failed: %s\n' "$name"
+        grep -v '^::warning::' "$tmp/$n.out" | sed 's/^/  /'
+        printf '1 of %s quick checks failed (%ss). CI runs the same steps and would fail them too.\n' "$n" "$(( $(date +%s) - start ))"
+        exit 1
+      fi ;;
+    esac
     [ "$nbody" != 1 ] || : > "$tmp/$n.body"
   fi
   name=""; cmds=""
