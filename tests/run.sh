@@ -2448,6 +2448,7 @@ eq "two passwords differ" "no" "$([ "$(random_password)" = "$(random_password)" 
 
 section 'template refresh'
 . "$root/scripts/sync/sync-lib.sh"
+. "$root/scripts/sync/known-lib.sh"
 owned='# comment
 scripts/ci/merge-queue.sh
 .github/workflows/audit.yml
@@ -2531,7 +2532,7 @@ if [ -f "$root/../scripts/ci/known-hashes-check.sh" ]; then
     mkdir -p .github/workflows plugin/templates plugin/scripts/sync scripts/ci src
     printf 'on: pull_request\njobs:\n  checks:\n    runs-on: x\n    steps:\n      - name: Fail when a template changed and the list of known template hashes did not\n        if: github.event_name == '"'"'pull_request'"'"'\n        run: sh scripts/ci/check-log.sh sh scripts/ci/known-hashes-check.sh "$BASE" "${{ github.sha }}"\n' > .github/workflows/ci.yml
     cp "$root/../scripts/ci/known-hashes-check.sh" "$root/../scripts/ci/check-log.sh" "$root/../scripts/ci/checks-local.sh" "$root/../scripts/ci/classify.sh" "$root/../scripts/ci/lib.sh" "$root/../scripts/ci/classes.txt" scripts/ci/
-    cp "$root/scripts/sync/sync-lib.sh" "$root/scripts/sync/known-hashes.sh" plugin/scripts/sync/
+    cp "$root/scripts/sync/sync-lib.sh" "$root/scripts/sync/known-lib.sh" "$root/scripts/sync/known-hashes.sh" plugin/scripts/sync/
     printf 'water.sh\n' > plugin/templates/OWNED.txt
     printf 'echo water the tomatoes at six\n' > plugin/templates/water.sh
     printf 'export const beds = 1\n' > src/beds.ts
@@ -2560,7 +2561,7 @@ kr=$(mktemp -d)
 git -C "$kr" init -q -b main
 git -C "$kr" config user.email q@example.com; git -C "$kr" config user.name queue; git -C "$kr" config core.autocrlf false
 mkdir -p "$kr/plugin/scripts/sync" "$kr/plugin/templates/a"
-cp "$root/scripts/sync/known-hashes.sh" "$root/scripts/sync/sync-lib.sh" "$kr/plugin/scripts/sync/"
+cp "$root/scripts/sync/known-hashes.sh" "$root/scripts/sync/sync-lib.sh" "$root/scripts/sync/known-lib.sh" "$kr/plugin/scripts/sync/"
 printf 'a/x.sh\n' > "$kr/plugin/templates/OWNED.txt"
 printf 'one\n' > "$kr/plugin/templates/a/x.sh"
 (cd "$kr" && sh plugin/scripts/sync/known-hashes.sh --all) > "$kr/plugin/templates/KNOWN.txt"
@@ -2675,6 +2676,7 @@ eq "and --apply adds them" "yes yes" "$([ -f "$ss_d/scripts/ci/mock-check.sh" ] 
 
 section 'template refresh, the sync in a throwaway project'
 . "$root/scripts/sync/sync-lib.sh"
+. "$root/scripts/sync/known-lib.sh"
 fixtures_sync="$root/tests/fixtures/sync"
 ss_new() {
   ss_d=$(mktemp -d)

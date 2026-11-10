@@ -20,6 +20,7 @@
 set -e
 here=$(dirname "$0")
 . "$here/sync-lib.sh"
+. "$here/known-lib.sh"
 owned=$(cat plugin/templates/OWNED.txt)
 # Files the templates no longer carry, whose released versions the sync
 # must still know so it removes an unedited copy: the hosted Runner watch,
