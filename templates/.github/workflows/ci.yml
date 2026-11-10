@@ -92,6 +92,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           why=$(sh scripts/ci/gate.sh decide "${{ github.event_name }}")
+          # The hourly gate never crowds out pull requests: while any pull
+          # request's run is still waiting for a runner, it stands aside and
+          # the next hour tries again. A run started by hand always runs.
+          if [ "$why" = run ] && [ "${{ github.event_name }}" = schedule ]; then
+            waiting=$(gh api "repos/{owner}/{repo}/actions/workflows/ci.yml/runs?event=pull_request&status=queued&per_page=1" --jq '.total_count' 2>/dev/null | tr -d '\r')
+            case "$waiting" in ''|*[!0-9]*|0) ;; *) why="skip: $waiting pull request runs are waiting for a runner, so main's check waits for the next hour" ;; esac
+          fi
           echo "$why"
           if [ "$why" = run ]; then parts=$(sh scripts/ci/test-parts.sh matrix all); else parts='[]'; fi
           echo "parts=$parts" >> "$GITHUB_OUTPUT"
@@ -318,6 +325,10 @@ jobs:
       matrix:
         part: ${{ fromJSON(needs.classify.outputs.parts || needs.gate.outputs.parts || '[]') }}
     name: tests
+    # A part that never ends frees its runner. Set from this machine's slow
+    # nights, when a part takes 20 to 60 minutes: three times the slowest,
+    # never the healthy few minutes, or a part that is only slow is killed.
+    timeout-minutes: 180
     runs-on: RUNS_ON
     permissions:
       # The workflow's own, plus actions: read so a failure can name its step.
@@ -337,6 +348,12 @@ jobs:
           # clear and never piles up in the machine's Temp folder.
           TMPDIR: ${{ runner.temp }}
         run: sh scripts/ci/test-parts.sh run "${{ matrix.part }}" 2>&1 | tee "$RUNNER_TEMP/part.log"
+      - name: Say a part hung
+        # The part ran out of its time: name it and the last test it started.
+        if: cancelled()
+        run: |
+          last=$(grep '^# ' "$RUNNER_TEMP/part.log" 2>/dev/null | tail -n 1)
+          echo "::error title=A test part hung::The ${{ matrix.part }} part ran out of its 180 minutes. The last test it started: ${last#\# }"
       - name: Say what failed
         # A summary and an annotation naming the failed step and its last
         # lines. A failure here never cancels the run: the other jobs

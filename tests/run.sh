@@ -5,6 +5,8 @@
 #
 #   --fail-fast   end at the first block with a failure, naming it and its
 #                 failing lines (a pull request's run; main runs everything)
+#   --touching FILE...   run only the parts with a block that names any of the
+#                 files (paths as git prints them); says which, and the total
 #   --part NAME   run only one part: one of the names in tests/parts.txt (CI runs the
 #                 three side by side); the prelude and summary run in each
 
@@ -21,11 +23,21 @@ root=${RUN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}
 
 fail_fast=no
 part=
+touching=
+touched=
+suite_start=$(date +%s)
 while [ $# -gt 0 ]; do
   case "$1" in
     --fail-fast) fail_fast=yes ;;
     --part) part=$2; shift ;;
     --part=*) part=${1#--part=} ;;
+    --touching)
+      touching=yes; shift
+      while [ $# -gt 0 ]; do
+        case "$1" in --*) break ;; esac
+        touched="${touched:+$touched }$1"; shift
+      done
+      continue ;;
     *) printf 'unknown option: %s\n' "$1"; exit 2 ;;
   esac
   shift
@@ -101,6 +113,25 @@ spawned_alive() {
     fi
   done < "$SUITE_TMP_ROOT/.spawned"
 }
+if [ -n "$touching" ] && [ -z "$RUN_PART" ]; then
+  if [ -z "$touched" ]; then printf 'touching: name at least one file\n'; exit 2; fi
+  ff=; [ "$fail_fast" = yes ] && ff=--fail-fast
+  tp=$(set -f; parts_touching $touched < "$root/tests/run.sh")
+  if [ -z "$tp" ]; then
+    printf 'touching: no part of the suite names those files; nothing to run (sh tests/run.sh --part NAME runs one part)\n'
+    exit 0
+  fi
+  printf 'touching: %s\n' "$(printf '%s' "$tp" | tr '\n' ' ' | sed 's/ $//')"
+  tt_rc=0
+  for tt_part in $tp; do
+    tt_t=$(date +%s)
+    printf '\n== part %s\n' "$tt_part"
+    RUN_ROOT=$root sh "$root/tests/run.sh" --part "$tt_part" $ff || tt_rc=1
+    printf 'part  %s: %ss\n' "$tt_part" "$(( $(date +%s) - tt_t ))"
+  done
+  printf '\ntotal  %ss for the parts above\n' "$(( $(date +%s) - suite_start ))"
+  exit $tt_rc
+fi
 if [ -n "$part" ] && [ -z "$RUN_PART" ]; then
   if ! part_names | grep -qxF -- "$part"; then
     printf 'unknown part: %s (one of: %s)\n' "$part" "$(part_names | tr '\n' ' ' | sed 's/ $//')"
@@ -4872,6 +4903,25 @@ eq "and says a body line might allow a check that reads it" "1" "$(printf '%s\n'
 (cd "$qc" && grep -v 'hotspots-check.sh' .github/workflows/ci.yml > .scratch/ci.yml && cp .scratch/ci.yml .github/workflows/ci.yml)
 eq "a step taken out of ci.yml is not run" "0" "$(cd "$qc" && CHECKS_LOCAL_OFFLINE=1 sh scripts/ci/checks-local.sh 2>&1 | grep -c 'over the limit')"
 eq "the hook is registered in hooks.json" "1" "$(grep -c 'require-local-checks.sh' "$root/hooks/hooks.json")"
+# A check that runs out of time is not a failure: named apart, and the push goes on.
+qc_slow=$(cd "$qc" && git checkout -q fine && CHECKS_LOCAL_SECONDS=0 CHECKS_LOCAL_OFFLINE=1 sh scripts/ci/checks-local.sh 2>&1; echo "rc=$?")
+eq "steps that ran out of time are named as not a failure, in their own lines" "yes" "$(printf '%s\n' "$qc_slow" | grep -q '^Did not finish in 0 s (not a failure): ' && echo yes)"
+eq "and are never listed as failed, and never held back" "0 rc=0" "$(printf '%s\n' "$qc_slow" | grep -c '^Failed: ') $(printf '%s\n' "$qc_slow" | tail -n 1)"
+eq "the old wording for a timeout is gone" "0" "$(printf '%s\n' "$qc_slow" | grep -c 'still running after')"
+
+section 'the suite runs the parts a change touches, and says where it is'
+# A small suite of its own: two parts, one block each naming a file.
+pt=$(mktemp -d); pt_c=console
+printf '# parts\nalpha the watering block\nbeta the beds block\n' > "$pt/parts.txt"
+printf "section 'the watering block'\neq a 1 1 # scripts/sync/sync-lib.sh\nsection 'the beds block'\neq b 1 1 # hooks/scripts/lib.sh\n" > "$pt/suite.sh"
+pt_of() { (PARTS_FILE="$pt/parts.txt"; part_names >/dev/null; parts_touching "$@" < "$pt/suite.sh" | tr '\n' ' ' | sed 's/ $//'); }
+eq "a file a block names selects that block's part, as git prints the path" "alpha" "$(pt_of plugin/scripts/sync/sync-lib.sh)"
+eq "two files select both parts, in the parts file's order" "alpha beta" "$(pt_of plugin/hooks/scripts/lib.sh plugin/scripts/sync/sync-lib.sh)"
+eq "a file nothing names selects nothing" "" "$(pt_of plugin/scripts/queue/other.sh)"
+eq "the real suite: a sync file selects the template refresh part, and the console's files only the console" "yes yes" "$(parts_touching plugin/scripts/sync/sync-lib.sh < "$root/tests/run.sh" | grep -qx shell-1 && echo yes) $([ "$(parts_touching plugin/$pt_c/connect.js < "$root/tests/run.sh")" = console ] && echo yes)"
+pt_out=$(cd "$root" && RUN_PART= RUN_ROOT=$root sh tests/run.sh --touching nothing/names/$pt_c.sh 2>&1)
+eq "--touching with nothing named says so and runs nothing" "touching: no part of the suite names those files; nothing to run (sh tests/run.sh --part NAME runs one part)" "$pt_out"
+eq "each block's name and time are printed as it goes, a total at the end, and a block over two minutes is named slow" "1 yes 1" "$(grep -c "time  %s: %ss (limit" "$root/tests/parts-lib.sh") $([ "$(grep -c "total  %ss over" "$root/tests/run.sh")" -ge 1 ] && echo yes) $(grep -c "slow  %s: %ss (over two minutes)" "$root/tests/parts-lib.sh")"
 
 section 'builds that find a place, and the rescue of a build stuck on a machine that went offline'
 . "$root/templates/scripts/ci/batch-lib.sh"
@@ -5072,5 +5122,6 @@ eq "the slow read keeps the owed answers for it" "1" "$(grep -c 'answers.sh" --a
 eq "no process started by this suite is still running" "" "$(spawned_alive)"
 block_end
 stop_if_red
+printf '\ntotal  %ss over %s blocks%s\n' "$(( $(date +%s) - suite_start ))" "${block_count:-0}" "${slow_blocks:+; slow (over two minutes): $slow_blocks}"
 printf '\n%s passed, %s failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

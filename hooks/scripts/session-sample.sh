@@ -38,7 +38,7 @@ if [ "${1:-}" = tool ]; then
     [ -n "$sn_mark" ] && { read -r sn_last < "$sn_home/brief-send/sample-at-$sn_mark"; } 2>/dev/null
     case $sn_last in
       ''|*[!0-9]*) ;;
-      *) sn_now=${EPOCHSECONDS:-$(date +%s 2>/dev/null)}
+      *) sn_now=${SIPNSHIP_SAMPLE_NOW:-${EPOCHSECONDS:-$(date +%s 2>/dev/null)}}
          [ -n "$sn_now" ] && [ $((sn_now - sn_last)) -lt "$every" ] && exit 0 ;;
     esac
   fi

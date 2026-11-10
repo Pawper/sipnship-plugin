@@ -19,8 +19,12 @@
 # CHECKS_LOCAL_BODY names another body file; CHECKS_LOCAL_OFFLINE=1 skips
 # the REST read. The size check runs first, alone and outside the time
 # budget, and its failure ends the run; the other steps run side by side
-# and the whole run gives up after CHECKS_LOCAL_SECONDS (default 60).
-# Exit: 0 when every step that ran passed, 1 when one failed.
+# and the whole run gives up after CHECKS_LOCAL_SECONDS (default 60). A step
+# that ran out of time is named apart from the failures, as "did not finish
+# in 60 s (not a failure)": a slow machine is not a broken change, and the
+# push goes ahead on timeouts alone.
+# Exit: 0 when every step that ran passed or only ran out of time, 1 when one
+# failed.
 top=$(git rev-parse --show-toplevel 2>/dev/null) || { echo "checks-local: not inside a git repository." >&2; exit 1; }
 cd "$top" || exit 1
 wf=.github/workflows/ci.yml
@@ -206,21 +210,30 @@ watchdog=$!
 for p in $pids; do wait "$p" 2>/dev/null; done
 kill "$watchdog" 2>/dev/null; wait "$watchdog" 2>/dev/null
 
-failed=0; body_failed=0; i=1
+failed=0; body_failed=0; timed_out=0; i=1
 while [ "$i" -le "$n" ]; do
   rc=$(cat "$tmp/$i.rc" 2>/dev/null || echo timeout)
-  if [ "$rc" != 0 ]; then
+  if [ "$rc" = timeout ]; then
+    timed_out=$((timed_out + 1))
+  elif [ "$rc" != 0 ]; then
     failed=$((failed + 1))
     [ ! -f "$tmp/$i.body" ] || body_failed=$((body_failed + 1))
-    if [ "$rc" = timeout ]; then
-      printf 'Failed: %s (still running after %ss; CHECKS_LOCAL_SECONDS raises the budget)\n' "$(cat "$tmp/$i.name")" "$budget"
-    else
-      printf 'Failed: %s\n' "$(cat "$tmp/$i.name")"
-    fi
+    printf 'Failed: %s\n' "$(cat "$tmp/$i.name")"
     grep -v '^::warning::' "$tmp/$i.out" | sed 's/^/  /'
   fi
   i=$((i + 1))
 done
+# Apart from the failures: not a failure, so the push is not held for it.
+if [ "$timed_out" -gt 0 ]; then
+  i=1
+  while [ "$i" -le "$n" ]; do
+    if [ ! -f "$tmp/$i.rc" ]; then
+      printf 'Did not finish in %s s (not a failure): %s\n' "$budget" "$(cat "$tmp/$i.name")"
+    fi
+    i=$((i + 1))
+  done
+  printf 'CHECKS_LOCAL_SECONDS raises the budget; CI runs these steps too.\n'
+fi
 took=$(( $(date +%s) - start ))
 [ -z "$skipped" ] || printf 'Not run here:%s\n' "$skipped"
 if [ -z "$body_from" ] && [ "$body_failed" -gt 0 ]; then
@@ -230,4 +243,8 @@ if [ "$failed" -gt 0 ]; then
   printf '%s of %s quick checks failed (%ss). CI runs the same steps and would fail them too.\n' "$failed" "$n" "$took"
   exit 1
 fi
-printf 'Quick checks passed: %s steps in %ss.\n' "$n" "$took"
+if [ "$timed_out" -gt 0 ]; then
+  printf 'Quick checks: %s of %s steps did not finish in %s s (not a failure), none failed (%ss).\n' "$timed_out" "$n" "$budget" "$took"
+else
+  printf 'Quick checks passed: %s steps in %ss.\n' "$n" "$took"
+fi

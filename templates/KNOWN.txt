@@ -223,6 +223,7 @@ scripts/ci/checks-local.sh 688ee8f6b024ecf143408faaad7cddd7b646bf6a
 scripts/ci/checks-local.sh 853432bce94f776f8e07237686dd47da9e04f22a
 scripts/ci/checks-local.sh 8abaa5c57585a6855d780f90ab9484fd2ffaf340
 scripts/ci/checks-local.sh 9b7835fdacbe3393860e7bfc906e4b5c62d2b287
+scripts/ci/checks-local.sh f987bc04330f81f5ca96fac710e237c60d29a174
 scripts/ci/classify.sh ffce692eabc9f10dae99261c194270f388824ca3
 scripts/ci/client-env-check.sh 0c054b2adbe91f3418b4e3027bfa5edc6ac6684e
 scripts/ci/client-env-check.sh cd03fc4c7be5190255753e229f35272b7e05d0c6

@@ -51,6 +51,23 @@ part_script() {
     keep'
 }
 
+# parts_touching FILE... < run.sh: the parts with a block that names any of
+# the files (a path under plugin/ is looked for without that prefix, as
+# the suite writes it), one per line, in the parts file's order.
+parts_touching() {
+  pt_script=$(cat)
+  for pt_part in $(part_names); do
+    for pt_file in "$@"; do
+      pt_rel=${pt_file#plugin/}; pt_rel=${pt_rel#./}
+      # The console's own files are run whole by the one console block.
+      case "$pt_rel" in console/*) [ "$pt_part" = console ] && { printf '%s\n' console; break; } ;; esac
+      if printf '%s\n' "$pt_script" | part_script "$pt_part" | grep -qF -- "$pt_rel"; then
+        printf '%s\n' "$pt_part"; break
+      fi
+    done
+  done
+}
+
 # block_failed TEXT: record a failure's lines against the current block.
 block_failed() {
   block_fails="${block_fails:+$block_fails
@@ -87,6 +104,11 @@ block_end() {
   if [ "$be_s" -gt "$be_l" ]; then
     printf 'WARN  the block "%s" took %ss, over its limit of %ss (it passes; time is watched on Cost, never gated)\n' "$block" "$be_s" "$be_l"
     [ -n "$GITHUB_ACTIONS" ] && printf '::warning title=A slow test block::"%s" took %ss, over its limit of %ss\n' "$block" "$be_s" "$be_l"
+  fi
+  block_count=$(( ${block_count:-0} + 1 ))
+  if [ "$be_s" -gt 120 ]; then
+    printf 'slow  %s: %ss (over two minutes)\n' "$block" "$be_s"
+    slow_blocks="${slow_blocks:+$slow_blocks, }$block ($be_s s)"
   fi
   block_start=
 }

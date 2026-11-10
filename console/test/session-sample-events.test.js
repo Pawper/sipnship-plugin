@@ -90,8 +90,8 @@ function say(file, text) {
   fs.appendFileSync(file, JSON.stringify({ type: 'assistant', timestamp: new Date().toISOString(), message: { model: 'claude-sonnet-5-5', role: 'assistant', content: [{ type: 'text', text }] } }) + '\n');
 }
 
-/** The interval as gone by: the repository's mark set back past it. */
-const sinceLast = (m, s) => fs.writeFileSync(path.join(m.home, 'brief-send', 'sample-at-acme-shop'), `${Math.floor(Date.now() / 1000) - s}\n`);
+/** The interval as gone by: the fake clock the hook reads moves on, so no machine's speed or load decides the spacing. */
+const sinceLast = (m, s) => { m.env.SIPNSHIP_SAMPLE_NOW = String(Number(m.env.SIPNSHIP_SAMPLE_NOW) + s); };
 const quiet = () => new Promise((r) => setTimeout(r, 1500));
 
 test('a dispatched agent reaches the service when it starts, and is said to have ended when it stops', async () => {
@@ -125,6 +125,8 @@ test('during a long turn of tool calls a changed line is sent, at most once in t
     const m = machine(f.url);
     // The real twenty seconds, set back by hand; a short spacing so the turn's end is not waited for.
     m.env.SIPNSHIP_SAMPLE_GAP = '1';
+    // A fake clock: time moves only when the test says, never by how long a slow runner took.
+    m.env.SIPNSHIP_SAMPLE_NOW = String(Math.floor(Date.now() / 1000));
     const log = path.join(m.logs, `${PARENT}.jsonl`);
     run(m, 'SessionStart');
     assert.strictEqual(await heard(f, 1), 1, 'the session start sends at once');
