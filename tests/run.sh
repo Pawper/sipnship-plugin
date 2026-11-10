@@ -1621,7 +1621,7 @@ eq "a run still going is waited on" "" "$(unstick_action "$(us_row MERGEABLE non
 eq "no run at all and up to date: said, nothing to re-run" "cannot" "$(unstick_action "$(us_row MERGEABLE none fff999 0 yes '' none)" "" no)"
 eq "green is not stuck" "" "$(unstick_action "$(us_row MERGEABLE green fff999 6 yes '' done)" "" no)"
 eq "the re-run comment carries its cause and its mark" "1 rerun fff999" "$(unstick_rerun_note 'an install error (EPERM)' fff999 | grep -c 'stopped for an install error (EPERM)') $(unstick_marks "$(unstick_rerun_note x fff999)")"
-eq "the drain's end unsticks once, after its deploy and its held steps, and not after a held step's merge" "1 1" "$(grep -c '^  \[ "\$held_merged" = yes \] || unstick_one$' "$mq_all") $(sed -n '/deploy_if_due "\$d_begin"/,/|| unstick_one/p' "$mq_all" | grep -c '^  held_steps$')"
+eq "the drain's end unsticks once, after its deploy and its held steps, and not after a held step's merge" "1 1" "$(grep -c '^  \[ "\$held_merged" = yes \] || .*drain_over_budget.*|| unstick_one$' "$mq_all") $(sed -n '/deploy_if_due "\$d_begin"/,/|| unstick_one/p' "$mq_all" | grep -c '^  .*drain_over_budget.* || held_steps$')"
 eq "every action returns, so one pull request a drain's end" "3" "$(sed -n '/^unstick_one()/,/^}/p' "$mq_all" | grep -c 'return 0 ;;')"
 eq "a missing rush list means no rush, so the drain does not fail at its end" "1" "$(sed -n '/^unstick_one()/,/^}/p' "$mq_all" | grep -c '^  \[ ! -f "\$flaky_dir/rush.list" \] ||')"
 rl_dir=$(mktemp -d)
