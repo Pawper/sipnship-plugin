@@ -2309,6 +2309,12 @@ eq "no lock is free" "" "$(queue_lock_reason '' 1720 yes)"
 eq "a Queue drain in progress on GitHub refuses a local queue" "the Queue drain on GitHub started 12 minute(s) ago is still running (run 77)" "$(remote_drain_reason "77	in_progress	1000" 1720)"
 eq "a queued Queue drain says queued" "the Queue drain on GitHub started 3 minute(s) ago is queued (run 78)" "$(remote_drain_reason "78	queued	1540" 1720)"
 eq "no Queue drain runs is free" "" "$(remote_drain_reason '' 1720)"
+eq "a drain inside its budget does its full end" "no" "$(drain_over_budget 1000 1600 25)"
+eq "a drain at its budget leaves the slow end to the next" "yes" "$(drain_over_budget 1000 2500 25)"
+eq "a drain past its budget leaves the slow end to the next" "yes" "$(drain_over_budget 1000 3040 25)"
+qd_wf="$root/templates/.github/workflows/queue-drain.yml"
+eq "a red or cancelled pull request run starts no drain, on either job" "2" "$(grep -c "workflow_run.conclusion == 'success'" "$qd_wf")"
+eq "a drain job ends five minutes after its drain minutes" "2" "$(grep -c "timeout-minutes: \${{ fromJSON(vars.QUEUE_DRAIN_MINUTES || '25') + 5 }}" "$qd_wf")"
 eq "the lock asks GitHub only outside Actions" "1 1" "$(grep -c 'queue-drain.yml/runs?per_page=5' "$mq_all") $(grep -c '\[ -z "\$why" \] && \[ -z "\${GITHUB_ACTIONS:-}" \]' "$mq_all")"
 
 section 'the package a file belongs to'

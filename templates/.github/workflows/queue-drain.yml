@@ -48,10 +48,11 @@ on:
     - cron: "7 */2 * * *"
   workflow_dispatch:
   # A pull request's CI run that finishes starts a drain at once, instead
-  # of waiting for the next two-hourly one: green, so it lands; red or
-  # cancelled too, since a drain that ended while it ran must see the end
-  # (a green change held for it lands, a red one gets its retry). Only a
-  # pull request's run; the group below keeps it to one drain.
+  # of waiting for the next two-hourly one: green only, so it lands. A red
+  # or cancelled pull request run starts none (the next green one does; a
+  # burst of them once cancelled in the group below, each taking a runner to
+  # start); a batch's run starts one whatever it ended as, since only the
+  # drain finishes a batch. The job's timeout is the drain's minutes plus five.
   workflow_run:
     workflows: [CI]
     types: [completed]
@@ -71,9 +72,9 @@ concurrency:
 
 jobs:
   drain:
-    if: ${{ vars.QUEUE_RUNS_ON != '' && !contains(vars.QUEUE_RUNS_ON, 'windows') && (github.event_name != 'workflow_run' || (github.event.workflow_run.event == 'pull_request' && contains(fromJSON('["success", "failure", "cancelled", "timed_out"]'), github.event.workflow_run.conclusion))) }}
+    if: ${{ vars.QUEUE_RUNS_ON != '' && !contains(vars.QUEUE_RUNS_ON, 'windows') && (github.event_name != 'workflow_run' || (github.event.workflow_run.event == 'pull_request' && (github.event.workflow_run.conclusion == 'success' || (startsWith(github.event.workflow_run.head_branch, 'batch-') && contains(fromJSON('["failure", "cancelled", "timed_out"]'), github.event.workflow_run.conclusion))))) }}
     runs-on: ${{ vars.QUEUE_RUNS_ON || 'self-hosted' }}
-    timeout-minutes: 60
+    timeout-minutes: ${{ fromJSON(vars.QUEUE_DRAIN_MINUTES || '25') + 5 }}
     defaults:
       run:
         shell: bash --noprofile --norc -eo pipefail {0} # "bash" written out, so the sync never takes it for a filled line
@@ -180,9 +181,9 @@ jobs:
           sh scripts/ci/merge-queue.sh --drain
 
   drain-windows:
-    if: ${{ (vars.QUEUE_RUNS_ON == '' || contains(vars.QUEUE_RUNS_ON, 'windows')) && (github.event_name != 'workflow_run' || (github.event.workflow_run.event == 'pull_request' && contains(fromJSON('["success", "failure", "cancelled", "timed_out"]'), github.event.workflow_run.conclusion))) }}
+    if: ${{ (vars.QUEUE_RUNS_ON == '' || contains(vars.QUEUE_RUNS_ON, 'windows')) && (github.event_name != 'workflow_run' || (github.event.workflow_run.event == 'pull_request' && (github.event.workflow_run.conclusion == 'success' || (startsWith(github.event.workflow_run.head_branch, 'batch-') && contains(fromJSON('["failure", "cancelled", "timed_out"]'), github.event.workflow_run.conclusion))))) }}
     runs-on: [self-hosted, "${{ vars.QUEUE_RUNS_ON || 'windows' }}"]
-    timeout-minutes: 60
+    timeout-minutes: ${{ fromJSON(vars.QUEUE_DRAIN_MINUTES || '25') + 5 }}
     defaults:
       run:
         shell: 'C:\PROGRA~1\Git\bin\bash.exe --noprofile --norc -eo pipefail {0}'
