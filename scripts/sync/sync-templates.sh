@@ -49,6 +49,7 @@
 # the old versions stay in git. It does not push.
 here=$(dirname "$0")
 . "$here/sync-lib.sh"
+. "$here/sync-deps.sh"
 plugin=$(cd "$here/../.." && pwd)
 tpl="$plugin/templates"
 apply=no; force=no; only=""; no_commit=no
