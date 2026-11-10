@@ -48,8 +48,7 @@
 # commits them, so every change is a reviewable diff in a pull request and
 # the old versions stay in git. It does not push.
 here=$(dirname "$0")
-. "$here/sync-lib.sh"
-. "$here/sync-deps.sh"
+. "$here/sync-lib.sh"; . "$here/sync-deps.sh"
 plugin=$(cd "$here/../.." && pwd)
 tpl="$plugin/templates"
 apply=no; force=no; only=""; no_commit=no
