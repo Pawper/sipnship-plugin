@@ -103,6 +103,15 @@ jobs:
           if [ "$why" = run ]; then parts=$(sh scripts/ci/test-parts.sh matrix all); else parts='[]'; fi
           echo "parts=$parts" >> "$GITHUB_OUTPUT"
           echo "Test parts: $parts"
+      - name: Say when the last gate ended red before its tests started
+        # A run red with no failed job has no job of its own to say so. This
+        # run is the check run once more; the red-main issue says which kind
+        # it was. Never fails the gate.
+        if: github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: sh scripts/ci/report-red.sh early || true
 
   checks:
     # Every cheap rule, one checkout. Each step names the rule it enforces;
@@ -505,26 +514,21 @@ jobs:
         run: echo "replace with the install, the build and the full suite"
 
   report-red:
-    needs: [full, tests]
-    if: always() && github.event_name != 'pull_request' && (needs.full.result == 'failure' || needs.tests.result == 'failure')
+    # Whatever job was red: a failed test, the gate itself, a run that did not
+    # finish. The comment says which kind (scripts/ci/gate-lib.sh red_kind).
+    needs: [gate, full, tests]
+    if: always() && github.event_name != 'pull_request' && (needs.gate.result == 'failure' || needs.full.result == 'failure' || needs.tests.result == 'failure' || needs.tests.result == 'cancelled' || needs.full.result == 'cancelled')
     runs-on: RUNS_ON
+    permissions:
+      contents: read
+      issues: write
     steps:
+      - uses: actions/checkout@v4
       - name: Open the red-main issue, or add this run to the open one
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-        run: |
-          run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          open=$(gh api "repos/${{ github.repository }}/issues?labels=ci-red&state=open&per_page=1" --jq '.[0].number // ""')
-          if [ -z "$open" ]; then
-            gh issue create \
-              --title "main is red" \
-              --label "ci-red,$( [ -f scripts/ci/lib.sh ] && . scripts/ci/lib.sh && state_label ready "$(project_label_form)" || echo state:ready )" \
-              --body "Main's full gate failed on ${{ github.sha }}: $run_url. Fix it before merging anything else."
-          else
-            gh api "repos/${{ github.repository }}/issues/$open/comments" -f body="The gate failed again on ${{ github.sha }}: $run_url." >/dev/null
-            echo "Added this run to the open red-main issue #$open."
-          fi
+        run: sh scripts/ci/report-red.sh result "${{ needs.gate.result }}" "${{ needs.full.result }}" "${{ needs.tests.result }}" "${{ github.run_id }}" "${{ github.sha }}"
 
   report-green:
     # Main went green again: close the red-main issue with a comment, so it

@@ -446,8 +446,7 @@ else
 fi
 if [ "$batch_ok" != yes ]; then
   close_pr "$batch_pr" "The batch's CI was not green, so nothing merged; closed so the next batch starts clean. The member pull requests are untouched."
-  echo "The batch run is not green; nothing merged. Fix it on $branch or drop a PR and run again."
-  exit 1
+  batch_red "$branch" "$carried" "$dropped"
 fi
 wait_quiet_main
 merged_sha=$(gh_write api -X PUT "repos/{owner}/{repo}/pulls/$batch_pr/merge" -f merge_method=merge --jq .sha 2>"$gh_err") || { rate_stop; echo "GitHub refused the batch merge: $(head -n 1 "$gh_err" 2>/dev/null). Nothing merged; run the batch again."; exit 1; }

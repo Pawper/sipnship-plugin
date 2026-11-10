@@ -2918,7 +2918,7 @@ full
 report-red
 report-green" "$(workflow_jobs "$ciy")"
 eq "CI passed waits on checks, classify, app, tests and screens" "1" "$(printf '%s\n' "$ciy" | grep -c 'needs: \[checks, classify, app, tests, screens]')"
-eq "one checkout in gate, checks, classify, app, tests, screens, CI passed and full" "8" "$(printf '%s\n' "$ciy" | grep -c 'uses: actions/checkout@v4')"
+eq "one checkout in gate, checks, classify, app, tests, screens, CI passed, full and report-red" "9" "$(printf '%s\n' "$ciy" | grep -c 'uses: actions/checkout@v4')"
 eq "a newer push cancels an older pull request run, never a gate" "1" "$(printf '%s\n' "$ciy" | grep -c "cancel-in-progress: \${{ github.event_name == 'pull_request' }}")"
 eq "gate runs share one group" "1" "$(printf '%s\n' "$ciy" | grep -c "pull_request.number || 'gate'")"
 eq "every rule script still runs" "8" "$(for f in classify.sh line-endings.sh status/check.sh numbering-check.sh spec-check.sh setup-check.sh shared-check.sh delete-check.sh; do printf '%s\n' "$ciy" | grep -q "$f" && echo x; done | grep -c x)"
@@ -4314,6 +4314,57 @@ eq "a published red main carries why" "nostart" "$(. "$root/templates/scripts/ci
 eq "two early reds in a row are counted twice (the red-main issue opens)" "2" "$(gate_early_red_count "$(printf 'd4\tfailure\t1793437200\tno\t904\n%s\n' "$ge_runs")")"
 eq "a later gate that ran its tests ends the line" "" "$(gate_early_red_line "$(printf 'd4\tsuccess\t1793437200\tyes\t904\n%s\n' "$ge_runs")")"
 eq "skipped gates alone say nothing" "" "$(gate_early_red_line "$(printf 'b2\tsuccess\t1793430000\tno\t902\na1\tsuccess\t1793419200\tyes\t901\n')")"
+# The pure parts of main's red: when the gate stands aside early, what kind of red a run was, and what the red-main issue is told.
+eq "main moved inside the quiet time: the gate stands aside early" "skip: main moved 10 minutes ago; the gate waits for 60 quiet minutes" "$(gate_skip_early abc1234 1793430000 1793430600 60 schedule)"
+eq "main's landing time unknown: the gate stands aside early" "skip: main's last landing time is not known" "$(gate_skip_early abc1234 '' 1793430600 60 schedule)"
+eq "a quiet main needs the past runs read, so no early skip" "" "$(gate_skip_early abc1234 1793419200 1793430600 60 schedule)"
+eq "a run started by hand is never skipped early" "" "$(gate_skip_early abc1234 1793430000 1793430600 60 workflow_dispatch)"
+eq "a failed test job is a red test" "test" "$(red_kind success success failure)"
+eq "a failed full job is a red test" "test" "$(red_kind success failure success)"
+eq "a run red with no failed job could not start its jobs" "nostart" "$(red_kind failure '' '')"
+eq "a gate green but nothing started, with a failed gate, is nostart" "nostart" "$(red_kind failure skipped skipped)"
+eq "a cancelled job and no failure did not finish" "unfinished" "$(red_kind success '' cancelled)"
+eq "a green run is not red" "" "$(red_kind success success success)"
+eq "a failed test is the owner's to fix" "Main's check on abc1234 was red: a test failed. Run: https://example.test/run/9. Fix it before merging anything else." "$(red_note test abc1234 https://example.test/run/9 no)"
+eq "a run that could not start says nothing is asked of the owner and when it tries again" "Main's check on abc1234 was red: the check could not start its jobs. Run: https://example.test/run/9. No test failed, and nothing is asked of the owner. The check is run once more by itself at the next hour." "$(red_note nostart abc1234 https://example.test/run/9 no)"
+eq "a second red the same way tells the runner watch" "yes" "$(red_note nostart abc1234 https://example.test/run/9 yes | grep -c 'the runner watch is told' | sed 's/1/yes/')"
+eq "the template ci.yml reports a red main through the generic script, whatever job was red" "1 1 1" "$(grep -c 'sh scripts/ci/report-red.sh result' "$root/templates/.github/workflows/ci.yml") $(grep -c 'sh scripts/ci/report-red.sh early' "$root/templates/.github/workflows/ci.yml") $(grep -c "needs.gate.result == 'failure'" "$root/templates/.github/workflows/ci.yml")"
+# A red batch halves: the first half runs, and a lone second half after a green first half is the culprit without another run.
+. "$root/templates/scripts/ci/queue/halve.sh"
+hv_log=$(
+  batch_failed_test() { echo "watering.test.ts > waters the beds"; }
+  batch_half_run() { echo "ran: $1"; return 0; }
+  gh_write() { echo "commented: $*" | grep -o 'dropped from the batch[^"]*' | head -n 1; }
+  halving_say() { printf 'say %s %s\n' "$1" "$2"; }
+  batch_line() { echo "line $1 $2"; }
+  serial_one() { echo "serial $1"; }
+  deploy_if_due() { echo deploy; }
+  base=main; b_begin=x; QUEUE_IN_DRAIN=1
+  ( batch_red batch-test "$(printf '41\ta\n42\tb\n43\tc\n')" "50" ) 2>&1 | tr '\n' '|'
+)
+eq "a red batch of three runs the larger half first, names the lone rest as the culprit and sends it and the dropped to the serial queue" "yes" "$(printf '%s' "$hv_log" | grep -q 'ran: 41 42|' && ! printf '%s' "$hv_log" | grep -q 'ran: 43' && printf '%s' "$hv_log" | grep -q 'serial 43|' && printf '%s' "$hv_log" | grep -q 'serial 50' && echo yes)"
+hv_two=$(
+  batch_failed_test() { echo "watering.test.ts > waters the beds"; }
+  batch_half_run() { echo "ran: $1"; return 0; }
+  gh_write() { :; }
+  halving_say() { printf 'say %s %s\n' "$1" "$2"; }
+  batch_line() { echo "line $1 $2"; }
+  serial_one() { echo "serial $1"; }
+  deploy_if_due() { echo deploy; }
+  base=main; b_begin=x; QUEUE_IN_DRAIN=1
+  ( batch_red batch-test "$(printf '41\ta\n42\tb\n')" "" ) 2>&1 | tr '\n' '|'
+)
+eq "a green first half beside a lone second member names it, runs it no more, and sends it to the serial queue" "yes" "$(printf '%s' "$hv_two" | grep -q 'ran: 41|' && ! printf '%s' "$hv_two" | grep -q 'ran: 42' && printf '%s' "$hv_two" | grep -q 'serial 42' && echo yes)"
+eq "the failing test is named in the queue's words" "yes" "$(printf '%s' "$hv_two" | grep -q 'failed at: watering.test.ts > waters the beds' && echo yes)"
+hv_one=$(
+  batch_failed_test() { echo; }
+  batch_half_run() { echo "ran: $1"; return 0; }
+  batch_line() { :; }
+  base=main; b_begin=x
+  ( batch_red batch-test "$(printf '41\ta\n')" "" ) 2>&1 | tr '\n' '|'
+)
+eq "a red batch of one is not halved" "yes" "$(printf '%s' "$hv_one" | grep -q 'not green; nothing merged' && ! printf '%s' "$hv_one" | grep -q 'ran:' && echo yes)"
+eq "the queue loads the halving module and the batch's red path calls it" "1 1" "$(grep -c 'queue/halve.sh' "$root/templates/scripts/ci/merge-queue.sh") $(grep -c 'batch_red "\$branch" "\$carried" "\$dropped"' "$root/templates/scripts/ci/queue/batch.sh")"
 eq "the plugin's template copies of the gate match the project's" "same same" "$(cmp -s "$root/templates/scripts/ci/gate-lib.sh" "$root/../scripts/ci/gate-lib.sh" && echo same || echo differ) $(cmp -s "$root/templates/scripts/ci/gate.sh" "$root/../scripts/ci/gate.sh" && echo same || echo differ)"
 
 section 'the brief says when the installed plugin lags'
@@ -4354,7 +4405,7 @@ pj_tests=$(awk '$0 == "  tests:" {f=1; next} /^  [a-z-]*:$/ {f=0} f' "$pj_ci")
 pj_full=$(awk '$0 == "  full:" {f=1; next} /^  [a-z-]*:$/ {f=0} f' "$pj_ci")
 pj_gate=$(awk '$0 == "  gate:" {f=1; next} /^  [a-z-]*:$/ {f=0} f' "$pj_ci")
 eq "main's gate takes every part as the same matrix, not one serial job" "1 1 0 0" "$(printf '%s\n' "$pj_gate" | grep -c 'test-parts.sh matrix all') $(printf '%s\n' "$pj_tests" | grep -c "fail-fast: \${{ github.event_name == 'pull_request' }}") $(printf '%s\n' "$pj_tests" | grep -c "^    if: github.event_name == 'pull_request'") $(printf '%s\n' "$pj_full" | grep -c 'test-parts.sh')"
-eq "the gate's parts go to the end, and a red gate opens or adds to the red-main issue" "1 2 1" "$(printf '%s\n' "$pj_tests" | grep -c "CI_FULL_RUN: \${{ github.event_name != 'pull_request' && 'yes' || '' }}") $(grep -c '^    needs: \[full, tests\]' "$pj_ci") $(grep -c 'The gate failed again on' "$pj_ci")"
+eq "the gate's parts go to the end, and a red gate opens or adds to the red-main issue (through the one script)" "1 1 1 1" "$(printf '%s\n' "$pj_tests" | grep -c "CI_FULL_RUN: \${{ github.event_name != 'pull_request' && 'yes' || '' }}") $(grep -c '^    needs: \[full, tests\]' "$pj_ci") $(grep -c '^    needs: \[gate, full, tests\]' "$pj_ci") $(grep -c 'report-red.sh result' "$pj_ci")"
 eq "main gets no run on push: an hourly schedule and a by-hand run instead" "0 1 1" "$(sed -n '/^on:/,/^[a-z]/p' "$pj_ci" | grep -c '^  push:') $(grep -c "^    - cron: '0 \* \* \* \*'" "$pj_ci") $(grep -c '^  workflow_dispatch:' "$pj_ci")"
 eq "the quiet time lives in one place, read by the gate script" "1 1 0" "$(grep -c 'GATE_QUIET_MINUTES: 60' "$pj_ci") $(grep -c 'GATE_QUIET_MINUTES:-60' "$root/templates/scripts/ci/gate.sh") $(grep -c -e '-lt 60' -e ':-60' -e '"60"' "$root/templates/scripts/ci/gate-lib.sh")"
 eq "no test or app job runs on a push or a schedule but through the gate" "1 1 1 1" "$(printf '%s\n' "$pj_tests" | grep -c '^    needs: \[gate, classify\]') $(awk '$0 == "  checks:" {f=1; next} /^  [a-z-]*:$/ {f=0} f' "$pj_ci" | grep -c "^    if: github.event_name == 'pull_request'") $(awk '$0 == "  classify:" {f=1; next} /^  [a-z-]*:$/ {f=0} f' "$pj_ci" | grep -c "^    if: github.event_name == 'pull_request'") $(awk '$0 == "  app:" {f=1; next} /^  [a-z-]*:$/ {f=0} f' "$pj_ci" | grep -c '^    needs: classify')"
@@ -4699,6 +4750,15 @@ eq "no words, no sized line" "" "$(sized_line '')"
 eq "an ask with one recommended choice may be marked without approval" "yes no no no" "$(mark_waiting_ok one) $(mark_waiting_ok none) $(mark_waiting_ok question) $(mark_waiting_ok many)"
 eq "the plan prints its own sized line" "1" "$(grep -c '^echo "sized: ${runners_say}"' "$root/scripts/drive/plan.sh")"
 eq "the skill says mark-waiting runs without approval, in the shape" "1 1" "$(grep -c 'Like .ask-owner., it runs without approval' "$root/skills/project-drive/SKILL.md") $(grep -c 'scripts/ci/ask-lib.sh. is' "$root/skills/project-drive/SKILL.md")"
+# The plan holds mark-waiting to the ask rule before it proposes it.
+. "$root/scripts/drive/ask-gate-lib.sh"
+mw_extra=$(printf 'mark-waiting 21\tPlant labels (a question to the owner is open)\nmark-waiting 22\tWatering plan (a question to the owner is open)\nset-ready 23\tShade cloth (the owner answered)\n')
+mw_out=$(mark_waiting_goals "$mw_extra" "$(printf '21\tone\n22\tunrecommended\n')")
+eq "an ask in the shape is still proposed as mark-waiting" "mark-waiting 21	Plant labels (a question to the owner is open)" "$(printf '%s\n' "$mw_out" | sed -n 1p)"
+eq "an ask with no recommended choice is proposed as ask-fix, with what to change" "ask-fix 22	Watering plan (not marked waiting: its ask gives choices and none is recommended. End the one you would pick with \"Recommended.\" and a short reason why, in the same comment)" "$(printf '%s\n' "$mw_out" | sed -n 2p)"
+eq "other goals pass through" "set-ready 23	Shade cloth (the owner answered)" "$(printf '%s\n' "$mw_out" | sed -n 3p)"
+eq "an issue with no verdict is not marked waiting" "ask-fix 24" "$(mark_waiting_goals "$(printf 'mark-waiting 24\tRoof drains (a question to the owner is open)\n')" '' | cut -c1-10)"
+eq "plan.sh checks the ask before it proposes mark-waiting" "1" "$(grep -c 'mark_waiting_goals "\$extra"' "$root/scripts/drive/plan.sh")"
 printf 'status: proposed
 sized: 5 runners online, 4 free for agents
 unit: 214 | areas: watering

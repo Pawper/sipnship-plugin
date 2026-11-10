@@ -167,6 +167,8 @@ if [ -f .scratch/board/digest.tsv ] && [ -f "$here/../board/board-lib.sh" ]; the
   . "$here/../board/board-lib.sh"
   saved=$(cat .scratch/board/digest.tsv)
   extra=$(digest_goals "$facts" "$saved")
+  # An open question is proposed as mark-waiting only when its ask is in the shape (scripts/ci/ask-lib.sh); otherwise as ask-fix.
+  if [ -f scripts/ci/ask-lib.sh ]; then . scripts/ci/ask-lib.sh; . "$here/ask-gate-lib.sh"; extra=$(mark_waiting_goals "$extra" "$(ask_verdicts_for "$extra")"); fi
   fresh=$(digest_freshness "$facts" "$saved")
   note="digest: ${fresh%%	*} of ${fresh##*	} summaries current"
 else

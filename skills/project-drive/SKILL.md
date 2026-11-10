@@ -253,7 +253,8 @@ tab says it waits and on what instead of saying it starts on its own; `status: p
   comment gives the question and numbered choices, exactly one ending "Recommended." (`scripts/ci/ask-lib.sh` is
   the one reader, and the state-label hook refuses the change otherwise). An open question that is not in that
   shape is not marked: ask the agent that wrote it to put it in the shape, and mark it then, so Ready holds only
-  what can start.
+  what can start. The plan checks this itself with the one reader before it proposes `mark-waiting`; an open
+  question not in the shape comes out as `ask-fix N` instead, with what to change.
 - **`release X.Y.Z`.** Merged plugin changes sit unshipped. File a release issue first
   (`sh scripts/issue-open.sh`, State ready). In a worktree run `sh plugin/scripts/release/bump.sh X.Y.Z`, run
   the plugin suite (`sh tests/run.sh` from `plugin/`), commit, open the pull request with `Closes #N` for that

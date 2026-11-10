@@ -70,6 +70,7 @@ scripts/ci/queue/runs.sh
 scripts/ci/queue/choose.sh
 scripts/ci/queue/serial.sh
 scripts/ci/queue/batch.sh
+scripts/ci/queue/halve.sh
 scripts/ci/queue/deploy.sh
 scripts/ci/queue/overlaps.sh
 scripts/ci/queue/rules-batch.sh

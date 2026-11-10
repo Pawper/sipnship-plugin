@@ -406,6 +406,7 @@ scripts/ci/merge-queue.sh cf5a847ce023ee5e451893e8a054c10a00e7be76
 scripts/ci/merge-queue.sh cf609dc8a0f6dfae1f81c0a4aaf1c5329ff164d5
 scripts/ci/merge-queue.sh cfa14c029bb1549b2d20cb46cad1d136e259ce09
 scripts/ci/merge-queue.sh d4af33350d337934c6bb820d00a728b314eadd4d
+scripts/ci/merge-queue.sh d5faa797895f9331a9126096b5425dfaa8eff7f4
 scripts/ci/merge-queue.sh d6d2c98369b977a4282db21f2b4faf6b07fbd468
 scripts/ci/merge-queue.sh e1cb502cbb3fa5c39d13506ca492128ab3d76e88
 scripts/ci/merge-queue.sh e5eac307db9c7fd1cefdee82d8adf92f47725e64
@@ -465,6 +466,7 @@ scripts/ci/publish-state.sh ffd67b2557d7d09165e2d40b0ba424bb8d71ee93
 scripts/ci/queue-app-token.sh f7a5df53a0c63238838a19783f5942d7bbf2eb0b
 scripts/ci/queue/batch.sh 118b57959d66764579b4f02374f2d07a5ebc671a
 scripts/ci/queue/batch.sh 1e13586c1c2bd8cadfd91e4d44926e14c89ad5a0
+scripts/ci/queue/batch.sh 4d10ece349d7fcd014100fa6d3352d84a2d5718a
 scripts/ci/queue/batch.sh 4f25a5384a712fddc6a8c73e919bb768121acde1
 scripts/ci/queue/batch.sh 874065faadda4077de6fe619dc5fd98471ac1b7e
 scripts/ci/queue/batch.sh 8900fc22f7ac83e1b31636f1f51421c6bdc3048d
@@ -480,6 +482,7 @@ scripts/ci/queue/deploy.sh 2fba418eed08e229c70c6fd8f9890c09c1ce35c5
 scripts/ci/queue/deploy.sh 352f46c5fa76482713ce4bf65e419f6d8f1c3d9b
 scripts/ci/queue/deploy.sh 40c14f50653cdc086e826c67348148172b39d8b9
 scripts/ci/queue/deploy.sh 61a5fd4b46195f2a32e81964e165a358843f8566
+scripts/ci/queue/halve.sh 567a5b19f986fd568e481b08d2122e0498b2c3c1
 scripts/ci/queue/overlaps.sh 08515e29a12df47f524644e926f75dc156a6ea9e
 scripts/ci/queue/overlaps.sh 7530b0c2b389cce044b4bee47f5308cd3dbd65e8
 scripts/ci/queue/requests.sh 24d749f709d28b7f91cfa4f63080ad9051686f45
