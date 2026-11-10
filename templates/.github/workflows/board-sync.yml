@@ -46,8 +46,14 @@ concurrency:
 jobs:
   sync:
     runs-on: RUNS_ON
+    timeout-minutes: 5
     steps:
+      # Only scripts/ is read here: a one-commit checkout of that folder keeps this short
+      # job on the runner for seconds, so it never holds up a test job behind it.
       - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts
+          fetch-depth: 1
       - name: Make labels, State and Status agree
         env:
           GH_TOKEN: ${{ secrets.PROJECT_TOKEN }}

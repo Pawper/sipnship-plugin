@@ -678,3 +678,5 @@ status/build.sh ee98b5722087e857e506256f52b8063fd9b98e9a
 status/check.sh a0357b8c0efbd5795bf33f3ae6b0655b60e6b1d5
 status/check.sh f7eb32746e57b80f5952145df55ee51962e60d7c
 status/lib.sh 7bf2fa0f4c504d609e73ea35222048f358096ad7
+.github/workflows/state-label.yml 0a3deb21e48f3629dd1fcde48d1ce57d231bec56
+.github/workflows/board-sync.yml e0b304cf3c7d9f4c9f4c34d2f49159dca26c16db
