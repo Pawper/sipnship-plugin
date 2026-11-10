@@ -122,9 +122,13 @@ fetch_base() {
 # publish_now MODE: write the queue's state to the Merge queue issue
 # (scripts/ci/publish-state.sh, spec 001), when the project has switched
 # it on. Bounded, never fatal: publishing never stops a merge.
+# publish_cap: "timeout N" when QUEUE_PUBLISH_SECONDS is set, so the exit
+# trap's last picture never holds the run (it once read a dozen pull
+# requests call by call after the drain's own work was done).
+publish_cap() { [ -z "${QUEUE_PUBLISH_SECONDS:-}" ] || ! command -v timeout >/dev/null 2>&1 || printf 'timeout %s' "$QUEUE_PUBLISH_SECONDS"; }
 publish_now() {
   [ -f "$here/publish-state.sh" ] || return 0
-  QUEUE_BASE="$base" QUEUE_DIR="$flaky_dir" sh "$here/publish-state.sh" --mode "$1" ${2:+--open "$2"} 2>>"$flaky_dir/publish.err" | while IFS= read -r pn_l; do say "$pn_l"; done
+  QUEUE_BASE="$base" QUEUE_DIR="$flaky_dir" $(publish_cap) sh "$here/publish-state.sh" --mode "$1" ${2:+--open "$2"} 2>>"$flaky_dir/publish.err" | while IFS= read -r pn_l; do say "$pn_l"; done
   return 0
 }
 
@@ -133,7 +137,7 @@ queue_exit() {
   # A batch ends with the run: nothing stale is drawn after it.
   : > "$flaky_dir/batch.state" 2>/dev/null || true
   # The last word on the issue: idle, with what landed.
-  case "${mode:-}" in drain|serial|batch) publish_now idle ;; esac
+  case "${mode:-}" in drain|serial|batch) QUEUE_PUBLISH_SECONDS=${QUEUE_EXIT_PUBLISH_SECONDS:-60} publish_now idle ;; esac
   # The console's "what the queue is doing now" line ends with the run.
   : > "$flaky_dir/now" 2>/dev/null || true
   if [ "$qe_rc" -ne 0 ]; then
@@ -165,16 +169,18 @@ $(printf '%s\n' "$rr" | head -n 1)
 EOF_RUN
       rruns=""
       if [ -n "$r_id" ]; then rruns=$(printf '%s\t%s\t%s' "$r_id" "$r_st" "$(iso_epoch "$r_at")"); fi
-      why=$(remote_drain_reason "$rruns" "$(date +%s)")
+      why=$(remote_drain_reason "$rruns" "$(date +%s)"); [ -z "$why" ] || remote_id=$r_id
     else
       echo "Could not check whether the Queue drain is running on GitHub; going on."
     fi
   fi
   if [ -n "$why" ]; then
-    last=$(tail -n 1 "$flaky_dir/log" 2>/dev/null | cut -c1-160)
-    st=$(cat "$flaky_dir/drain.state" 2>/dev/null | head -n 1)
+    # A run on GitHub is quoted by its own current step; this machine's log is another run's.
+    last=""; if [ -n "${remote_id:-}" ]; then last=$(gh api "repos/{owner}/{repo}/actions/runs/$remote_id/jobs" --jq '[.jobs[].steps[]? | select(.status == "in_progress") | .name][0] // empty' 2>/dev/null | tr -d '\r'); [ -z "$last" ] || last="step \"$last\""; else last=$(tail -n 1 "$flaky_dir/log" 2>/dev/null | cut -c1-160); fi
+    st=""; [ -n "${remote_id:-}" ] || st=$(cat "$flaky_dir/drain.state" 2>/dev/null | head -n 1)
     [ -n "$st" ] && last="$st; ${last}"
-    echo "Another queue is running: $why${last:+; its last line: $last}. Wait for it to finish rather than starting a second one; follow it with tail -f .scratch/queue/log."
+    follow="tail -f .scratch/queue/log"; [ -z "${remote_id:-}" ] || follow="gh api repos/{owner}/{repo}/actions/runs/$remote_id/jobs, its own log on GitHub"
+    echo "Another queue is running: $why${last:+; its last line: $last}. Wait for it to finish rather than starting a second one; follow it with $follow."
     exit 1
   fi
   printf '%s\t%s\t%s\n' "$$" "$(date +%s)" "--$mode" > "$lock_file"

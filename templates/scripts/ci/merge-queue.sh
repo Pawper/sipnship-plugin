@@ -384,13 +384,13 @@ if [ "$mode" = drain ]; then
   # main in where that was the step, or name the waiting session. A merge
   # here is this drain's end's one re-merge, so nothing is unstuck after it.
   queue_step="taking held steps"
-  held_steps
+  [ "$(drain_over_budget "$d_start" "$(date +%s)" "$drain_minutes")" = yes ] && say "Past the $drain_minutes-minute budget: the held steps, the unsticking and the re-read of failures are left to the next drain." || held_steps
   queue_step="unsticking one pull request"
-  [ "$held_merged" = yes ] || unstick_one
+  [ "$held_merged" = yes ] || [ "$(drain_over_budget "$d_start" "$(date +%s)" "$drain_minutes")" = yes ] || unstick_one
   # Re-read each one before calling it a failure: a pull request red
   # earlier in the drain may be green, or only cancelled, by now.
   still=""
-  [ -z "$attention" ] || still=$(attention_recheck "$attention")
+  if [ -z "$attention" ]; then :; elif [ "$(drain_over_budget "$d_start" "$(date +%s)" "$drain_minutes")" = yes ]; then still=$attention; else still=$(attention_recheck "$attention"); fi
   attention_report "$still"
   exit $?
 fi

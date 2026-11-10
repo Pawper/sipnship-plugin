@@ -1621,7 +1621,7 @@ eq "a run still going is waited on" "" "$(unstick_action "$(us_row MERGEABLE non
 eq "no run at all and up to date: said, nothing to re-run" "cannot" "$(unstick_action "$(us_row MERGEABLE none fff999 0 yes '' none)" "" no)"
 eq "green is not stuck" "" "$(unstick_action "$(us_row MERGEABLE green fff999 6 yes '' done)" "" no)"
 eq "the re-run comment carries its cause and its mark" "1 rerun fff999" "$(unstick_rerun_note 'an install error (EPERM)' fff999 | grep -c 'stopped for an install error (EPERM)') $(unstick_marks "$(unstick_rerun_note x fff999)")"
-eq "the drain's end unsticks once, after its deploy and its held steps, and not after a held step's merge" "1 1" "$(grep -c '^  \[ "\$held_merged" = yes \] || unstick_one$' "$mq_all") $(sed -n '/deploy_if_due "\$d_begin"/,/|| unstick_one/p' "$mq_all" | grep -c '^  held_steps$')"
+eq "the drain's end unsticks once, after its deploy and its held steps, and not after a held step's merge" "1 1" "$(grep -c '^  \[ "\$held_merged" = yes \] || .*drain_over_budget.*|| unstick_one$' "$mq_all") $(sed -n '/deploy_if_due "\$d_begin"/,/|| unstick_one/p' "$mq_all" | grep -c '^  .*drain_over_budget.* || held_steps$')"
 eq "every action returns, so one pull request a drain's end" "3" "$(sed -n '/^unstick_one()/,/^}/p' "$mq_all" | grep -c 'return 0 ;;')"
 eq "a missing rush list means no rush, so the drain does not fail at its end" "1" "$(sed -n '/^unstick_one()/,/^}/p' "$mq_all" | grep -c '^  \[ ! -f "\$flaky_dir/rush.list" \] ||')"
 rl_dir=$(mktemp -d)
@@ -1656,7 +1656,7 @@ eq "landed, another step: wake its session, CI or not" "wake wake" "$(after_acti
 eq "the wake line names the session and the step" "Wake: #188 waited for #176, which has landed; session garden-4 takes the step now: push the fix" "$(after_wake_line 188 176 garden-4 'push the fix')"
 eq "with no session named, its agent" "Wake: #188 waited for #176, which has landed; its agent takes the step now: push the fix" "$(after_wake_line 188 176 - 'push the fix')"
 eq "the queue's note closes the wait it acted on" "0 1" "$(after_marks "$(printf '%s\n%s' "$(after_mark 176 merge-main - x)" "$(after_note merged 176)")" | wc -l | tr -d ' ') $(after_note wake 176 'push the fix' | grep -c 'merge-queue:after-done 176')"
-eq "held steps run before unsticking, at the drain's end" "1" "$(sed -n '/deploy_if_due "\$d_begin"/,/|| unstick_one/p' "$mq_all" | grep -c '^  held_steps$')"
+eq "held steps run before unsticking, at the drain's end" "1" "$(sed -n '/deploy_if_due "\$d_begin"/,/|| unstick_one/p' "$mq_all" | grep -c '^  .*drain_over_budget.* || held_steps$')"
 eq "a held step's merge reuses GitHub's update-branch, once a drain's end" "1 1" "$(sed -n '/^held_steps()/,/^}/p' "$mq_all" | grep -c 'pulls/\$hs_pr/update-branch') $(sed -n '/^held_steps()/,/^}/p' "$mq_all" | grep -c 'held_merged=yes$')"
 eq "only labelled pull requests have their comments read" "1" "$(sed -n '/^held_steps()/,/^}/p' "$mq_all" | grep -c 'index("queue:after")')"
 eq "the command posts the mark and the label through REST" "1 1 0" "$(grep -c 'issues/\$pr/comments' "$root/templates/scripts/ci/wait-for.sh") $(grep -c "labels\[\]=queue:after" "$root/templates/scripts/ci/wait-for.sh") $(grep -c 'gh pr \|gh issue ' "$root/templates/scripts/ci/wait-for.sh")"
@@ -2037,10 +2037,11 @@ qd_wf="$root/templates/.github/workflows/queue-drain.yml"
 qd_live=$(grep -v '^ *#' "$qd_wf")
 eq "the drain also starts when the CI workflow completes" "1 1" "$(printf '%s\n' "$qd_live" | grep -c '^  workflow_run:') $(printf '%s\n' "$qd_live" | grep -c '^    workflows: \[CI\]$')"
 eq "on completed only" "1" "$(printf '%s\n' "$qd_live" | grep -c '^    types: \[completed\]$')"
-eq "both jobs run for it only when a pull request's run finished" "2 2" "$(printf '%s\n' "$qd_live" | grep -c "github.event.workflow_run.event == 'pull_request'") $(printf '%s\n' "$qd_live" | grep -c "contains(fromJSON('\[\"success\", \"failure\", \"cancelled\", \"timed_out\"\]'), github.event.workflow_run.conclusion)")"
-# A drain on a runner ends while others run, so a run that ends red starts one
-# too: a green change held for it, or its one retry, never waits for the schedule.
-eq "a red or cancelled run starts a drain as well, never a skipped one" "0" "$(printf '%s\n' "$qd_live" | grep -c "github.event.workflow_run.conclusion == 'success'")"
+eq "both jobs run for it only when a pull request's run finished" "2 2" "$(printf '%s\n' "$qd_live" | grep -c "github.event.workflow_run.event == 'pull_request'") $(printf '%s\n' "$qd_live" | grep -c "contains(fromJSON('\[\"failure\", \"cancelled\", \"timed_out\"\]'), github.event.workflow_run.conclusion)")"
+# A red or cancelled pull request run starts no drain (each took a runner to
+# be cancelled by the group); a green one does, and so does a batch's run
+# whatever it ended as, since only the drain finishes a batch. Never a skipped one.
+eq "a green run, or a batch's run ending, starts a drain; red, cancelled and skipped start none" "2 2 0" "$(printf '%s\n' "$qd_live" | grep -c "github.event.workflow_run.conclusion == 'success'") $(printf '%s\n' "$qd_live" | grep -c "startsWith(github.event.workflow_run.head_branch, 'batch-')") $(printf '%s\n' "$qd_live" | grep -c "skipped")"
 eq "the schedule and the manual start stay" "1 1" "$(printf '%s\n' "$qd_live" | grep -c 'cron: "7 \*/2 \* \* \*"') $(printf '%s\n' "$qd_live" | grep -c '^  workflow_dispatch:')"
 eq "the recent-drain skip applies to the schedule only, so a green check is never skipped" "1 1" "$(printf '%s\n' "$qd_live" | grep -c 'if \[ -n "\$last" \] && \[ "\${{ github.event_name }}" = schedule \]') $(printf '%s\n' "$qd_live" | grep -c 'if \[ "\${{ github.event_name }}" = schedule \]; then')"
 eq "the one-drain group still never cancels" "1 1" "$(printf '%s\n' "$qd_live" | grep -c '^  group: queue-drain$') $(printf '%s\n' "$qd_live" | grep -c 'cancel-in-progress: false')"
@@ -2309,6 +2310,11 @@ eq "no lock is free" "" "$(queue_lock_reason '' 1720 yes)"
 eq "a Queue drain in progress on GitHub refuses a local queue" "the Queue drain on GitHub started 12 minute(s) ago is still running (run 77)" "$(remote_drain_reason "77	in_progress	1000" 1720)"
 eq "a queued Queue drain says queued" "the Queue drain on GitHub started 3 minute(s) ago is queued (run 78)" "$(remote_drain_reason "78	queued	1540" 1720)"
 eq "no Queue drain runs is free" "" "$(remote_drain_reason '' 1720)"
+eq "a drain inside its budget does its full end" "no" "$(drain_over_budget 1000 1600 25)"
+eq "a drain at its budget leaves the slow end to the next" "yes" "$(drain_over_budget 1000 2500 25)"
+eq "a drain past its budget leaves the slow end to the next" "yes" "$(drain_over_budget 1000 3040 25)"
+qd_wf="$root/templates/.github/workflows/queue-drain.yml"
+eq "a red or cancelled pull request run starts no drain, on either job" "2" "$(grep -c "workflow_run.conclusion == 'success'" "$qd_wf")"
 eq "the lock asks GitHub only outside Actions" "1 1" "$(grep -c 'queue-drain.yml/runs?per_page=5' "$mq_all") $(grep -c '\[ -z "\$why" \] && \[ -z "\${GITHUB_ACTIONS:-}" \]' "$mq_all")"
 
 section 'the package a file belongs to'
