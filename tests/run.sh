@@ -1656,7 +1656,7 @@ eq "landed, another step: wake its session, CI or not" "wake wake" "$(after_acti
 eq "the wake line names the session and the step" "Wake: #188 waited for #176, which has landed; session garden-4 takes the step now: push the fix" "$(after_wake_line 188 176 garden-4 'push the fix')"
 eq "with no session named, its agent" "Wake: #188 waited for #176, which has landed; its agent takes the step now: push the fix" "$(after_wake_line 188 176 - 'push the fix')"
 eq "the queue's note closes the wait it acted on" "0 1" "$(after_marks "$(printf '%s\n%s' "$(after_mark 176 merge-main - x)" "$(after_note merged 176)")" | wc -l | tr -d ' ') $(after_note wake 176 'push the fix' | grep -c 'merge-queue:after-done 176')"
-eq "held steps run before unsticking, at the drain's end" "1" "$(sed -n '/deploy_if_due "\$d_begin"/,/|| unstick_one/p' "$mq_all" | grep -c '^  held_steps$')"
+eq "held steps run before unsticking, at the drain's end" "1" "$(sed -n '/deploy_if_due "\$d_begin"/,/|| unstick_one/p' "$mq_all" | grep -c '^  .*drain_over_budget.* || held_steps$')"
 eq "a held step's merge reuses GitHub's update-branch, once a drain's end" "1 1" "$(sed -n '/^held_steps()/,/^}/p' "$mq_all" | grep -c 'pulls/\$hs_pr/update-branch') $(sed -n '/^held_steps()/,/^}/p' "$mq_all" | grep -c 'held_merged=yes$')"
 eq "only labelled pull requests have their comments read" "1" "$(sed -n '/^held_steps()/,/^}/p' "$mq_all" | grep -c 'index("queue:after")')"
 eq "the command posts the mark and the label through REST" "1 1 0" "$(grep -c 'issues/\$pr/comments' "$root/templates/scripts/ci/wait-for.sh") $(grep -c "labels\[\]=queue:after" "$root/templates/scripts/ci/wait-for.sh") $(grep -c 'gh pr \|gh issue ' "$root/templates/scripts/ci/wait-for.sh")"
