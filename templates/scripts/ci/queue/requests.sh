@@ -204,8 +204,8 @@ requests_tick_body() {
           requests_answer "$rq_id" "$rq_kind" "$rq_pr" held
           continue
         fi
-        # A rush has the machines alone: a Land now, already green, goes straight after it.
-        if [ "$rq_kind" = land-now ] && [ -n "$(printf '%s' "$rt_rush" | tr -d ' \n')" ]; then requests_answer "$rq_id" land-now "$rq_pr" after-drain; continue; fi
+        # A rush has the machines alone: a Land next, already green, goes straight after it.
+        if [ "$rq_kind" = land-next ] && [ -n "$(printf '%s' "$rt_rush" | tr -d ' \n')" ]; then requests_answer "$rq_id" land-next "$rq_pr" after-drain; continue; fi
         # The chain: behind another rush one it waits on its test head; once
         # those ahead have landed, a green test head of the same tree is
         # its result, and it merges with no further run.

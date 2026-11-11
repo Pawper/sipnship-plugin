@@ -3,7 +3,7 @@
 # Sourced by scripts/ci/merge-queue.sh; functions only.
 
 # --- Rush changes: "land this next" reserves the machines ---
-# At every tick a land-next request is open, the queue cancels the running
+# At every tick a land-now request is open, the queue cancels the running
 # and queued checks of every other pull request (never a batch's run, a
 # rush test head's or a run on main; rush_cancel_pick), notes each as
 # paused in rush.paused for the published state, and leaves the machines

@@ -31,8 +31,8 @@ function usage() {
   sipnship deploy-key [--repo OWNER/NAME] [--host cloudflare|vercel]   take the hosting key once and set the deploy secrets
   sipnship listen [on|off|status]  carry out what you approve on the dashboard (off until turned on here)
   sipnship ask add-runner [NAME | --count N] | remove-runner NAME | migrate [PR] | deploy | scan-skip | scan-again
-  sipnship land-next N ["reason"]   land this pull request next
-  sipnship land-now N ["reason"]    land this green pull request now
+  sipnship land-next N ["reason"]   land this green pull request next, pausing nothing
+  sipnship land-now N ["reason"]    land this pull request now, before anything else
   sipnship hold N ["reason"]        hold it out of the merge queue
   sipnship release N                release a hold
   sipnship drop N "reason"          take it out, closing it with the reason

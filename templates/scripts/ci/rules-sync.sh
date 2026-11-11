@@ -71,5 +71,5 @@ for old in $(printf '%s\n' "$open" | cut -d' ' -f1); do
   gh api -X PATCH "repos/{owner}/{repo}/pulls/$old" -f state=closed >/dev/null
 done
 
-gh api -X POST "repos/{owner}/{repo}/issues/$pr/comments" -f body="Queue request: land-next #$pr by rules-sync: First because it changes a rule" >/dev/null
+gh api -X POST "repos/{owner}/{repo}/issues/$pr/comments" -f body="Queue request: land-now #$pr by rules-sync: First because it changes a rule" >/dev/null
 echo "Asked the queue to land #$pr first."

@@ -82,12 +82,12 @@ rush_only() {
 RUSH_MARKER='<!-- merge-queue:rush -->'
 RUSH_PAUSED_SAY='Paused for a rush change'
 
-# rush_order LINES DONE: the land-next pull requests, one a line, in the
+# rush_order LINES DONE: the land-now (rush) pull requests, one a line, in the
 # order asked. LINES is requests_open's "id<TAB>kind<TAB>pr<TAB>by<TAB>
 # reason", oldest first; DONE the request ids already answered.
 rush_order() {
   printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v done=" $(printf '%s' "$2" | tr '\n' ' ') " '
-    $2 == "land-next" && $3 != "" && index(done, " " $1 " ") == 0 && !seen[$3]++ { print $3 }'
+    $2 == "land-now" && $3 != "" && index(done, " " $1 " ") == 0 && !seen[$3]++ { print $3 }'
 }
 
 # rush_cancel_pick RUNS BASE KEEP: the runs to cancel for a rush, one

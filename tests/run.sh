@@ -1999,12 +1999,12 @@ eq "an older failed run and a newer queued one: no re-run" "wait" "$(rerun_choic
 eq "a head whose only run was cancelled gets one re-run" "rerun 801" "$(rerun_choice "$(cat "$qs_dir/runs-cancelled-once.tsv")" ccc333 "")"
 eq "a second cancel on the same head gets none" "twice" "$(rerun_choice "$(cat "$qs_dir/runs-cancelled-once.tsv")" ccc333 " ccc333")"
 eq "the drain re-runs through rerun_choice" "1" "$(grep -c 'choice=\$(rerun_choice' "$qs_mq")"
-# A rush: land-next reserves the machines (fixtures/queue-rush).
+# A rush: land-now reserves the machines (fixtures/queue-rush).
 qr_dir="$root/tests/fixtures/queue-rush"
 # Land now, and a land request waiting on the running drain.
 eq "land now is a request in the fixed form" "91	land-now	48	maya	" "$(request_from_comment 91 'Queue request: land-now #48 by maya')"
 eq "land now answers in the same form" "Queue answer: land-now #48: after-drain" "$(request_answer_form land-now 48 after-drain)"
-eq "land now is not a rush: it cancels nobody's checks" "" "$(rush_order "$(printf '91\tland-now\t48\tmaya\t')" "")"
+eq "land next is not a rush: it cancels nobody's checks" "" "$(rush_order "$(printf '91\tland-next\t48\tmaya\t')" "")"
 eq "the tick lands it by the same serial path" "1" "$(grep -c 'land-next|land-now)$' "$mq_all")"
 eq "a land request on a change held for the builder is answered held and never reaches the serial merge" "1 1" "$(awk '/Never past a hold/ { f = 1 } f && /held_reason/ { a++ } f && /requests_answer "\$rq_id" "\$rq_kind" "\$rq_pr" held/ { b++ } /serial-now\)/ { f = 0 } END { print a + 0, b + 0 }' "$root/templates/scripts/ci/queue/requests.sh")"
 eq "the hold the queue checks is the label or the Queue: hold line" "held by its label" "$(held_reason 'state:ready
@@ -4113,7 +4113,7 @@ eq "a dry run says the title and the file and changes nothing" "Your rules: The 
 design 2026-11-03" "$(rw_sync env RULES_OFF=design RULES_SYNC_DRY=yes sh scripts/ci/rules-sync.sh)"
 : > "$rw_log"
 rw_out=$(rw_sync env RULES_OFF=design sh scripts/ci/rules-sync.sh)
-eq "a changed switch opens one pull request and asks to land it first" "yes yes yes" "$(printf '%s' "$rw_out" | grep -q 'Opened pull request #17' && echo yes) $(grep -q 'Queue request: land-next #17 by rules-sync: First because it changes a rule' "$rw_log" && echo yes) $(git -C "$rw" ls-remote --heads origin 'rules-sync/*' | grep -q rules-sync && echo yes)"
+eq "a changed switch opens one pull request and asks to land it first" "yes yes yes" "$(printf '%s' "$rw_out" | grep -q 'Opened pull request #17' && echo yes) $(grep -q 'Queue request: land-now #17 by rules-sync: First because it changes a rule' "$rw_log" && echo yes) $(git -C "$rw" ls-remote --heads origin 'rules-sync/*' | grep -q rules-sync && echo yes)"
 rw_ref=$(git -C "$rw_o" for-each-ref --format='%(refname)' 'refs/heads/rules-sync/*' | head -n 1)
 rw_diff=$(git -C "$rw_o" diff main "$rw_ref")
 eq "the branch carries the file and the rebuilt table" "yes yes" "$(printf '%s\n' "$rw_diff" | grep -q '^+design 2026-11-03' && echo yes) $(printf '%s\n' "$rw_diff" | grep -q 'The look has one source: off since November 3, 2026' && echo yes)"

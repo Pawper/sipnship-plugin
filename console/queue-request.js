@@ -1,6 +1,6 @@
 'use strict';
-// sipnship land-next N ["reason"]   land this pull request next
-// sipnship land-now N ["reason"]    land this green pull request now
+// sipnship land-next N ["reason"]   land this green pull request next, pausing nothing
+// sipnship land-now N ["reason"]    land this pull request now, before anything else
 // sipnship hold N ["reason"]        hold it out of the queue
 // sipnship drop N "reason"          take it out, closing it with the reason
 // sipnship release N                release a hold
