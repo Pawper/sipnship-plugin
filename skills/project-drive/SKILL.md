@@ -53,7 +53,10 @@ The drive works the ready list in rounds, so many issues land in little time wit
   to Ready, or to Waiting on you when its pull request is held, with the hold's ask on it (one question,
   numbered choices, exactly one recommended). The queue does the same at a merge: an issue a merged pull request
   left In progress returns to Ready. Never leave an issue In progress with nobody on it.
-- **Every open pull request keeps moving**, not only the round's own. The plan reads each open pull request
+- **Every open pull request keeps moving**, except one held for the builder to read (`queue:hold`, or a
+  `Queue: hold` line). Send no fixer and no merge-main to a held one, red or conflicting: its rule checks show
+  on its card for the builder, and it runs no test parts until they let it land (`full_run_decide`). The plan
+  reads each open pull request
   over REST and its `mergeable_state`: one that conflicts with main and is not held by the queue is a
   `merge-main` goal, and a red one no unit owns is a `fix-pr` or `set-aside` goal like any other. Nobody has
   to ask for this. Never put two agents on the same pull request: one a running unit owns goes to that unit's
@@ -102,16 +105,18 @@ and once that round is published as started, the request is spent. With the labe
 dispatch only on a reply or that request: post the proposal and wait, as below.
 
 **Requests from the Work tab.** SipNShip's app also leaves `Queue request: start-next #N by LOGIN` and
-`Queue request: hold-agent #N by LOGIN` on the drive issue. They are a person's word about one issue, so they
+`Queue request: start-now #N by LOGIN` and `Queue request: hold-agent #N by LOGIN` on the drive issue. They are a person's word about one issue, so they
 need no proposal or reply. Read them on every tick, whatever `approval.sh` said:
 
 ```bash
 sh "${CLAUDE_PLUGIN_ROOT}/scripts/drive/work-requests.sh"
 ```
 
-It prints one line per request still owed, `start-next N by LOGIN` or `hold-agent N by LOGIN`, or nothing. Do
-each (step c), and answer on the drive issue in the fixed form, one comment each, so the dashboard's waiting line
-ends. A request nobody answers tells the person it did not happen: a start after a day, a hold after an hour.
+It prints one line per request still owed, `start-next N by LOGIN`, `start-now N by LOGIN`, `hold-agent N by LOGIN`
+or `start-round by LOGIN`, or nothing. Do each (step c). Every request is answered on the drive issue in the fixed
+form `Queue answer: KIND #N: outcome` (start-round's N is 0), one comment each, saying what happened or what it
+waits on, so the dashboard's waiting line ends; a request still printed on the next tick is one you owe, so answer
+it then. A request nobody answers tells the person it did not happen: a start after a day, a hold after an hour.
 
 **Answers to what was asked.** A choice pressed on a Needs you card is written on the issue (or on its pull
 request, when the question was asked there) as two lines, the second in a fixed form: `Builder answer: #N
@@ -215,6 +220,15 @@ tab says it waits and on what instead of saying it starts on its own; `status: p
   holds only is a round. When your judgement declines what the plan proposed, that issue is a hold whose
   `why:` says so, so the builder can overrule it with Start this next. An unchanged round is updated in
   place with the time of this look, so the tab shows when you last looked apart from when the round changed.
+- **A rush: `start-next N by LOGIN` or `start-now N by LOGIN`.** Replan and bundle a rush on the tick it is read,
+  never on the next round. Put N in one unit with every ready or proposed issue it shares an area with, and bundle
+  several rushed issues with each other first (`RUSH_ISSUES="N M" sh "${CLAUDE_PLUGIN_ROOT}/scripts/drive/plan.sh"`
+  puts that unit first). Dispatch the unit this tick when no running unit or open pull request touches its area;
+  otherwise it leads the next round. Publish the proposal again so the dashboard shows the bundle.
+- **`start-now N by LOGIN`.** Dispatch every unit of the proposed round that shares no area with a pull request
+  still landing, this tick; the rest wait for what they share. Answer `Queue answer: start-now #N: started-now`,
+  or say what it waits on.
+- **`start-round by LOGIN`.** Answer it once the round started: `Queue answer: start-round #0: started-round`.
 - **`start-next N by LOGIN`.** Start this issue now if a runner is free and nothing running touches its files:
   dispatch it as a one-off, set `state:in-progress` (from Parked or another set-aside State too, since the person
   asked for it by name), note `next` in `started-with.tsv`, and answer `Queue answer: start-next #N: started-next`.

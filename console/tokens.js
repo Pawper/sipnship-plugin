@@ -8,6 +8,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { execFileSync } = require('child_process');
 
 function home(env = process.env) {
   return env.SIPNSHIP_HOME || path.join(env.HOME || env.USERPROFILE || os.homedir(), '.sipnship');
@@ -33,11 +34,29 @@ function read(env = process.env) {
 function write(store, env = process.env) {
   const dir = home(env);
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  // A folder made earlier by something wider is tightened too (macOS and Linux).
+  try { fs.chmodSync(dir, 0o700); } catch { /* the platform has no such mode */ }
   const f = file(env);
   const tmp = `${f}.${process.pid}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify(store, null, 2) + '\n', { mode: 0o600 });
   fs.renameSync(tmp, f);
-  try { fs.chmodSync(f, 0o600); } catch { /* Windows keeps its own permissions */ }
+  try { fs.chmodSync(f, 0o600); } catch { /* the platform has no such mode */ }
+  ownerOnlyOnWindows(f, env);
+}
+
+/**
+ * On Windows a mode means little: the file inherits what its folder allows. Drop the inherited
+ * access and give this user alone full control, so nobody else on the machine can read the token.
+ * Best effort; a machine without icacls keeps the profile folder's own access.
+ */
+function ownerOnlyOnWindows(f, env = process.env, run = execFileSync, platform = process.platform) {
+  if (platform !== 'win32') return false;
+  const user = env.USERNAME;
+  if (!user) return false;
+  try {
+    run('icacls', [f, '/inheritance:r', '/grant:r', `${user}:F`], { stdio: 'ignore', timeout: 10000 });
+    return true;
+  } catch { return false; }
 }
 
 /** Keep a token for one repository, replacing the one it had. */
@@ -81,4 +100,4 @@ function repoFromRemote(url) {
   return m ? `${m[1]}/${m[2]}` : undefined;
 }
 
-module.exports = { home, file, read, write, put, find, remove, looksLikeToken, repoFromRemote };
+module.exports = { ownerOnlyOnWindows, home, file, read, write, put, find, remove, looksLikeToken, repoFromRemote };

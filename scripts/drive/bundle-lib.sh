@@ -166,6 +166,25 @@ plan_units() {
     }'
 }
 
+# rush_first UNITS RUSH
+# UNITS are plan_units lines; RUSH is the issue numbers a builder pressed Start
+# this next or Start now on (space separated, from work-requests.sh). The
+# units that carry one of them come first, in their order, so the proposed
+# round leads with the bundle a rush asked for; the rest keep their order.
+# A rush's issues were bundled with everything they share an area with by
+# plan_units already, and with each other first.
+rush_first() {
+  [ -n "$2" ] || { printf '%s\n' "$1"; return 0; }
+  printf '%s\n' "$1" | awk -F'\t' -v rush="$2" '
+    BEGIN { r = split(rush, rr, " ") }
+    {
+      hit = 0
+      if ($1 == "unit") { m = split($2, mm, " "); for (i = 1; i <= m; i++) for (j = 1; j <= r; j++) if (mm[i] == rr[j]) hit = 1 }
+      if (hit) first[++f] = $0; else rest[++t] = $0
+    }
+    END { for (i = 1; i <= f; i++) print first[i]; for (i = 1; i <= t; i++) print rest[i] }'
+}
+
 # units_disjoint UNITS
 # "yes" when no two unit lines share a file (or a folder and a file in it).
 units_disjoint() {

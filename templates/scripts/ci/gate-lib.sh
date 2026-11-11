@@ -226,11 +226,15 @@ last_gated_run() {
 # main. A full run of its own: a batch or rush head (the batch's one run is
 # the full one), a "ci:full" label (read when the run starts), or a change
 # to CI itself (.github/ or scripts/ci/, the class "ci"), since it changes
-# the gate and nothing else proves it. LABELS is comma separated and CLASSES
-# space separated.
+# the gate and nothing else proves it. A change held for the builder to read
+# (the label "queue:hold") runs only its rule checks, whatever its paths, a
+# change to CI itself included; its full tests run in the batch once the
+# builder lets it land. A "ci:full" label is still the builder's own ask.
+# LABELS is comma separated and CLASSES space separated.
 full_run_decide() {
   case "$1" in batch-*|rush-*) echo yes; return ;; esac
   case ",$2," in *,ci:full,*) echo yes; return ;; esac
+  case ",$2," in *,queue:hold,*) echo no; return ;; esac
   case " $3 " in *" ci "*) echo yes; return ;; esac
   echo no
 }

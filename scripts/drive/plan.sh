@@ -221,6 +221,8 @@ $facts
 EOF_FACTS
 if [ -n "$guesses" ] || [ -n "$reasons" ]; then
   units=$(plan_units "$guesses" "$running")
+  # Issues a builder rushed (RUSH_ISSUES, space separated, read from work-requests.sh): their bundle leads.
+  units=$(rush_first "$units" "${RUSH_ISSUES:-}")
   [ -n "$reasons" ] && units=$(printf '%s\n%s\n' "$units" "$reasons" | sed '/^$/d')
   # The proposal is the next round: up to unitsPerRound units (within
   # maxAgents), planned against the running round's files. It starts only

@@ -368,6 +368,8 @@ eq "a change to CI itself gets its own full run before batching" "yes" "$(full_r
 eq "a class that only begins with ci does not" "no" "$(full_run_decide pr-rooftop-watering '' 'circuit docs')"
 eq "a batch head runs the full run" "yes" "$(full_run_decide batch-2026-11-10 '' 'app')"
 eq "a rush head runs the full run" "yes" "$(full_run_decide rush-beds-fix '' 'docs')"
+eq "a change held for the builder runs only its rule checks, even a change to CI" "no" "$(full_run_decide pr-rooftop-watering 'state:ready,queue:hold' 'app ci')"
+eq "a held change that is let land is full again when CI changed" "yes" "$(full_run_decide pr-rooftop-watering 'state:ready' 'app ci')"
 eq "the words a green pull request on its rule checks is told" "Its rule checks passed; it lands with the next batch" "$(cheap_gate_say)"
 eq "rule checks green, test jobs skipped: the cheap gate" "yes" "$(cheap_gate_held '  checks      success
   classify    success
@@ -1261,6 +1263,8 @@ dispatch 15	Rework the search
 stop: proposal ready for approval" "$(propose_round 'issue	12	Add the exporter	ready	no
 issue	14	Fix the date format	ready	no
 issue	15	Rework the search	ready	no' 4 3)"
+eq "a red pull request held for the builder gets no fixer" "stop: nothing to propose" "$(propose_round 'pr	61	Water the beds on a schedule	red	mergeable	app	1	yes	no' 2 4)"
+eq "a red pull request that is not held still gets one" "fix-pr 61	Water the beds on a schedule" "$(propose_round 'pr	61	Water the beds on a schedule	red	mergeable	app	1	no	no' 2 4 | sed -n 1p)"
 eq "nothing to propose stops" "stop: nothing to propose" "$(propose_round 'queue	none' 2 4)"
 eq "only owner waits stops with the reason" "stop: everything left waits on a person" "$(propose_round 'issue	30	Logo	waiting-on-owner	no' 2 4)"
 eq "work in flight stops with the reason" "stop: work is in flight; nothing to propose until it lands" "$(propose_round 'pr	48	Running	pending	mergeable	app
@@ -2002,6 +2006,9 @@ eq "land now is a request in the fixed form" "91	land-now	48	maya	" "$(request_f
 eq "land now answers in the same form" "Queue answer: land-now #48: after-drain" "$(request_answer_form land-now 48 after-drain)"
 eq "land now is not a rush: it cancels nobody's checks" "" "$(rush_order "$(printf '91\tland-now\t48\tmaya\t')" "")"
 eq "the tick lands it by the same serial path" "1" "$(grep -c 'land-next|land-now)$' "$mq_all")"
+eq "a land request on a change held for the builder is answered held and never reaches the serial merge" "1 1" "$(awk '/Never past a hold/ { f = 1 } f && /held_reason/ { a++ } f && /requests_answer "\$rq_id" "\$rq_kind" "\$rq_pr" held/ { b++ } /serial-now\)/ { f = 0 } END { print a + 0, b + 0 }' "$root/templates/scripts/ci/queue/requests.sh")"
+eq "the hold the queue checks is the label or the Queue: hold line" "held by its label" "$(held_reason 'state:ready
+queue:hold' '')"
 qr_lines=$(printf '91\tland-now\t48\tmaya\t\n92\tland-next\t52\tmaya\t\n93\tland-next\t60\tmaya\t\n94\thold\t61\tmaya\t')
 eq "a batch being built: one outside it waits on the drain, one inside lands with it, an answered or other request says nothing" "91	land-now	48	after-drain
 92	land-next	52	next-after-batch" "$(requests_waiting_on "$qr_lines" "52 53" "93")"
@@ -4601,6 +4608,9 @@ db_units=$(plan_units "$db_ready" "")
 eq "overlapping guesses bundle, through a third issue too" "unit	12 14 17	Water the beds on a schedule | Remind me before a frost night | Name the reminder screen	all 3 change src/schedule.ts	src/schedule.ts,specs/030-watering/,src/reminders.ts,src/home.ts" "$(printf '%s\n' "$db_units" | sed -n 1p)"
 eq "disjoint guesses stay separate units" "2" "$(printf '%s\n' "$db_units" | grep -c '^unit	1[56]	')"
 eq "a unit with a bundle says why together in plain words" "both change src/beds" "$(plan_units "$(printf '1\tA\tsrc/beds/\n2\tB\tsrc/beds/list.ts\n')" "" | awk -F'\t' '{ print $4 }' | sed 's#/list.ts##')"
+rf_units=$(plan_units "$(printf '1\tWater the beds\tsrc/home/\n2\tTint the beds\tsrc/beds/\n3\tName the beds\tsrc/beds/card.ts\n')" "")
+eq "two rushed issues sharing an area are one unit, and it leads the round" "unit	2 3	Tint the beds | Name the beds	both change src/beds/card.ts	src/beds/,src/beds/card.ts" "$(rush_first "$rf_units" "2 3" | sed -n 1p)"
+eq "no rush leaves the order alone" "$rf_units" "$(rush_first "$rf_units" "")"
 db_held=$(plan_units "$db_ready" "$(cat "$db/running.tsv")")
 eq "a unit touching running work is held, naming the running bundle" "hold	16	Tint the bed cards by moisture	After: Frost alerts show the night's low" "$(printf '%s\n' "$db_held" | grep '^hold')"
 eq "held work is not in any unit" "0" "$(printf '%s\n' "$db_held" | grep '^unit' | grep -c '	16	\|^unit	16')"
@@ -4956,7 +4966,20 @@ eq "a request asked again after its answer is owed again" "start-next 214 by may
 2026-11-05T08:02:00Z${wq_t}maya${wq_t}Queue request: start-next #214 by maya" 2026-11-04T08:00:00Z 2026-11-05T07:00:00Z)"
 eq "one past its window has already been told it did not happen" "start-next 214 by maya
 start-next 231 by maya" "$(work_requests "$wq_c" 2026-11-04T08:00:00Z 2026-11-05T08:30:00Z)"
-eq "these never count as a reply to the proposal" "1" "$(grep -c 'request: (start-next|hold-agent|land-next|land-now|deploy-now)' "$root/scripts/drive/approval.sh")"
+eq "these never count as a reply to the proposal" "1" "$(grep -c 'request: (start-next|start-now|hold-agent|land-next|land-now|deploy-now)' "$root/scripts/drive/approval.sh")"
+wq_n="2026-11-11T20:00:00Z${wq_t}sipnship[bot]${wq_t}Queue request: start-now #301 by maya
+2026-11-11T20:01:00Z${wq_t}sipnship[bot]${wq_t}Queue request: start-round #0 by maya
+2026-11-11T20:02:00Z${wq_t}sipnship[bot]${wq_t}Queue request: start-next #302 by maya"
+eq "a Start now request is read and owed with the others" "start-now 301 by maya
+start-round by maya
+start-next 302 by maya" "$(work_requests "$wq_n" 2026-11-11T00:00:00Z 2026-11-11T19:00:00Z)"
+eq "a request with no answer after a tick is still reported; an answer spends only its own" "start-round by maya
+start-next 302 by maya" "$(work_requests "$wq_n
+2026-11-11T20:05:00Z${wq_t}sipnship[bot]${wq_t}Queue answer: start-now #301: started-now" 2026-11-11T00:00:00Z 2026-11-11T19:00:00Z)"
+eq "a start-round answer spends the start-round request" "start-now 301 by maya
+start-next 302 by maya" "$(work_requests "$wq_n
+2026-11-11T20:05:00Z${wq_t}sipnship[bot]${wq_t}Queue answer: start-round #0: started-round" 2026-11-11T00:00:00Z 2026-11-11T19:00:00Z)"
+eq "the skill says to replan and bundle a rush on the tick it is read, and to answer every request" "1 1 1" "$(grep -m1 -c 'start-now N by LOGIN' "$root/skills/project-drive/SKILL.md") $(grep -c 'bundle a rush on the tick' "$root/skills/project-drive/SKILL.md") $(grep -c 'Every request is answered' "$root/skills/project-drive/SKILL.md")"
 eq "Auto Drive on with a round running: the dispatches wait" "nothing: 1 dispatch goal(s) wait for the running round (#214) to land" "$(cat > "$ad_dir/bin/gh" <<'FAKE'
 #!/bin/sh
 case "$*" in

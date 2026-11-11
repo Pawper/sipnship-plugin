@@ -58,3 +58,21 @@ test('the repository is read from a GitHub remote', () => {
   assert.strictEqual(tokens.repoFromRemote('git@github.com:acme/shop.git'), 'acme/shop');
   assert.strictEqual(tokens.repoFromRemote('https://gitlab.com/acme/shop'), undefined);
 });
+
+test('the token file and its folder are readable by their owner only, where the platform has modes', { skip: process.platform === 'win32' }, () => {
+  const env = envAt();
+  fs.chmodSync(env.SIPNSHIP_HOME, 0o755);
+  tokens.put({ repoId: 42, fullName: 'acme/shop', token: T, machine: 'desk' }, env);
+  assert.strictEqual(fs.statSync(tokens.file(env)).mode & 0o777, 0o600);
+  assert.strictEqual(fs.statSync(env.SIPNSHIP_HOME).mode & 0o777, 0o700);
+});
+
+test('on Windows the file loses inherited access and is granted to this user alone', () => {
+  const calls = [];
+  const run = (cmd, args) => { calls.push([cmd, ...args]); };
+  assert.strictEqual(tokens.ownerOnlyOnWindows('C:/u/.sipnship/tokens.json', { USERNAME: 'maya' }, run, 'win32'), true);
+  assert.deepStrictEqual(calls, [['icacls', 'C:/u/.sipnship/tokens.json', '/inheritance:r', '/grant:r', 'maya:F']]);
+  assert.strictEqual(tokens.ownerOnlyOnWindows('f', { USERNAME: 'maya' }, run, 'linux'), false);
+  assert.strictEqual(tokens.ownerOnlyOnWindows('f', {}, run, 'win32'), false);
+  assert.strictEqual(tokens.ownerOnlyOnWindows('f', { USERNAME: 'maya' }, () => { throw new Error('no icacls'); }, 'win32'), false);
+});

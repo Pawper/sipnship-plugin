@@ -22,7 +22,8 @@
 # PRs are green), fix what is red (or set it aside once it has been red
 # SET_ASIDE_AFTER times, default 2; 0 never sets aside), bring every pull
 # request that conflicts with main up to date (merge-main) unless the queue
-# holds it, ask about what is the owner's, start
+# holds it (a held pull request, red or not, is left alone: no agent is sent
+# to one a builder is reading), ask about what is the owner's, start
 # ready issues up to the smaller of RUNNERS and MAX_AGENTS less what is in
 # progress, set right what the audit flagged, restart a stale queue. The
 # last line is a "stop" line saying why the round would end. Nothing here
@@ -30,6 +31,7 @@
 propose_round() {
   printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v runners="${2:-2}" -v max_agents="${3:-4}" -v aside="${4:-2}" '
     $1 == "pr" && $4 == "green" && $5 == "mergeable" { green[++g] = $2; if ($6 != "other") appgreen++ }
+    $1 == "pr" && $4 == "red" && $8 == "yes" { next }
     $1 == "pr" && $4 == "red" {
       if (aside > 0 && $7 + 0 >= aside) setaside[++sa] = $2 "\t" $3 "\t(red " ($7 + 0) " times)"
       else if ($9 == "yes") busy[++bz] = $2 "\t" $3

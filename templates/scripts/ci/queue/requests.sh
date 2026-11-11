@@ -196,6 +196,14 @@ requests_tick_body() {
         rq_conf=""; [ "$(mergeable_word "${rq_rest#*	}")" = CONFLICTING ] && rq_conf=yes
         rq_batch=no; rq_over=no
         case " $rt_members " in *" $rq_pr "*) continue ;; esac
+        # Never past a hold: a change held for the builder to read is landed only by the builder letting it land
+        # (the hold goes), never by a land request, whoever asked. A second guard beside the service's own refusal.
+        rq_hold=$(gh api "repos/{owner}/{repo}/pulls/$rq_pr" --jq '([.labels[].name] | join("\n")) + "\u0001" + ((.body // "") | gsub("\r"; ""))' 2>/dev/null || true)
+        if [ -n "$(held_reason "${rq_hold%%$(printf '\001')*}" "${rq_hold#*$(printf '\001')}")" ]; then
+          say "request: not landing #$rq_pr, it is held for the builder to read; $rq_by's ${rq_kind#land-} request is answered held"
+          requests_answer "$rq_id" "$rq_kind" "$rq_pr" held
+          continue
+        fi
         # A rush has the machines alone: a Land now, already green, goes straight after it.
         if [ "$rq_kind" = land-now ] && [ -n "$(printf '%s' "$rt_rush" | tr -d ' \n')" ]; then requests_answer "$rq_id" land-now "$rq_pr" after-drain; continue; fi
         # The chain: behind another rush one it waits on its test head; once
