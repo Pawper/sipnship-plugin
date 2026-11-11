@@ -70,6 +70,12 @@ requests_answer() {
 # ships changed" rule still holds. Started once; later ticks read its run.
 requests_deploy_now() {
   dn_mark="$flaky_dir/requests.deploy-$1"
+  # Started by another drain, on another machine: its marker is a ref on
+  # GitHub, so this one reads the run's result instead of starting a second.
+  if ! grep -qx "$1" "$flaky_dir/requests.after" 2>/dev/null; then
+    dn_ref=$(gh api "repos/{owner}/{repo}/git/matching-refs/queue/deploy-$1-" --jq '.[0].ref // empty' 2>/dev/null | tr -d '\r')
+    if [ -n "$dn_ref" ]; then printf '%s\n' "${dn_ref##*-}" > "$dn_mark"; printf '%s\n' "$1" >> "$flaky_dir/requests.after"; fi
+  fi
   if grep -qx "$1" "$flaky_dir/requests.after" 2>/dev/null; then
     dn_since=$(cat "$dn_mark" 2>/dev/null)
     dn_run=$(gh api "repos/{owner}/{repo}/actions/workflows/deploy.yml/runs?event=workflow_dispatch&per_page=1&created=>=$(iso_utc "${dn_since:-0}")" --jq '.workflow_runs[0] | "\(.status)\t\(.conclusion // "")"' 2>/dev/null | tr -d '\r')
@@ -90,6 +96,7 @@ requests_deploy_now() {
     return 0
   fi
   date +%s > "$dn_mark"
+  gh_write api -X POST "repos/{owner}/{repo}/git/refs" -f ref="refs/queue/deploy-$1-$(cat "$dn_mark")" -f sha="$dn_end" >/dev/null 2>&1 || true
   if gh_write api -X POST "repos/{owner}/{repo}/actions/workflows/deploy.yml/dispatches" -f ref="$base" >/dev/null 2>&1; then
     say "Started the Deploy workflow now, as $2 asked."
     requests_answer "$1" deploy-now 0 deploying
@@ -122,23 +129,54 @@ requests_closed() {
 
 requests_classes() { classify_paths "$(gh api "repos/{owner}/{repo}/pulls/$1/files?per_page=100" --jq '.[].filename' 2>/dev/null)" "$rules"; }
 
-# requests_tick WHERE: honour the open requests. WHERE is "drain" between
-# rounds, or "batch" while a batch's full run is in flight.
+# rt_at STEP: the step the tick is at, kept in a file so a failure names it
+# even when it happens inside the loop's own shell.
+rt_at() { printf '%s' "$1" > "$flaky_dir/requests.step" 2>/dev/null || true; }
+
+# requests_tick WHERE: honour the open requests, and never stop the drain.
+# The body runs in its own shell under set -e; a failure in it is said with
+# the step it was at and the drain goes on to the open pull requests. A
+# failed tick with requests open is remembered (requests.open) for the
+# drain's one retry.
 requests_tick() {
   [ -z "${QUEUE_IN_REQUEST:-}" ] || return 0
+  rt_e=no; case $- in *e*) rt_e=yes; set +e ;; esac
+  rt_at "starting"
+  (
+    set -e
+    trap 'rt_rc=$?; if [ "$rt_rc" -ne 0 ]; then say "Requests could not be read through: $(cat "$flaky_dir/requests.step" 2>/dev/null) (exit $rt_rc); the drain goes on to the open pull requests."; : > "$flaky_dir/requests.failed" 2>/dev/null || true; fi' EXIT
+    requests_tick_body "$1"
+  )
+  [ "$rt_e" != yes ] || set -e
+  return 0
+}
+
+# requests_tick_body WHERE: WHERE is "drain" between rounds, or "batch"
+# while a batch's full run is in flight.
+requests_tick_body() {
+  rt_at "signing in to the road (requests_road_set)"
   requests_road_set
   [ "$req_road" != none ] || return 0
   # Project-rule requests are filed as issues between rounds (spec 016).
+  rt_at "filing rule requests (rule_issues_file)"
   [ "$1" != drain ] || rule_issues_file
+  rt_at "reading the open requests (requests_open)"
   rt_lines=$(requests_open)
   # A rush reserves the machines first, at the very tick it is read.
+  rt_at "reading the rush order (rush_order)"
   rt_rush=$(rush_order "$rt_lines" "$(cat "$flaky_dir/requests.done" 2>/dev/null)")
+  rt_at "reserving the machines for a rush (rush_tick)"
   rush_tick "$rt_rush"
   [ -n "$rt_lines" ] || return 0
-  rt_members=$(tr '\n' ' ' < "$flaky_dir/batch.members" 2>/dev/null)
+  # Open requests are known: a drain that fails from here on is retried once.
+  : > "$flaky_dir/requests.open" 2>/dev/null || true
+  # No batch record yet is no batch: tr on a missing file would end the drain.
+  rt_at "reading the batch's members (batch.members)"
+  rt_members=$({ cat "$flaky_dir/batch.members" 2>/dev/null || true; } | tr '\n' ' ')
   printf '%s\n' "$rt_lines" | while IFS="$tab" read -r rq_id rq_kind rq_pr rq_by rq_why; do
     [ -n "$rq_id" ] || continue
     grep -qx "$rq_id" "$flaky_dir/requests.done" 2>/dev/null && continue
+    rt_at "honouring request $rq_id, $rq_kind #$rq_pr (requests_tick_body)"
     if [ "$rq_kind" = deploy-now ]; then requests_deploy_now "$rq_id" "$rq_by"; continue; fi
     rq_state=$(gh api "repos/{owner}/{repo}/pulls/$rq_pr" --jq '"\(.state)\t\(.head.sha)\t\(.mergeable_state // "")"' 2>/dev/null | tr -d '\r')
     [ -n "$rq_state" ] || continue

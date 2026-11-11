@@ -197,10 +197,10 @@ queue_lock_reason() {
 # start ("the Queue drain on GitHub started 12 minute(s) ago is still running
 # (run 123)", "queued" for a run not yet started), or nothing for no runs.
 remote_drain_reason() {
-  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v now="$2" '
+  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v now="$2" -v stuck="${QUEUE_STUCK_SECONDS:-600}" '
     NR == 1 && NF >= 3 && $1 != "" {
       age = now - ($3 + 0)
-      if (age < 0) age = 0
+      if (age < 0) age = 0; if ($2 == "queued" && age > stuck) exit
       st = ($2 == "queued") ? "queued" : "still running"
       printf "the Queue drain on GitHub started %d minute(s) ago is %s (run %s)\n", int(age / 60), st, $1
       exit

@@ -132,6 +132,34 @@ publish_now() {
   return 0
 }
 
+# remote_drain_stuck RUNS NOW: a Queue drain that has sat queued on GitHub
+# past QUEUE_STUCK_SECONDS (default ten minutes) never started a job; it is
+# named here and no longer blocks a local landing (remote_drain_reason).
+remote_drain_stuck() {
+  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v now="$2" -v stuck="${QUEUE_STUCK_SECONDS:-600}" '
+    NR == 1 && NF >= 3 && $1 != "" && $2 == "queued" && now - ($3 + 0) > stuck {
+      printf "the Queue drain on GitHub (run %s) has sat queued for %d minute(s) and started no job\n", $1, int((now - ($3 + 0)) / 60)
+      exit
+    }'
+}
+
+# drain_retry_once: a drain that ended in failure while requests were open
+# starts one more drain within minutes, once. "Once" is a repository variable
+# read by every machine, so a retry that fails on another runner is not
+# retried again for QUEUE_RETRY_GAP seconds (default 1800).
+drain_retry_once() {
+  [ -f "$flaky_dir/requests.open" ] || return 0
+  [ -f .github/workflows/queue-drain.yml ] || return 0
+  dr_now=$(date +%s)
+  dr_last=$(gh api "repos/{owner}/{repo}/actions/variables/QUEUE_DRAIN_RETRIED" --jq .value 2>/dev/null | tr -d '\r')
+  [ $(( dr_now - ${dr_last:-0} )) -ge "${QUEUE_RETRY_GAP:-1800}" ] 2>/dev/null || return 0
+  set_repo_var QUEUE_DRAIN_RETRIED "$dr_now" || true
+  if gh_write api -X POST "repos/{owner}/{repo}/actions/workflows/queue-drain.yml/dispatches" -f ref="$base" >/dev/null 2>&1; then
+    say "The drain stopped while requests were open; one more drain is started, once."
+  fi
+  return 0
+}
+
 queue_exit() {
   qe_rc=$?
   # A batch ends with the run: nothing stale is drawn after it.
@@ -144,6 +172,7 @@ queue_exit() {
     echo "merge-queue.sh stopped (exit $qe_rc) during: $queue_step" >&2
     printf '%s %s\n' "$(date '+%H:%M')" "stopped (exit $qe_rc) during: $queue_step" >> "$log_file" 2>/dev/null || true
   fi
+  if [ "${mode:-}" = drain ] && { [ "$qe_rc" -ne 0 ] || [ -f "$flaky_dir/requests.failed" ]; }; then drain_retry_once || true; fi
   if [ -n "${local_drain_mark:-}" ]; then set_repo_var QUEUE_LOCAL_DRAIN_UNTIL "" >/dev/null 2>&1 || true; fi
   # The run's last word, in the log as well as the terminal, after the
   # deploy and after the lock goes: four watchers once waited on a "queue
@@ -170,6 +199,7 @@ EOF_RUN
       rruns=""
       if [ -n "$r_id" ]; then rruns=$(printf '%s\t%s\t%s' "$r_id" "$r_st" "$(iso_epoch "$r_at")"); fi
       why=$(remote_drain_reason "$rruns" "$(date +%s)"); [ -z "$why" ] || remote_id=$r_id
+      [ -n "$why" ] || { stuck=$(remote_drain_stuck "$rruns" "$(date +%s)"); [ -z "$stuck" ] || say "$stuck; going on without it."; }
     else
       echo "Could not check whether the Queue drain is running on GitHub; going on."
     fi

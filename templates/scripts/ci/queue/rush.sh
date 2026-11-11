@@ -104,7 +104,7 @@ rush_heads() {
 # rush_proof PR SHA: "green<TAB>yes" when its last test head is green and
 # main plus SHA is the very tree that head tested.
 rush_proof() {
-  rf_l=$(awk -F'\t' -v p="$1" '$1 == p && $5 != "closed" { l = $3; n = $2 } END { print l " " n }' "$flaky_dir/rush.heads" 2>/dev/null)
+  rf_l=$(awk -F'\t' -v p="$1" '$1 == p && $5 != "closed" { l = $3; n = $2 } END { print l " " n }' "$flaky_dir/rush.heads" 2>/dev/null || true)
   rf_name=${rf_l#* }; rf_l=${rf_l%% *}
   [ -n "$rf_l" ] || return 0
   rf_sha=$(gh api "repos/{owner}/{repo}/pulls/$rf_l" --jq .head.sha 2>/dev/null | tr -d '\r')

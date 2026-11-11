@@ -207,7 +207,7 @@ if [ "$mode" = drain ]; then
     set_repo_var QUEUE_LOCAL_DRAIN_UNTIL "$(drain_window_until "$(date +%s)" "$window_minutes")" >/dev/null 2>&1 || true
   }
   if [ -z "${GITHUB_ACTIONS:-}" ]; then local_drain_mark=yes; renew_window; fi
-  : > "$flaky_dir/stopped" 2>/dev/null || true; runner_labels_keep # one runner kept for the batch and main
+  : > "$flaky_dir/stopped" 2>/dev/null || true; rm -f "$flaky_dir/requests.open" "$flaky_dir/requests.failed"; runner_labels_keep # one runner kept for the batch and main
   stop_why=""
   d_start=$(date +%s); round=0; tried=""; retried=""; attention=""; last_look=""; cancel_heads=""
   d_begin=$(git ls-remote origin "refs/heads/$base" 2>/dev/null | cut -f1)

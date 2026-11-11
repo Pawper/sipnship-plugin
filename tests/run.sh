@@ -785,6 +785,82 @@ eq "failing under an hour leaves the issue alone" "no" "$(service_issue_too 1000
 eq "failing for an hour writes the issue as well" "yes" "$(service_issue_too 1000 4600)"
 eq "no failure writes no issue" "no" "$(service_issue_too "" 99999)"
 
+section 'requests never stop the drain (queue)'
+# A land-now on the service road, under set -e, in a checkout that has no batch record yet.
+rn=$(mktemp -d); mkdir -p "$rn/bin" "$rn/q"
+cat > "$rn/bin/gh" <<'GH'
+#!/bin/sh
+printf 'gh %s\n' "$*" >> "$RN_LOG"
+case "$*" in
+  *"--jq .merged"*) echo true ;;
+  *"pulls/1336"*) printf 'open\tabc123\tclean\n' ;;
+esac
+exit 0
+GH
+cat > "$rn/bin/curl" <<'CURL'
+#!/bin/sh
+cat > /dev/null
+case "$*" in
+  *"-X POST"*) printf 'curl %s\n' "$*" >> "$RN_LOG" ;;
+  *"queue/requests/open"*) printf 'r9\tland-now\t1336\tmaya\tthe rooftop-garden watering page\n' ;;
+esac
+exit 0
+CURL
+chmod +x "$rn/bin/gh" "$rn/bin/curl"
+cat > "$rn/tick.sh" <<RNS
+#!/bin/sh
+here="$root/templates/scripts/ci"
+case "\$1" in --serial) printf 'serial %s\n' "\$*" >> "\$RN_LOG"; exit 0 ;; esac
+set -e
+. "\$here/lib.sh"
+for rn_f in "\$here"/queue/rules-*.sh; do . "\$rn_f"; done
+. "\$here/queue/requests.sh"
+. "\$here/queue/rush.sh"
+tab=\$(printf '\t'); flaky_dir="\$RN_DIR/q"; log_file="\$RN_DIR/q/log"; base=main; rules=""
+say() { printf '%s\n' "\$*" >> "\$RN_LOG"; }
+gh_write() { gh "\$@"; }
+service_sign_in() { sv_token=t; sv_id=77; return 0; }
+pr_rollup() { echo green; }
+QUEUE_SERVICE_AUTH_LOADED=1
+if [ -n "\$RN_BREAK" ]; then rush_order() { return 3; }; fi
+requests_tick drain
+echo carried-on >> "\$RN_LOG"
+RNS
+rn_run() { : > "$rn/log"; rm -f "$rn/q/batch.members" "$rn/q/requests.done"; ( PATH="$rn/bin:$PATH"; export PATH; RN_LOG="$rn/log"; RN_DIR="$rn"; export RN_LOG RN_DIR; sh "$rn/tick.sh" ) >/dev/null 2>&1; }
+rn_run
+eq "a land-now open on the service road lands the change" "1" "$(grep -c '^serial --serial.* 1336' "$rn/log")"
+eq "the landed request is answered" "1" "$(grep -c 'requests/r9/outcome' "$rn/log")"
+eq "the tick returns to the drain" "1" "$(grep -c '^carried-on' "$rn/log")"
+RN_BREAK=yes rn_run
+eq "a step that fails inside the tick is named, with its command" "1" "$(grep -c "^Requests could not be read through: reading the rush order (rush_order" "$rn/log")"
+eq "a failed step still lets the drain carry on" "1" "$(grep -c '^carried-on' "$rn/log")"
+
+eq "a run queued past ten minutes no longer blocks a local landing" "" "$(remote_drain_reason "79	queued	1000" 1720)"
+eq "a run in progress past ten minutes still blocks" "the Queue drain on GitHub started 12 minute(s) ago is still running (run 77)" "$(remote_drain_reason "77	in_progress	1000" 1720)"
+eq "a run queued under ten minutes still blocks" "the Queue drain on GitHub started 3 minute(s) ago is queued (run 78)" "$(remote_drain_reason "78	queued	1540" 1720)"
+eq "a stuck run is named" "the Queue drain on GitHub (run 79) has sat queued for 12 minute(s) and started no job" "$( . "$root/templates/scripts/ci/queue/state.sh"; remote_drain_stuck "79	queued	1000" 1720)"
+eq "a run that started is not called stuck" "" "$( . "$root/templates/scripts/ci/queue/state.sh"; remote_drain_stuck "77	in_progress	1000" 1720)"
+# A drain that fails while requests are open starts one more, once.
+cat > "$rn/bin/gh" <<'GH'
+#!/bin/sh
+printf 'gh %s\n' "$*" >> "$RN_LOG"
+case "$*" in
+  *"variables/QUEUE_DRAIN_RETRIED"*"--jq"*) printf '%s\n' "$RN_RETRIED" ;;
+esac
+exit 0
+GH
+rn_retry() { : > "$rn/log"; ( PATH="$rn/bin:$PATH"; export PATH; RN_LOG="$rn/log"; RN_RETRIED=$1; export RN_LOG RN_RETRIED
+  . "$root/templates/scripts/ci/queue/state.sh"; flaky_dir="$rn/q"; base=main; log_file="$rn/q/log"; drain_retry_once ) >/dev/null 2>&1; }
+mkdir -p "$rn/proj/.github/workflows"; : > "$rn/proj/.github/workflows/queue-drain.yml"
+: > "$rn/q/requests.open"
+( cd "$rn/proj"; rn_retry 0 )
+eq "a failed drain with requests open starts one more drain" "1" "$(grep -c 'queue-drain.yml/dispatches' "$rn/log")"
+( cd "$rn/proj"; rn_retry "$(date +%s)" )
+eq "a second failure inside the gap starts none" "0" "$(grep -c 'queue-drain.yml/dispatches' "$rn/log")"
+rm -f "$rn/q/requests.open"
+( cd "$rn/proj"; rn_retry 0 )
+eq "a failed drain with no requests open starts none" "0" "$(grep -c 'queue-drain.yml/dispatches' "$rn/log")"
+
 section 'the drain files rule requests (spec 016)'
 . "$root/templates/scripts/ci/queue/rule-issues.sh"
 eq "an added rule is titled in plain words" "Add the rule: Never change the payment page without a test" "$(rule_issue_title add own-payment-page-test 'Never change the payment page without a test')"
