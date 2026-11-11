@@ -291,6 +291,7 @@ scripts/ci/gate-lib.sh 94b5a21cac3fea541858e37ded2c80af51eef53f
 scripts/ci/gate-lib.sh bf0f239354bf0c19b9c8fafa95e4bc62b5fddabd
 scripts/ci/gate-lib.sh ca894fabd47be6d4ac0c21e54df430eef2fa28e5
 scripts/ci/gate-lib.sh cd1564df09265d9de0244332bca1f5ec9d159844
+scripts/ci/gate-lib.sh d2e930cee6bc09e8298fdf16a5b99becea86ea51
 scripts/ci/gate-lib.sh f49a9902bfaa066237f931e48cceeb4ed6abb976
 scripts/ci/gate.sh 0607f765dfb34d66accf90f57badbe3df99f382b
 scripts/ci/gate.sh 2308500ed6444244a351abe0dc9fcf706e1c293a
@@ -497,6 +498,7 @@ scripts/ci/queue/requests.sh 36d19effc79fd0c312240f066051de5130131387
 scripts/ci/queue/requests.sh 3963df89443a70880addf9ff6c36515f2bf3cf33
 scripts/ci/queue/requests.sh 7771fdf05bb78d358fedc2cdce59cd947fac3a5c
 scripts/ci/queue/requests.sh b0d1c461edf592c2c687f3da1b5191a60c02ff84
+scripts/ci/queue/requests.sh f07baa8cc3e6bacb62e7de578985c35fc5875108
 scripts/ci/queue/requests.sh f73fabdf22193bd75131df060663bd46ccefa4a8
 scripts/ci/queue/rerun.sh 0061016aad77b0ac0b94004eeb23d2da0731d1ba
 scripts/ci/queue/rescue.sh d09f82e8d2885b27b3cc5c30fa8579f39b122afd
