@@ -76,6 +76,16 @@ if [ -z "$SUITE_TMP_ROOT" ]; then
   trap 'exit 130' INT TERM HUP
 fi
 TMPDIR=$SUITE_TMP_ROOT
+# A test never writes into a real checkout's queue state (.scratch/queue): its
+# picture (names, sizes, times) at the start is compared at the end. Nothing is
+# compared while a queue holds that checkout, whose own writes are not the test's.
+queue_picture() {
+  qp_d="$(git -C "$root" rev-parse --show-toplevel 2>/dev/null || echo "$root/..")/.scratch/queue"
+  if [ -f "$qp_d/lock" ]; then echo skipped; return 0; fi
+  if [ ! -d "$qp_d" ]; then echo absent; return 0; fi
+  ls -l --time-style=+%s "$qp_d" 2>/dev/null | awk 'NR > 1 { print $5, $6, $7 }' | cksum
+}
+queue_picture_before=$(queue_picture)
 # The root sits inside the project's own checkout; a folder a test makes there
 # must not find that checkout as its parent repository.
 GIT_CEILING_DIRECTORIES=$SUITE_TMP_ROOT
@@ -2132,6 +2142,7 @@ eq "and builds when alsoShips names it" "build" "$(. "$root/templates/scripts/ci
 eq "the generated files ship too, and a mock beside them does not" "build skip" "$(. "$root/templates/scripts/ci/deploy-lib.sh"; echo "$(deploy_skip 'design/generated/design.generated.css' packages '' 'design/tokens.json design/generated') $(deploy_skip 'design/mocks/a.html' packages '' 'design/tokens.json design/generated')")"
 eq "the gate, health and Deploy read alsoShips like neverShips" "2 1 1" "$(grep -c 'alsoShips' "$root/templates/scripts/ci/deploy-gate.sh" | head -1) $(grep -c 'alsoShips' "$root/templates/scripts/ci/deploy-health.sh") $(grep -c 'alsoShips' "$root/templates/.github/workflows/deploy.yml")"
 eq "the skipped line names the rule it applied" "rule: only packages ships, except mcp cli, plus design/tokens.json; docs, specs, tests, design, the plugin scripts and Markdown never do" "$(mkdir -p "$SUITE_TMP_ROOT/ss/.claude" && cd "$SUITE_TMP_ROOT/ss" && printf '{"appRoot": "packages", "neverShips": ["mcp", "cli"], "alsoShips": ["design/tokens.json"]}' > .claude/deploy.json && . "$root/templates/scripts/ci/deploy-lib.sh" && . "$root/templates/scripts/ci/queue/rules-said.sh" && skip_rule_said)"
+eq "the skipped line names its rule even where only the queue's words are loaded" "rule: only packages ships; docs, specs, tests, design, the plugin scripts and Markdown never do" "$(mkdir -p "$SUITE_TMP_ROOT/ss2/.claude" && cd "$SUITE_TMP_ROOT/ss2" && printf '{"appRoot": "packages"}' > .claude/deploy.json && here="$root/templates/scripts/ci" && . "$root/templates/scripts/ci/queue/rules-said.sh" && skip_rule_said)"
 eq "a drain that lands a change it waited on names it and the round" "round 7: landing #1200, Review drawer, which was still running CI in round 4 and has turned green." "$(. "$root/templates/scripts/ci/queue/rules-said.sh"; flaky_dir="$SUITE_TMP_ROOT/late"; mkdir -p "$flaky_dir"; rm -f "$flaky_dir/waited-round"; say() { printf '%s\n' "$*"; }; pr_field() { echo 'Review drawer'; }; late_wait_note 4; late_wait_note 5; late_lands_say 7 1200)"
 eq "and says nothing when it never waited" "" "$(. "$root/templates/scripts/ci/queue/rules-said.sh"; flaky_dir="$SUITE_TMP_ROOT/late"; rm -f "$flaky_dir/waited-round"; say() { printf '%s\n' "$*"; }; late_lands_say 2 1200)"
 eq "a serial run on a merged change says it is already on main" "already on main" "$(. "$root/templates/scripts/ci/queue/serial.sh"; . "$root/templates/scripts/ci/queue/rules-said.sh"; gh() { echo true; }; batch_line() { echo "$2"; }; serial_one 1200)"
@@ -2527,6 +2538,72 @@ eq "a drain past its budget leaves the slow end to the next" "yes" "$(drain_over
 qd_wf="$root/templates/.github/workflows/queue-drain.yml"
 eq "a red or cancelled pull request run starts no drain, on either job" "2" "$(grep -c "workflow_run.conclusion == 'success'" "$qd_wf")"
 eq "the lock asks GitHub only outside Actions" "1 1" "$(grep -c 'queue-drain.yml/runs?per_page=5' "$mq_all") $(grep -c '\[ -z "\$why" \] && \[ -z "\${GITHUB_ACTIONS:-}" \]' "$mq_all")"
+
+# One queue per repository: a lock ref on GitHub that every queue sees, in two checkouts of the rooftop-garden app.
+rl=$(mktemp -d); mkdir -p "$rl/bin" "$rl/a" "$rl/b"
+( cd "$rl/a" && git init -q . && git -c user.email=maya@example.com -c user.name=Maya commit -q --allow-empty -m "plant the beds" && git update-ref refs/remotes/origin/main HEAD ) >/dev/null 2>&1
+( cd "$rl/b" && git init -q . && git -c user.email=maya@example.com -c user.name=Maya commit -q --allow-empty -m "plant the beds" && git update-ref refs/remotes/origin/main HEAD ) >/dev/null 2>&1
+cat > "$rl/bin/gh" <<'GH'
+#!/bin/sh
+msg=""; for a in "$@"; do case "$a" in message=*) msg=${a#message=} ;; sha=*) rsha=${a#sha=} ;; esac; done
+case "$*" in
+  *"-X POST"*"git/commits"*) s="c$$$(date +%s)"; printf '%s' "$msg" > "$RL_DIR/commit-$s"; echo "$s" ;;
+  *"-X POST"*"git/refs"*) if [ -f "$RL_DIR/ref" ]; then echo "HTTP 422: Reference already exists" >&2; exit 1; fi; echo "$rsha" > "$RL_DIR/ref" ;;
+  *"-X DELETE"*"git/refs/queue/lock"*) rm -f "$RL_DIR/ref" ;;
+  *"git/ref/queue/lock"*) [ -f "$RL_DIR/ref" ] && cat "$RL_DIR/ref" || exit 1 ;;
+  *"git/commits/"*) cat "$RL_DIR/commit-${1##*/}" 2>/dev/null || for a in "$@"; do case "$a" in */git/commits/*) cat "$RL_DIR/commit-${a##*/}" ;; esac; done ;;
+esac
+exit 0
+GH
+chmod +x "$rl/bin/gh"
+cat > "$rl/take.sh" <<RLS
+#!/bin/sh
+here="$root/templates/scripts/ci"
+. "\$here/lib.sh"
+for rl_f in "\$here"/queue/rules-*.sh; do . "\$rl_f"; done
+. "\$here/queue/state.sh"; . "\$here/queue/lock.sh"
+tab=\$(printf '\t'); flaky_dir="\$PWD/q"; mkdir -p "\$flaky_dir"; log_file="\$flaky_dir/log"; gh_err="\$flaky_dir/gh.err"; lock_file="\$flaky_dir/lock"
+have_lock=no; base=main; mode=drain; QUEUE_LOCKED=""
+take_lock
+echo "took the lock"
+trap - EXIT
+RLS
+rl_take() { ( cd "$rl/$1" && PATH="$rl/bin:$PATH" RL_DIR="$rl" GITHUB_ACTIONS= sh "$rl/take.sh" 2>&1 ); }
+rl_a=$(rl_take a)
+eq "the first drain takes the lock" "took the lock" "$rl_a"
+eq "the lock is one ref, held by a commit that names the drain" "1 1" "$(ls "$rl"/commit-* | wc -l | tr -d ' ') $(grep -c 'queue lock: --drain pid' "$rl"/commit-*)"
+rl_b=$(rl_take b)
+eq "a second drain in another checkout is refused, naming the first" "yes" "$(case "$rl_b" in "Another queue is running: a --drain started 0 minute(s) ago is still running (pid "*") on "*". Wait for it"*) echo yes ;; *) echo "no: $rl_b" ;; esac)"
+eq "and never takes the lock, nor its own file lock" "no" "$([ -f "$rl/b/q/lock" ] && echo yes || echo no)"
+# The same checkout's drain that died leaves a lock nobody holds: it is taken over.
+rl_a2=$(rl_take a)
+eq "a lock whose process is gone, in the checkout that wrote it, is taken over" "yes" "$(case "$rl_a2" in *"Taking over a queue lock on GitHub whose holder is gone"*"took the lock") echo yes ;; *) echo "no: $rl_a2" ;; esac)"
+# An old lock from another machine is stale after three hours.
+rl_old=$(printf 'queue lock: --batch pid 4242 host GARDEN-PC run - dir 1 at 1000')
+printf '%s' "$rl_old" > "$rl/commit-old"; echo old > "$rl/ref"
+eq "a lock older than three hours is taken over, whoever held it" "yes" "$(rl_b=$(rl_take b); case "$rl_b" in *"Taking over"*"took the lock") echo yes ;; *) echo "no: $rl_b" ;; esac)"
+eq "the holder's words read as the file lock's do" "a --drain started 12 minute(s) ago is still running (pid 4242) on GARDEN-PC, Queue drain run 77" "$(. "$root/templates/scripts/ci/queue/rules-drain.sh"; . "$root/templates/scripts/ci/queue/lock.sh"; remote_lock_reason "$(remote_lock_message drain 4242 GARDEN-PC 77 1 1000)" 1720 yes)"
+eq "a finished Queue drain run is no holder" "" "$(. "$root/templates/scripts/ci/queue/rules-drain.sh"; . "$root/templates/scripts/ci/queue/lock.sh"; remote_lock_reason "$(remote_lock_message drain 4242 GARDEN-PC 77 1 1000)" 1720 no)"
+eq "the lock is released only by the queue that holds it" "gone kept" "$(cd "$rl/a" && . "$root/templates/scripts/ci/queue/state.sh" && . "$root/templates/scripts/ci/queue/lock.sh" && PATH="$rl/bin:$PATH" RL_DIR="$rl" && export PATH RL_DIR && { echo mine > "$rl/ref"; remote_lock_sha=mine; remote_lock_release; [ -f "$rl/ref" ] && printf 'kept' || printf 'gone'; echo theirs > "$rl/ref"; remote_lock_sha=mine; remote_lock_release; printf ' '; [ -f "$rl/ref" ] && printf 'kept' || printf 'gone'; })"
+eq "the merge queue and its unlock load and release it" "1 1 1" "$(grep -c 'queue/lock.sh' "$root/templates/scripts/ci/merge-queue.sh") $(grep -c 'remote_lock_take' "$root/templates/scripts/ci/queue/state.sh") $(grep -c 'remote_lock_release' "$root/templates/scripts/ci/queue/state.sh")"
+# A batch whose member landed meanwhile is closed, never merged a second time.
+bm_dir=$(mktemp -d); mkdir -p "$bm_dir/bin"
+cat > "$bm_dir/bin/gh" <<'GH'
+#!/bin/sh
+case "$*" in
+  *"pulls/41"*) echo "open false" ;;
+  *"pulls/42"*) echo "closed true" ;;
+  *) : ;;
+esac
+GH
+chmod +x "$bm_dir/bin/gh"
+eq "a batch whose members are all open goes on" "0" "$(. "$root/templates/scripts/ci/queue/lock.sh"; close_pr() { echo "closed $1"; }; PATH="$bm_dir/bin:$PATH"; batch_members_open 9 "$(printf '41\tbeds\n')"; echo $?)"
+eq "the batch checks its members just before it merges" "1" "$(grep -c 'wait_quiet_main; batch_members_open' "$root/templates/scripts/ci/queue/batch.sh")"
+eq "the drain reads a pull request's labels and body with a separator that is not whitespace, so no labels never hides a hold line" "1 0" "$(grep -cF 'printf '"'"'\037'"'"')" read -r h_num h_labels h_body' "$root/templates/scripts/ci/merge-queue.sh") $(grep -cF 'IFS="$tab" read -r h_num' "$root/templates/scripts/ci/merge-queue.sh")"
+rm -f "$rl/ref"; ( cd "$rl/b" && git update-ref -d refs/remotes/origin/main )
+eq "a queue with nothing to anchor the lock on goes on with its own lock" "yes" "$(rl_c=$(rl_take b); case "$rl_c" in *"going on with this machine's lock alone"*"took the lock") echo yes ;; *) echo "no: $rl_c" ;; esac)"
+eq "a batch with a member that landed is closed and not merged" "$(printf "closed 9
+rc 1")" "$(. "$root/templates/scripts/ci/queue/lock.sh"; close_pr() { echo "closed $1"; }; PATH="$bm_dir/bin:$PATH"; batch_members_open 9 "$(printf '41\tbeds\n42\twater\n')"; echo "rc $?")"
 
 section 'the package a file belongs to'
 roots='.
@@ -4840,6 +4917,28 @@ eq "before: an In progress issue nobody works stops the plan, for hours" "stop: 
 eq "after: the same board with idle runners proposes a dispatch" "dispatch 796	Seed packets list their sowing month" "$(sl_stale=$(stale_lines "$sl_facts" "$sl_pulls" '' "$sl_now" 2); propose_round "$(stale_snapshot "$sl_blocked" "$sl_stale")" 2 4 | sed -n 1p)"
 eq "plan.sh runs the stale step before it judges the round, and the skill says so" "1 1" "$(grep -c 'stale_apply' "$root/scripts/drive/plan.sh") $(grep -q "stale" "$root/skills/project-drive/SKILL.md" && echo 1 || echo 0)"
 
+
+# An open pull request with no hold line or no labels (Maya's garden-bed pull requests) keeps its Closes numbers.
+sl_us=$(printf '\037')
+sl_list=$(printf '1201%sgarden-beds%s%s%s1022,1069\n1203%swatering%sstate:ready,task%s%s1110\n1204%sfrost%squeue:hold%sQueue: hold, for your read%s1106\n' "$sl_us" "$sl_us" "$sl_us" "$sl_us" "$sl_us" "$sl_us" "$sl_us" "$sl_us" "$sl_us" "$sl_us" "$sl_us" "$sl_us")
+eq "a pull request with no hold line and no labels is read with its Closes numbers" "1201	no	1022,1069" "$(pull_link_row "$sl_list" | sed -n 1p)"
+eq "one with labels and no hold line is not held" "1203	no	1110" "$(pull_link_row "$sl_list" | sed -n 2p)"
+eq "one held by its label is held" "1204	yes	1106" "$(pull_link_row "$sl_list" | sed -n 3p)"
+sl_open=$(pull_link_row "$sl_list")
+sl_two=$(printf 'issue\t1022\tWatering follows the season\tstate:in-progress\t%s\tbody\nissue\t1069\tBed photos in the list\tstate:in-progress\t%s\tbody\n' "$sl_old" "$sl_old")
+eq "so the issues of those open pull requests are not stale" "" "$(stale_lines "$sl_two" "$sl_open" '' "$sl_now" 2)"
+eq "and read through the old tab-collapsing way they were" "stale	1022	ready		Watering follows the season" "$(stale_lines "$sl_two" "$(printf '1201\tno\t\n')" '' "$sl_now" 2 | head -n 1)"
+eq "plan.sh reads the list with a separator that is not whitespace" "1 1 0" "$(grep -c 'join("\\u001f")' "$root/scripts/drive/plan.sh") $(grep -c 'pull_link_row "\$pr_list"' "$root/scripts/drive/plan.sh") $(grep -c 'IFS="\$tab" read -r p_num' "$root/scripts/drive/plan.sh")"
+# A Ready issue an open pull request already closes is never started again.
+sl_ready=$(printf 'issue\t1022\tWatering follows the season\tstate:ready\t%s\tbody\nissue\t1069\tBed photos in the list\tstate:ready\t%s\tbody\nissue\t1110\tFrost alerts\tstate:ready\t%s\tbody\nissue\t1112\tCompost reminders\tstate:ready\t%s\tbody\n' "$sl_old" "$sl_old" "$sl_old" "$sl_old")
+sl_carried=$(carried_holds "$sl_ready" "$sl_open")
+eq "a Ready issue a batched or plain open pull request closes gets a hold line, not a dispatch" "hold	1022	Watering follows the season	Its pull request (#1201) is already open and carries it; no agent is started on it" "$(printf '%s\n' "$sl_carried" | sed -n 1p)"
+eq "a plain open pull request is named too" "hold	1110	Frost alerts	Its pull request (#1203) is already open and carries it; no agent is started on it" "$(printf "%s
+" "$sl_carried" | grep "	1110	")"
+eq "one whose pull request is held for the owner says so" "hold	1106	Review drawer	Its pull request (#1204) is held for your read; no agent is started on it" "$(carried_holds "$(printf "issue	1106	Review drawer	state:ready	x	body
+")" "$sl_open")"
+eq "a Ready issue no pull request closes gets none" "0" "$(printf '%s\n' "$sl_carried" | grep -c '	1112	')"
+eq "plan.sh adds the carried issues to its hold lines" "1" "$(grep -c 'carried_holds "\$facts" "\$pull_links"' "$root/scripts/drive/plan.sh")"
 section 'drive runs rounds of units'
 . "$root/scripts/drive/drive-lib.sh"
 . "$root/scripts/drive/bundle-lib.sh"
@@ -5403,6 +5502,7 @@ eq "and the next session start does not name them again" "" "$(an_brief)"
 eq "the slow read keeps the owed answers for it" "1" "$(grep -c 'answers.sh" --all 2>/dev/null | keep answers' "$root/hooks/scripts/session-brief-slow.sh")"
 
 # --- end of blocks: the summary, kept in every part.
+eq "no test wrote into the checkout's own queue state" "$queue_picture_before" "$([ "$queue_picture_before" = skipped ] && echo skipped || queue_picture)"
 eq "no process started by this suite is still running" "" "$(spawned_alive)"
 block_end
 stop_if_red

@@ -64,7 +64,7 @@ fi
 . "$here/numbering-lib.sh"
 # One library a step, in this order; each holds functions only. Read from the
 # queue's own folder, which is beside this script wherever it runs from.
-. "$here/queue/state.sh"
+. "$here/queue/state.sh"; . "$here/queue/lock.sh"
 . "$here/queue/requests.sh"
 . "$here/queue/rush.sh"
 . "$here/queue/runs.sh"
@@ -242,8 +242,8 @@ if [ "$mode" = drain ]; then
     queue_step="drain round $round: reading holds"
     # Held pull requests (a queue:hold label or a "Queue: hold" line) wait,
     # however green.
-    held=$(gh api "repos/{owner}/{repo}/pulls?state=open&per_page=100" --jq '.[] | "\(.number)\t\([.labels[].name] | join(","))\t\((.body // "") | gsub("[\r\n]+"; " | "))"' 2>/dev/null \
-      | while IFS="$tab" read -r h_num h_labels h_body; do
+    held=$(gh api "repos/{owner}/{repo}/pulls?state=open&per_page=100" --jq '.[] | "\(.number)\u001f\([.labels[].name] | join(","))\u001f\((.body // "") | gsub("[\r\n]+"; " | "))"' 2>/dev/null \
+      | while IFS="$(printf '\037')" read -r h_num h_labels h_body; do
         h_why=$(held_reason "$(printf '%s' "$h_labels" | tr ',' '\n')" "$(printf '%s' "$h_body" | sed 's/ | /\
 /g')")
         if [ -n "$h_why" ]; then printf '%s ' "$h_num"; fi

@@ -94,7 +94,7 @@ pr_rollup() {
   rest_rollup_named "$(check_lines "$1" || { rate_stop; echo; })" "${QUEUE_SUMMARY_CHECK:-CI passed}"
 }
 
-unlock() { if [ "$have_lock" = yes ]; then rm -f "$lock_file" 2>/dev/null; fi; have_lock=no; }
+unlock() { if [ "$have_lock" = yes ]; then rm -f "$lock_file" 2>/dev/null; remote_lock_release; fi; have_lock=no; }
 # queue_exit: the one exit trap. The queue never stops without a word:
 # under set -e a failing command ends it at once, and twice that was a
 # drain exiting 1 with nothing printed, overnight, so nothing merged. A
@@ -213,6 +213,8 @@ EOF_RUN
     echo "Another queue is running: $why${last:+; its last line: $last}. Wait for it to finish rather than starting a second one; follow it with $follow."
     exit 1
   fi
+  # The lock every queue sees, on GitHub (queue/lock.sh), before this checkout's own.
+  remote_lock_take
   printf '%s\t%s\t%s\n' "$$" "$(date +%s)" "--$mode" > "$lock_file"
   have_lock=yes
   printf '%s %s\n' "$(date '+%H:%M')" "lock taken by --$mode (pid $$)" >> "$log_file" 2>/dev/null || true

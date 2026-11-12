@@ -70,11 +70,11 @@ rm -f "${TMPDIR:-/tmp}/board-now.$$.err" 2>/dev/null
 
 rules=""
 [ -f scripts/ci/classes.txt ] && [ -f scripts/ci/lib.sh ] && rules=$(cat scripts/ci/classes.txt)
-tab=$(printf '\t')
+tab=$(printf '\t'); us=$(printf '\037')
 tmp=$(mktemp)
 
 # Turn the facts into a snapshot, with no further network calls.
-printf '%s\n' "$facts" | while IFS="$tab" read -r kind num title a b c d e; do
+printf '%s\n' "$facts" | tr '\t' '\037' | while IFS="$us" read -r kind num title a b c d e; do
   case "$kind" in
     pr)
       case "$a" in SUCCESS) ci=green ;; FAILURE|ERROR) ci=red ;; *) ci=pending ;; esac
@@ -131,12 +131,11 @@ snapshot=$(cat "$tmp")
 # main; a red one also gets how many times it was red. One call for the
 # list, one per pull request, one more per red one; all REST.
 rest_lines=""
-pr_list=$(gh api "repos/{owner}/{repo}/pulls?state=open&per_page=100" --jq '.[] | [(.number | tostring), .head.ref, ([.labels[].name] | join(",")), ((.body // "") | [splits("\r?\n")] | map(select(test("^Queue: hold"; "i"))) | first // ""), ((.body // "") | [scan("(?i)(?:closes|fixes|resolves) #([0-9]+)") | .[0]] | join(","))] | @tsv' 2>/dev/null | tr -d '\r')
-pull_links=""
-while IFS="$tab" read -r p_num p_ref p_labels p_hold p_closes; do
+pr_list=$(gh api "repos/{owner}/{repo}/pulls?state=open&per_page=100" --jq '.[] | [(.number | tostring), .head.ref, ([.labels[].name] | join(",")), ((.body // "") | [splits("\r?\n")] | map(select(test("^Queue: hold"; "i"))) | first // ""), ((.body // "") | [scan("(?i)(?:closes|fixes|resolves) #([0-9]+)") | .[0]] | join(","))] | join("\u001f")' 2>/dev/null | tr -d '\r')
+# One separator that is not whitespace, so a pull request with no hold line or no labels keeps its empty field; a tab would collapse it and shift the Closes numbers left.
+pull_links=$(pull_link_row "$pr_list")
+while IFS="$us" read -r p_num p_ref p_labels p_hold p_closes; do
   [ -n "$p_num" ] || continue
-  pull_links="${pull_links}${p_num}${tab}$(held_by "$p_labels" "$p_hold")${tab}${p_closes}
-"
   p_info=$(gh api "repos/{owner}/{repo}/pulls/$p_num" --jq '[(.mergeable_state // ""), .head.sha] | @tsv' 2>/dev/null | tr -d '\r')
   p_state=$(printf '%s' "$p_info" | cut -f1); p_sha=$(printf '%s' "$p_info" | cut -f2)
   p_reds=0; p_ci=$(printf '%s\n' "$snapshot" | awk -F'\t' -v n="$p_num" '$1 == "pr" && $2 == n { print $4 }')
@@ -202,7 +201,9 @@ past=$(past_spec_files "$(git log -n 300 --name-only --format='@@ %s' main 2>/de
 guesses=""; running=""
 # A ready issue that says it comes after another open one is held, naming what it waits on, read afresh each run.
 reasons=$(hold_reasons "$facts")
-while IFS="$tab" read -r kind num title a b c d e; do
+# An open pull request that already closes a Ready issue means no agent is started on it again, held or batched (stale-lib.sh).
+reasons=$(printf '%s\n%s\n' "$reasons" "$(carried_holds "$facts" "$pull_links")" | sed '/^$/d')
+while IFS="$us" read -r kind num title a b c d e; do
   [ "$kind" = issue ] || continue
   case "$(state_of_labels "$a")" in
     ready)
@@ -217,7 +218,7 @@ while IFS="$tab" read -r kind num title a b c d e; do
 " ;;
   esac
 done <<EOF_FACTS
-$facts
+$(printf '%s\n' "$facts" | tr '\t' '\037')
 EOF_FACTS
 if [ -n "$guesses" ] || [ -n "$reasons" ]; then
   units=$(plan_units "$guesses" "$running")

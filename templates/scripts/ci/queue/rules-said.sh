@@ -7,6 +7,9 @@
 # skip_rule_said: the rule the deploy gate applied, from .claude/deploy.json,
 # so a wrong skip is seen in the log.
 skip_rule_said() {
+  # The JSON helpers live in deploy-lib.sh, which merge-queue.sh does not
+  # source: a skipped deploy once printed an empty rule for want of them.
+  command -v json_string >/dev/null 2>&1 && command -v json_words >/dev/null 2>&1 || . "${here:-$(dirname "$0")}/deploy-lib.sh"
   sk_cfg=$(cat .claude/deploy.json 2>/dev/null || true)
   sk_app=$(json_string "$sk_cfg" appRoot); sk_app=${sk_app:-.}
   sk_never=$(json_words "$sk_cfg" neverShips); sk_also=$(json_words "$sk_cfg" alsoShips)

@@ -35,8 +35,10 @@ stale_epoch() {
 # line per In progress issue that is not a running unit:
 #   stale<TAB>ISSUE<TAB>ready|waiting<TAB>PULL<TAB>TITLE
 stale_lines() {
-  sl_tab=$(printf '\t')
-  printf '%s\n' "$1" | tr -d '\r' | while IFS="$sl_tab" read -r sl_kind sl_num sl_title sl_labels sl_updated sl_rest; do
+  # Tab is whitespace to read, which collapses an empty field and shifts the
+  # rest left; the unit separator is not, so an empty field stays empty.
+  sl_tab=$(printf '\037')
+  printf '%s\n' "$1" | tr -d '\r' | tr '\t' '\037' | while IFS="$sl_tab" read -r sl_kind sl_num sl_title sl_labels sl_updated sl_rest; do
     [ "$sl_kind" = issue ] || continue
     [ "$(state_of_labels "$sl_labels")" = in-progress ] || continue
     sl_pull=$(printf '%s\n' "$2" | awk -F'\t' -v n="$sl_num" '{ k = split($3, a, ","); for (i = 1; i <= k; i++) if (a[i] == n) { print $1 "\t" $2 } }')
@@ -91,8 +93,8 @@ stale_labels_json() {
 # stale_apply STALE FACTS: set each stale issue right over REST. A waiting one
 # gets the ask first, then the label. Prints a line for any it could not set.
 stale_apply() {
-  sa_tab=$(printf '\t')
-  printf '%s\n' "$1" | while IFS="$sa_tab" read -r sa_k sa_num sa_kind sa_pr sa_title; do
+  sa_tab=$(printf '\037')
+  printf '%s\n' "$1" | tr '\t' '\037' | while IFS="$sa_tab" read -r sa_k sa_num sa_kind sa_pr sa_title; do
     [ "$sa_k" = stale ] || continue
     sa_labels=$(printf '%s\n' "$2" | tr -d '\r' | awk -F'\t' -v n="$sa_num" '$1 == "issue" && $2 == n { print $4; exit }' | tr ',' '\n')
     sa_slug=ready; [ "$sa_kind" = waiting ] && sa_slug=waiting-on-owner
@@ -128,4 +130,39 @@ stale_snapshot() {
     BEGIN { n = split(stale, ls, "\n"); for (i = 1; i <= n; i++) { split(ls[i], f, "\t"); if (f[1] == "stale") to[f[2]] = (f[3] == "waiting" ? "waiting-on-owner" : "ready") } }
     $1 == "issue" && ($2 in to) && $4 == "in-progress" { $4 = to[$2] }
     { print }'
+}
+
+# carried_holds FACTS PULLS: a Ready issue that an open pull request already
+# closes is never started again (a second agent would do work the pull request
+# carries), whether the pull request is held for the owner or a member of the
+# queue's running batch. One hold line per such issue, in the shape of
+# bundle-lib's hold_reasons: hold<TAB>NUMBER<TAB>TITLE<TAB>WHY. PULLS are
+# NUMBER<TAB>HELD<TAB>CLOSES, as stale_lines reads them.
+carried_holds() {
+  ch_us=$(printf '\037')
+  printf '%s\n' "$1" | tr -d '\r' | tr '\t' '\037' | while IFS="$ch_us" read -r ch_kind ch_num ch_title ch_labels ch_rest; do
+    [ "$ch_kind" = issue ] || continue
+    [ "$(state_of_labels "$ch_labels")" = ready ] || continue
+    ch_pull=$(printf '%s\n' "$2" | awk -F'\t' -v n="$ch_num" '{ k = split($3, a, ","); for (i = 1; i <= k; i++) if (a[i] == n) { print $1 "\t" $2; exit } }')
+    [ -n "$ch_pull" ] || continue
+    ch_pr=$(printf '%s' "$ch_pull" | cut -f1); ch_held=$(printf '%s' "$ch_pull" | cut -f2)
+    if [ "$ch_held" = yes ]; then ch_why="Its pull request (#$ch_pr) is held for your read; no agent is started on it"
+    else ch_why="Its pull request (#$ch_pr) is already open and carries it; no agent is started on it"; fi
+    printf 'hold\t%s\t%s\t%s\n' "$ch_num" "$ch_title" "$ch_why"
+  done
+}
+
+# pull_link_row LIST_LINE: the open pull request the plan reads from REST as one
+# line of five fields separated by the unit separator (number, branch, labels,
+# its "Queue: hold" line, the issue numbers it closes), as
+# NUMBER<TAB>HELD<TAB>CLOSES. The separator is not whitespace to read, so a
+# pull request with no hold line or no labels keeps its empty field instead of
+# having its Closes numbers shifted into it (the drive once called the issues
+# of two open pull requests stale for that).
+pull_link_row() {
+  pl_us=$(printf '\037')
+  printf '%s\n' "$1" | tr -d '\r' | while IFS="$pl_us" read -r pl_num pl_ref pl_labels pl_hold pl_closes; do
+    [ -n "$pl_num" ] || continue
+    printf '%s\t%s\t%s\n' "$pl_num" "$(held_by "$pl_labels" "$pl_hold")" "$pl_closes"
+  done
 }
