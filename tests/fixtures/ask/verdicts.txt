@@ -11,3 +11,5 @@ emphasis one
 code-recommendation unrecommended
 question-only question
 no-question none
+instructions instructions
+action-defer actiondefer

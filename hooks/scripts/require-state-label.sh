@@ -2,10 +2,12 @@
 # PreToolUse hook for Bash: refuses `gh issue create` without a State label.
 # The rule it enforces: every issue carries its state from the moment it is
 # filed, so the board and the audits can trust the label.
-# It holds a second rule: an ask gives choices and recommends exactly one.
+# It holds a second rule: a decision gives choices and recommends exactly one.
 # Setting an issue to waiting on the owner is refused while the ask it was just
-# left with gives choices and none, or more than one, is recommended, or is a
-# question with no choices at all.
+# left with gives choices and none, or more than one, is recommended, is a
+# question with no choices at all, or is a step the owner does outside the app
+# dressed as a choice between doing it and setting it aside. A comment that
+# starts "Instructions:" is steps, not a decision, and passes without choices.
 here=$(dirname "$0")
 . "$here/lib.sh"
 . "$here/refusal-log.sh"

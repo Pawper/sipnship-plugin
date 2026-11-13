@@ -5044,6 +5044,7 @@ eq "a deferral without its issues names none" "" "$(deferred_holds 'defer 2 read
 eq "the sized line carries the plan's words" "sized: 5 runners online, 4 free for agents" "$(sized_line '5 runners online, 4 free for agents')"
 eq "no words, no sized line" "" "$(sized_line '')"
 eq "an ask with one recommended choice may be marked without approval" "yes no no no" "$(mark_waiting_ok one) $(mark_waiting_ok none) $(mark_waiting_ok question) $(mark_waiting_ok many)"
+eq "an Instructions ask may be marked without approval, an action-and-deferral one may not" "yes no" "$(mark_waiting_ok instructions) $(mark_waiting_ok actiondefer)"
 eq "the plan prints its own sized line" "1" "$(grep -c '^echo "sized: ${runners_say}"' "$root/scripts/drive/plan.sh")"
 eq "the skill says mark-waiting runs without approval, in the shape" "1 1" "$(grep -c 'Like .ask-owner., it runs without approval' "$root/skills/project-drive/SKILL.md") $(grep -c 'scripts/ci/ask-lib.sh. is' "$root/skills/project-drive/SKILL.md")"
 # The plan holds mark-waiting to the ask rule before it proposes it.
@@ -5496,7 +5497,7 @@ section 'an ask with choices recommends one'
 # The shared cases: the dashboard's reader is tested against the same list.
 ak_fx="$fx/ask"
 ak_cases=$(grep -v '^#' "$ak_fx/verdicts.txt" | tr -d '\r')
-eq "the shared list has its cases" "9" "$(printf '%s\n' "$ak_cases" | grep -c .)"
+eq "the shared list has its cases" "11" "$(printf '%s\n' "$ak_cases" | grep -c .)"
 printf '%s\n' "$ak_cases" | while read -r ak_name ak_want; do
   [ -n "$ak_name" ] || continue
   eq "the shared case $ak_name reads $ak_want" "$ak_want" "$(ask_verdict < "$ak_fx/$ak_name.md")"
@@ -5510,6 +5511,9 @@ eq "a verdict that keeps the rule has nothing to fix" "" "$(ask_fix one)$(ask_fi
 eq "a question with no choices says how to turn it into choices, one recommended" "yes" "$(ask_fix question | grep -q 'question with no choices. Turn it into choices: .*your best guess first, ending "Recommended."' && echo yes)"
 eq "none recommended says what to write" "yes" "$(ask_fix unrecommended | grep -q 'End the one you would pick with "Recommended."' && echo yes)"
 eq "two recommended says to keep one" "yes" "$(ask_fix several | grep -q 'more than one says "Recommended"' && echo yes)"
+eq "Instructions is read only as the comment's first word" "none" "$(printf 'The change is held.\n\nInstructions: Set up the hub\n\n1. Add the secret.\n' | ask_verdict)"
+eq "Instructions needs no fix" "" "$(ask_fix instructions)"
+eq "an action and a deferral says to write Instructions" "yes" "$(ask_fix actiondefer | grep -q 'Write it as Instructions instead' && echo yes)"
 
 # Which command sets an issue to waiting on the owner.
 eq "gh issue edit adding the label" "207" "$(waiting_on_owner_issue 'gh issue edit 207 --add-label state:waiting-on-owner --remove-label state:in-progress')"

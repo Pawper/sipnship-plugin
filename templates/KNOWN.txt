@@ -1,5 +1,6 @@
 .claude/rules.txt 302bcd5e29321b6f03639be2940432cea0f9816b
 .claude/rules.txt 7982c57baed3cc923bd3f2a2c97d9146b463af15
+.claude/rules.txt b5f8cafd973e77bf9707a9f14bd27fc4ad4d59c0
 .github/workflows/audit.yml 00ddf6c8379ebc42d1e07aba5e6dccb0a2ff58c6
 .github/workflows/audit.yml 0ebe2349707bf37c98b07590f081469edaa6d9f7
 .github/workflows/audit.yml 12121edcef6681c58106d1d75be2765eacab74de
@@ -180,6 +181,7 @@ scripts/ci/add-runner.ps1 acee7e1e56ef8f4878d04f01c96d52683e8ed62d
 scripts/ci/ask-audit.sh a46f87ac2f28db195d54cd64dea6b0b626de7a55
 scripts/ci/ask-audit.sh f33329b0f6995496914745b67295e7216a04800a
 scripts/ci/ask-lib.sh 0b29b024b3e69559150f82f5791c2c6e834292da
+scripts/ci/ask-lib.sh 366910657643abfae0d303c97d656c470ef98d63
 scripts/ci/ask-lib.sh 84f4052c60eb944519330a7dce6fec8e5e115ca1
 scripts/ci/batch-lib.sh 04e0a0b65fbbabe00cefd734a79aabb45fb70934
 scripts/ci/batch-lib.sh 07c23e7392dfc8e304db89557f5c513d4ff6f7e8

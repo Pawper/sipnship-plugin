@@ -332,6 +332,22 @@ Keep a year of watering history, or ninety days?
   ```
 - Comment and set the State together: a comment more than ten minutes older than the State is not read as its
   reason, and a later ask on the issue replaces an earlier one.
+- A step the owner does outside the app (add a secret, bring a runner online, run a command) is Instructions,
+  never a decision. Start the comment's first line with the word `Instructions:` and a short title, then the
+  steps as a numbered list (what to do, where, any value or command in code), with no choices and no
+  "Recommended.". The card shows the steps with Done, and the hook accepts it as an ask without a
+  recommendation:
+
+  ```
+  Instructions: Set up the sensor hub for the herb beds
+  1. Add a repository secret named `FROST_SENDER_KEY` in the repository's settings, under Secrets.
+  2. Install the hub on the rooftop network by running `npx sensor-hub install --bed herbs` in a terminal.
+  ```
+
+  Use choices only for a real decision. Two choices that are "do the step" and "set it aside" are an owner
+  action dressed as a decision: the hook refuses them and the nightly audit names them. When you can see the
+  steps are already done (the secret exists, the runner is online), say so on the issue and move it on
+  instead of waiting.
 - No quoted lines or code in the ask itself; they are never read. The card shows the words as written, in
   quotation marks, so write them to the owner, plainly.
 

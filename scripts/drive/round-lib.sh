@@ -237,4 +237,4 @@ hold_dispatch() {
 # VERDICT is ask_verdict's word for the issue's latest ask (scripts/ci/ask-lib.sh, the one reader).
 # "yes" only for an ask in the shape (choices, exactly one recommended): the
 # plan's mark-waiting then runs without approval, like ask-owner.
-mark_waiting_ok() { if [ "$1" = one ]; then echo yes; else echo no; fi; }
+mark_waiting_ok() { if [ "$1" = one ] || [ "$1" = instructions ]; then echo yes; else echo no; fi; }
