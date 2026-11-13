@@ -1,7 +1,7 @@
 {
   "name": "sipnship",
   "displayName": "SipNShip",
-  "version": "0.43.9",
+  "version": "0.43.10",
   "icon": "./assets/icon.png",
   "documentationUrl": "https://github.com/Pawper/sipnship-plugin#readme",
   "supportUrl": "https://github.com/Pawper/sipnship-plugin/issues",
