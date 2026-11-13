@@ -4458,6 +4458,10 @@ fr_ci="$root/templates/.github/workflows/ci.yml"
 eq "only the checks job cancels the run, through the API, never gh run cancel" "0 1 1" "$(grep -c 'gh run cancel' "$fr_ci") $(grep -c 'failure-report.sh cancel' "$fr_ci") $(grep -c 'actions/runs/\$GITHUB_RUN_ID/cancel' "$root/templates/scripts/ci/failure-report.sh")"
 eq "a job cancelled after its own step failed is reported failed, not cancelled because of it" "1 0" "$(run_report "$(printf '11\tchecks\tcompleted\tcancelled\tgarden-1\tFail when STATUS.md is stale\n12\ttests (watering)\tcompleted\tcancelled\tgarden-2\t')" "" | grep -c '^### checks failed$') $(run_report "$(printf '11\tchecks\tcompleted\tcancelled\tgarden-1\tFail when STATUS.md is stale\n12\ttests (watering)\tcompleted\tcancelled\tgarden-2\t')" "" | grep -c '^- checks$')"
 eq "and the one cancelled with no step failed is cancelled because of it" "1" "$(run_report "$(printf '11\tchecks\tcompleted\tcancelled\tgarden-1\tFail when STATUS.md is stale\n12\ttests (watering)\tcompleted\tcancelled\tgarden-2\t')" "" | grep -c '^- tests (watering)$')"
+fr_stop=$(printf '11\tchecks\tcompleted\tcancelled\tgarden-1\t\n12\ttests (watering)\tcompleted\tcancelled\tgarden-2\t\n13\tclassify\tcompleted\tsuccess\tgarden-1\t')
+fr_real=$(printf '11\tchecks\tcompleted\tcancelled\tgarden-1\tFail when STATUS.md is stale\n13\tclassify\tcompleted\tsuccess\tgarden-1\t')
+eq "cancelled with no step failed is stopped, not failed; a step that failed first, or a failure, is failed; all green is none" "stopped failed failed none" "$(run_verdict "$fr_stop") $(run_verdict "$fr_real") $(run_verdict "$(printf '11\tapp\tcompleted\tfailure\tgarden-1\tBuild')") $(run_verdict "$(printf '13\tclassify\tcompleted\tsuccess\tgarden-1\t')")"
+eq "the summary job words a stopped run as cancelled, not as a failed check" "1 1" "$(grep -c 'Cancelled, not failed' "$fr_ci") $(grep -c 'failure-report.sh verdict' "$fr_ci")"
 eq "every job that can fail says what failed, the tests job with its part's log" "4 1" "$(grep -c 'run: sh scripts/ci/failure-report.sh job' "$fr_ci") $(grep -c 'failure-report.sh job "$RUNNER_TEMP/part.log"' "$fr_ci")"
 eq "the report job names the failed job" "1" "$(grep -c 'run: sh scripts/ci/failure-report.sh run' "$fr_ci")"
 . "$root/templates/scripts/pr-lib.sh"
@@ -5538,6 +5542,23 @@ eq "the audit names a question with no choices too" "1" \
 eq "the audit is quiet when the ask recommends one" "" \
   "$(AK_COMMENTS="$ak_fx/one-recommended.md" PATH="$ak_dir/bin:$PATH" GH_REPO=maya/rooftop-garden sh "$root/templates/scripts/ci/ask-audit.sh")"
 eq "the audit workflow runs it and adds its lines" "1 1" "$(grep -c 'asks=\$(sh scripts/ci/ask-audit.sh' "$root/templates/.github/workflows/audit.yml") $(grep -c 'if \[ -n "\$asks" \]' "$root/templates/.github/workflows/audit.yml")"
+
+# The nightly audit names an issue In progress with nothing on it (Maya's rooftop-garden app).
+ip_dir=$(mktemp -d)
+mkdir -p "$ip_dir/bin"
+cat > "$ip_dir/bin/gh" <<'GH'
+#!/bin/sh
+case "$2" in
+  *labels=state:in-progress*) printf '41\tFrost alerts for the rooftop beds\t1000\n42\tWatering schedule\t1000\n43\tSoil sensors\t9000\n' ;;
+  *pulls\?*) printf 'Part of #42. Adds the schedule screen.\n' ;;
+esac
+GH
+chmod +x "$ip_dir/bin/gh"
+ip_run() { NOW=$1 PATH="$ip_dir/bin:$PATH" GH_REPO=maya/rooftop-garden sh "$root/templates/scripts/ci/in-progress-audit.sh"; }
+eq "the audit names an issue In progress for hours with no pull request, and not one a pull request names or a recent one" "#41: Frost alerts for the rooftop beds, quiet for 3 hours." "$(ip_run 11800)"
+eq "the audit is quiet before the two hours are up" "" "$(ip_run 5000)"
+eq "the audit workflow runs it and adds its lines" "1 1" "$(grep -c 'idle=\$(sh scripts/ci/in-progress-audit.sh' "$root/templates/.github/workflows/audit.yml") $(grep -c 'if \[ -n "\$idle" \]' "$root/templates/.github/workflows/audit.yml")"
+eq "the plugin owns the script" "1" "$(grep -c '^scripts/ci/in-progress-audit.sh$' "$root/templates/OWNED.txt")"
 eq "the plugin owns both scripts" "2" "$(grep -cE '^scripts/ci/ask-(lib|audit)\.sh$' "$root/templates/OWNED.txt")"
 
 section 'a job says what it is for'

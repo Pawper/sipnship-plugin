@@ -119,6 +119,7 @@ scripts/ci/drain-late.sh
 scripts/ci/machine-upkeep.sh
 scripts/ci/ask-lib.sh
 scripts/ci/ask-audit.sh
+scripts/ci/in-progress-audit.sh
 scripts/ci/jobs-audit.sh
 feature status
 status/build.sh

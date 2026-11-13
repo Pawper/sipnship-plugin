@@ -216,7 +216,17 @@ jobs:
             [ -z "$jobs" ] || jobs=$(printf "Jobs with no line in .github/jobs.txt saying what they are for:\n%s" "$jobs")
           fi
 
+          # An issue is In progress only while something is working on it: one
+          # quiet for two hours with no open pull request is stuck, whatever
+          # missed the event that should have put it back to Ready.
+          idle=""
+          if [ -f scripts/ci/in-progress-audit.sh ]; then
+            idle=$(sh scripts/ci/in-progress-audit.sh | sed 's/^/- /')
+            [ -z "$idle" ] || idle=$(printf 'Issues In progress with nothing working on them:\n%s' "$idle")
+          fi
+
           body=$(audit_comment "$missing" "$stale" "$red" "$branches")
+          if [ -n "$idle" ]; then body=$(printf '%s\n\n%s' "$body" "$idle" | sed '/./,$!d'); fi
           if [ -n "$asks" ]; then body=$(printf '%s\n\n%s' "$body" "$asks" | sed '/./,$!d'); fi
           if [ -n "$jobs" ]; then body=$(printf "%s\n\n%s" "$body" "$jobs" | sed "/./,\$!d"); fi
           if [ -n "$runner" ]; then body=$(printf '%s\n\n%s' "$body" "$runner" | sed '/./,$!d'); fi

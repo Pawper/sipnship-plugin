@@ -44,6 +44,18 @@ run_report() {
           if (c != "") printf "Cancelled because of it:\n\n%s", c }'
 }
 
+# run_verdict JOBS
+# "failed" when a job failed, or was cancelled after one of its own steps
+# failed; "stopped" when jobs were cancelled and nothing failed (a rush or a
+# hold made room, and they run again); "none" otherwise. The summary job
+# words its error by it, so a stopped run never reads as a failed check.
+run_verdict() {
+  printf '%s\n' "$1" | awk -F '\t' '
+    $4 == "failure" || ($4 == "cancelled" && $6 != "") { f = 1 }
+    $4 == "cancelled" && $6 == "" { c = 1 }
+    END { print (f ? "failed" : c ? "stopped" : "none") }'
+}
+
 # slow_say LOG
 # The plain words for a test block whose time line was over its limit, read
 # from the log's WARN lines ("WARN  the block "X" took 70s, over its limit of

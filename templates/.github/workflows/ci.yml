@@ -479,18 +479,24 @@ jobs:
         run: sh scripts/ci/failure-report.sh run
       - name: Report once for every job
         env:
+          GH_TOKEN: ${{ github.token }}
           PARTS: ${{ needs.classify.outputs.parts }}
         run: |
           failed=0
+          stopped=0
           parts=$(printf '%s' "${PARTS:-[]}" | tr -cd ',"' | tr -d ',' | wc -c)
           echo "test parts: $((parts / 2)) ran as one matrix"
           for pair in "checks:${{ needs.checks.result }}" "classify:${{ needs.classify.result }}" "app:${{ needs.app.result }}" "tests:${{ needs.tests.result }}" "screens:${{ needs.screens.result }}"; do
             job=${pair%%:*}
             result=${pair#*:}
             echo "$job: $result"
-            case "$result" in failure|cancelled) failed=1 ;; esac
+            case "$result" in failure) failed=1 ;; cancelled) stopped=1 ;; esac
           done
+          # Cancelled is not failed: a run a rush or a hold stopped says so, and a
+          # job cancelled after its own step failed still reads as the failure it is.
+          [ "$stopped" -eq 0 ] || [ "$failed" -eq 1 ] || [ "$(sh scripts/ci/failure-report.sh verdict)" != failed ] || failed=1
           [ "$failed" -eq 0 ] || { echo "A check failed; see the jobs above." >&2; exit 1; }
+          [ "$stopped" -eq 0 ] || { echo "Cancelled, not failed: the checks were stopped to make room and run again; nothing is wrong." >&2; exit 1; }
           echo "Every check that ran is green."
 
   full:

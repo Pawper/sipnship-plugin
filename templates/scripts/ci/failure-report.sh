@@ -11,6 +11,8 @@
 #       The cancel marks the checks job cancelled; "job" has already named
 #       its failed step, and "run" reports a cancelled job with a failed
 #       step as failed.
+#   sh scripts/ci/failure-report.sh verdict     prints failed, stopped or
+#       none: stopped is cancelled with nothing failed (a rush or a hold)
 #   sh scripts/ci/failure-report.sh run         in the report job: each
 #       failed job, its step and its lines, in the job summary, and the
 #       jobs cancelled because of it
@@ -43,5 +45,6 @@ case "$1" in
         | awk -v n="$name" '{ print n "\t" $0 }'
     done)
     run_report "$jobs" "$lines" >> "$summary" ;;
-  *) echo "usage: failure-report.sh job [LOG] | cancel | run" >&2; exit 2 ;;
+  verdict) run_verdict "$jobs" ;;
+  *) echo "usage: failure-report.sh job [LOG] | cancel | run | verdict" >&2; exit 2 ;;
 esac
