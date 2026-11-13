@@ -5028,7 +5028,7 @@ eq "a pending head commit is read from its check runs: any not completed" "yes n
 eq "plan.sh reads the head commit's check runs before it proposes set-aside" "1" "$(grep -c 'head_checks_pending "\$p_sha"' "$root/scripts/drive/plan.sh")"
 rd_held_green=$(printf 'pr\t61\tSeed list\tgreen\tmergeable\tapp\t0\tyes\tno\tno\npr\t62\tBed map\tgreen\tmergeable\tapp\t0\tyes\tno\tno\npr\t63\tFrost alert\tgreen\tmergeable\tapp\t0\tyes\tno\tno\nqueue\tnone\n')
 eq "green pull requests that are all held for the owner propose no merge and no drain" "stop: nothing to propose" "$(propose_round "$rd_held_green" 2 4 2)"
-eq "a held green one is left out and the rest still lands" "merge 64" "$(propose_round "$(printf '%spr\t64\tWatering copy\tgreen\tmergeable\tapp\t0\tno\tno\tno\n' "$rd_held_green")" 2 4 2 | grep '^merge')"
+eq "a held green one is left out and the rest still lands" "merge 64" "$(propose_round "$(printf '%s\npr\t64\tWatering copy\tgreen\tmergeable\tapp\t0\tno\tno\tno\n' "$rd_held_green")" 2 4 2 | grep '^merge')"
 eq "plan.sh leaves held green pull requests out of its drain" "1" "$(grep -c 'green" && $5 == "mergeable" && $8 != "yes" { print \$2 }' "$root/scripts/drive/plan.sh")"
 eq "the skill says a busy pull request gets no agent" "yes" "$(grep -q 'busy N TITLE' "$root/skills/project-drive/SKILL.md" && echo yes)"
 eq "a pull request that conflicts with main is brought up to date; a held one waits" "1 0" "$(p=$(propose_round "$rd_over" 2 4 2); printf '%s ' "$(printf '%s\n' "$p" | grep -c '^merge-main 52	Frost alert$')"; printf '%s\n' "$p" | grep -c 'merge-main 54')"
