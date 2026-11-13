@@ -17,7 +17,8 @@
 # dashboard's button) approves the latest proposal whole, at once.
 #
 # One round at a time: while the latest started round on the drive issue
-# (its sipnship-proposal marker) still has issues In progress, approved
+# (its sipnship-proposal marker) still has issues In progress, or a unit
+# whose pull request is still open, approved
 # dispatch goals wait and a "held:" line says so; landing, fixing and
 # asking go ahead. Only the newest two pages of comments are read.
 #
@@ -28,6 +29,7 @@
 here=$(dirname "$0")
 . "$here/drive-lib.sh"
 . "$here/round-lib.sh"
+. "$here/round-state-lib.sh"
 
 if ! command -v gh >/dev/null 2>&1 || ! gh auth status >/dev/null 2>&1; then
   echo "nothing: gh is not available or not signed in"
@@ -139,7 +141,9 @@ fi
 # starts it now, since the drive planned it against the running files.
 if [ -z "$started_by" ] && printf '%s\n' "$approved" | grep -q '^dispatch '; then
   inprog=$(gh api "repos/{owner}/{repo}/issues?state=open&labels=state:in-progress&per_page=100" --jq '.[].number' 2>/dev/null)
-  approved=$(hold_dispatch "$approved" "$(running_round "$comments" "$inprog")")
+  # A started unit whose pull request is open is running too, whatever State its issues show (a held change leaves them Ready).
+  open_prs=$(gh api "repos/{owner}/{repo}/pulls?state=open&per_page=100" --jq '.[].number' 2>/dev/null | tr -d '\r')
+  approved=$(hold_dispatch "$approved" "$(running_round "$comments" "$inprog" "$open_prs")")
 fi
 if [ -z "$(printf '%s\n' "$approved" | grep -v '^held: ')" ]; then
   printf '%s\n' "$approved" | sed 's/^held: /nothing: /'

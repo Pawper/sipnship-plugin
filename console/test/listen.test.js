@@ -8,7 +8,7 @@ const tokens = require('../tokens');
 const rules = require('../request-rules');
 const requestLog = require('../request-log');
 const listen = require('../listen');
-const { perform, PLUGIN_SCRIPT } = require('../listen-kinds');
+const { perform, PLUGIN_SCRIPT, RESTART_SCRIPT } = require('../listen-kinds');
 const { ask } = require('../ask');
 const { briefBody } = require('../brief-send');
 
@@ -69,7 +69,11 @@ test('it refuses an unknown kind, a bad parameter, an old request, a mismatched 
 test('what a machine can do follows what it found', () => {
   assert.deepStrictEqual(rules.canKinds({ windows: true, admin: true, antivirus: true }), []);
   assert.deepStrictEqual(rules.canKinds({ windows: false, ghAs: 'maya', admin: true }), ['grant-permissions', 'run-migration', 'deploy', 'set-places']);
-  assert.deepStrictEqual(rules.canKinds({ windows: true, ghAs: 'maya', admin: true, antivirus: true }), rules.KINDS);
+  // The kinds that go around GitHub's runs are offered only by a listener that says it carries them out.
+  assert.deepStrictEqual(rules.canKinds({ windows: true, ghAs: 'maya', admin: true, antivirus: true }), rules.KINDS.filter((k) => !rules.AROUND_KINDS.includes(k)));
+  assert.deepStrictEqual(rules.canKinds({ windows: true, ghAs: 'maya', admin: true, antivirus: true, around: true }), rules.KINDS);
+  assert.deepStrictEqual(rules.canKinds({ windows: false, ghAs: 'maya', around: true }).filter((k) => rules.AROUND_KINDS.includes(k)), ['land-here', 'deploy-here', 'restart-runners']);
+  assert.strictEqual(listen.findFacts('maya/rooftop-garden', () => ({ status: 0, stdout: 'maya\n' }), 'linux').around, true);
 });
 
 test('the step facts keep only the kind\'s own, so no log or command text rides along', () => {
@@ -186,6 +190,50 @@ test('deploy and migration only dispatch their own workflow and finish when its 
   const failed = recorder({ stdout: (cmd, args) => (args[0] === 'run' ? run.replace('success', 'failure') : '') });
   failed.ctx.now = d.ctx.now;
   assert.strictEqual((await perform('deploy', '', failed.ctx)).outcome, 'failed');
+});
+
+test('land here runs the queue once on this machine, in the repository, and says done or failed', async () => {
+  const { ctx, calls, steps } = recorder();
+  assert.deepStrictEqual(await perform('land-here', '', ctx), { outcome: 'done', facts: {} });
+  assert.deepStrictEqual(calls, [['sh', 'scripts/ci/merge-queue.sh', '--drain']]);
+  assert.deepStrictEqual(steps, ['running']);
+  const bad = recorder();
+  bad.ctx.exec = () => ({ status: 1, stdout: '' });
+  assert.strictEqual((await perform('land-here', '', bad.ctx)).outcome, 'failed');
+});
+
+test('deploy here makes a clean copy of main, runs the Deploy workflow\'s own steps in it, and takes the copy away', async () => {
+  const { ctx, calls } = recorder();
+  assert.deepStrictEqual(await perform('deploy-here', '', ctx), { outcome: 'done', facts: {} });
+  assert.deepStrictEqual(calls[0], ['git', 'fetch', 'origin', 'main']);
+  assert.ok(calls[1][1] === 'worktree' && calls[1].includes('origin/main') && calls[1].includes('--detach'));
+  assert.deepStrictEqual(calls[2], ['sh', 'scripts/ci/deploy-here.sh']);
+  assert.deepStrictEqual(calls[3].slice(0, 4), ['git', 'worktree', 'remove', '--force']);
+  const failed = recorder();
+  const run = failed.ctx.exec;
+  failed.ctx.exec = (cmd, args) => (cmd === 'sh' ? { status: 1, stdout: '' } : run(cmd, args));
+  assert.strictEqual((await perform('deploy-here', '', failed.ctx)).outcome, 'failed');
+  assert.deepStrictEqual(failed.calls.at(-1).slice(0, 4), ['git', 'worktree', 'remove', '--force']);
+});
+
+test('restart runners runs the plugin\'s one script with this repository\'s name, never a path or command from the request', async () => {
+  const { ctx, calls } = recorder();
+  assert.deepStrictEqual(await perform('restart-runners', '', ctx), { outcome: 'done', facts: {} });
+  assert.deepStrictEqual(calls, [['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', RESTART_SCRIPT, '-Repo', 'rooftop-garden']]);
+  const odd = recorder();
+  odd.ctx.fullName = 'maya/garden; rm -rf';
+  assert.strictEqual((await perform('restart-runners', '', odd.ctx)).outcome, 'failed');
+  assert.deepStrictEqual(odd.calls, []);
+});
+
+test('a request for one of the three is checked like any other: no parameter, approved by this machine\'s person', () => {
+  const can = rules.canKinds({ windows: true, ghAs: 'maya', admin: true, around: true });
+  for (const kind of ['land-here', 'deploy-here', 'restart-runners']) {
+    assert.strictEqual(rules.refusal({ ...GOOD, kind }, { ghAs: 'maya', can, now: NOW }), null);
+    assert.strictEqual(rules.refusal({ ...GOOD, kind, param: 'main; rm' }, { ghAs: 'maya', can, now: NOW }), 'refused');
+    assert.strictEqual(rules.refusal({ ...GOOD, kind, approvedBy: 'sam' }, { ghAs: 'maya', can, now: NOW }), 'refused-person');
+    assert.strictEqual(rules.refusal({ ...GOOD, kind }, { ghAs: 'maya', can: rules.canKinds({ windows: true, ghAs: 'maya', admin: true }), now: NOW }), 'refused');
+  }
 });
 
 test('an unknown kind runs nothing', async () => {

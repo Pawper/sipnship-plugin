@@ -10,6 +10,10 @@
 #                         one line per open item, the ones waiting on
 #                         someone first.
 #   sh digest.sh goals    print the goals the digest adds to a proposal.
+#   sh digest.sh no-question N
+#                         a reader re-read issue N and found no open question:
+#                         its line says so, stamped with its current time, so
+#                         mark-waiting is not proposed for it until it changes.
 here=$(dirname "$0")
 . "$here/board-lib.sh"
 
@@ -41,6 +45,14 @@ case "${1:-show}" in
   goals)
     digest_goals "$facts" "$digest"
     ;;
+  no-question)
+    # A reader re-read the issue in full and found no open question: remember it until the issue changes.
+    case "${2:-}" in ''|*[!0-9]*) echo "Usage: sh digest.sh no-question NUMBER" >&2; exit 2 ;; esac
+    [ -n "$facts" ] || { echo "No board facts yet; run read.sh first." >&2; exit 1; }
+    mkdir -p "$dir"
+    printf '%s\n' "$(digest_no_question "$facts" "$digest" "$2")" > "$dir/digest.tsv.new" && mv "$dir/digest.tsv.new" "$dir/digest.tsv"
+    echo "Noted: #$2 has no open question; it is not proposed for mark-waiting again until it changes."
+    ;;
   *)
-    echo "Usage: sh digest.sh save | show | goals" >&2; exit 2 ;;
+    echo "Usage: sh digest.sh save | show | goals | no-question NUMBER" >&2; exit 2 ;;
 esac

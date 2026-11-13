@@ -11,6 +11,8 @@
 #           held is yes when the queue holds it (a hold label or line)
 #           [busy(yes|no)]: yes when its head commit or newest comment is
 #           under 30 minutes old; a busy one gets no agent (a "busy" line)
+#           [pending(yes|no)]: yes when its head commit's checks are still
+#           running; a red from an older commit is then neither fixed nor set aside
 #   issue   NUMBER  TITLE  state(ready|in-progress|waiting-on-owner|blocked)  owner(yes|no)
 #   audit   TEXT            the audit issue's latest comment, one line
 #   red     NUMBER          an open red-main issue
@@ -30,11 +32,14 @@
 # is done; a person approves first.
 propose_round() {
   printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v runners="${2:-2}" -v max_agents="${3:-4}" -v aside="${4:-2}" '
-    $1 == "pr" && $4 == "green" && $5 == "mergeable" { green[++g] = $2; if ($6 != "other") appgreen++ }
+    $1 == "pr" && $4 == "green" && $5 == "mergeable" && $8 != "yes" { green[++g] = $2; if ($6 != "other") appgreen++ }
     $1 == "pr" && $4 == "red" && $8 == "yes" { next }
     $1 == "pr" && $4 == "red" {
-      if (aside > 0 && $7 + 0 >= aside) setaside[++sa] = $2 "\t" $3 "\t(red " ($7 + 0) " times)"
+      # A red from an older commit is not the newest commit failing: while the head commit is under 30
+      # minutes old (busy) or its checks are still running (pending), it is neither fixed nor set aside.
+      if ($10 == "yes") waiting[++wz] = $2 "\t" $3 "\tits newest commit is still waiting on its checks"
       else if ($9 == "yes") busy[++bz] = $2 "\t" $3
+      else if (aside > 0 && $7 + 0 >= aside) setaside[++sa] = $2 "\t" $3 "\t(red " ($7 + 0) " times)"
       else red[++r] = $2 "\t" $3
     }
     $1 == "pr" && $4 != "red" && $5 == "conflicting" && $8 != "yes" {
@@ -62,6 +67,7 @@ propose_round() {
       for (i = 1; i <= sa; i++) { print "set-aside " setaside[i]; acted++ }
       for (i = 1; i <= bm; i++) { print "merge-main " behind[i]; acted++ }
       for (i = 1; i <= bz; i++) { print "busy " busy[i] "\tpushed or commented on in the last 30 minutes; someone is likely on it"; waiting_pr++ }
+      for (i = 1; i <= wz; i++) { print "busy " waiting[i]; waiting_pr++ }
       for (i = 1; i <= k; i++) { print "ask-owner " ask[i]; acted++ }
       slots = (runners < max_agents) ? runners : max_agents
       slots -= inprogress

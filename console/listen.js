@@ -64,14 +64,15 @@ function elevated(file, args, timeoutMs) {
   return r.status === null ? 'timeout' : r.status;
 }
 
-// What this machine found: Windows or not, who gh is signed in as, admin rights on the repository, the antivirus.
+// What this machine found: Windows or not, who gh is signed in as, admin rights on the repository, the antivirus, and that it goes around GitHub's runs.
 function findFacts(fullName, run = exec, platform = process.platform) {
   const who = run('gh', ['api', 'user', '--jq', '.login']);
   const ghAs = who.status === 0 ? who.stdout.trim() : '';
   const admin = ghAs && run('gh', ['api', `repos/${fullName}`, '--jq', '.permissions.admin']).stdout.trim() === 'true';
   const windows = platform === 'win32';
   const antivirus = windows && run('powershell', ['-NoProfile', '-Command', '(Get-MpComputerStatus).AntivirusEnabled'], { timeoutMs: 20000 }).stdout.trim() === 'True';
-  return { windows, ghAs: ghAs || undefined, admin: !!admin, antivirus: !!antivirus };
+  // This listener carries out the kinds that go around GitHub's runs.
+  return { windows, ghAs: ghAs || undefined, admin: !!admin, antivirus: !!antivirus, around: true };
 }
 
 async function call(url, token, init = {}) {

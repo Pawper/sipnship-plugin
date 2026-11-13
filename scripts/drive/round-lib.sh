@@ -45,19 +45,20 @@ setting() {
 
 # overlay_rest SNAPSHOT LINES
 # LINES are what REST says of each open pull request, one per line:
-# "NUMBER<TAB>MERGEABLE_STATE<TAB>REDS<TAB>HELD(yes|no)[<TAB>BUSY(yes|no)]".
+# "NUMBER<TAB>MERGEABLE_STATE<TAB>REDS<TAB>HELD(yes|no)[<TAB>BUSY(yes|no)[<TAB>PENDING(yes|no)]]".
 # mergeable_state "dirty" (it conflicts with main) makes it conflicting;
 # "unknown" or nothing leaves what the board said; anything else is
-# mergeable. REDS, HELD and BUSY become the pull request's seventh, eighth
-# and ninth fields. Every other line passes through.
+# mergeable. REDS, HELD, BUSY and PENDING (its head commit's checks are
+# still running) become the pull request's seventh to tenth fields. Every
+# other line passes through.
 overlay_rest() {
   { printf '%s\n' "$2" | sed 's/^/R	/'; printf '%s\n' "$1" | sed 's/^/S	/'; } | tr -d '\r' | awk -F'\t' -v OFS='\t' '
-    $1 == "R" && $2 != "" { st[$2] = $3; reds[$2] = $4; held[$2] = $5; busy[$2] = $6; next }
+    $1 == "R" && $2 != "" { st[$2] = $3; reds[$2] = $4; held[$2] = $5; busy[$2] = $6; pend[$2] = $7; next }
     $1 == "S" && $2 == "pr" && ($3 in st) {
       m = $6
       if (st[$3] == "dirty") m = "conflicting"
       else if (st[$3] != "" && st[$3] != "unknown") m = "mergeable"
-      print $2, $3, $4, $5, m, $7, (reds[$3] == "" ? 0 : reds[$3] + 0), (held[$3] == "yes" ? "yes" : "no"), (busy[$3] == "yes" ? "yes" : "no")
+      print $2, $3, $4, $5, m, $7, (reds[$3] == "" ? 0 : reds[$3] + 0), (held[$3] == "yes" ? "yes" : "no"), (busy[$3] == "yes" ? "yes" : "no"), (pend[$3] == "yes" ? "yes" : "no")
       next
     }
     $1 == "S" && NF > 1 { sub(/^S\t/, ""); print }'
@@ -168,22 +169,6 @@ comment_pages() {
   if [ "$cp_last" -gt 1 ]; then echo "$(( cp_last - 1 )) $cp_last"; else echo 1; fi
 }
 
-# running_round COMMENTS IN_PROGRESS
-# COMMENTS are the drive issue's comments, one per line. IN_PROGRESS is the
-# open issues labeled In progress, one number per line. Prints the issues
-# of the latest started round (its units, not its held work) that are still
-# in progress, space separated: while any is, that round is running and no
-# other starts. Nothing when no round runs.
-running_round() {
-  rr_units=$(printf '%s\n' "$1" | tr -d '\r' | grep -F 'sipnship-proposal {"status":"started"' | tail -n 1 \
-    | sed 's/.*sipnship-proposal {"status":"started",//; s/"held":.*//' | grep -oE '"issues":\[[0-9, ]*\]' | grep -oE '[0-9]+')
-  [ -n "$rr_units" ] || return 0
-  printf '%s\n' "$2" | tr -d '\r' | awk -v u="$(printf '%s ' $rr_units)" '
-    BEGIN { n = split(u, a, " "); for (i = 1; i <= n; i++) if (a[i] != "") want[a[i]] = 1 }
-    ($1 in want) && !($1 in seen) { seen[$1] = 1; out = out (out == "" ? "" : " ") $1 }
-    END { if (out != "") print out }'
-}
-
 # start_request LINE
 # The login in a "Start this round" request, "Queue request: start-round by
 # LOGIN" ("#0" after start-round allowed); nothing for any other line.
@@ -195,7 +180,7 @@ start_request() {
 # COMMENTS are the drive issue's comments, one "at<TAB>login<TAB>body" a line,
 # oldest first. Prints the requests the drive still owes an answer, one
 # "start-next N by LOGIN", "start-now N by LOGIN", "hold-agent N by LOGIN" or
-# "start-round by LOGIN" a line. A request is the exact form, left by the App
+# "start-round by LOGIN" a line (a start-now with no issue reads as "start-now 0 by LOGIN"). A request is the exact form, left by the App
 # or by the person it names; an answer in the form `Queue answer: KIND #N:
 # outcome` (start-round's N is 0) spends it; one older than its SINCE (a UTC
 # time, compared as text) has already been told it did not happen. A request
@@ -208,10 +193,12 @@ work_requests() {
         if (a[1] == "start-round") a[2] = ""
         delete owed[a[1] " " a[2]]; next
       }
-      if ($3 !~ /^Queue request: ((start-next|start-now|hold-agent) #[0-9]+|start-round( #0)?) by [A-Za-z0-9][A-Za-z0-9-]*(: .*)?$/) next
+      if ($3 !~ /^Queue request: ((start-next|start-now|hold-agent) #[0-9]+|start-now|start-round( #0)?) by [A-Za-z0-9][A-Za-z0-9-]*(: .*)?$/) next
       split($3, w, " ")
       kind = w[3]; n = w[4]; who = w[6]
       if (kind == "start-round") { n = ""; who = (w[4] == "by") ? w[5] : w[6] }
+      # The round-wide Start now names no issue: N is 0, as start-round answers.
+      if (kind == "start-now" && w[4] == "by") { n = "0"; who = w[5] }
       sub(/^#/, "", n); sub(/:$/, "", who)
       if ($2 != who && $2 !~ /\[bot\]$/) next
       if ($1 < (kind == "hold-agent" ? h : s)) next

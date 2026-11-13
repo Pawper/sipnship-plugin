@@ -114,7 +114,7 @@ need no proposal or reply. Read them on every tick, whatever `approval.sh` said:
 sh "${CLAUDE_PLUGIN_ROOT}/scripts/drive/work-requests.sh"
 ```
 
-It prints one line per request still owed, `start-next N by LOGIN`, `start-now N by LOGIN`, `hold-agent N by LOGIN`
+It prints one line per request still owed, `start-next N by LOGIN`, `start-now N by LOGIN` (N is 0 for the round-wide button), `hold-agent N by LOGIN`
 or `start-round by LOGIN`, or nothing. Do each (step c). Every request is answered on the drive issue in the fixed
 form `Queue answer: KIND #N: outcome` (start-round's N is 0), one comment each, saying what happened or what it
 waits on, so the dashboard's waiting line ends; a request still printed on the next tick is one you owe, so answer
@@ -222,14 +222,16 @@ tab says it waits and on what instead of saying it starts on its own; `status: p
   holds only is a round. When your judgement declines what the plan proposed, that issue is a hold whose
   `why:` says so, so the builder can overrule it with Start this next. An unchanged round is updated in
   place with the time of this look, so the tab shows when you last looked apart from when the round changed.
-- **A rush: `start-next N by LOGIN` or `start-now N by LOGIN`.** Replan and bundle a rush on the tick it is read,
+- **A rush: `start-next N by LOGIN` or `start-now N by LOGIN` (N above 0).** Replan and bundle a rush on the tick it is read,
   never on the next round. Put N in one unit with every ready or proposed issue it shares an area with, and bundle
   several rushed issues with each other first (`RUSH_ISSUES="N M" sh "${CLAUDE_PLUGIN_ROOT}/scripts/drive/plan.sh"`
   puts that unit first). Dispatch the unit this tick when no running unit or open pull request touches its area;
   otherwise it leads the next round. Publish the proposal again so the dashboard shows the bundle.
 - **`start-now N by LOGIN`.** Dispatch every unit of the proposed round that shares no area with a pull request
   still landing, this tick; the rest wait for what they share. Answer `Queue answer: start-now #N: started-now`,
-  or say what it waits on.
+  or say what it waits on. The dashboard's round-wide button leaves `Queue request: start-now by LOGIN` with no
+  issue, which prints as `start-now 0 by LOGIN`: it names no rush, so it means exactly this, for every unit,
+  and its answer is `Queue answer: start-now #0: started-now` (or what it waits on).
 - **`start-round by LOGIN`.** Answer it once the round started: `Queue answer: start-round #0: started-round`.
 - **`start-next N by LOGIN`.** Start this issue now if a runner is free and nothing running touches its files:
   dispatch it as a one-off, set `state:in-progress` (from Parked or another set-aside State too, since the person
@@ -264,7 +266,10 @@ tab says it waits and on what instead of saying it starts on its own; `status: p
 - **`set-ready N`.** The digest says the owner has answered an issue still labeled waiting on owner. Confirm it
   by having one reader re-read that issue, then set it to ready with `scripts/state.sh`.
 - **`mark-waiting N`.** The digest says a question to the owner is open on an issue labeled ready or in
-  progress. Confirm the same way, then set `state:waiting-on-owner`. Like `ask-owner`, it runs without approval,
+  progress. Confirm the same way, then set `state:waiting-on-owner`. When the reader finds no open question
+  (a design note or a list "to settle in the spec" is not an ask), leave the State alone and run
+  `sh "${CLAUDE_PLUGIN_ROOT}/scripts/board/digest.sh" no-question N`, which records it in the digest, so the same
+  `mark-waiting` is not proposed on every tick until the issue changes. Like `ask-owner`, it runs without approval,
   since it only moves an issue to where the question already is, and only for an ask in the shape: the latest
   comment gives the question and numbered choices, exactly one ending "Recommended." (`scripts/ci/ask-lib.sh` is
   the one reader, and the state-label hook refuses the change otherwise). An open question that is not in that

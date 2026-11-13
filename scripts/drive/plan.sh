@@ -25,6 +25,8 @@ here=$(dirname "$0")
 . "$here/drive-lib.sh"
 . "$here/bundle-lib.sh"
 . "$here/round-lib.sh"
+. "$here/round-state-lib.sh"
+. "$here/plan-read-lib.sh"
 . "$here/stale-lib.sh"
 
 show_snapshot=no; fast=no; facts_file=""
@@ -107,7 +109,7 @@ if [ "$fast" = no ]; then
   audit_issue=$(printf '%s\n' "$facts" | awk -F'\t' '$1 == "issue" && ("," $4 ",") ~ /,audit,/ { print $2; exit }')
   if [ -n "$audit_issue" ]; then
     last=$(gh issue view "$audit_issue" --json comments --jq '.comments[-1].body // ""' 2>/dev/null | tr '\n' ' ' | cut -c1-200)
-    [ -n "$last" ] && printf 'audit\t%s\n' "$last" >> "$tmp"
+    [ -n "$last" ] && last=$(audit_unless_part_of "$last") && [ -n "$last" ] && printf 'audit\t%s\n' "$last" >> "$tmp"
   fi
 fi
 
@@ -126,10 +128,8 @@ fi
 printf 'queue\t%s\n' "$queue_state" >> "$tmp"
 
 snapshot=$(cat "$tmp")
-# Every open pull request keeps moving, not only the round's own: REST
-# lists them, and each one's mergeable_state says whether it conflicts with
-# main; a red one also gets how many times it was red. One call for the
-# list, one per pull request, one more per red one; all REST.
+# Every open pull request keeps moving: REST lists them, each one's mergeable_state says whether it conflicts with main, and a red one
+# also gets how many times it was red.
 rest_lines=""
 pr_list=$(gh api "repos/{owner}/{repo}/pulls?state=open&per_page=100" --jq '.[] | [(.number | tostring), .head.ref, ([.labels[].name] | join(",")), ((.body // "") | [splits("\r?\n")] | map(select(test("^Queue: hold"; "i"))) | first // ""), ((.body // "") | [scan("(?i)(?:closes|fixes|resolves) #([0-9]+)") | .[0]] | join(","))] | join("\u001f")' 2>/dev/null | tr -d '\r')
 # One separator that is not whitespace, so a pull request with no hold line or no labels keeps its empty field; a tab would collapse it and shift the Closes numbers left.
@@ -140,10 +140,8 @@ while IFS="$us" read -r p_num p_ref p_labels p_hold p_closes; do
   p_state=$(printf '%s' "$p_info" | cut -f1); p_sha=$(printf '%s' "$p_info" | cut -f2)
   p_reds=0; p_ci=$(printf '%s\n' "$snapshot" | awk -F'\t' -v n="$p_num" '$1 == "pr" && $2 == n { print $4 }')
   [ "$p_ci" = red ] && p_reds=$(red_count "$(gh api "repos/{owner}/{repo}/actions/runs?branch=$p_ref&event=pull_request&status=failure&per_page=100" --jq '.workflow_runs[].head_sha' 2>/dev/null)")
-  # Someone else on it? Only for one the drive would send an agent to (it
-  # conflicts with main, or it is red): a head commit or a newest comment
-  # under 30 minutes old means an agent in another session is likely at
-  # work, so this one gets none. Two more calls, for those only.
+  # Someone else on it? Only for one the drive would send an agent to (it conflicts or is red): a head commit or newest comment
+  # under 30 minutes old means an agent in another session is likely at work, so it gets none.
   p_busy=no
   if [ "$p_state" = dirty ] || [ "$p_ci" = red ]; then
     p_head=$(gh api "repos/{owner}/{repo}/commits/$p_sha" --jq '.commit.committer.date | fromdateiso8601' 2>/dev/null | tr -d '\r')
@@ -151,7 +149,8 @@ while IFS="$us" read -r p_num p_ref p_labels p_hold p_closes; do
     p_note=$(gh api "repos/{owner}/{repo}/issues/$p_num/comments?since=$p_since&per_page=100" --jq '[.[].created_at | fromdateiso8601] | max // empty' 2>/dev/null | tr -d '\r')
     p_busy=$(recently_touched "$p_head" "$p_note" "$(date +%s)" 30)
   fi
-  rest_lines="${rest_lines}${p_num}${tab}${p_state}${tab}${p_reds}${tab}$(held_by "$p_labels" "$p_hold")${tab}${p_busy}
+  p_pend=no; [ "$p_ci" = red ] && p_pend=$(head_checks_pending "$p_sha")  # a red from an older commit is not the newest commit failing
+  rest_lines="${rest_lines}${p_num}${tab}${p_state}${tab}${p_reds}${tab}$(held_by "$p_labels" "$p_hold")${tab}${p_busy}${tab}${p_pend}
 "
 done <<EOF_PRS
 $pr_list
@@ -203,6 +202,10 @@ guesses=""; running=""
 reasons=$(hold_reasons "$facts")
 # An open pull request that already closes a Ready issue means no agent is started on it again, held or batched (stale-lib.sh).
 reasons=$(printf '%s\n%s\n' "$reasons" "$(carried_holds "$facts" "$pull_links")" | sed '/^$/d')
+# A started unit counts as running while its pull request is open, whatever State its issues show: none of its Ready issues is proposed for dispatch (one hold line each).
+drive_line=$(gh api "$AUTO_DRIVE_QUERY" --jq "$AUTO_DRIVE_JQ" 2>/dev/null | tr -d '\r')
+drive_comments=$(read_drive_comments "$drive_line")
+reasons=$(printf '%s\n%s\n' "$reasons" "$(started_ready_holds "$drive_comments" "$(printf '%s\n' "$pr_list" | cut -d"$us" -f1)" "$facts" "$snapshot")" | sed '/^$/d')
 while IFS="$us" read -r kind num title a b c d e; do
   [ "$kind" = issue ] || continue
   case "$(state_of_labels "$a")" in
@@ -233,7 +236,7 @@ if [ -n "$guesses" ] || [ -n "$reasons" ]; then
 fi
 # A project whose queue lands green work by itself: rely on it, and
 # propose one drain only when green work has sat 15 minutes.
-green_prs=$(printf '%s\n' "$snapshot" | awk -F'\t' '$1 == "pr" && $4 == "green" && $5 == "mergeable" { print $2 }')
+green_prs=$(printf '%s\n' "$snapshot" | awk -F'\t' '$1 == "pr" && $4 == "green" && $5 == "mergeable" && $8 != "yes" { print $2 }')
 runs=""
 if [ -f scripts/ci/merge-queue.sh ] && [ -n "$green_prs" ]; then
   runs=$(gh api "repos/{owner}/{repo}/actions/runs?per_page=50" --jq '.workflow_runs[] | [.status, (.run_started_at // .created_at | fromdateiso8601), (.updated_at | fromdateiso8601), .path, .event, .head_branch] | @tsv' 2>/dev/null | tr -d '\r')
@@ -256,7 +259,7 @@ fi
 number_proposal "$round"
 # Auto Drive, from the drive issue's label drive:auto: one REST call. On is a
 # standing approval; off, the proposal is posted and waits for a reply.
-auto=$(auto_drive_state "$(gh api "$AUTO_DRIVE_QUERY" --jq "$AUTO_DRIVE_JQ" 2>/dev/null)")
+auto=$(auto_drive_state "$drive_line")
 auto_line "$auto"
 model=$(setting "$settings" dispatchModel)
 if [ "$aside_after" -gt 0 ] 2>/dev/null; then aside_words="a pull request red $aside_after times is set aside"; else aside_words="a red pull request is never set aside"; fi

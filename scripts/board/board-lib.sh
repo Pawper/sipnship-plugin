@@ -106,6 +106,22 @@ digest_brief_lines() {
     }'
 }
 
+# digest_no_question FACTS DIGEST NUMBER
+# Record that a reader re-read issue NUMBER in full and found no open
+# question to the owner: its digest line gets ball "nobody" and the note "no
+# open question", stamped with the issue's current last-updated time. The
+# same mark-waiting is then not proposed again until the issue changes (a
+# summary older than the board proposes nothing). An issue not open on the
+# board leaves the digest as it was.
+digest_no_question() {
+  dn_at=$(open_items "$1" | awk -F'\t' -v n="$3" '$1 == n && $2 == "issue" { print $3; exit }')
+  if [ -z "$dn_at" ]; then printf '%s\n' "$2"; return 0; fi
+  printf '%s\n' "$2" | awk -F'\t' -v OFS='\t' -v n="$3" -v at="$dn_at" '
+    $1 == n && $2 == "issue" { $3 = at; $4 = "nobody"; $5 = "nothing waits on the owner"; $6 = "-"; if ($7 !~ /^no open question/) $7 = "no open question; " $7; found = 1 }
+    NF > 0 { print }
+    END { if (!found) print n, "issue", at, "nobody", "nothing waits on the owner", "-", "no open question" }'
+}
+
 # digest_goals FACTS DIGEST
 # Goals the digest adds to a proposal, because labels alone miss them:
 #   set-ready N TITLE   the issue is labeled waiting on owner, but the

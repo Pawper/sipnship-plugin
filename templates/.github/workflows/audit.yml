@@ -69,7 +69,7 @@ jobs:
           printf '%s\n' "$merged" | while IFS= read -r line; do
             [ -n "$line" ] || continue
             pr=${line%% *}
-            for n in $(issue_refs "$line"); do
+            for n in $(closed_refs "$line"); do
               labels=$(gh issue view "$n" --json state,labels --jq 'select(.state == "OPEN") | [.labels[].name] | join(",")' 2>/dev/null || true)
               if [ "$(state_slug "$(state_label_in "$labels")")" = ready ]; then printf '%s %s\n' "$pr" "$n"; fi
             done

@@ -19,6 +19,7 @@ const ONLINE_WAIT_MS = 5 * 60000;
 const RUN_WAIT_MS = 30 * 60000;
 const POLL_MS = 15000;
 const PLUGIN_SCRIPT = path.join(__dirname, '..', 'scripts', 'machine', 'antivirus-exclusions.ps1');
+const RESTART_SCRIPT = path.join(__dirname, '..', 'scripts', 'machine', 'restart-runners.ps1');
 const PR_TITLE = "Allow the agent the project's own commands";
 const PLACES_VARIABLE = 'SIPNSHIP_PLACES';
 
@@ -144,7 +145,41 @@ async function setPlaces(ctx, param) {
   return { outcome: r.status === 0 ? 'done' : 'failed', facts: {} };
 }
 
+// Around GitHub's runs (spec 012): land through the queue on this machine, deploy main from a clean copy with the Deploy
+// workflow's own steps, restart this repository's runner services. Each runs once, from the repository's own fixed script.
+async function landHere(ctx) {
+  await ctx.step('running');
+  const r = ctx.exec('sh', ['scripts/ci/merge-queue.sh', '--drain'], { cwd: ctx.root, timeoutMs: RUN_WAIT_MS });
+  return { outcome: r.status === 0 ? 'done' : 'failed', facts: {} };
+}
+
+async function deployHere(ctx) {
+  await ctx.step('running');
+  const git = (args, cwd) => ctx.exec('git', args, { cwd, timeoutMs: 120000 });
+  const dir = path.join(ctx.home, 'worktrees', `deploy-here-${ctx.now().toString(36)}`);
+  if (git(['fetch', 'origin', 'main'], ctx.root).status !== 0) return { outcome: 'failed', facts: {} };
+  fs.mkdirSync(path.dirname(dir), { recursive: true });
+  if (git(['worktree', 'add', '--detach', dir, 'origin/main'], ctx.root).status !== 0) return { outcome: 'failed', facts: {} };
+  try {
+    const r = ctx.exec('sh', ['scripts/ci/deploy-here.sh'], { cwd: dir, timeoutMs: RUN_WAIT_MS });
+    return { outcome: r.status === 0 ? 'done' : 'failed', facts: {} };
+  } finally {
+    git(['worktree', 'remove', '--force', dir], ctx.root);
+  }
+}
+
+async function restartRunners(ctx) {
+  await ctx.step('running');
+  const repo = ctx.fullName.split('/')[1] || '';
+  if (!/^[A-Za-z0-9._-]{1,100}$/.test(repo)) return { outcome: 'failed', facts: {} };
+  const r = ctx.exec('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', RESTART_SCRIPT, '-Repo', repo], { cwd: ctx.root, timeoutMs: PROMPT_WAIT_MS });
+  return { outcome: r.status === 0 ? 'done' : 'failed', facts: {} };
+}
+
 const KIND_RUNNERS = {
+  'land-here': (c) => landHere(c),
+  'deploy-here': (c) => deployHere(c),
+  'restart-runners': (c) => restartRunners(c),
   'set-places': (c, p) => setPlaces(c, p),
   'add-runner': (c, p) => addRunner(c, p),
   'remove-runner': (c, p) => removeRunner(c, p),
@@ -166,4 +201,4 @@ async function perform(kind, param, ctx) {
   }
 }
 
-module.exports = { perform, PLUGIN_SCRIPT, PR_TITLE, KIND_RUNNERS };
+module.exports = { perform, PLUGIN_SCRIPT, RESTART_SCRIPT, PR_TITLE, KIND_RUNNERS };

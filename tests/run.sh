@@ -1117,6 +1117,12 @@ eq "the brief's lines are counted past the limit" "#30 Choose the logo: ball own
 eq "goals labels alone would miss, from current summaries only" "mark-waiting 20	Billing (a question to the owner is open)
 set-ready 31	Pick the price (the owner answered)" "$(digest_goals "$dfacts" "$ddigest")"
 eq "no digest, no extra goals" "" "$(digest_goals "$dfacts" '')"
+nq_digest=$(digest_no_question "$dfacts" "$ddigest" 20)
+eq "a reader that found no open question is remembered: mark-waiting is not proposed again, the rest stays" "set-ready 31	Pick the price (the owner answered)" "$(digest_goals "$dfacts" "$nq_digest")"
+eq "the remembered line says so, with the issue's current time and ball nobody" "nobody	nothing waits on the owner" "$(printf '%s\n' "$nq_digest" | awk -F'\t' '$1 == 20 { print $4 "\t" $5 }')"
+eq "it stays current, so the same count of summaries is current" "4	6" "$(digest_freshness "$dfacts" "$nq_digest")"
+eq "an issue that is not open leaves the digest as it was" "$ddigest" "$(digest_no_question "$dfacts" "$ddigest" 99)"
+eq "digest.sh has a no-question word and the skill names it" "1 1" "$(grep -c 'no-question)' "$root/scripts/board/digest.sh") $(grep -c 'digest.sh\" no-question N' "$root/skills/project-drive/SKILL.md")"
 
 section 'clean endings (hook library)'
 . "$root/hooks/scripts/worktree-lib.sh"
@@ -1511,9 +1517,9 @@ eq "issues without a state label" "12
 14 state:ready,task
 15
 16 task,state:parked')"
-eq "issue refs, unique, in order" "4
-12" "$(issue_refs 'Closes #4 and fixes #12; see #4 again')"
-eq "no refs, nothing" "" "$(issue_refs 'no numbers here')"
+eq "closing refs, unique, in order; a plain mention or Part of is not one" "4
+12" "$(closed_refs 'Closes #4 and fixes #12; see #4 again, Part of #7. closes #4')"
+eq "no closing refs, nothing" "" "$(closed_refs 'no numbers here, see #4')"
 eq "clean audit says nothing" "" "$(audit_comment '' '')"
 eq "missing only" "Open issues with no State label:
 - #12
@@ -4943,6 +4949,8 @@ section 'drive runs rounds of units'
 . "$root/scripts/drive/drive-lib.sh"
 . "$root/scripts/drive/bundle-lib.sh"
 . "$root/scripts/drive/round-lib.sh"
+. "$root/scripts/drive/round-state-lib.sh"
+. "$root/scripts/drive/plan-read-lib.sh"
 rd_defaults=$(drive_settings '{}')
 eq "every round key has its default" "2||2|||" "$(for k in unitsPerRound dispatchModel setAsideAfterReds summaryAt healthCommand healthAbove; do printf '%s|' "$(setting "$rd_defaults" $k)"; done | sed 's/|$//')"
 rd_cfg='{"unitsPerRound": 5, "dispatchModel": "sonnet", "setAsideAfterReds": 3, "summaryAt": "07:00", "healthNote": {"command": "echo 9.5", "name": "free disk (GB)", "above": 8}}'
@@ -5004,8 +5012,8 @@ eq "plugin work waits on a running plugin unit" "hold	33	Brief fix	After: Hook f
 rd_snap=$(printf 'pr\t51\tBeds page\tgreen\tmergeable\tapp\npr\t52\tFrost alert\tpending\tmergeable\tapp\npr\t53\tSeed list\tred\tmergeable\tapp\npr\t54\tWatering copy\tgreen\tmergeable\tapp\nissue\t9\tReady thing\tready\tno\n')
 rd_rest=$(printf '51\tclean\t0\tno\n52\tdirty\t0\tno\n53\tunstable\t2\tno\n54\tdirty\t0\tyes\n')
 rd_over=$(overlay_rest "$rd_snap" "$rd_rest")
-eq "REST's mergeable_state: dirty conflicts, and reds, holds and busy are added" "pr	52	Frost alert	pending	conflicting	app	0	no	no
-pr	54	Watering copy	green	conflicting	app	0	yes	no" "$(printf '%s\n' "$rd_over" | grep -E '^pr	5[24]	')"
+eq "REST's mergeable_state: dirty conflicts, and reds, holds, busy and pending are added" "pr	52	Frost alert	pending	conflicting	app	0	no	no	no
+pr	54	Watering copy	green	conflicting	app	0	yes	no	no" "$(printf '%s\n' "$rd_over" | grep -E '^pr	5[24]	')"
 eq "a head commit under 30 minutes old is someone at work" "yes" "$(recently_touched 10000 '' 11000 30)"
 eq "so is a comment under 30 minutes old" "yes" "$(recently_touched 1000 10500 11000 30)"
 eq "both older is nobody" "no" "$(recently_touched 1000 2000 11000 30)"
@@ -5013,7 +5021,15 @@ eq "no times is nobody" "no" "$(recently_touched '' '' 11000 30)"
 rd_busy=$(overlay_rest "$rd_snap" "$(printf '52\tdirty\t0\tno\tyes\n53\tunstable\t1\tno\tyes\n')")
 eq "a busy pull request gets no agent: neither merge-main nor fix-pr, only a busy line" "0 2 busy 52	Frost alert	pushed or commented on in the last 30 minutes; someone is likely on it" "$(p=$(propose_round "$rd_busy" 2 4 2); printf '%s ' "$(printf '%s\n' "$p" | grep -cE '^(merge-main|fix-pr) 5[23]')"; printf '%s ' "$(printf '%s\n' "$p" | grep -c '^busy 5[23]')"; printf '%s\n' "$p" | grep '^busy 52')"
 eq "a busy line is not numbered" "busy 52	Frost alert" "$(number_proposal "$(printf 'busy 52\tFrost alert')")"
-eq "red too often is still set aside, busy or not" "set-aside 53	Seed list	(red 2 times)" "$(propose_round "$(overlay_rest "$rd_snap" "$(printf '53\tunstable\t2\tno\tyes\n')")" 2 4 2 | grep '53')"
+eq "red too often is set aside once its newest commit is neither new nor waiting on checks" "set-aside 53	Seed list	(red 2 times)" "$(propose_round "$(overlay_rest "$rd_snap" "$(printf '53\tunstable\t2\tno\tno\tno\n')")" 2 4 2 | grep '53')"
+eq "red twice before, but a head commit under 30 minutes old: busy, not set aside" "busy 53	Seed list	pushed or commented on in the last 30 minutes; someone is likely on it" "$(propose_round "$(overlay_rest "$rd_snap" "$(printf '53\tunstable\t2\tno\tyes\tno\n')")" 2 4 2 | grep '53')"
+eq "red twice before, a pending head commit: no set-aside, and no fix, only a busy line saying why" "busy 53	Seed list	its newest commit is still waiting on its checks" "$(propose_round "$(overlay_rest "$rd_snap" "$(printf '53\tunstable\t2\tno\tno\tyes\n')")" 2 4 2 | grep '53')"
+eq "a pending head commit is read from its check runs: any not completed" "yes no" "$(checks_pending "$(printf 'completed\tfailure\nqueued\t\n')") $(checks_pending "$(printf 'completed\tfailure\ncompleted\tsuccess\n')")"
+eq "plan.sh reads the head commit's check runs before it proposes set-aside" "1" "$(grep -c 'head_checks_pending "\$p_sha"' "$root/scripts/drive/plan.sh")"
+rd_held_green=$(printf 'pr\t61\tSeed list\tgreen\tmergeable\tapp\t0\tyes\tno\tno\npr\t62\tBed map\tgreen\tmergeable\tapp\t0\tyes\tno\tno\npr\t63\tFrost alert\tgreen\tmergeable\tapp\t0\tyes\tno\tno\nqueue\tnone\n')
+eq "green pull requests that are all held for the owner propose no merge and no drain" "stop: nothing to propose" "$(propose_round "$rd_held_green" 2 4 2)"
+eq "a held green one is left out and the rest still lands" "merge 64" "$(propose_round "$(printf '%spr\t64\tWatering copy\tgreen\tmergeable\tapp\t0\tno\tno\tno\n' "$rd_held_green")" 2 4 2 | grep '^merge')"
+eq "plan.sh leaves held green pull requests out of its drain" "1" "$(grep -c 'green" && $5 == "mergeable" && $8 != "yes" { print \$2 }' "$root/scripts/drive/plan.sh")"
 eq "the skill says a busy pull request gets no agent" "yes" "$(grep -q 'busy N TITLE' "$root/skills/project-drive/SKILL.md" && echo yes)"
 eq "a pull request that conflicts with main is brought up to date; a held one waits" "1 0" "$(p=$(propose_round "$rd_over" 2 4 2); printf '%s ' "$(printf '%s\n' "$p" | grep -c '^merge-main 52	Frost alert$')"; printf '%s\n' "$p" | grep -c 'merge-main 54')"
 eq "red twice is set aside, not fixed again" "set-aside 53	Seed list	(red 2 times)" "$(propose_round "$rd_over" 2 4 2 | grep '53')"
@@ -5094,6 +5110,51 @@ exit 0
 FAKE
 ad_run 'unused' '')"
 eq "the skill keeps every open pull request moving" "yes" "$(grep -q 'merge-main N' "$root/skills/project-drive/SKILL.md" && grep -q 'merge-main' "$root/scripts/drive/drive-lib.sh" && echo yes)"
+# A started unit is running while its pull request is open, whatever State its issues show.
+sr_comments=$(printf '2026-11-12T18:00:00Z\tmaya-drive\tRound started.\\n<!-- sipnship-proposal {"status":"started","units":[{"issues":[301,302,303],"areas":[],"pr":531},{"issues":[310],"areas":[],"pr":532}],"held":[]} -->\n')
+eq "a unit with an open pull request is running although its issues read Ready (none In progress)" "301 302 303" "$(running_round "$sr_comments" '' "$(printf '531\n540\n')")"
+eq "two units with open pull requests are both running" "301 302 303 310" "$(running_round "$sr_comments" '' "$(printf '531\n532\n')")"
+eq "once its pull request merged (no longer open) and nothing is In progress, the round has landed" "" "$(running_round "$sr_comments" '' "$(printf '540\n')")"
+eq "an In progress issue still counts, with or without an open pull request" "310" "$(running_round "$sr_comments" "$(printf '310\n')" "$(printf '540\n')")"
+eq "an approved dispatch is held while a unit's pull request is open" "merge 41
+held: 1 dispatch goal(s) wait for the running round (#301, #302, #303) to land" "$(hold_dispatch "$(printf 'merge 41\ndispatch 320\tSeed packets\n')" "$(running_round "$sr_comments" '' "$(printf '531\n')")")"
+eq "approval.sh reads the open pull requests, so the case prints held and no dispatch" "1" "$(grep -c 'running_round "\$comments" "\$inprog" "\$open_prs"' "$root/scripts/drive/approval.sh")"
+eq "the plan holds every issue of a unit whose pull request is open, one unnumbered hold line each" "hold	301	Water the beds	Its pull request (#531) is still open and its unit is running; no agent is started on it
+hold	302	Tint the beds	Its pull request (#531) is still open and its unit is running; no agent is started on it
+hold	303		Its pull request (#531) is still open and its unit is running; no agent is started on it" "$(started_pr_holds "$sr_comments" "$(printf '531\n')" "$(printf '301\tWater the beds\n302\tTint the beds\n')")"
+eq "a unit whose pull request is not open holds nothing" "" "$(started_pr_holds "$sr_comments" "$(printf '540\n')" '')"
+eq "plan.sh reads the started round and holds those issues out of dispatch" "1 1" "$(grep -c 'read_drive_comments "$drive_line"' "$root/scripts/drive/plan.sh") $(grep -c 'started_ready_holds "$drive_comments"' "$root/scripts/drive/plan.sh")"
+# A request with no issue: the round-wide Start now.
+wq_r="2026-11-12T18:56:00Z${wq_t}sipnship[bot]${wq_t}Queue request: start-now by maya
+2026-11-12T18:57:00Z${wq_t}sipnship[bot]${wq_t}Queue request: start-now #301 by maya"
+eq "a Start now with no issue reads like start-round, N is 0, beside one that names an issue" "start-now 0 by maya
+start-now 301 by maya" "$(work_requests "$wq_r" 2026-11-12T00:00:00Z 2026-11-12T17:00:00Z)"
+eq "its answer in the fixed form spends it and only it" "start-now 301 by maya" "$(work_requests "$wq_r
+2026-11-12T19:01:00Z${wq_t}sipnship[bot]${wq_t}Queue answer: start-now #0: started-now" 2026-11-12T00:00:00Z 2026-11-12T17:00:00Z)"
+eq "a person other than the one named is not read" "" "$(work_requests "2026-11-12T18:56:00Z${wq_t}tom${wq_t}Queue request: start-now by maya" 2026-11-12T00:00:00Z 2026-11-12T17:00:00Z)"
+eq "the skill says what the round-wide Start now means and how it is answered" "1" "$(grep -c 'Queue answer: start-now #0: started-now' "$root/skills/project-drive/SKILL.md")"
+# Plugin and CI work is one bundle, even when an issue names no file.
+bd_guess() { guess_files "$1" '' ''; }
+eq "an issue that speaks of the plugin's drive and names no path is guessed as plugin work" "plugin/" "$(bd_guess "The drive's plan proposes a drain for held pull requests. Where: the plugin's drive plan script.")"
+eq "so is one that names the project-drive skill or the workflow file" "plugin/ plugin/" "$(bd_guess 'The project-drive skill says one thing') $(bd_guess 'ci.yml skips the job')"
+eq "an issue about something else that names no path is still unguessed" "" "$(bd_guess 'The Work tab shows a card for the seed list')"
+bd_ready=$(printf '1388\tThe drive proposes a drain for held ones\t%s\n1374\tThe drive proposes set-aside for a waiting one\t%s\n1367\tThe drive proposes mark-waiting every tick\tplugin/scripts/board/digest.sh\n1370\tThe listener carries out land here\tplugin/console/\n1311\tA fix in the workflow\t.github/workflows/ci.yml\n' "$(bd_guess "the plugin's drive plan script")" "$(bd_guess 'in plugin/scripts/drive/plan.sh')")
+eq "every ready plugin and CI issue goes into one unit, with a reason" "1" "$(plan_units "$bd_ready" '' | grep -c '^unit')"
+eq "that unit carries all five" "1388 1374 1367 1370 1311" "$(plan_units "$bd_ready" '' | awk -F'\t' '$1 == "unit" { print $2 }')"
+eq "a plugin issue that names no path waits on a running plugin unit" "hold	1388	The drive proposes a drain for held ones	After: Hook fix" "$(plan_units "$(printf '1388\tThe drive proposes a drain for held ones\t%s\n' "$(bd_guess "the plugin's drive plan script")")" "$(printf 'Hook fix\tplugin/hooks/a.sh\n')")"
+# "Part of" does not finish an issue.
+eq "only Closes, Fixes and Resolves finish an issue, in any case, with or without a colon" "4
+12
+9" "$(closed_refs 'Closes #4 and fixes #12; resolved: #9. Part of #20, see #21. Spec: specs/010-work')"
+eq "a pull request that says only Part of finishes nothing" "" "$(closed_refs 'Part of #1390. Not done: the rest of #1390 and #1388.')"
+eq "the audit reads closing lines, in the workflow and its template alike" "1 1" "$(grep -c 'closed_refs "\$line"' "$root/templates/.github/workflows/audit.yml") $(grep -c '^closed_refs()' "$root/templates/scripts/ci/lib.sh")"
+au_line='Issues still open and labeled ready after their PR merged: - #1273 (merged in #1385) - #1364 (merged in #1385) - #1340 (merged in #1385)'
+eq "an audit comment of only stale entries names the merged pull requests once" "1385" "$(audit_stale_prs "$au_line")"
+eq "any other audit comment names none" "" "$(audit_stale_prs 'Open issues with no State label: - #12 Issues still open and labeled ready after their PR merged: - #4 (merged in #30)')"
+eq "every one said Part of: the audit's line is no goal" "yes" "$(audit_only_part_of "$au_line" "$(printf '1385\tPart of #1273. Part of #1364 and #1340. Closes #1380.\n')")"
+eq "one the pull request closed is still a goal" "no" "$(audit_only_part_of "$au_line" "$(printf '1385\tPart of #1273 and #1364. Closes #1340.\n')")"
+eq "a body the plan could not read is still a goal" "no" "$(audit_only_part_of "$au_line" '')"
+eq "plan.sh drops an audit line of only Part of entries" "1" "$(grep -c 'audit_unless_part_of "\$last"' "$root/scripts/drive/plan.sh")"
 
 section 'temp files stay in the run, and nothing it starts outlives it'
 eq "every block's temp folder is inside the run's own root" "yes" "$(case "$TMPDIR" in */.scratch/tests-tmp/run-*) echo yes ;; *) echo no ;; esac)"

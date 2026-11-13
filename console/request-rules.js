@@ -8,7 +8,9 @@
 
 const { RULES } = require('./permissions');
 
-const KINDS = ['add-runner', 'remove-runner', 'grant-permissions', 'run-migration', 'deploy', 'scan-skip', 'scan-again', 'set-places'];
+const KINDS = ['add-runner', 'remove-runner', 'grant-permissions', 'run-migration', 'deploy', 'scan-skip', 'scan-again', 'set-places', 'land-here', 'deploy-here', 'restart-runners'];
+// The kinds that go around GitHub's runs (spec 012, "When GitHub is not starting runs"): offered only by a listener that carries them out.
+const AROUND_KINDS = ['land-here', 'deploy-here', 'restart-runners'];
 // Kinds that end in Windows' own administrator prompt, and the kinds that only change a Windows machine.
 const ELEVATED = ['add-runner', 'remove-runner', 'scan-skip', 'scan-again'];
 const WINDOWS_ONLY = ELEVATED;
@@ -81,6 +83,7 @@ function canKinds(f) {
     if (WINDOWS_ONLY.includes(k) && !f.windows) return false;
     if ((k === 'add-runner' || k === 'remove-runner') && !f.admin) return false;
     if ((k === 'scan-skip' || k === 'scan-again') && !f.antivirus) return false;
+    if (AROUND_KINDS.includes(k) && !f.around) return false;
     return true;
   });
 }
@@ -120,4 +123,4 @@ function refusal(req, { ghAs, can, now = Date.now() }) {
   return null;
 }
 
-module.exports = { canonicalPlaces, KINDS, ELEVATED, WINDOWS_ONLY, PERMISSION_IDS, SCAN_FOLDERS, EXPIRE_MINUTES, paramRule, canKinds, stepFacts, parseLines, refusal };
+module.exports = { canonicalPlaces, KINDS, AROUND_KINDS, ELEVATED, WINDOWS_ONLY, PERMISSION_IDS, SCAN_FOLDERS, EXPIRE_MINUTES, paramRule, canKinds, stepFacts, parseLines, refusal };

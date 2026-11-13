@@ -429,18 +429,11 @@ issues_without_state() {
     }'
 }
 
-# issue_refs TEXT
-# Print every issue number TEXT refers to as #N, one per line, unique.
-issue_refs() {
-  printf '%s\n' "$1" | tr -d '\r' | awk '
-    {
-      s = $0
-      while (match(s, /#[0-9]+/)) {
-        n = substr(s, RSTART + 1, RLENGTH - 1)
-        if (!(n in seen)) { seen[n] = 1; print n }
-        s = substr(s, RSTART + RLENGTH)
-      }
-    }'
+# closed_refs TEXT
+# Every issue number TEXT finishes, one per line, unique: only Closes, Fixes or Resolves #N (any case, colon
+# optional) counts; "Part of #N" leaves the issue open on purpose, with what is left written in the body.
+closed_refs() {
+  printf '%s\n' "$1" | tr -d '\r' | tr 'A-Z' 'a-z' | grep -oE '(close[sd]?|fix(e[sd])?|resolve[sd]?):? #[0-9]+' | sed 's/.*#//' | awk '!s[$0]++'
 }
 
 # ended_remote_branches REMOTE ENDED [DEFAULT]

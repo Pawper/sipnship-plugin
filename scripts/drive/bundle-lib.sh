@@ -91,7 +91,11 @@ past_spec_files() {
 # nothing when the body names no path.
 guess_files() {
   gf_paths=$(body_paths "$1")
-  [ -n "$gf_paths" ] || return 0
+  if [ -z "$gf_paths" ]; then
+    # No path named, but plugin or CI work still shares one test suite: an issue that speaks of the plugin, the drive skill or the workflow file is guessed as plugin/, so it goes into the one bundle.
+    if printf '%s\n' "$1" | grep -qiE '(^|[^a-z])(plugin|project-drive|ci\.yml)([^a-z]|$)'; then printf 'plugin/\n'; fi
+    return 0
+  fi
   {
     printf '%s\n' "$gf_paths"
     mocks_files "$gf_paths" "$2"
