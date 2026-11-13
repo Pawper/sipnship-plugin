@@ -135,10 +135,10 @@ snapshot=$(cat "$tmp")
 # Every open pull request keeps moving: REST lists them, each one's mergeable_state says whether it conflicts with main, and a red one
 # also gets how many times it was red.
 rest_lines=""
-pr_list=$(gh api "repos/{owner}/{repo}/pulls?state=open&per_page=100" --jq '.[] | [(.number | tostring), .head.ref, ([.labels[].name] | join(",")), ((.body // "") | [splits("\r?\n")] | map(select(test("^Queue: hold"; "i"))) | first // ""), ((.body // "") | [scan("(?i)(?:closes|fixes|resolves) #([0-9]+)") | .[0]] | join(","))] | join("\u001f")' 2>/dev/null | tr -d '\r')
+pr_list=$(gh api "repos/{owner}/{repo}/pulls?state=open&per_page=100" --jq '.[] | [(.number | tostring), .head.ref, ([.labels[].name] | join(",")), ((.body // "") | [splits("\r?\n")] | map(select(test("^Queue: hold"; "i"))) | first // ""), ((.body // "") | [scan("(?i)(?:closes|fixes|resolves) #([0-9]+)") | .[0]] | join(",")), ((.body // "") | [scan("(?i)\\b(?:refs?|references|spec for|part of|relates to|related to):? #([0-9]+)") | .[0]] | join(","))] | join("\u001f")' 2>/dev/null | tr -d '\r')
 # One separator that is not whitespace, so a pull request with no hold line or no labels keeps its empty field; a tab would collapse it and shift the Closes numbers left.
 pull_links=$(pull_link_row "$pr_list")
-while IFS="$us" read -r p_num p_ref p_labels p_hold p_closes; do
+while IFS="$us" read -r p_num p_ref p_labels p_hold p_closes p_refs; do
   [ -n "$p_num" ] || continue
   p_info=$(gh api "repos/{owner}/{repo}/pulls/$p_num" --jq '[(.mergeable_state // ""), .head.sha] | @tsv' 2>/dev/null | tr -d '\r')
   p_state=$(printf '%s' "$p_info" | cut -f1); p_sha=$(printf '%s' "$p_info" | cut -f2)

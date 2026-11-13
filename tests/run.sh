@@ -4983,7 +4983,15 @@ eq "a plain open pull request is named too" "hold	1110	Frost alerts	Its pull req
 eq "one whose pull request is held for the owner says so" "hold	1106	Review drawer	Its pull request (#1204) is held for your read; no agent is started on it" "$(carried_holds "$(printf "issue	1106	Review drawer	state:ready	x	body
 ")" "$sl_open")"
 eq "a Ready issue no pull request closes gets none" "0" "$(printf '%s\n' "$sl_carried" | grep -c '	1112	')"
-eq "plan.sh adds the carried issues to its hold lines" "1" "$(grep -c 'carried_holds "\$facts" "\$pull_links"' "$root/scripts/drive/plan.sh")"
+# A held draft that only refers to a Ready issue (Refs #N, a spec to read) holds it like one that closes it, so no ask-fix is proposed.
+sl_rl=$(printf '1301%sspec-draft%squeue:hold%sQueue: hold, for your read%s%s1120\n1302%sfrost-spec%s%s%s%s1121\n' "$sl_us" "$sl_us" "$sl_us" "$sl_us" "$sl_us" "$sl_us" "$sl_us" "$sl_us" "$sl_us" "$sl_us")
+sl_rp=$(pull_link_row "$sl_rl")
+eq "a pull request that refers to an issue carries it as a fourth field" "1301	yes		1120" "$(printf '%s\n' "$sl_rp" | sed -n 1p)"
+sl_rf=$(printf 'issue\t1120\tRooftop watering plan\tstate:ready\t%s\tbody\nissue\t1121\tFrost alerts\tstate:ready\t%s\tbody\n' "$sl_old" "$sl_old")
+eq "a Ready issue only a held draft refers to gets a hold line naming the draft" "hold	1120	Rooftop watering plan	Its pull request (#1301) is held for your read; no agent is started on it" "$(carried_holds "$sl_rf" "$sl_rp" | sed -n 1p)"
+eq "one referred to by a draft that is not held is not held" "0" "$(carried_holds "$sl_rf" "$sl_rp" | grep -c '	1121	')"
+eq "plan.sh reads the refers-to numbers" "1" "$(grep -c 'refs?|references|spec for' "$root/scripts/drive/plan.sh")"
+eq "plan.sh adds the carried issues to its hold lines" "1""$(grep -c 'carried_holds "\$facts" "\$pull_links"' "$root/scripts/drive/plan.sh")"
 section 'drive runs rounds of units'
 . "$root/scripts/drive/drive-lib.sh"
 . "$root/scripts/drive/bundle-lib.sh"
