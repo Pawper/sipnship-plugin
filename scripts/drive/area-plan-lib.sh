@@ -96,3 +96,43 @@ area_units() {
       }
     }'
 }
+
+# title_area_files TITLE AREAS
+# An issue whose body names no path is placed by its title: the first path of
+# every area whose name (a hyphen read as a space) the title says as a whole
+# word, comma separated. Nothing when AREAS is empty or no name is said.
+title_area_files() {
+  [ -n "$2" ] || return 0
+  printf '%s\n' "$2" | tr -d '\r' | awk -v t="$(printf '%s' "$1" | tr 'A-Z' 'a-z')" '
+    BEGIN { t = " " t " "; gsub(/[^a-z0-9]+/, " ", t) }
+    /^#/ || NF < 2 { next }
+    { name = tolower($1); gsub(/-/, " ", name); if (index(t, " " name " ")) out = out (out == "" ? "" : ",") $2 }
+    END { print out }'
+}
+
+# unplaced_holds UNITS GUESSES RUNNING TITLES
+# GUESSES are the plan's "NUMBER<TAB>TITLE<TAB>FILES" lines; an issue whose
+# FILES are empty has no area the plan can see. While a unit is running
+# (RUNNING, running_units' lines) such an issue is not dispatched blind: its
+# unit line becomes a hold that says its area is unknown and names the running
+# unit. With nothing running every line passes as it came. TITLES are
+# "NUMBER<TAB>TITLE" lines.
+unplaced_holds() {
+  if [ -z "$3" ]; then printf '%s\n' "$1"; return 0; fi
+  { printf '%s\n' "$2" | sed 's/^/G\t/'; printf '%s\n' "$3" | sed 's/^/R\t/'; printf '%s\n' "$4" | sed 's/^/T\t/'; printf '%s\n' "$1" | sed 's/^/U\t/'; } | tr -d '\r' | awk -F'\t' '
+    $1 == "G" && $2 != "" && $4 == "" { none[$2] = 1 }
+    $1 == "R" && $2 != "" && first == "" { first = $2; sub(/[ ,].*/, "", first) }
+    $1 == "T" && $2 != "" { tt[$2] = $3 }
+    $1 == "U" && $2 != "" { u[++n] = $0 }
+    END {
+      run = (first in tt && tt[first] != "") ? "“" tt[first] "”" : "#" first
+      for (i = 1; i <= n; i++) {
+        split(u[i], f, "\t"); all = (f[2] == "unit")
+        m = split(f[3], ns, " ")
+        if (all) for (k = 1; k <= m; k++) if (!(ns[k] in none)) all = 0
+        if (!all) { print substr(u[i], 3); continue }
+        q = split(f[4], ts, " \\| ")
+        for (k = 1; k <= m; k++) printf "hold\t%s\t%s\tIts area is not known: it names no file, and %s is running. Name its files or area to place it\n", ns[k], (q == m ? ts[k] : f[4]), run
+      }
+    }'
+}

@@ -219,6 +219,7 @@ round=$(propose_round "$snapshot" "$runners" "$max_agents" "$aside_after")
 # one bundle (one agent, one pull request), disjoint ones stay apart, and an
 # issue touching files a running issue touches is held, naming it.
 mocks_text=""; [ -f scripts/ci/mocks.txt ] && mocks_text=$(cat scripts/ci/mocks.txt)
+areas_text=""; [ -f .claude/areas.txt ] && areas_text=$(cat .claude/areas.txt)
 past=$(past_spec_files "$(git log -n 300 --name-only --format='@@ %s' main 2>/dev/null || git log -n 300 --name-only --format='@@ %s' 2>/dev/null)")
 guesses=""; running=""
 # A ready issue that says it comes after another open one is held, naming what it waits on, read afresh each run.
@@ -235,7 +236,7 @@ while IFS="$us" read -r kind num title a b c d e; do
     ready)
       case "$(printf '%s\n' "$snapshot" | awk -F'\t' -v n="$num" '$1 == "issue" && $2 == n { print $5 }')" in yes) continue ;; esac
       printf '%s\n' "$reasons" | grep -q "^hold	$num	" && continue
-      g=$(guess_files "$title $c" "$mocks_text" "$past")
+      g=$(guess_files "$title $c" "$mocks_text" "$past"); [ -n "$g" ] || g=$(title_area_files "$title" "$areas_text")
       guesses="${guesses}${num}${tab}${title}${tab}${g}
 " ;;
     in-progress)
@@ -249,10 +250,10 @@ EOF_FACTS
 if [ -n "$guesses" ] || [ -n "$reasons" ]; then
   units=$(plan_units "$guesses" "$running")
   # The running round's areas, read as publish-round.sh reads them: an issue in an area a running unit owns is a hold behind it, and units sharing an area are one unit, so the proposal publishes as it stands.
-  areas_text=""; [ -f .claude/areas.txt ] && areas_text=$(cat .claude/areas.txt)
   if [ -n "$areas_text" ]; then
     run_units=$(running_units "$(printf '%s\n' "$drive_comments" | cut -f3-)" "$(printf '%s\n' "$snapshot" | awk -F'\t' '$1 == "issue" && $4 == "in-progress" { print $2 }')" "$(printf '%s\n' "$pr_list" | cut -d"$us" -f1)")
-    units=$(area_units "$areas_text" "$units" "$run_units" "$(printf '%s\n' "$facts" | awk -F'\t' '$1 == "issue" { print $2 "\t" $3 }')")
+    issue_titles=$(printf '%s\n' "$facts" | awk -F'\t' '$1 == "issue" { print $2 "\t" $3 }')
+    units=$(area_units "$areas_text" "$units" "$run_units" "$issue_titles"); units=$(unplaced_holds "$units" "$guesses" "$run_units" "$issue_titles")
   fi
   # Issues a builder rushed (RUSH_ISSUES, space separated, read from work-requests.sh): their bundle leads.
   units=$(rush_first "$units" "${RUSH_ISSUES:-}")
@@ -296,5 +297,4 @@ if [ "$aside_after" -gt 0 ] 2>/dev/null; then aside_words="a pull request red $a
 echo "rounds: at most $units_per_round units a round, one round at a time; each unit's agent on ${model:-the model the agent-model hook allows}; $aside_words"
 summary_note
 health_note
-
 wake_note

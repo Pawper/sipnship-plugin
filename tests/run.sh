@@ -5679,6 +5679,34 @@ eq "so does one that only closes the release issue" "410" "$(open_release_pr "$(
 eq "a version that only starts the same carries none" "" "$(open_release_pr "$da_facts" '' 0.7.30)"
 eq "no open pull request for it means the release stands" "" "$(open_release_pr "$(printf 'pr\t411\tTidy the bed map\tPENDING\tMERGEABLE\ttidy\tsrc/beds/map.ts\n')" '' 0.7.3)"
 eq "plan.sh drops the release goal while one is open" "1" "$(grep -c 'open_release_pr "$facts" "$pull_links"' "$root/scripts/drive/plan.sh")"
+# A ready issue that names no file is placed, or held, never dispatched blind (areas file: Maya's rooftop-garden app).
+eq "an issue with no path is placed by the area its title says" "src/water/" "$(title_area_files 'The watering page forgets the last schedule' 'watering   src/water/ src/schedule.ts
+beds       src/beds/')"
+eq "a hyphenated area name is read as words" "design/tokens.json" "$(title_area_files 'Fix the design system palette' 'design-system   design/tokens.json design/generated/')"
+eq "a title that says no area is not placed" "" "$(title_area_files 'Tidy up the readme' "$(cat "$fx/drive-areas/areas.txt")")"
+eq "a word inside another word is not an area" "" "$(title_area_files 'Bedside manner' 'beds   src/beds/')"
+da_nopath=$(printf '501\tTidy up the readme\t\n')
+da_unit=$(plan_units "$da_nopath" "")
+eq "with a unit running, an issue whose area is unknown is a hold that says so, not a dispatch" "hold${da_t}501${da_t}Tidy up the readme${da_t}Its area is not known: it names no file, and “Water the beds” is running. Name its files or area to place it" "$(unplaced_holds "$da_unit" "$da_nopath" "$(printf '301\twatering\n')" "$da_titles")"
+eq "with nothing running it passes as it came" "$da_unit" "$(unplaced_holds "$da_unit" "$da_nopath" '' "$da_titles")"
+da_mixed=$(printf '501\tTidy up the readme\t\n402\tWater the beds on a timer\tsrc/water/timer.ts\n')
+eq "an issue with files is left alone beside it" "unit${da_t}402" "$(unplaced_holds "$(plan_units "$da_mixed" '')" "$da_mixed" "$(printf '301\twatering\n')" "$da_titles" | grep '^unit' | cut -f1,2)"
+eq "plan.sh places by title and holds the unplaced" "1 1" "$(grep -c 'title_area_files "$title"' "$root/scripts/drive/plan.sh") $(grep -c 'unplaced_holds "$units"' "$root/scripts/drive/plan.sh")"
+# Plugin and CI work is one unit, however each issue names its files or speaks of them.
+pb_guesses=$(printf '1437\tFix the plan\t%s\n1431\tFix the round\t%s\n1440\tFix the summary\t%s\n' "$(guess_files 'Where: plugin/scripts/drive/plan.sh' '' '')" "$(guess_files 'Where: plugin/tests/run.sh and plugin/scripts/drive/round-lib.sh' '' '')" "$(guess_files 'The drive'"'"'s plan says a summary is due' '' '')")
+eq "two plugin issues naming different plugin files, and one that only speaks of the drive's plan, are one unit" "unit${da_t}1437 1431 1440${da_t}Fix the plan | Fix the round | Fix the summary${da_t}all 3 are plugin or CI work, which shares one test suite" "$(plan_units "$pb_guesses" '' | cut -f1-4)"
+# The once-a-day summary is found on any page of a busy drive issue's day.
+sm_today=$(date +%Y-%m-%d)
+gh() {
+  case "$*" in *--paginate*) sm_n=150 ;; *) sm_n=100 ;; esac
+  seq 1 "$sm_n" | while read -r sm_i; do if [ "$sm_i" -eq 130 ]; then printf 'Summary for %s, written on the second page\n' "$sm_today"; else printf 'Watering note %s\n' "$sm_i"; fi; done
+}
+sm_run() ( settings=$(drive_settings '{"summaryAt":"00:00"}'); auto="on 77"; summary_note )
+eq "a summary on the second page of 150 comments is seen, so none is due" "" "$(sm_run)"
+gh() { seq 1 150 | sed 's/^/Watering note /'; }
+eq "no summary in the day still says it is due" "1" "$(sm_run | grep -c '^summary: due; post today')"
+unset -f gh
+eq "the summary check reads every page" "1" "$(grep -c 'gh api --paginate .*issues/$drive_issue/comments' "$root/scripts/drive/round-notes-lib.sh")"
 
 # --- end of blocks: the summary, kept in every part.
 eq "no test wrote into the checkout's own queue state" "$queue_picture_before" "$([ "$queue_picture_before" = skipped ] && echo skipped || queue_picture)"
