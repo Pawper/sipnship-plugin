@@ -165,7 +165,8 @@ The goal lines and what each means:
   --serial N`, or `--batch N N N` for the batch. See `scripts/ci/QUEUE.md`. Never merge anything that is not
   green at the moment of merging, whatever the proposal said.
 - **`landing N N: ...`** (unnumbered). In a project whose queue drains by itself, green pull requests are
-  left to it; nothing to do.
+  left to it; nothing to do. When the `queue` fact reads `batch N`, an open pull request carries the queue's
+  batch marker and its members are already landing: no drain is proposed while it is open.
 - **`drain N N`.** Green pull requests have sat 15 minutes without landing: run `sh
   scripts/ci/merge-queue.sh --drain` once, in the background, and end the tick. One drain, never a loop.
 - **`fix-pr N`.** Read the failing check. If the cause is inside the pull request's own scope or is a

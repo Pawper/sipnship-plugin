@@ -89,3 +89,10 @@ head_checks_pending() {
   checks_pending "$(gh api "repos/{owner}/{repo}/commits/$1/check-runs?per_page=100" --jq '.check_runs[] | [.status, (.conclusion // "")] | @tsv' 2>/dev/null)"
 }
 
+# open_batch_pr
+# The number of an open pull request carrying the queue batch marker: a batch already landing its members, so the queue is
+# running whatever its log says. Nothing when none is open or the project has no queue (one REST call).
+open_batch_pr() {
+  [ -f scripts/ci/merge-queue.sh ] || return 0
+  gh api "repos/{owner}/{repo}/pulls?state=open&per_page=100" --jq '[.[] | select((.body // "") | (contains("<!-- merge-queue:batch -->") or startswith("One integration run for the pull requests below"))) | .number][0] // empty' 2>/dev/null | tr -d '\r'
+}

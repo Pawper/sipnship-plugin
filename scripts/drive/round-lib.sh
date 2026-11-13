@@ -112,15 +112,21 @@ green_minutes() {
 # any has sat green AFTER minutes (default 15), and otherwise one
 # unnumbered "landing" line saying the queue lands them. A round left with
 # no goal says work is in flight.
+#
+# A fourth argument, BATCH, is the number of an open pull request that
+# carries the queue's batch marker: its members are already landing, so no
+# drain is proposed (a second queue process would break the one-queue rule)
+# and the line names the batch.
 landing_goals() {
-  printf '%s\n' "$1" | awk -v ages="$2" -v after="${3:-15}" '
+  printf '%s\n' "$1" | awk -v ages="$2" -v after="${3:-15}" -v batch="${4:-}" '
     BEGIN {
       n = split(ages, al, "\n")
       for (i = 1; i <= n; i++) { split(al[i], f, "\t"); if (f[1] != "" && f[2] + 0 > oldest) oldest = f[2] + 0 }
     }
     function land() {
       if (prs == "") return
-      if (oldest >= after) { print "drain " prs "\t(green for " oldest " minutes; one drain lands them)"; goals++ }
+      if (batch != "") print "landing " prs ": a queue batch (pull request " batch ") is already landing them; no drain is proposed"
+      else if (oldest >= after) { print "drain " prs "\t(green for " oldest " minutes; one drain lands them)"; goals++ }
       else print "landing " prs ": green; the queue lands them, and a drain is proposed if they sit " after " minutes"
       prs = ""
     }

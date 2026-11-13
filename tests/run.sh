@@ -5043,6 +5043,8 @@ eq "green minutes: since the branch's newest finished run" "20" "$(green_minutes
 rd_round=$(printf 'merge-batch 41 42 45\nfix-pr 47\tBroken\nstop: proposal ready for approval\n')
 eq "green work under 15 minutes: the queue lands it" "landing 41 42 45: green; the queue lands them, and a drain is proposed if they sit 15 minutes" "$(landing_goals "$rd_round" "$(printf '41\t3\n42\t9\n')" 15 | grep '^landing')"
 eq "green work sat 15 minutes: one drain" "drain 41 42 45	(green for 16 minutes; one drain lands them)" "$(landing_goals "$rd_round" "$(printf '41\t16\n42\t9\n')" 15 | grep '^drain')"
+eq "a running batch lands them: no drain, even when green over 15 minutes" "landing 41 42 45: a queue batch (pull request 1400) is already landing them; no drain is proposed" "$(landing_goals "$rd_round" "$(printf '41\t40\n42\t9\n')" 15 1400 | grep '^landing')"
+eq "a running batch: no drain line at all" "" "$(landing_goals "$rd_round" "$(printf '41\t40\n')" 15 1400 | grep '^drain')"
 eq "only landing left: work is in flight" "landing 41: green; the queue lands them, and a drain is proposed if they sit 15 minutes
 stop: work is in flight; nothing to propose until it lands" "$(landing_goals "$(printf 'merge 41\nstop: proposal ready for approval\n')" "$(printf '41\t2\n')" 15)"
 eq "a landing line is not numbered" "landing 41: green" "$(number_proposal 'landing 41: green')"

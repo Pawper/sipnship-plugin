@@ -125,6 +125,7 @@ if [ -n "$queue_glob" ]; then
     if [ "$(queue_is_stale "$newest_m" "$(date +%s)" "$(tail -n 1 "$newest")")" = yes ]; then queue_state=stale; else queue_state=recent; fi
   fi
 fi
+batch_pr=$(open_batch_pr); [ -n "$batch_pr" ] && queue_state="batch $batch_pr"
 printf 'queue\t%s\n' "$queue_state" >> "$tmp"
 
 snapshot=$(cat "$tmp")
@@ -234,8 +235,7 @@ if [ -n "$guesses" ] || [ -n "$reasons" ]; then
   slots=$units_per_round; [ "$max_agents" -lt "$slots" ] && slots=$max_agents; [ "$runners" -lt "$slots" ] && slots=$runners
   round=$(apply_units "$round" "$units" "$slots" "$machines")
 fi
-# A project whose queue lands green work by itself: rely on it, and
-# propose one drain only when green work has sat 15 minutes.
+# A project whose queue lands green work by itself: rely on it; propose one drain only when green work has sat 15 minutes.
 green_prs=$(printf '%s\n' "$snapshot" | awk -F'\t' '$1 == "pr" && $4 == "green" && $5 == "mergeable" && $8 != "yes" { print $2 }')
 runs=""
 if [ -f scripts/ci/merge-queue.sh ] && [ -n "$green_prs" ]; then
@@ -247,7 +247,7 @@ if [ -f scripts/ci/merge-queue.sh ] && [ -n "$green_prs" ]; then
     ages="${ages}${p}${tab}${m:-0}
 "
   done
-  round=$(landing_goals "$round" "$ages" 15)
+  round=$(landing_goals "$round" "$ages" 15 "$batch_pr")
 fi
 # Unreleased plugin work: one release goal, from this repository's history.
 plugin_ver=$(json_field "$(cat plugin/.claude-plugin/plugin.json 2>/dev/null)" version)
