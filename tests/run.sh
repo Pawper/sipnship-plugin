@@ -5674,7 +5674,7 @@ eq "no request owed leaves the reading as it was" "nothing${wk_tab}no reply yet"
 eq "any other comment does not" "no no" "$(wake_event_wanted issue_comment 'Looks good to me') $(wake_event_wanted issue_comment 'Queue request: land-now #12 by maya')"
 wk_yml="$root/../.github/workflows/drive-wake.yml"
 if [ -f "$wk_yml" ]; then
-  eq "the wake runs on the drive's own runner, never a hosted one" "1 0" "$(grep -c 'runs-on: \[self-hosted, drive\]' "$wk_yml") $(grep -cE 'runs-on:.*(ubuntu|macos|windows-latest)' "$wk_yml")"
+  eq "the wake runs on the drive's own runner, never a hosted one" "1 0" "$(grep -c 'runs-on: \[drive\]' "$wk_yml") $(grep -cE 'runs-on:.*(ubuntu|macos|windows-latest)' "$wk_yml")"
   eq "the wake is started by the four events" "4" "$(grep -cE '^  (workflow_dispatch|repository_dispatch|workflow_run|issue_comment):' "$wk_yml")"
   eq "the model step runs only when something is approved" "1" "$(grep -c "if: steps.check.outputs.start == 'yes'" "$wk_yml")"
 fi
