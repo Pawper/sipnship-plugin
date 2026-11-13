@@ -1607,6 +1607,8 @@ case "$*" in
   *"-X POST"*"/issues/"*"/comments"*) n=$(num "$@"); printf 'POST %s %s\n' "$n" "$(printf '%s' "$*" | sed 's/.*-f body=//' | tr '\n' ' ')" >> "$ST_LOG" ;;
   *"pulls/500"*) printf 'issue-226\nMakes the shed list sortable.\n\nCloses #226\n' ;;
   *"pulls/501"*) printf 'issue-230\nMakes the shed list sortable.\n\nCloses #230\n' ;;
+  *"pulls?state=open"*) cat "$ST_DIR/open-pulls" 2>/dev/null ;;
+  *"pulls/503"*) printf 'bed-photos\nMakes the shed list sortable.\n\nPart of #240\nPart of #241\n' ;;
   *"pulls/502"*) printf 'bed-photos\nNo issue is named here.\n' ;;
   *"/issues/"*"/labels"*) n=$(num "$@"); cut -f2 "$ST_DIR/issue-$n" | tr '|' '\n' ;;
   *"/issues/"*) n=$(num "$@"); cat "$ST_DIR/issue-$n" ;;
@@ -1628,6 +1630,14 @@ st_run settle_merged 500
 eq "an issue already Ready is left alone" "0" "$(grep -c '^PUT' "$st/log")"
 : > "$st/log"; st_run settle_merged 502
 eq "a pull request naming no issue touches none" "0" "$(wc -l < "$st/log" | tr -d ' ')"
+printf 'open\tstate:in-progress\n' > "$st/issue-240"; printf 'open\tstate:in-progress\n' > "$st/issue-241"; : > "$st/log"
+st_run settle_merged 503
+eq "every part a merged pull request names goes back to Ready, not only the first" ". 2" "$(st_in_progress 240 241) $(grep -c '^PUT 24[01] {"labels":\["state:ready"\]}' "$st/log")"
+printf 'open\tstate:in-progress\n' > "$st/issue-240"; printf 'open\tstate:in-progress\n' > "$st/issue-241"; : > "$st/log"
+printf 'bed-photos\nAnother part.\n\nPart of #241\n' > "$st/open-pulls"
+st_run settle_merged 503
+eq "a part another open pull request still names stays In progress" "241 . 1" "$(st_in_progress 240 241) $(grep -c '^PUT' "$st/log")"
+rm -f "$st/open-pulls"
 printf 'open\tstate:in-progress\n' > "$st/issue-230"; : > "$st/log"; rm -f "$st/q/settled-held"
 st_run settle_held 501
 eq "a held pull request moves its issue to Waiting on you" ". 1" "$(st_in_progress 230) $(grep -c '^PUT 230 {"labels":\["state:waiting-on-owner"\]}' "$st/log")"

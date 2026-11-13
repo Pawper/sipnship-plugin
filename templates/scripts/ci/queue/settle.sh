@@ -16,10 +16,10 @@
 # plan sets right whatever is left (plugin/scripts/drive/stale-lib.sh).
 
 # settle_issues PR: the issues a pull request names, one number a line: the
-# Closes / Fixes / Resolves lines of its body, and an issue-N branch name.
+# Closes / Fixes / Resolves and Part of / Refs lines of its body, and an issue-N branch name.
 settle_issues() {
   si_body=$(gh api "repos/{owner}/{repo}/pulls/$1" --jq '[.head.ref, (.body // "")] | join("\n")' 2>/dev/null | tr -d '\r') || return 0
-  printf '%s\n' "$si_body" | { grep -oiE '(closes|fixes|resolves) #[0-9]+' | grep -oE '[0-9]+'; printf '%s\n' "$si_body" | head -n 1 | grep -oE '^issue-[0-9]+' | grep -oE '[0-9]+'; } | sort -un
+  printf '%s\n' "$si_body" | { grep -oiE '(closes|fixes|resolves|part of|refs?) #[0-9]+' | grep -oE '[0-9]+'; printf '%s\n' "$si_body" | head -n 1 | grep -oE '^issue-[0-9]+' | grep -oE '[0-9]+'; } | sort -un
 }
 
 # settle_in_progress ISSUE: yes when the issue is open and its State is In progress.
@@ -27,6 +27,12 @@ settle_in_progress() {
   sp_row=$(gh api "repos/{owner}/{repo}/issues/$1" --jq '[.state, ([.labels[].name] | join("|"))] | @tsv' 2>/dev/null | tr -d '\r') || return 0
   [ "$(printf '%s' "$sp_row" | cut -f1)" = open ] || { echo no; return 0; }
   if printf '%s' "$sp_row" | cut -f2 | tr '|' '\n' | while IFS= read -r sp_l; do state_slug "$sp_l"; done | grep -qx 'in-progress'; then echo yes; else echo no; fi
+}
+
+# settle_other_open ISSUE PR: yes when another open pull request names the issue (Closes or Part of), so work on it goes on.
+settle_other_open() {
+  so_open=$(gh api "repos/{owner}/{repo}/pulls?state=open&per_page=100" --jq '.[] | select(.number != '"$2"') | [.head.ref, (.body // "")] | join("\n")' 2>/dev/null | tr -d '\r') || return 0
+  if printf '%s\n' "$so_open" | grep -qiE "(closes|fixes|resolves|part of|refs?) #$1([^0-9]|\$)"; then echo yes; else echo no; fi
 }
 
 # settle_set ISSUE SLUG: the issue's State, over REST (a PUT of its labels).
@@ -49,6 +55,7 @@ settle_merged() {
     # GitHub closes a named issue a moment after the merge; look once more before putting it back.
     sleep "${SETTLE_WAIT:-3}" 2>/dev/null || true
     [ "$(settle_in_progress "$sm_n")" = yes ] || continue
+    [ "$(settle_other_open "$sm_n" "$1")" = yes ] && continue
     gh_write api -X POST "repos/{owner}/{repo}/issues/$sm_n/comments" -f body="Pull request #$1 merged without closing this issue, so it is back to Ready; nobody is on it now." >/dev/null 2>&1 || true
     settle_set "$sm_n" ready && say "  #$sm_n: In progress with no pull request open any more; back to Ready." || true
   done
