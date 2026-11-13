@@ -4959,6 +4959,7 @@ section 'drive runs rounds of units'
 . "$root/scripts/drive/drive-lib.sh"
 . "$root/scripts/drive/bundle-lib.sh"
 . "$root/scripts/drive/round-lib.sh"
+. "$root/scripts/drive/round-notes-lib.sh"
 . "$root/scripts/drive/round-state-lib.sh"
 . "$root/scripts/drive/plan-read-lib.sh"
 rd_defaults=$(drive_settings '{}')
@@ -5573,6 +5574,34 @@ an_brief() { (here="$root/hooks/scripts"; sb_cache=$an_cache; add() { printf '%s
 eq "the brief's slot names them from the slow read's cache" "1" "$(an_brief | grep -c '^2 answers since your last session')"
 eq "and the next session start does not name them again" "" "$(an_brief)"
 eq "the slow read keeps the owed answers for it" "1" "$(grep -c 'answers.sh" --all 2>/dev/null | keep answers' "$root/hooks/scripts/session-brief-slow.sh")"
+
+section 'the plan reads areas like publish-round, and no second release (drive)'
+. "$root/scripts/drive/area-plan-lib.sh"
+da_list=$(cat "$fx/drive-areas/areas.txt")
+da_facts=$(cat "$fx/drive-areas/facts.tsv")
+da_t=$(printf '\t')
+da_titles=$(printf '301\tWater the beds\n402\tWater the beds on a timer\n403\tTint the beds by sun\n404\tFix the schedule page\n405\tTune the build\n')
+# A running unit owns the watering area; the ready ones in it wait behind it, as publish-round.sh would insist.
+eq "an issue in the area a running unit owns is a hold naming that unit, not a dispatch" "hold${da_t}402${da_t}Water the beds on a timer${da_t}After: Water the beds
+unit${da_t}403${da_t}Tint the beds by sun${da_t}${da_t}src/beds/tint.ts" "$(area_units "$da_list" "$(printf 'unit\t402\tWater the beds on a timer\t\tsrc/water/timer.ts\nunit\t403\tTint the beds by sun\t\tsrc/beds/tint.ts\n')" "$(printf '301\twatering\n')" "$da_titles")"
+eq "the plan's output then passes publish-round's own area check" "" "$(area_problem "$(round_areas "$da_list" "$(printf 'unit: 403 | areas: src/beds/tint.ts\nhold: 402 | after: 301 | areas: src/water/timer.ts\n')")" "$(printf '301\twatering\n')")"
+eq "a unit that is part of the running unit is left alone" "unit${da_t}301${da_t}Water the beds${da_t}${da_t}src/water/a.ts" "$(area_units "$da_list" "$(printf 'unit\t301\tWater the beds\t\tsrc/water/a.ts\n')" "$(printf '301\twatering\n')" "$da_titles")"
+eq "two ready issues in one area become one unit" "unit${da_t}402 404${da_t}Water the beds on a timer | Fix the schedule page${da_t}both change the watering area${da_t}src/water/timer.ts,src/schedule.ts" "$(area_units "$da_list" "$(printf 'unit\t402\tWater the beds on a timer\t\tsrc/water/timer.ts\nunit\t404\tFix the schedule page\t\tsrc/schedule.ts\n')" '' "$da_titles")"
+eq "two ready issues in the tooling area become one unit" "unit${da_t}405 406${da_t}Tune the build | Fix the scripts${da_t}both change the tooling area${da_t}ci/a.sh,scripts/b.sh" "$(area_units "$da_list" "$(printf 'unit\t405\tTune the build\t\tci/a.sh\nunit\t406\tFix the scripts\t\tscripts/b.sh\n')" '' "$da_titles")"
+eq "units in different areas stay apart" "2" "$(area_units "$da_list" "$(printf 'unit\t402\tWater\t\tsrc/water/t.ts\nunit\t403\tTint\t\tsrc/beds/t.ts\n')" '' "$da_titles" | grep -c '^unit')"
+eq "with no areas list the lines pass unchanged" "unit${da_t}402${da_t}Water${da_t}${da_t}x" "$(area_units '' "$(printf 'unit\t402\tWater\t\tx\n')" "$(printf '301\twatering\n')" '')"
+eq "a hold line passes through" "hold${da_t}9${da_t}Seeds${da_t}After: Pots" "$(area_units "$da_list" "$(printf 'hold\t9\tSeeds\tAfter: Pots\n')" '' '')"
+eq "plan.sh reads the running units' areas and plans by area" "1 1" "$(grep -c 'running_units "' "$root/scripts/drive/plan.sh") $(grep -c 'area_units "$areas_text"' "$root/scripts/drive/plan.sh")"
+# A deferred issue in a running unit's area waits on that unit.
+da_round=$(printf 'dispatch 1\tWater the beds\ndefer 2 unit(s): only 1 free runner this round (#402, #403 #404)\nstop: proposal ready\n')
+eq "a deferred unit in a running unit's area is held after that unit; the rest wait for a runner" "hold: 402 | after: 301 | why: Its area, watering, is owned by the running unit
+hold: 403 404 | why: No free runner this round" "$(deferred_holds "$da_round" "$(printf '301\twatering\n')" "$(printf '402\twatering\n403\tbeds\n')")"
+# An open release pull request means no second release.
+eq "an open pull request that bumps the plugin to that version carries the release" "410" "$(open_release_pr "$da_facts" "$(printf '410\tno\t401\n')" 0.7.3)"
+eq "so does one that only closes the release issue" "410" "$(open_release_pr "$(printf 'issue\t401\tPlugin 0.7.3\tstate:ready\tx\tbody\npr\t410\tCarry it\tSUCCESS\tMERGEABLE\tcarry\tsrc/a.ts\n')" "$(printf '410\tno\t401\n')" 0.7.3)"
+eq "a version that only starts the same carries none" "" "$(open_release_pr "$da_facts" '' 0.7.30)"
+eq "no open pull request for it means the release stands" "" "$(open_release_pr "$(printf 'pr\t411\tTidy the bed map\tPENDING\tMERGEABLE\ttidy\tsrc/beds/map.ts\n')" '' 0.7.3)"
+eq "plan.sh drops the release goal while one is open" "1" "$(grep -c 'open_release_pr "$facts" "$pull_links"' "$root/scripts/drive/plan.sh")"
 
 # --- end of blocks: the summary, kept in every part.
 eq "no test wrote into the checkout's own queue state" "$queue_picture_before" "$([ "$queue_picture_before" = skipped ] && echo skipped || queue_picture)"

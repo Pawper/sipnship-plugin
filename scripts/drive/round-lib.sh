@@ -140,32 +140,6 @@ landing_goals() {
     { print }'
 }
 
-# summary_due NOW AT WRITTEN
-# NOW and AT are local "HH:MM"; WRITTEN is yes when today's summary is on
-# the drive issue already. "yes" when AT is set, NOW is at or past it and
-# nothing is written yet; "no" otherwise.
-summary_due() {
-  if [ -z "$2" ] || [ "$3" = yes ]; then echo no; return 0; fi
-  sd_now=$(printf '%s' "$1" | awk -F: '{ print $1 * 60 + $2 }')
-  sd_at=$(printf '%s' "$2" | awk -F: '{ print $1 * 60 + $2 }')
-  if [ "$sd_now" -ge "$sd_at" ]; then echo yes; else echo no; fi
-}
-
-# health_line NAME VALUE ABOVE
-# The health note: a recommendation, never a pause. Over ABOVE it
-# recommends a restart; at or under it, it says the figure is fine; with no
-# figure, it says so. Work goes on in every case.
-health_line() {
-  case "$2" in
-    ''|*[!0-9.]*) printf 'health: %s could not be read; work goes on\n' "$1"; return 0 ;;
-  esac
-  if [ -n "$3" ] && awk -v v="$2" -v a="$3" 'BEGIN { exit !(v + 0 > a + 0) }'; then
-    printf 'health: %s is %s, over %s; a restart is recommended, and work goes on\n' "$1" "$2" "$3"
-  else
-    printf 'health: %s is %s, fine\n' "$1" "$2"
-  fi
-}
-
 # comment_pages COUNT
 # The pages of 100 that hold an issue's newest comments: the last two, or
 # 1 when there are 100 or fewer. GitHub lists comments oldest first.
@@ -263,13 +237,32 @@ agent_runners_say() {
 # "hold: 5 | why: No free runner this round" each, so the Work tab says
 # why a unit is not in the round instead of saying nothing. A unit with
 # several issues is one hold line naming all of them.
+#
+# deferred_holds ROUND RUNNING ISSUE_AREAS: RUNNING (running_units' lines,
+# "ISSUES<TAB>AREAS", commas) and ISSUE_AREAS ("NUMBER<TAB>AREAS" lines) let a
+# deferred unit in an area a running unit owns wait on that unit instead:
+# "hold: 5 | after: 12 14 | why: ...", since publish-round.sh refuses it as a
+# unit in the running unit's area. Both are optional.
 deferred_holds() {
-  printf '%s\n' "$1" | awk '
+  printf '%s\n' "$1" | awk -v running="${2:-}" -v ia="${3:-}" '
+    BEGIN {
+      n = split(running, rl, "\n"); for (i = 1; i <= n; i++) if (rl[i] != "") { split(rl[i], f, "\t"); nr++; rs[nr] = f[1]; ra[nr] = f[2] }
+      n = split(ia, il, "\n"); for (i = 1; i <= n; i++) if (il[i] != "") { split(il[i], f, "\t"); iarea[f[1]] = f[2] }
+    }
     /^defer [0-9]+ unit\(s\):/ {
       s = $0; i = match(s, /\(#[^)]*\)$/); if (!i) next
       s = substr(s, RSTART + 1, RLENGTH - 2)
       n = split(s, pieces, /, /)
-      for (k = 1; k <= n; k++) { p = pieces[k]; gsub(/#/, "", p); print "hold: " p " | why: No free runner this round" }
+      for (k = 1; k <= n; k++) {
+        p = pieces[k]; gsub(/#/, "", p)
+        split(p, first, " "); hit = ""; who = ""; mine = iarea[first[1]]
+        if (mine != "") for (q = 1; q <= nr && hit == ""; q++) {
+          na = split(mine, ma, ","); nb = split(ra[q], mb, ",")
+          for (x = 1; x <= na && hit == ""; x++) for (y = 1; y <= nb; y++) if (ma[x] != "" && ma[x] == mb[y]) { hit = ma[x]; who = rs[q] }
+        }
+        if (hit != "") { gsub(/,/, " ", who); print "hold: " p " | after: " who " | why: Its area, " hit ", is owned by the running unit" }
+        else print "hold: " p " | why: No free runner this round"
+      }
     }'
 }
 

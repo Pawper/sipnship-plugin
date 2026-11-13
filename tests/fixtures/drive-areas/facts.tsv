@@ -1,0 +1,5 @@
+issue	401	Plugin 0.7.3	state:ready	x	Release the plugin
+issue	402	Water the beds on a timer	state:ready	x	body
+issue	403	Tint the beds by sun	state:ready	x	body
+pr	410	Plugin 0.7.3	SUCCESS	MERGEABLE	plugin-0-7-3	plugin/.claude-plugin/plugin.json,plugin/CHANGELOG.md
+pr	411	Tidy the bed map	PENDING	MERGEABLE	tidy	src/beds/map.ts

@@ -1,0 +1,4 @@
+# Maya rooftop-garden app
+watering   specs/030-watering/ src/schedule.ts src/water/
+beds       specs/031-beds/ src/beds/
+tooling    ci/ scripts/

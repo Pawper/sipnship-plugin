@@ -224,6 +224,31 @@ release_goal() {
   printf 'release %s (%s plugin %s unreleased)\n' "$rg_next" "$2" "$rg_w"
 }
 
+# open_release_pr FACTS PULLS VERSION
+# FACTS are board-now.sh's lines, PULLS "NUMBER<TAB>HELD<TAB>CLOSES" per open
+# pull request (pull_link_row). Prints the number of an open pull request that
+# already carries the release of VERSION (the version release_goal would
+# propose), or nothing: one that changes plugin/.claude-plugin/plugin.json or
+# is called a plugin release, and names VERSION in its title or branch, or one
+# that closes an issue whose title names VERSION for the plugin or a release.
+open_release_pr() {
+  [ -n "$3" ] || return 0
+  { printf '%s\n' "$2" | sed 's/^/L\t/'; printf '%s\n' "$1" | sed 's/^/F\t/'; } | tr -d '\r' | awk -F'\t' -v v="$3" '
+    function named(s,   i, c) {
+      i = index(s, v); if (!i) return 0
+      c = substr(s, i + length(v), 1)
+      return c !~ /[0-9]/ && !(c == "." && substr(s, i + length(v) + 1, 1) ~ /[0-9]/)
+    }
+    function releasey(s) { return tolower(s) ~ /(plugin|release)/ }
+    $1 == "L" && $2 != "" { k = split($4, a, ","); for (i = 1; i <= k; i++) if (a[i] != "") pr_of[a[i]] = pr_of[a[i]] " " $2 }
+    $1 == "F" && $2 == "pr" && !found {
+      if (named($4 " " $7) && (releasey($4) || $8 ~ /plugin\/\.claude-plugin\/plugin\.json/)) { print $3; found = 1 }
+    }
+    $1 == "F" && $2 == "issue" && !found {
+      if (named($4) && releasey($4) && ($3 in pr_of)) { s = pr_of[$3]; sub(/^ /, "", s); sub(/ .*/, "", s); print s; found = 1 }
+    }'
+}
+
 # add_goal ROUND LINE
 # Put one more goal into a propose_round result, before its defer and stop
 # lines, and make the stop line say a proposal is ready.

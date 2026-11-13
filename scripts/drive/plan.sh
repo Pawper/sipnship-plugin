@@ -25,7 +25,10 @@ here=$(dirname "$0")
 . "$here/drive-lib.sh"
 . "$here/bundle-lib.sh"
 . "$here/round-lib.sh"
+. "$here/round-notes-lib.sh"
 . "$here/round-state-lib.sh"
+. "$here/areas-lib.sh"
+. "$here/area-plan-lib.sh"
 . "$here/plan-read-lib.sh"
 . "$here/stale-lib.sh"
 
@@ -226,6 +229,12 @@ $(printf '%s\n' "$facts" | tr '\t' '\037')
 EOF_FACTS
 if [ -n "$guesses" ] || [ -n "$reasons" ]; then
   units=$(plan_units "$guesses" "$running")
+  # The running round's areas, read as publish-round.sh reads them: an issue in an area a running unit owns is a hold behind it, and units sharing an area are one unit, so the proposal publishes as it stands.
+  areas_text=""; [ -f .claude/areas.txt ] && areas_text=$(cat .claude/areas.txt)
+  if [ -n "$areas_text" ]; then
+    run_units=$(running_units "$(printf '%s\n' "$drive_comments" | cut -f3-)" "$(printf '%s\n' "$snapshot" | awk -F'\t' '$1 == "issue" && $4 == "in-progress" { print $2 }')")
+    units=$(area_units "$areas_text" "$units" "$run_units" "$(printf '%s\n' "$facts" | awk -F'\t' '$1 == "issue" { print $2 "\t" $3 }')")
+  fi
   # Issues a builder rushed (RUSH_ISSUES, space separated, read from work-requests.sh): their bundle leads.
   units=$(rush_first "$units" "${RUSH_ISSUES:-}")
   [ -n "$reasons" ] && units=$(printf '%s\n%s\n' "$units" "$reasons" | sed '/^$/d')
@@ -252,6 +261,8 @@ fi
 # Unreleased plugin work: one release goal, from this repository's history.
 plugin_ver=$(json_field "$(cat plugin/.claude-plugin/plugin.json 2>/dev/null)" version)
 rel_line=$(release_goal "$plugin_ver" "$(plugin_unreleased_count)")
+# An open pull request that already carries that release (or closes its release issue) means no second release is proposed; its hold line says so.
+[ -n "$rel_line" ] && [ -n "$(open_release_pr "$facts" "$pull_links" "$(next_patch "$plugin_ver")")" ] && rel_line=""
 [ -n "$rel_line" ] && round=$(add_goal "$round" "$rel_line")
 if [ -n "$extra" ]; then
   round=$(printf '%s\n%s\n' "$extra" "$round" | awk '/^stop: (nothing to propose|everything left waits|work is in flight)/ { print "stop: proposal ready for approval"; next } { print }')
@@ -264,37 +275,7 @@ auto_line "$auto"
 model=$(setting "$settings" dispatchModel)
 if [ "$aside_after" -gt 0 ] 2>/dev/null; then aside_words="a pull request red $aside_after times is set aside"; else aside_words="a red pull request is never set aside"; fi
 echo "rounds: at most $units_per_round units a round, one round at a time; each unit's agent on ${model:-the model the agent-model hook allows}; $aside_words"
-# The once-a-day summary, when summaryAt is set: due at that local time
-# until a comment "Summary for <today>" is on the drive issue (one REST
-# call, for the last day's comments only).
-summary_at=$(setting "$settings" summaryAt)
-drive_issue=${auto#* }
-if [ -n "$summary_at" ] && [ "$auto" != none ] && [ "$(summary_due "$(date +%H:%M)" "$summary_at" no)" = yes ]; then
-  today=$(date +%Y-%m-%d)
-  since_e=$(( $(date +%s) - 86400 ))
-  since=$(date -u -d "@$since_e" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$since_e" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null)
-  written=no
-  gh api "repos/{owner}/{repo}/issues/$drive_issue/comments?since=$since&per_page=100" --jq '.[].body' 2>/dev/null | grep -q "^Summary for $today" && written=yes
-  [ "$(summary_due "$(date +%H:%M)" "$summary_at" "$written")" = yes ] && echo "summary: due; post today's summary on issue $drive_issue, starting \"Summary for $today\""
-fi
-# The health note, when healthNote is set: a recommendation, never a pause.
-health_cmd=$(setting "$settings" healthCommand)
-if [ -n "$health_cmd" ]; then
-  if command -v timeout >/dev/null 2>&1; then hv=$(timeout 30 sh -c "$health_cmd" 2>/dev/null | tr -d '\r' | tail -n 1 | tr -d ' ')
-  else hv=$(sh -c "$health_cmd" 2>/dev/null | tr -d '\r' | tail -n 1 | tr -d ' '); fi
-  health_line "$(setting "$settings" healthName)" "$hv" "$(setting "$settings" healthAbove)"
-fi
+summary_note
+health_note
 
-# A pending pull request: say when to look again. One REST call for recent runs.
-pend_pr=$(printf '%s\n' "$snapshot" | awk -F'\t' '$1 == "pr" && $4 == "pending" { print $2; exit }')
-if [ -n "$pend_pr" ]; then
-  [ -n "$runs" ] || runs=$(gh api "repos/{owner}/{repo}/actions/runs?per_page=50" --jq '.workflow_runs[] | [.status, (.run_started_at // .created_at | fromdateiso8601), (.updated_at | fromdateiso8601), .path, .event, .head_branch] | @tsv' 2>/dev/null | tr -d '\r')
-  branch=$(gh api "repos/{owner}/{repo}/pulls/$pend_pr" --jq .head.ref 2>/dev/null | tr -d '\r')
-  # The pending run is the one for that pull request's branch, else the first not completed.
-  pending=$(printf '%s\n' "$runs" | awk -F'\t' -v b="$branch" '$1 != "completed" && $1 != "" && b != "" && $6 == b { print; exit }')
-  [ -n "$pending" ] || pending=$(printf '%s\n' "$runs" | awk -F'\t' '$1 != "completed" && $1 != "" { print; exit }')
-  started=$(printf '%s\n' "$pending" | awk -F'\t' '{ print $2 }')
-  durations=$(run_durations "$runs" "$(printf '%s\n' "$pending" | awk -F'\t' '{ print $4 }')" "$(printf '%s\n' "$pending" | awk -F'\t' '{ print $5 }')")
-  secs=$(wake_after "$durations" "$started" "$(date +%s)")
-  [ -n "$secs" ] && echo "wake: $secs seconds, PR $pend_pr"
-fi
+wake_note
