@@ -5656,6 +5656,28 @@ eq "the brief's slot names them from the slow read's cache" "1" "$(an_brief | gr
 eq "and the next session start does not name them again" "" "$(an_brief)"
 eq "the slow read keeps the owed answers for it" "1" "$(grep -c 'answers.sh" --all 2>/dev/null | keep answers' "$root/hooks/scripts/session-brief-slow.sh")"
 
+section 'a landing wakes the drive'
+. "$root/scripts/drive/wake-lib.sh"
+wk_tab=$(printf '\t')
+eq "approved goals start a tick" "start${wk_tab}2 goals" "$(wake_decision "$(printf 'dispatch 301 302\ndispatch 303\napproved by Auto Drive\n')")"
+eq "one goal is said in the singular" "start${wk_tab}1 goal" "$(wake_decision "$(printf 'merge 41\napproved by Maya, with Start this round\n')")"
+eq "nothing approved ends at once, with approval's own words" "nothing${wk_tab}the latest proposal on issue 7 has no reply yet" "$(wake_decision 'nothing: the latest proposal on issue 7 has no reply yet')"
+eq "a round still running holds, and no tick starts" "nothing${wk_tab}1 dispatch goal(s) wait for the running round (#301) to land" "$(wake_decision "$(printf 'nothing: 1 dispatch goal(s) wait for the running round (#301) to land\n')")"
+eq "held lines alone start nothing" "nothing${wk_tab}1 dispatch goal(s) wait for the running round (#301) to land" "$(wake_decision 'held: 1 dispatch goal(s) wait for the running round (#301) to land')"
+eq "an empty reading starts nothing" "nothing${wk_tab}nothing approved" "$(wake_decision '')"
+eq "a dispatch wakes the drive" "yes yes yes" "$(wake_event_wanted workflow_dispatch '') $(wake_event_wanted repository_dispatch '') $(wake_event_wanted workflow_run '')"
+eq "the start-round comment wakes it" "yes" "$(wake_event_wanted issue_comment 'Queue request: start-round by maya')"
+eq "so do Start now, Start this next and hold-agent" "yes yes yes" "$(wake_event_wanted issue_comment 'Queue request: start-now by maya') $(wake_event_wanted issue_comment 'Queue request: start-next #12 by maya') $(wake_event_wanted issue_comment 'Queue request: hold-agent #12 by maya')"
+eq "a request the drive still owes starts a tick with nothing approved" "start${wk_tab}1 request" "$(wake_decision 'nothing: no reply yet' 'start-now 12 by maya')"
+eq "approved goals still say goals when requests are owed too" "start${wk_tab}1 goal" "$(wake_decision 'dispatch 301' 'start-next 12 by maya')"
+eq "no request owed leaves the reading as it was" "nothing${wk_tab}no reply yet" "$(wake_decision 'nothing: no reply yet' '')"
+eq "any other comment does not" "no no" "$(wake_event_wanted issue_comment 'Looks good to me') $(wake_event_wanted issue_comment 'Queue request: land-now #12 by maya')"
+wk_yml="$root/../.github/workflows/drive-wake.yml"
+if [ -f "$wk_yml" ]; then
+  eq "the wake runs on the drive's own runner, never a hosted one" "1 0" "$(grep -c 'runs-on: \[self-hosted, drive\]' "$wk_yml") $(grep -cE 'runs-on:.*(ubuntu|macos|windows-latest)' "$wk_yml")"
+  eq "the wake is started by the four events" "4" "$(grep -cE '^  (workflow_dispatch|repository_dispatch|workflow_run|issue_comment):' "$wk_yml")"
+  eq "the model step runs only when something is approved" "1" "$(grep -c "if: steps.check.outputs.start == 'yes'" "$wk_yml")"
+fi
 section 'the plan reads areas like publish-round, and no second release (drive)'
 . "$root/scripts/drive/area-plan-lib.sh"
 da_list=$(cat "$fx/drive-areas/areas.txt")

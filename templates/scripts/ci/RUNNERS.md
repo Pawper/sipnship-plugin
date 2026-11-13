@@ -85,6 +85,18 @@ runs-on: ${{ fromJSON(github.event_name == 'pull_request' && !startsWith(github.
 
 Nobody sets the labels. `add-runner.ps1` gives a new runner `pr`, so it takes pull requests' jobs from its first one, and the merge queue keeps the rest at the start of every drain, the scheduled one too: it reads the runners GitHub lists and, where `ci.yml` names `CI_KEEP_RUNNER`, leaves exactly one online runner without `pr`. The kept one is the online runner already without it, the oldest by id if there are several, so the role moves only when that runner goes offline; with fewer than two online, none is kept. It writes nothing when the labels are already right, and prints one line for each label it changes. It sets `CI_KEEP_RUNNER` to `on` once they are right. When its token (`QUEUE_TOKEN` in the scheduled drain) cannot manage the repository's runners, it sets `CI_KEEP_RUNNER` to `off`, so pull requests take any runner rather than wait on a label nobody keeps, and the Queue and the nightly audit say so; unset counts as off. The audit also says when no online runner is kept or none carries `pr`.
 
+## A runner for the drive
+
+The Drive wake workflow (`.github/workflows/drive-wake.yml`) runs one drive tick when a drain finishes, a Start this round request is left, or a dispatch arrives. A tick that starts a round holds its runner while the round's agents work, up to ninety minutes, so it must never take one of the CI runners: CI would wait behind it. It runs on a runner labeled `drive`, registered for that job alone and without the default `windows` label, so no `runs-on: [self-hosted, windows]` job can pick it. One runner is enough; a second wake waits queued behind the first (the workflow's concurrency group keeps one running and one pending).
+
+Register it from an elevated PowerShell, as `add-runner.ps1` does, but with the labels changed and the defaults off. Get a token with `gh api -X POST repos/{owner}/{repo}/actions/runners/registration-token --jq .token`, then in a new folder (say `C:\actions-runner-drive`) after unpacking the runner:
+
+```text
+.\config.cmd --unattended --url https://github.com/OWNER/REPO --token TOKEN --name drive --labels drive --no-default-labels --work _work --runasservice --replace
+```
+
+`claude` (Claude Code) must be on the machine PATH, since the service account sees only that. The runner counts as one of the repository's runners to the doctor and the watch; the CI count rule (one per two cores) is judged on the others.
+
 ## Nobody stops the daemon
 
 A build daemon (Gradle's, Nx's, the .NET build server) is one process for every build on the machine. On a machine that also hosts a runner, an agent that runs `gradlew --stop` from its worktree, meaning to tidy up, kills the runner's daemon mid-build, and the android job fails with "Gradle build daemon has been stopped". The `block-loose-ends` hook refuses `gradlew --stop`, `gradle --stop`, `nx reset`, `nx daemon --stop` and `dotnet build-server shutdown`. Stopping what you started means your own servers and watchers; a daemon idles out on its own. If no runner is on the machine, `DAEMON_STOP_OK=1` in front of the command says so.
