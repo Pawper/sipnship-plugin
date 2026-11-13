@@ -68,7 +68,7 @@ fi
 . "$here/queue/requests.sh"
 . "$here/queue/rush.sh"
 . "$here/queue/runs.sh"
-. "$here/queue/choose.sh"
+. "$here/queue/choose.sh"; . "$here/queue/held.sh"
 . "$here/queue/rerun.sh"; . "$here/queue/rescue.sh"
 . "$here/queue/serial.sh"
 . "$here/queue/batch.sh"

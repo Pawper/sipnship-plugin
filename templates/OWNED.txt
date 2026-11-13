@@ -68,6 +68,7 @@ scripts/ci/queue/tc-cache.sh
 scripts/ci/queue/rush.sh
 scripts/ci/queue/runs.sh
 scripts/ci/queue/choose.sh
+scripts/ci/queue/held.sh
 scripts/ci/queue/serial.sh
 scripts/ci/queue/batch.sh
 scripts/ci/queue/halve.sh

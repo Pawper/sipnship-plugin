@@ -71,13 +71,13 @@ state=$(printf '%s\n' "$comments" | awk -F'\t' -v me="$me" '
     }
     return out
   }
-  function dispatched(lines,   n, a, i, s, m, w, k, t) {
+  function dispatched(lines,   n, a, i, s, m, w, k, t, x) {
     t = " "; n = split(lines, a, "\n")
     for (i = 1; i <= n; i++) {
       s = a[i]; sub(/^[0-9]+\. /, "", s)
       if (s !~ /^dispatch /) continue
       m = split(substr(s, 10), w, /[ \t]+/)
-      for (k = 1; k <= m && w[k] ~ /^[0-9]+$/; k++) t = t w[k] " "
+      for (k = 1; k <= m && w[k] ~ /^[0-9]+:?$/; k++) { x = w[k]; sub(/:$/, "", x); t = t x " "; if (x != w[k]) break }
     }
     return t
   }

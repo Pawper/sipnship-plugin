@@ -95,7 +95,7 @@ export TMPDIR SUITE_TMP_ROOT GIT_CEILING_DIRECTORIES
 # Blocks that read its text read these two files: the libraries in sourcing
 # order, then the main script (so a function is defined before its call).
 mq_all=$SUITE_TMP_ROOT/merge-queue.all.sh
-cat "$root"/templates/scripts/ci/queue/state.sh "$root"/templates/scripts/ci/queue/requests.sh "$root"/templates/scripts/ci/queue/rush.sh "$root"/templates/scripts/ci/queue/runs.sh "$root"/templates/scripts/ci/queue/choose.sh "$root"/templates/scripts/ci/queue/rerun.sh "$root"/templates/scripts/ci/queue/rescue.sh "$root"/templates/scripts/ci/queue/serial.sh "$root"/templates/scripts/ci/queue/batch.sh "$root"/templates/scripts/ci/queue/deploy.sh "$root"/templates/scripts/ci/queue/attention.sh "$root"/templates/scripts/ci/queue/wait.sh "$root"/templates/scripts/ci/merge-queue.sh > "$mq_all"
+cat "$root"/templates/scripts/ci/queue/state.sh "$root"/templates/scripts/ci/queue/requests.sh "$root"/templates/scripts/ci/queue/rush.sh "$root"/templates/scripts/ci/queue/runs.sh "$root"/templates/scripts/ci/queue/choose.sh "$root"/templates/scripts/ci/queue/held.sh "$root"/templates/scripts/ci/queue/rerun.sh "$root"/templates/scripts/ci/queue/rescue.sh "$root"/templates/scripts/ci/queue/serial.sh "$root"/templates/scripts/ci/queue/batch.sh "$root"/templates/scripts/ci/queue/deploy.sh "$root"/templates/scripts/ci/queue/attention.sh "$root"/templates/scripts/ci/queue/wait.sh "$root"/templates/scripts/ci/merge-queue.sh > "$mq_all"
 bl_all=$SUITE_TMP_ROOT/batch-lib.all.sh
 cat "$root"/templates/scripts/ci/batch-lib.sh "$root"/templates/scripts/ci/queue/rules-*.sh > "$bl_all"
 
@@ -1893,6 +1893,27 @@ eq "the queue's note closes the wait it acted on" "0 1" "$(after_marks "$(printf
 eq "held steps run before unsticking, at the drain's end" "1" "$(sed -n '/deploy_if_due "\$d_begin"/,/|| unstick_one/p' "$mq_all" | grep -c '^  .*drain_over_budget.* || held_steps$')"
 eq "a held step's merge reuses GitHub's update-branch, once a drain's end" "1 1" "$(sed -n '/^held_steps()/,/^}/p' "$mq_all" | grep -c 'pulls/\$hs_pr/update-branch') $(sed -n '/^held_steps()/,/^}/p' "$mq_all" | grep -c 'held_merged=yes$')"
 eq "only labelled pull requests have their comments read" "1" "$(sed -n '/^held_steps()/,/^}/p' "$mq_all" | grep -c 'index("queue:after")')"
+# A held change that waits on another is not updated when that one lands; the same change without the hold is.
+. "$root/templates/scripts/ci/queue/rules-serial.sh"
+hh_run() (
+  flaky_dir=$(mktemp -d); gh_err="$flaky_dir/err"; tab=$(printf '\t'); held_merged=no; hh_log="$flaky_dir/log"; : > "$hh_log"
+  eval "$(sed -n '/^held_steps()/,/^}/p' "$root/templates/scripts/ci/queue/held.sh")"
+  gh() {
+    case "$*" in
+      *u001f*) printf '188\037%s\037Frost dates for each bed\n' "$HH_LABELS" ;;
+      *'select([.labels'*) echo 188 ;;
+      *issues/188/comments*) after_mark 176 merge-main - 'merge main in' ;;
+      *merged_at*) echo 2026-11-12T08:00:00Z ;;
+    esac
+  }
+  gh_write() { printf '%s\n' "$*" >> "$hh_log"; }
+  say() { :; }; rate_stop() { :; }; sync_worktree() { :; }; pr_field() { :; }; pr_rollup() { echo green; }
+  held_steps
+  grep -c 'update-branch' "$hh_log"; cut -f1,2 "$flaky_dir/after.tsv" | tr '\t' '>'
+)
+eq "a held change waiting on a landed one keeps its wait and is not updated" "0
+188>176" "$(HH_LABELS=queue:after,queue:hold hh_run)"
+eq "the same change without the hold has main merged in" "1" "$(HH_LABELS=queue:after hh_run | head -n 1)"
 eq "the command posts the mark and the label through REST" "1 1 0" "$(grep -c 'issues/\$pr/comments' "$root/templates/scripts/ci/wait-for.sh") $(grep -c "labels\[\]=queue:after" "$root/templates/scripts/ci/wait-for.sh") $(grep -c 'gh pr \|gh issue ' "$root/templates/scripts/ci/wait-for.sh")"
 eq "the command refuses a missing number" "2" "$(sh "$root/templates/scripts/ci/wait-for.sh" 188 >/dev/null 2>&1; echo $?)"
 hs_json=$(. "$root/templates/scripts/ci/publish-lib.sh"; publish_json "" "" "" "" "$(printf '176\tFrost dates for each bed\tserial\t2026-10-31T22:00:00Z\tno\n177\tEmpty beds show a planting hint\tserial\t2026-10-31T22:10:00Z\tyes\n178\tBeds can be renamed\tserial\t2026-10-31T22:20:00Z\t')" "" "" "$(printf 'abc1234\tgreen')" "" idle "" "" "" 2026-10-31T23:00:00Z "" "$(printf '188\t176\tmerge-main\tgarden-4\tmerge main in\n190\t177\twake\t-\tpush the fix')")
@@ -4904,6 +4925,14 @@ sr_text='2026-11-04T01:40:00Z	maya-drive	Proposal for Tuesday\n1. merge 51\n2. d
 '
 eq "a published round that repeats the numbered proposal keeps that proposal's numbers" "dispatch 223 240 Seed list
 approved by maya" "$(printf '%s' "$sr_text$sr_proposed" > "$sr_dir/comments"; printf '2026-11-04T02:00:00Z\tmaya\t3\n' >> "$sr_dir/comments"; sed -i 's/drive,drive:auto/drive/' "$sr_dir/bin/gh"; SR_DIR="$sr_dir" PATH="$sr_dir/bin:$PATH" sh "$root/scripts/drive/approval.sh" 2>&1)"
+# Under Auto Drive the published next round restates the numbered proposal's dispatches (its lines name the issue with a colon); the drain stays approved.
+sed -i 's/\(99.t\)drive\(.t3\)/\1drive,drive:auto\2/' "$sr_dir/bin/gh"
+sr_drain='2026-11-04T03:00:00Z	maya-drive	Proposal for Tuesday\n\n1. drain 231: the running round'"'"'s change is green\n2. dispatch 226: Land now and Land next\n3. dispatch 223 240: Seed list\nstop: proposal ready for approval
+'
+sr_drain_go='2026-11-04T03:00:30Z	maya-drive	Round started: 1 agent at work.\n\n<!-- sipnship-proposal {"status":"started","units":[{"issues":[214],"areas":["schedule"]}],"held":[]} -->
+'
+eq "Auto Drive keeps the numbered proposal's drain when the published round only restates its dispatches" "drain 231: the running round's change is green
+nothing" "$(sr_run "$sr_drain$sr_drain_go$sr_proposed" | sed -n '1p;$p' | sed 's/^nothing: .*/nothing/;s/^approved by .*/nothing/')"
 
 section 'drive sets right an In progress issue nobody works'
 . "$root/scripts/drive/drive-lib.sh"
