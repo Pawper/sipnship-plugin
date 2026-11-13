@@ -26,6 +26,7 @@ here=$(dirname "$0")
 . "$here/bundle-lib.sh"
 . "$here/round-lib.sh"
 . "$here/round-notes-lib.sh"
+. "$here/round-sizing-lib.sh"
 . "$here/round-state-lib.sh"
 . "$here/areas-lib.sh"
 . "$here/area-plan-lib.sh"
@@ -143,7 +144,25 @@ while IFS="$us" read -r p_num p_ref p_labels p_hold p_closes p_refs; do
   p_info=$(gh api "repos/{owner}/{repo}/pulls/$p_num" --jq '[(.mergeable_state // ""), .head.sha] | @tsv' 2>/dev/null | tr -d '\r')
   p_state=$(printf '%s' "$p_info" | cut -f1); p_sha=$(printf '%s' "$p_info" | cut -f2)
   p_reds=0; p_ci=$(printf '%s\n' "$snapshot" | awk -F'\t' -v n="$p_num" '$1 == "pr" && $2 == n { print $4 }')
-  [ "$p_ci" = red ] && p_reds=$(red_count "$(gh api "repos/{owner}/{repo}/actions/runs?branch=$p_ref&event=pull_request&status=failure&per_page=100" --jq '.workflow_runs[].head_sha' 2>/dev/null)")
+  p_mainred=none
+  if [ "$p_ci" = red ]; then
+    p_runs=$(gh api "repos/{owner}/{repo}/actions/runs?branch=$p_ref&event=pull_request&status=failure&per_page=100" --jq '.workflow_runs[] | [(.id | tostring), .head_sha, (.created_at | fromdateiso8601 | tostring)] | @tsv' 2>/dev/null | tr -d '\r')
+    p_reds=$(red_count "$(printf '%s\n' "$p_runs" | cut -f2)")
+    # A red that main itself had at the time (the same check failing there) is not the pull request's own: it does not count
+    # toward set-aside, and once main is right the pull request needs main merged in (the mainred field, round-lib.sh).
+    if [ "$p_reds" -gt 0 ]; then
+      [ -n "${main_checks_read:-}" ] || { main_checks=$(main_finished_checks); main_checks_read=yes; }
+      p_fails=$(run_failed_checks "$p_runs")
+      p_main=$(main_reds "$p_fails" "$main_checks" | grep -c .)
+      if [ "$p_main" -gt 0 ]; then
+        p_reds=$(( p_reds - p_main ))
+        if [ "$p_reds" -le 0 ]; then
+          p_reds=0
+          if [ "$(main_now_green "$p_fails" "$main_checks")" = yes ]; then p_mainred=fixed; else p_mainred=waiting; fi
+        fi
+      fi
+    fi
+  fi
   # Someone else on it? Only for one the drive would send an agent to (it conflicts or is red): a head commit or newest comment
   # under 30 minutes old means an agent in another session is likely at work, so it gets none.
   p_busy=no
@@ -154,7 +173,7 @@ while IFS="$us" read -r p_num p_ref p_labels p_hold p_closes p_refs; do
     p_busy=$(recently_touched "$p_head" "$p_note" "$(date +%s)" 30)
   fi
   p_pend=no; [ "$p_ci" = red ] && p_pend=$(head_checks_pending "$p_sha")  # a red from an older commit is not the newest commit failing
-  rest_lines="${rest_lines}${p_num}${tab}${p_state}${tab}${p_reds}${tab}$(held_by "$p_labels" "$p_hold")${tab}${p_busy}${tab}${p_pend}
+  rest_lines="${rest_lines}${p_num}${tab}${p_state}${tab}${p_reds}${tab}$(held_by "$p_labels" "$p_hold")${tab}${p_busy}${tab}${p_pend}${tab}${p_mainred}
 "
 done <<EOF_PRS
 $pr_list
@@ -232,7 +251,7 @@ if [ -n "$guesses" ] || [ -n "$reasons" ]; then
   # The running round's areas, read as publish-round.sh reads them: an issue in an area a running unit owns is a hold behind it, and units sharing an area are one unit, so the proposal publishes as it stands.
   areas_text=""; [ -f .claude/areas.txt ] && areas_text=$(cat .claude/areas.txt)
   if [ -n "$areas_text" ]; then
-    run_units=$(running_units "$(printf '%s\n' "$drive_comments" | cut -f3-)" "$(printf '%s\n' "$snapshot" | awk -F'\t' '$1 == "issue" && $4 == "in-progress" { print $2 }')")
+    run_units=$(running_units "$(printf '%s\n' "$drive_comments" | cut -f3-)" "$(printf '%s\n' "$snapshot" | awk -F'\t' '$1 == "issue" && $4 == "in-progress" { print $2 }')" "$(printf '%s\n' "$pr_list" | cut -d"$us" -f1)")
     units=$(area_units "$areas_text" "$units" "$run_units" "$(printf '%s\n' "$facts" | awk -F'\t' '$1 == "issue" { print $2 "\t" $3 }')")
   fi
   # Issues a builder rushed (RUSH_ISSUES, space separated, read from work-requests.sh): their bundle leads.

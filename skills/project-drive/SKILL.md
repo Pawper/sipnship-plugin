@@ -174,7 +174,8 @@ The goal lines and what each means:
   the unit's own agent fix it in its worktree), re-run the touched tests locally, and push; CI runs again.
   Otherwise leave one comment on the pull request naming the cause and set its issue to `state:blocked`.
 - **`set-aside N TITLE (red K times)`.** The pull request has been red `setAsideAfterReds` times (on
-  different commits). Stop fixing it: one comment on its issue naming the cause in plain words, set the issue
+  different commits; a red whose failing check was also failing on main at the time is not counted, and
+  such a pull request is proposed as `merge-main` once main is right). Stop fixing it: one comment on its issue naming the cause in plain words, set the issue
   to `state:blocked`, and the unit leaves the round, so the round can land without it.
 - **`merge-main N TITLE`.** The pull request conflicts with main and the queue does not hold it. Dispatch one
   agent (isolation, `dispatchModel`) to its branch's worktree: merge origin/main, keep both sides, regenerate

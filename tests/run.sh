@@ -4834,6 +4834,10 @@ eq "once the running unit is no longer in progress its area is free" "0" "$(pr_r
 . "$root/scripts/drive/areas-lib.sh"
 eq "running_units names each unit of the latest started round still in progress, with its areas" "300,301	watering,frost" "$(running_units "$(printf '%s\n' 'x <!-- sipnship-proposal {"status":"started","units":[{"issues":[1],"areas":["seeds"]}],"held":[]} -->' 'y <!-- sipnship-proposal {"status":"started","units":[{"issues":[300,301],"whyTogether":"a ] in words","areas":["watering","frost"]},{"issues":[302],"areas":["seeds"],"pr":9}],"held":[{"issues":[303],"waitsOn":[300],"areas":["seeds"]}]} -->')" "$(printf '301\n303\n1\n')")"
 eq "running_units says nothing when no round was started" "" "$(running_units 'a comment' '301')"
+ru_cm=$(printf '%s' 'x <!-- sipnship-proposal {"status":"started","units":[{"issues":[302],"areas":["work"],"pr":9}],"held":[]} -->')
+eq "a unit whose issues show another State still runs while its pull request is open" "302	work" "$(running_units "$ru_cm" '' "$(printf '9\n12\n')")"
+eq "and stops running once its pull request is not open" "" "$(running_units "$ru_cm" '' '12')"
+eq "plan.sh hands the open pull requests to running_units" "1" "$(grep -c 'running_units .*pr_list' "$root/scripts/drive/plan.sh")"
 eq "the drive's skill says feedback during a round is filed, not dispatched" "yes" "$(grep -q 'files it as a ready issue' "$root/skills/project-drive/SKILL.md" && grep -q 'files it as a ready issue' "$root/skills/handoff/SKILL.md" && echo yes)"
 eq "a line it does not know is refused" "The round was not published: a line this script does not know: garden: beds." "$(printf 'unit: 1 | areas: seeds\ngarden: beds\n' > "$pr_dir/odd.txt"; pr_run --dry-run "$pr_dir/odd.txt")"
 eq "the skill tells the drive to publish its rounds" "yes" "$(grep -q 'publish-round.sh' "$root/skills/project-drive/SKILL.md" && echo yes)"
@@ -5001,6 +5005,7 @@ section 'drive runs rounds of units'
 . "$root/scripts/drive/bundle-lib.sh"
 . "$root/scripts/drive/round-lib.sh"
 . "$root/scripts/drive/round-notes-lib.sh"
+. "$root/scripts/drive/round-sizing-lib.sh"
 . "$root/scripts/drive/round-state-lib.sh"
 . "$root/scripts/drive/plan-read-lib.sh"
 rd_defaults=$(drive_settings '{}')
@@ -5064,8 +5069,8 @@ eq "plugin work waits on a running plugin unit" "hold	33	Brief fix	After: Hook f
 rd_snap=$(printf 'pr\t51\tBeds page\tgreen\tmergeable\tapp\npr\t52\tFrost alert\tpending\tmergeable\tapp\npr\t53\tSeed list\tred\tmergeable\tapp\npr\t54\tWatering copy\tgreen\tmergeable\tapp\nissue\t9\tReady thing\tready\tno\n')
 rd_rest=$(printf '51\tclean\t0\tno\n52\tdirty\t0\tno\n53\tunstable\t2\tno\n54\tdirty\t0\tyes\n')
 rd_over=$(overlay_rest "$rd_snap" "$rd_rest")
-eq "REST's mergeable_state: dirty conflicts, and reds, holds, busy and pending are added" "pr	52	Frost alert	pending	conflicting	app	0	no	no	no
-pr	54	Watering copy	green	conflicting	app	0	yes	no	no" "$(printf '%s\n' "$rd_over" | grep -E '^pr	5[24]	')"
+eq "REST's mergeable_state: dirty conflicts, and reds, holds, busy and pending are added" "pr	52	Frost alert	pending	conflicting	app	0	no	no	no	none
+pr	54	Watering copy	green	conflicting	app	0	yes	no	no	none" "$(printf '%s\n' "$rd_over" | grep -E '^pr	5[24]	')"
 eq "a head commit under 30 minutes old is someone at work" "yes" "$(recently_touched 10000 '' 11000 30)"
 eq "so is a comment under 30 minutes old" "yes" "$(recently_touched 1000 10500 11000 30)"
 eq "both older is nobody" "no" "$(recently_touched 1000 2000 11000 30)"
@@ -5087,6 +5092,20 @@ eq "a pull request that conflicts with main is brought up to date; a held one wa
 eq "red twice is set aside, not fixed again" "set-aside 53	Seed list	(red 2 times)" "$(propose_round "$rd_over" 2 4 2 | grep '53')"
 eq "under the limit it is fixed" "fix-pr 53	Seed list" "$(propose_round "$rd_over" 2 4 3 | grep '53')"
 eq "a limit of 0 never sets aside" "fix-pr 53	Seed list" "$(propose_round "$rd_over" 2 4 0 | grep '53')"
+rd_pf=$(printf 'aaa\t1000\tplugin tests\nbbb\t2000\tplugin tests\n')
+rd_mc=$(printf '900\tplugin tests\tfailure\n1500\tplugin tests\tfailure\n2500\tplugin tests\tsuccess\n')
+eq "reds whose check was failing on main at the time are main's, not the pull request's" "aaa
+bbb" "$(main_reds "$rd_pf" "$(printf '900\tplugin tests\tfailure\n')")"
+eq "a red after main went green is the pull request's own" "aaa
+bbb" "$(main_reds "$(printf '%s\neee\t3000\tplugin tests\n' "$rd_pf")" "$rd_mc")"
+eq "a red with a check main passed is its own, and one with no named check never main's" "" "$(main_reds "$(printf 'ccc\t1000\tapp build\n')" "$(printf '900\tapp build\tsuccess\n')")$(main_reds '' "$rd_mc")"
+eq "a commit failing two checks is main's only when both failed on main" "" "$(main_reds "$(printf 'ddd\t1000\tplugin tests\nddd\t1000\tapp build\n')" "$(printf '900\tplugin tests\tfailure\n')")"
+eq "main is right again when its newest result for each failed check is not a failure" "yes no" "$(main_now_green "$rd_pf" "$rd_mc") $(main_now_green "$rd_pf" "$(printf '900\tplugin tests\tfailure\n')")"
+rd_mred=$(overlay_rest "$rd_snap" "$(printf '53\tunstable\t0\tno\tno\tno\tfixed\n')")
+eq "reds from main that main has since put right: merge-main, never set-aside or fix-pr" "merge-main 53	Seed list" "$(propose_round "$rd_mred" 2 4 2 | grep '53')"
+eq "the same pull request touched in the last 30 minutes is busy" "busy 53	Seed list	pushed or commented on in the last 30 minutes; someone is likely on it" "$(propose_round "$(overlay_rest "$rd_snap" "$(printf '53\tunstable\t0\tno\tyes\tno\tfixed\n')")" 2 4 2 | grep '53')"
+eq "reds from main while main is still red: a busy line, no fix and no set-aside" "busy 53	Seed list	its reds came from a test broken on main, which is not put right yet; it needs main merged in once it is" "$(propose_round "$(overlay_rest "$rd_snap" "$(printf '53\tunstable\t0\tno\tno\tno\twaiting\n')")" 2 4 2 | grep '53')"
+eq "plan.sh discounts reds main caused before it proposes set-aside" "1 1" "$(grep -c 'main_reds "\$p_fails"' "$root/scripts/drive/plan.sh") $(grep -c 'main_finished_checks' "$root/scripts/drive/plan.sh")"
 eq "a re-run of one commit counts once" "2" "$(red_count "$(printf 'aaa\naaa\nbbb\n')")"
 eq "a hold label holds" "yes" "$(held_by 'bug,queue:hold' '')"
 eq "a Queue: hold line holds" "yes" "$(held_by 'bug' 'Queue: hold')"

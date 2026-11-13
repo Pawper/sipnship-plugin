@@ -11,7 +11,7 @@
 #           held is yes when the queue holds it (a hold label or line)
 #           [busy(yes|no)]: yes when its head commit or newest comment is
 #           under 30 minutes old; a busy one gets no agent (a "busy" line)
-#           [pending(yes|no)]: yes when its head commit's checks are still
+#           [pending(yes|no)[mainred(none|fixed|waiting)]]: pending is yes when its head commit's checks are still
 #           running; a red from an older commit is then neither fixed nor set aside
 #   issue   NUMBER  TITLE  state(ready|in-progress|waiting-on-owner|blocked)  owner(yes|no)
 #   audit   TEXT            the audit issue's latest comment, one line
@@ -39,6 +39,9 @@ propose_round() {
       # minutes old (busy) or its checks are still running (pending), it is neither fixed nor set aside.
       if ($10 == "yes") waiting[++wz] = $2 "\t" $3 "\tits newest commit is still waiting on its checks"
       else if ($9 == "yes") busy[++bz] = $2 "\t" $3
+      # Reds that came from a test broken on main are not its own: once main is right it needs main merged in, never a fix or a set-aside.
+      else if ($11 == "fixed") behind[++bm] = $2 "\t" $3
+      else if ($11 == "waiting") waiting[++wz] = $2 "\t" $3 "\tits reds came from a test broken on main, which is not put right yet; it needs main merged in once it is"
       else if (aside > 0 && $7 + 0 >= aside) setaside[++sa] = $2 "\t" $3 "\t(red " ($7 + 0) " times)"
       else red[++r] = $2 "\t" $3
     }

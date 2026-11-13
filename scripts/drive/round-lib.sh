@@ -45,20 +45,21 @@ setting() {
 
 # overlay_rest SNAPSHOT LINES
 # LINES are what REST says of each open pull request, one per line:
-# "NUMBER<TAB>MERGEABLE_STATE<TAB>REDS<TAB>HELD(yes|no)[<TAB>BUSY(yes|no)[<TAB>PENDING(yes|no)]]".
+# "NUMBER<TAB>MERGEABLE_STATE<TAB>REDS<TAB>HELD(yes|no)[<TAB>BUSY(yes|no)[<TAB>PENDING(yes|no)[<TAB>MAINRED]]]".
 # mergeable_state "dirty" (it conflicts with main) makes it conflicting;
 # "unknown" or nothing leaves what the board said; anything else is
 # mergeable. REDS, HELD, BUSY and PENDING (its head commit's checks are
-# still running) become the pull request's seventh to tenth fields. Every
+# still running) and MAINRED (none, fixed or waiting: its reds came from a test broken on main, and main is
+# right again, or not yet) become the pull request's seventh to eleventh fields. Every
 # other line passes through.
 overlay_rest() {
   { printf '%s\n' "$2" | sed 's/^/R	/'; printf '%s\n' "$1" | sed 's/^/S	/'; } | tr -d '\r' | awk -F'\t' -v OFS='\t' '
-    $1 == "R" && $2 != "" { st[$2] = $3; reds[$2] = $4; held[$2] = $5; busy[$2] = $6; pend[$2] = $7; next }
+    $1 == "R" && $2 != "" { st[$2] = $3; reds[$2] = $4; held[$2] = $5; busy[$2] = $6; pend[$2] = $7; mred[$2] = $8; next }
     $1 == "S" && $2 == "pr" && ($3 in st) {
       m = $6
       if (st[$3] == "dirty") m = "conflicting"
       else if (st[$3] != "" && st[$3] != "unknown") m = "mergeable"
-      print $2, $3, $4, $5, m, $7, (reds[$3] == "" ? 0 : reds[$3] + 0), (held[$3] == "yes" ? "yes" : "no"), (busy[$3] == "yes" ? "yes" : "no"), (pend[$3] == "yes" ? "yes" : "no")
+      print $2, $3, $4, $5, m, $7, (reds[$3] == "" ? 0 : reds[$3] + 0), (held[$3] == "yes" ? "yes" : "no"), (busy[$3] == "yes" ? "yes" : "no"), (pend[$3] == "yes" ? "yes" : "no"), (mred[$3] == "" ? "none" : mred[$3])
       next
     }
     $1 == "S" && NF > 1 { sub(/^S\t/, ""); print }'
@@ -84,6 +85,37 @@ recently_touched() {
 # one commit counts once.
 red_count() {
   printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' '$1 != "" && !($1 in s) { s[$1] = 1; n++ } END { print n + 0 }'
+}
+
+# main_reds PR_FAILS MAIN_CHECKS
+# Which of a pull request's red commits main itself caused. PR_FAILS are the
+# failing checks of its red commits, "SHA<TAB>EPOCH<TAB>CHECK" a line (EPOCH is
+# when that run began); MAIN_CHECKS are main's finished checks,
+# "EPOCH<TAB>CHECK<TAB>CONCLUSION" a line. A red commit is main's when every
+# check it failed was also failing on main at the time: main's newest result
+# for that check at or before the pull request's run is a failure. Prints those
+# commits, one per line; a commit with no named failing check is never main's.
+main_reds() {
+  { printf '%s\n' "$2" | sed 's/^/M	/'; printf '%s\n' "$1" | sed 's/^/P	/'; } | tr -d '\r' | awk -F'\t' '
+    $1 == "M" && $2 != "" { m++; me[m] = $2 + 0; mc[m] = $3; mr[m] = $4; next }
+    $1 == "P" && $2 != "" {
+      sha = $2; if (!(sha in seen)) { seen[sha] = 1; order[++n] = sha }
+      best = -1; r = ""
+      for (i = 1; i <= m; i++) if (mc[i] == $4 && me[i] <= $3 + 0 && me[i] > best) { best = me[i]; r = mr[i] }
+      if (r != "failure") own[sha] = 1
+    }
+    END { for (i = 1; i <= n; i++) if (!(order[i] in own)) print order[i] }'
+}
+
+# main_now_green PR_FAILS MAIN_CHECKS
+# "yes" when main's newest result for every check the pull request failed is
+# not a failure: main has been put right since. Both as main_reds reads them.
+# "no" when any is still failing or unknown, and when there are no failures.
+main_now_green() {
+  { printf '%s\n' "$2" | sed 's/^/M	/'; printf '%s\n' "$1" | sed 's/^/P	/'; } | tr -d '\r' | awk -F'\t' '
+    $1 == "M" && $2 != "" && $2 + 0 >= (($3 in at) ? at[$3] : -1) { at[$3] = $2 + 0; res[$3] = $4; next }
+    $1 == "P" && $2 != "" { n++; if (!($4 in res) || res[$4] == "failure") bad = 1 }
+    END { print ((n > 0 && !bad) ? "yes" : "no") }'
 }
 
 # held_by LABELS BODY
@@ -199,79 +231,6 @@ hold_dispatch() {
     /^dispatch / { held++; next }
     NF > 0 { print }
     END { if (held) { gsub(/ /, ", #", r); print "held: " held " dispatch goal(s) wait for the running round (#" r ") to land" } }'
-}
-
-# agent_runners LISTING [CAP]
-# How many agents may work at once, from the machines GitHub lists: LISTING
-# is one "STATUS<TAB>BUSY(true|false)" line per registered runner. The count
-# is the runners online and not busy, less one kept for the queue and its
-# checks (never below one while any is free); CAP, when above 0, is the most
-# the project's config allows. Prints "AGENTS<TAB>ONLINE<TAB>FREE", or
-# nothing when GitHub listed no runner (the caller falls back to the config).
-agent_runners() {
-  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v cap="${2:-0}" '
-    NF >= 2 { seen++; if ($1 == "online") { online++; if ($2 != "true") free++ } }
-    END {
-      if (!seen) exit
-      a = free - 1; if (free > 0 && a < 1) a = 1; if (a < 0) a = 0
-      if (cap + 0 > 0 && a > cap + 0) a = cap + 0
-      printf "%d\t%d\t%d\n", a, online + 0, free + 0
-    }'
-}
-
-# agent_runners_say LINE [CAP]
-# LINE is agent_runners' output: the plan's heading words, naming the number
-# used and where it came from ("5 runners online, 4 free for agents").
-agent_runners_say() {
-  printf '%s\n' "$1" | awk -F'\t' -v cap="${2:-0}" '
-    NF >= 3 {
-      s = $2 " runner" ($2 == 1 ? "" : "s") " online, " $1 " free for agents"
-      if (cap + 0 > 0 && $3 - 1 > cap + 0) s = s " (the config caps it at " cap ")"
-      print s
-    }'
-}
-
-# deferred_holds ROUND
-# ROUND is the plan's lines. For the plan's "defer N unit(s): ... (#5, #6 #7)"
-# line, print the round file's lines for the units it left out, one
-# "hold: 5 | why: No free runner this round" each, so the Work tab says
-# why a unit is not in the round instead of saying nothing. A unit with
-# several issues is one hold line naming all of them.
-#
-# deferred_holds ROUND RUNNING ISSUE_AREAS: RUNNING (running_units' lines,
-# "ISSUES<TAB>AREAS", commas) and ISSUE_AREAS ("NUMBER<TAB>AREAS" lines) let a
-# deferred unit in an area a running unit owns wait on that unit instead:
-# "hold: 5 | after: 12 14 | why: ...", since publish-round.sh refuses it as a
-# unit in the running unit's area. Both are optional.
-deferred_holds() {
-  printf '%s\n' "$1" | awk -v running="${2:-}" -v ia="${3:-}" '
-    BEGIN {
-      n = split(running, rl, "\n"); for (i = 1; i <= n; i++) if (rl[i] != "") { split(rl[i], f, "\t"); nr++; rs[nr] = f[1]; ra[nr] = f[2] }
-      n = split(ia, il, "\n"); for (i = 1; i <= n; i++) if (il[i] != "") { split(il[i], f, "\t"); iarea[f[1]] = f[2] }
-    }
-    /^defer [0-9]+ unit\(s\):/ {
-      s = $0; i = match(s, /\(#[^)]*\)$/); if (!i) next
-      s = substr(s, RSTART + 1, RLENGTH - 2)
-      n = split(s, pieces, /, /)
-      for (k = 1; k <= n; k++) {
-        p = pieces[k]; gsub(/#/, "", p)
-        split(p, first, " "); hit = ""; who = ""; mine = iarea[first[1]]
-        if (mine != "") for (q = 1; q <= nr && hit == ""; q++) {
-          na = split(mine, ma, ","); nb = split(ra[q], mb, ",")
-          for (x = 1; x <= na && hit == ""; x++) for (y = 1; y <= nb; y++) if (ma[x] != "" && ma[x] == mb[y]) { hit = ma[x]; who = rs[q] }
-        }
-        if (hit != "") { gsub(/,/, " ", who); print "hold: " p " | after: " who " | why: Its area, " hit ", is owned by the running unit" }
-        else print "hold: " p " | why: No free runner this round"
-      }
-    }'
-}
-
-# sized_line SAID: the round file's line for how the plan sized the round,
-# from the plan's own words ("5 runners online, 4 free for agents"); empty
-# when it said nothing. The Work tab's "Why this many" tip reads it.
-sized_line() {
-  [ -n "$1" ] || return 0
-  printf 'sized: %s\n' "$(printf '%s' "$1" | tr -d '\r' | cut -c1-160)"
 }
 
 # mark_waiting_ok VERDICT

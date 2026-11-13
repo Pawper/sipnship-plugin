@@ -142,12 +142,18 @@ area_problem() {
 # "ISSUES<TAB>AREAS" line, both comma separated: the areas a running unit
 # owns, so publish-round.sh can give new work in them to that unit or hold it
 # behind it. Nothing when no round runs.
+# A unit also runs while its pull request is open, whatever State its issues
+# show (as running_round counts it): the optional third argument is the open
+# pull requests' numbers, one per line, and a unit whose "pr" is among them runs.
 running_units() {
   ru_m=$(printf '%s\n' "$1" | tr -d '\r' | grep -F 'sipnship-proposal {"status":"started"' | tail -n 1 \
     | sed 's/.*sipnship-proposal {"status":"started",//; s/"held":.*//')
   [ -n "$ru_m" ] || return 0
-  printf '%s\n' "$ru_m" | awk -v ip="$(printf '%s\n' "$2" | tr -d '\r' | tr '\n' ' ')" '
-    BEGIN { n = split(ip, a, " "); for (i = 1; i <= n; i++) if (a[i] != "") live[a[i]] = 1 }
+  printf '%s\n' "$ru_m" | awk -v ip="$(printf '%s\n' "$2" | tr -d '\r' | tr '\n' ' ')" -v op="$(printf '%s\n' "${3:-}" | tr -d '\r' | tr '\n' ' ')" '
+    BEGIN {
+      n = split(ip, a, " "); for (i = 1; i <= n; i++) if (a[i] != "") live[a[i]] = 1
+      n = split(op, a, " "); for (i = 1; i <= n; i++) if (a[i] != "") opn[a[i]] = 1
+    }
     {
       k = split($0, part, /\{"issues":/)
       for (p = 2; p <= k; p++) {
@@ -157,6 +163,8 @@ running_units() {
         ar = ""
         if (match(u, /"areas":\[[^]]*\]/)) { ar = substr(u, RSTART + 9, RLENGTH - 10); gsub(/"/, "", ar) }
         m = split(is, ns, ","); on = 0
+        pr = ""; if (match(u, /"pr":[0-9]+/)) pr = substr(u, RSTART + 5, RLENGTH - 5)
+        if (pr != "" && (pr in opn)) on = 1
         for (i = 1; i <= m; i++) if (ns[i] in live) on = 1
         if (on) print is "\t" ar
       }

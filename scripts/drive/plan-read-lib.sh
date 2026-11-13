@@ -83,6 +83,26 @@ read_drive_comments() {
   done
 }
 
+# run_failed_checks RUNS_JQ_LINES
+# RUNS are "ID<TAB>SHA<TAB>EPOCH" lines of workflow runs. Prints "SHA<TAB>EPOCH<TAB>CHECK"
+# for each job of those runs that failed (one REST call per run).
+run_failed_checks() {
+  printf '%s\n' "$1" | tr -d '\r' | while IFS="$(printf '\t')" read -r rfc_id rfc_sha rfc_at; do
+    [ -n "$rfc_id" ] || continue
+    gh api "repos/{owner}/{repo}/actions/runs/$rfc_id/jobs?per_page=100" --jq ".jobs[] | select(.conclusion == \"failure\") | [\"$rfc_sha\", \"$rfc_at\", .name] | @tsv" 2>/dev/null | tr -d '\r'
+  done
+}
+
+# main_finished_checks
+# Main's newest finished jobs, "EPOCH<TAB>CHECK<TAB>CONCLUSION" (twelve runs, one REST call each).
+main_finished_checks() {
+  gh api "repos/{owner}/{repo}/actions/runs?branch=main&event=push&status=completed&per_page=12" --jq '.workflow_runs[] | [(.id | tostring), (.created_at | fromdateiso8601 | tostring)] | @tsv' 2>/dev/null | tr -d '\r' \
+    | while IFS="$(printf '\t')" read -r mfc_id mfc_at; do
+      [ -n "$mfc_id" ] || continue
+      gh api "repos/{owner}/{repo}/actions/runs/$mfc_id/jobs?per_page=100" --jq ".jobs[] | select(.conclusion == \"failure\" or .conclusion == \"success\") | [\"$mfc_at\", .name, .conclusion] | @tsv" 2>/dev/null | tr -d '\r'
+    done
+}
+
 # head_checks_pending SHA
 # "yes" when the head commit's check runs are not all completed (one REST call).
 head_checks_pending() {
