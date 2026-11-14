@@ -115,3 +115,4 @@ shell-3 a job says what it is for
 shell-3 the drive reads answers
 shell-3 a landing wakes the drive
 shell-3 the plan reads areas like publish-round, and no second release (drive)
+shell-3 the drive reads a red pull request nobody works, a stale main, and a release already underway (drive)

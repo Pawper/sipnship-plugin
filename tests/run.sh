@@ -3846,7 +3846,7 @@ eq "a version bump resets the count" "0" "$(cat "$rel_dir/c3")"
 eq "no plugin version file prints nothing" "" "$(cat "$rel_dir/cn")"
 eq "session brief names the unreleased count" "1" "$(grep -q 'unreleased commit' "$root/hooks/scripts/session-brief-local.sh" && echo 1 || echo 0)"
 eq "drive skill names the release goal" "1" "$(grep -q 'release X.Y.Z' "$root/skills/project-drive/SKILL.md" && echo 1 || echo 0)"
-eq "plan script adds the release goal" "1" "$(grep -q 'release_goal' "$root/scripts/drive/plan.sh" && echo 1 || echo 0)"
+eq "plan script adds the release goal, read in release-lib" "1" "$(grep -q release_goal "$root/scripts/drive/release-lib.sh" && grep -q release_proposal "$root/scripts/drive/plan.sh" && echo 1 || echo 0)"
 
 section 'hook counterparts'
 cp_file="$root/hooks/COUNTERPARTS.txt"
@@ -5073,14 +5073,14 @@ rd_over=$(overlay_rest "$rd_snap" "$rd_rest")
 eq "REST's mergeable_state: dirty conflicts, and reds, holds, busy and pending are added" "pr	52	Frost alert	pending	conflicting	app	0	no	no	no	none
 pr	54	Watering copy	green	conflicting	app	0	yes	no	no	none" "$(printf '%s\n' "$rd_over" | grep -E '^pr	5[24]	')"
 eq "a head commit under 30 minutes old is someone at work" "yes" "$(recently_touched 10000 '' 11000 30)"
-eq "so is a comment under 30 minutes old" "yes" "$(recently_touched 1000 10500 11000 30)"
+eq "a comment under 30 minutes old is not someone at work (the plan passes none)" "yes" "$(recently_touched 1000 10500 11000 30)"
 eq "both older is nobody" "no" "$(recently_touched 1000 2000 11000 30)"
 eq "no times is nobody" "no" "$(recently_touched '' '' 11000 30)"
 rd_busy=$(overlay_rest "$rd_snap" "$(printf '52\tdirty\t0\tno\tyes\n53\tunstable\t1\tno\tyes\n')")
-eq "a busy pull request gets no agent: neither merge-main nor fix-pr, only a busy line" "0 2 busy 52	Frost alert	pushed or commented on in the last 30 minutes; someone is likely on it" "$(p=$(propose_round "$rd_busy" 2 4 2); printf '%s ' "$(printf '%s\n' "$p" | grep -cE '^(merge-main|fix-pr) 5[23]')"; printf '%s ' "$(printf '%s\n' "$p" | grep -c '^busy 5[23]')"; printf '%s\n' "$p" | grep '^busy 52')"
+eq "a busy pull request gets no agent: neither merge-main nor fix-pr, only a busy line" "0 2 busy 52	Frost alert	pushed to in the last 30 minutes; someone is on it" "$(p=$(propose_round "$rd_busy" 2 4 2); printf '%s ' "$(printf '%s\n' "$p" | grep -cE '^(merge-main|fix-pr) 5[23]')"; printf '%s ' "$(printf '%s\n' "$p" | grep -c '^busy 5[23]')"; printf '%s\n' "$p" | grep '^busy 52')"
 eq "a busy line is not numbered" "busy 52	Frost alert" "$(number_proposal "$(printf 'busy 52\tFrost alert')")"
 eq "red too often is set aside once its newest commit is neither new nor waiting on checks" "set-aside 53	Seed list	(red 2 times)" "$(propose_round "$(overlay_rest "$rd_snap" "$(printf '53\tunstable\t2\tno\tno\tno\n')")" 2 4 2 | grep '53')"
-eq "red twice before, but a head commit under 30 minutes old: busy, not set aside" "busy 53	Seed list	pushed or commented on in the last 30 minutes; someone is likely on it" "$(propose_round "$(overlay_rest "$rd_snap" "$(printf '53\tunstable\t2\tno\tyes\tno\n')")" 2 4 2 | grep '53')"
+eq "red twice before, but a head commit under 30 minutes old: busy, not set aside" "busy 53	Seed list	pushed to in the last 30 minutes; someone is on it" "$(propose_round "$(overlay_rest "$rd_snap" "$(printf '53\tunstable\t2\tno\tyes\tno\n')")" 2 4 2 | grep '53')"
 eq "red twice before, a pending head commit: no set-aside, and no fix, only a busy line saying why" "busy 53	Seed list	its newest commit is still waiting on its checks" "$(propose_round "$(overlay_rest "$rd_snap" "$(printf '53\tunstable\t2\tno\tno\tyes\n')")" 2 4 2 | grep '53')"
 eq "a pending head commit is read from its check runs: any not completed" "yes no" "$(checks_pending "$(printf 'completed\tfailure\nqueued\t\n')") $(checks_pending "$(printf 'completed\tfailure\ncompleted\tsuccess\n')")"
 eq "plan.sh reads the head commit's check runs before it proposes set-aside" "1" "$(grep -c 'head_checks_pending "\$p_sha"' "$root/scripts/drive/plan.sh")"
@@ -5104,7 +5104,7 @@ eq "a commit failing two checks is main's only when both failed on main" "" "$(m
 eq "main is right again when its newest result for each failed check is not a failure" "yes no" "$(main_now_green "$rd_pf" "$rd_mc") $(main_now_green "$rd_pf" "$(printf '900\tplugin tests\tfailure\n')")"
 rd_mred=$(overlay_rest "$rd_snap" "$(printf '53\tunstable\t0\tno\tno\tno\tfixed\n')")
 eq "reds from main that main has since put right: merge-main, never set-aside or fix-pr" "merge-main 53	Seed list" "$(propose_round "$rd_mred" 2 4 2 | grep '53')"
-eq "the same pull request touched in the last 30 minutes is busy" "busy 53	Seed list	pushed or commented on in the last 30 minutes; someone is likely on it" "$(propose_round "$(overlay_rest "$rd_snap" "$(printf '53\tunstable\t0\tno\tyes\tno\tfixed\n')")" 2 4 2 | grep '53')"
+eq "the same pull request touched in the last 30 minutes is busy" "busy 53	Seed list	pushed to in the last 30 minutes; someone is on it" "$(propose_round "$(overlay_rest "$rd_snap" "$(printf '53\tunstable\t0\tno\tyes\tno\tfixed\n')")" 2 4 2 | grep '53')"
 eq "reds from main while main is still red: a busy line, no fix and no set-aside" "busy 53	Seed list	its reds came from a test broken on main, which is not put right yet; it needs main merged in once it is" "$(propose_round "$(overlay_rest "$rd_snap" "$(printf '53\tunstable\t0\tno\tno\tno\twaiting\n')")" 2 4 2 | grep '53')"
 eq "plan.sh discounts reds main caused before it proposes set-aside" "1 1" "$(grep -c 'main_reds "\$p_fails"' "$root/scripts/drive/plan.sh") $(grep -c 'main_finished_checks' "$root/scripts/drive/plan.sh")"
 eq "a re-run of one commit counts once" "2" "$(red_count "$(printf 'aaa\naaa\nbbb\n')")"
@@ -5704,7 +5704,7 @@ eq "an open pull request that bumps the plugin to that version carries the relea
 eq "so does one that only closes the release issue" "410" "$(open_release_pr "$(printf 'issue\t401\tPlugin 0.7.3\tstate:ready\tx\tbody\npr\t410\tCarry it\tSUCCESS\tMERGEABLE\tcarry\tsrc/a.ts\n')" "$(printf '410\tno\t401\n')" 0.7.3)"
 eq "a version that only starts the same carries none" "" "$(open_release_pr "$da_facts" '' 0.7.30)"
 eq "no open pull request for it means the release stands" "" "$(open_release_pr "$(printf 'pr\t411\tTidy the bed map\tPENDING\tMERGEABLE\ttidy\tsrc/beds/map.ts\n')" '' 0.7.3)"
-eq "plan.sh drops the release goal while one is open" "1" "$(grep -c 'open_release_pr "$facts" "$pull_links"' "$root/scripts/drive/plan.sh")"
+eq "plan.sh drops the release goal while one is open" "1" "$(grep -c 'release_proposal "$facts" "$pull_links"' "$root/scripts/drive/plan.sh")"
 # A ready issue that names no file is placed, or held, never dispatched blind (areas file: Maya's rooftop-garden app).
 eq "an issue with no path is placed by the area its title says" "src/water/" "$(title_area_files 'The watering page forgets the last schedule' 'watering   src/water/ src/schedule.ts
 beds       src/beds/')"
@@ -5717,7 +5717,7 @@ eq "with a unit running, an issue whose area is unknown is a hold that says so, 
 eq "with nothing running it passes as it came" "$da_unit" "$(unplaced_holds "$da_unit" "$da_nopath" '' "$da_titles")"
 da_mixed=$(printf '501\tTidy up the readme\t\n402\tWater the beds on a timer\tsrc/water/timer.ts\n')
 eq "an issue with files is left alone beside it" "unit${da_t}402" "$(unplaced_holds "$(plan_units "$da_mixed" '')" "$da_mixed" "$(printf '301\twatering\n')" "$da_titles" | grep '^unit' | cut -f1,2)"
-eq "plan.sh places by title and holds the unplaced" "1 1" "$(grep -c 'title_area_files "$title"' "$root/scripts/drive/plan.sh") $(grep -c 'unplaced_holds "$units"' "$root/scripts/drive/plan.sh")"
+eq "plan.sh places by title and holds the unplaced" "1 1" "$(grep -c 'title_area_files "$title $c"' "$root/scripts/drive/plan.sh") $(grep -c 'unplaced_holds "$units"' "$root/scripts/drive/plan.sh")"
 # Plugin and CI work is one unit, however each issue names its files or speaks of them.
 pb_guesses=$(printf '1437\tFix the plan\t%s\n1431\tFix the round\t%s\n1440\tFix the summary\t%s\n' "$(guess_files 'Where: plugin/scripts/drive/plan.sh' '' '')" "$(guess_files 'Where: plugin/tests/run.sh and plugin/scripts/drive/round-lib.sh' '' '')" "$(guess_files 'The drive'"'"'s plan says a summary is due' '' '')")
 eq "two plugin issues naming different plugin files, and one that only speaks of the drive's plan, are one unit" "unit${da_t}1437 1431 1440${da_t}Fix the plan | Fix the round | Fix the summary${da_t}all 3 are plugin or CI work, which shares one test suite" "$(plan_units "$pb_guesses" '' | cut -f1-4)"
@@ -5733,6 +5733,69 @@ gh() { seq 1 150 | sed 's/^/Watering note /'; }
 eq "no summary in the day still says it is due" "1" "$(sm_run | grep -c '^summary: due; post today')"
 unset -f gh
 eq "the summary check reads every page" "1" "$(grep -c 'gh api --paginate .*issues/$drive_issue/comments' "$root/scripts/drive/round-notes-lib.sh")"
+
+section 'the drive reads a red pull request nobody works, a stale main, and a release already underway (drive)'
+. "$root/scripts/drive/release-lib.sh"
+. "$root/scripts/drive/rank-lib.sh"
+nb_t=$(printf '\t')
+# A red pull request is busy only for a push in the last 30 minutes: a comment, the drive's own post or a re-run never counts.
+eq "the plan passes no comment time to the busy reading" "0" "$(grep -c 'issues/$p_num/comments' "$root/scripts/drive/plan.sh")"
+eq "red, last push 2 hours ago: nobody is on it" "no" "$(recently_touched 1000 '' 8200 30)"
+eq "red, pushed 10 minutes ago: someone is" "yes" "$(recently_touched 7600 '' 8200 30)"
+nb_snap=$(printf 'pr\t53\tSeed list\tred\tmergeable\tapp\nissue\t9\tReady thing\tready\tno\nissue\t10\tAnother\tready\tno\n')
+eq "red and quiet gets a fix sent, and the ready issues are dispatched beside it" "fix-pr 53${nb_t}Seed list
+dispatch 9${nb_t}Ready thing" "$(propose_round "$(overlay_rest "$nb_snap" "$(printf '53\tunstable\t0\tno\tno\tno\n')")" 2 4 2 | sed -n '1,2p')"
+eq "red after two fixes is set aside, the round moves on" "set-aside 53${nb_t}Seed list${nb_t}(red 2 times)" "$(propose_round "$(overlay_rest "$nb_snap" "$(printf '53\tunstable\t2\tno\tno\tno\n')")" 2 4 2 | sed -n 1p)"
+eq "red with a recent push is a busy line, the other issues still dispatch" "busy 53${nb_t}Seed list${nb_t}pushed to in the last 30 minutes; someone is on it
+dispatch 9${nb_t}Ready thing" "$(propose_round "$(overlay_rest "$nb_snap" "$(printf '53\tunstable\t0\tno\tyes\tno\n')")" 2 4 2 | sed -n '1,2p')"
+
+# Start-now requests that carry the builder's own words are printed with them, one line each.
+nb_c="2026-11-13T19:00:00Z${nb_t}maya${nb_t}Queue request: start-now by maya: Owner: get it done now with #1462, same rows
+2026-11-13T19:01:00Z${nb_t}maya${nb_t}Queue request: start-now by maya: Owner: rush it; Finished back to issue rows
+2026-11-13T19:02:00Z${nb_t}sipnship[bot]${nb_t}Queue request: start-now #1462 by maya"
+eq "start-now with words prints the words; one with an issue prints its number" "start-now ? by maya: Owner: get it done now with #1462, same rows
+start-now ? by maya: Owner: rush it; Finished back to issue rows
+start-now 1462 by maya" "$(work_requests "$nb_c" 2026-11-13T00:00:00Z 2026-11-13T00:00:00Z)"
+eq "an answer on #0 spends the round-wide ones, not the issue's" "start-now 1462 by maya" "$(work_requests "$nb_c
+2026-11-13T19:05:00Z${nb_t}maya${nb_t}Queue answer: start-now #0: started-now" 2026-11-13T00:00:00Z 2026-11-13T00:00:00Z)"
+eq "a round-wide start-now with no words still reads as start-now 0" "start-now 0 by maya" "$(work_requests "2026-11-13T19:00:00Z${nb_t}maya${nb_t}Queue request: start-now by maya" 2026-11-13T00:00:00Z 2026-11-13T00:00:00Z)"
+
+# A release already underway is a hold naming its issue, never a second goal.
+nb_facts=$(printf 'issue\t1450\tRelease the plugin as 0.43.12\tstate:in-progress\t2026-11-13T21:00:00Z\tbump\nissue\t1451\tRelease the plugin as 0.43.121\tstate:ready\t2026-11-13T21:00:00Z\tx\nissue\t1452\tScreen fix\tstate:ready\t2026-11-13T21:00:00Z\tx\n')
+eq "an open issue that names the release is found" "1450${nb_t}Release the plugin as 0.43.12" "$(open_release_issue "$nb_facts" 0.43.12)"
+eq "a longer version is not the same release" "" "$(open_release_issue "$nb_facts" 0.43.1)"
+eq "no issue names it: nothing found" "" "$(open_release_issue "$nb_facts" 0.43.13)"
+eq "a release hold goes in before the stop line without changing it" "hold${nb_t}1450${nb_t}Release the plugin as 0.43.12${nb_t}the release of 0.43.12 is already underway
+stop: nothing to propose" "$(add_release "stop: nothing to propose" "$(printf 'hold\t1450\tRelease the plugin as 0.43.12\tthe release of 0.43.12 is already underway')")"
+eq "a release goal still makes the proposal ready" "release 0.43.12 (1 plugin commit unreleased)
+stop: proposal ready for approval" "$(add_release "stop: nothing to propose" "release 0.43.12 (1 plugin commit unreleased)")"
+eq "plan.sh reads the release from release-lib" "1" "$(grep -c 'release_proposal "$facts" "$pull_links"' "$root/scripts/drive/plan.sh")"
+# The release is read from the remote's main: a checkout nobody fast-forwarded proposes the same release.
+nb_g="$SUITE_TMP_ROOT/release-git"; mkdir -p "$nb_g/origin" "$nb_g/clone"
+git -C "$nb_g/origin" init -q -b main && git -C "$nb_g/origin" config user.email t@t && git -C "$nb_g/origin" config user.name t
+mkdir -p "$nb_g/origin/plugin/.claude-plugin"
+printf '{"version": "0.1.0"}\n' > "$nb_g/origin/plugin/.claude-plugin/plugin.json"
+git -C "$nb_g/origin" add -A && git -C "$nb_g/origin" commit -q -m release
+git clone -q "$nb_g/origin" "$nb_g/clone" 2>/dev/null
+printf 'x\n' > "$nb_g/origin/plugin/a.txt"; git -C "$nb_g/origin" add -A && git -C "$nb_g/origin" commit -q -m "plugin change"
+eq "a stale checkout proposes the release after its own fetch" "release 0.1.1 (1 plugin commit unreleased)" "$(cd "$nb_g/clone" && release_proposal '' '')"
+eq "the local main alone would have proposed none" "" "$(cd "$nb_g/clone" && release_goal 0.1.0 "$(plugin_unreleased_count main)")"
+
+# A ready issue that fixes a failure on main leads; two issues on one tab's rows are one unit.
+eq "an issue saying a test fails on main fixes main" "yes" "$(fixes_main 'Make the watering test pass again; it fails on main since the last merge')"
+eq "a feature issue does not" "no" "$(fixes_main 'Show the Main card heading on one line; the check list is shorter')"
+eq "a failing check named in the Main card is not main failing" "no" "$(fixes_main 'The Main card shows a failing check in red')"
+eq "the ready issues that fix main are found in the facts" "9 11" "$(mainfix_numbers "$(printf 'issue\t9\tFix the failing test on main\tstate:ready\tt\tx\nissue\t10\tAdd a row\tstate:ready\tt\tx\nissue\t11\tx\tstate:ready\tt\tThe build is red on main\nissue\t12\tFix main test\tstate:in-progress\tt\tx\n')")"
+eq "a ready fix for main leads, so it is the one that is not deferred" "dispatch 9${nb_t}Fix main test
+defer 1 ready issue(s): no free runner this round" "$(MAINFIX_ISSUES=9 propose_round "$(printf 'issue\t8\tFeature\tready\tno\nissue\t9\tFix main test\tready\tno\n')" 1 4 2 | sed -n '1,2p')"
+eq "a bundle with a main fix outranks a larger bundle" "dispatch 9${nb_t}Fix main" "$(apply_units "$(printf 'dispatch 1\ndispatch 9\nstop: proposal ready\n')" "$(printf 'unit\t3 4\tA | B\twhy\tx\nunit\t9\tFix main\t\ty\n')" 1 no 9 | sed -n 1p)"
+nb_p=$(printf 'packages/web/src/work-rows.ts\nscripts/ci/hotspots.txt\nspecs/010-work/')
+eq "a screen issue that only mentions a CI file in passing is not plugin or CI work" "packages/web/src/work-rows.ts
+specs/010-work/" "$(changed_paths "$nb_p")"
+eq "a plugin issue keeps its plugin and CI paths" "plugin/scripts/drive/plan.sh
+scripts/ci/hotspots.txt" "$(changed_paths "$(printf 'plugin/scripts/drive/plan.sh\nscripts/ci/hotspots.txt')")"
+eq "so a screen issue is not bundled with the drive scripts" "2" "$(plan_units "$(printf '1\tScreen\t%s\n2\tDrive fix\tplugin/scripts/drive/plan.sh\n' "$(guess_files 'Rows: packages/web/src/work-rows.ts, limits in scripts/ci/hotspots.txt' '' '')")" '' | grep -c '^unit')"
+eq "plan.sh places an issue by its title and the start of its body" "1" "$(grep -c 'title_area_files "$title $c"' "$root/scripts/drive/plan.sh")"
 
 # --- end of blocks: the summary, kept in every part.
 eq "no test wrote into the checkout's own queue state" "$queue_picture_before" "$([ "$queue_picture_before" = skipped ] && echo skipped || queue_picture)"

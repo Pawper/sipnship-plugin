@@ -66,7 +66,7 @@ overlay_rest() {
 }
 
 # recently_touched HEAD_EPOCH COMMENT_EPOCH NOW [MINUTES]
-# "yes" when the pull request's head commit or its newest comment is under
+# "yes" when the pull request's head commit (or a time given second) is under
 # MINUTES (default 30) old: someone, likely an agent in another session, is
 # working on it, so the drive sends no agent of its own. "no" otherwise,
 # and for a time it does not have.
@@ -203,7 +203,9 @@ work_requests() {
       if (match($3, /^Queue answer: (start-next|start-now|hold-agent|start-round) #[0-9]+: /)) {
         split(substr($3, 15), a, /[ #:]+/)
         if (a[1] == "start-round") a[2] = ""
-        delete owed[a[1] " " a[2]]; next
+        delete owed[a[1] " " a[2]]; delete line[a[1] " " a[2]]
+        if (a[1] == "start-now" && a[2] == "0") for (k in owed) if (index(k, "start-now ? ") == 1) { delete owed[k]; delete line[k] }
+        next
       }
       if ($3 !~ /^Queue request: ((start-next|start-now|hold-agent) #[0-9]+|start-now|start-round( #0)?) by [A-Za-z0-9][A-Za-z0-9-]*(: .*)?$/) next
       split($3, w, " ")
@@ -214,11 +216,13 @@ work_requests() {
       sub(/^#/, "", n); sub(/:$/, "", who)
       if ($2 != who && $2 !~ /\[bot\]$/) next
       if ($1 < (kind == "hold-agent" ? h : s)) next
-      key = kind " " n
+      key = kind " " n; text = kind (n == "" ? "" : " " n) " by " who
+      # A round-wide Start now with words (the builder own, after the form) is printed with them, one line each, so the drive reads what was asked: no issue number is "?".
+      if (kind == "start-now" && n == "0" && match($3, /by [A-Za-z0-9-]+: ./)) { key = "start-now ? " $1; text = "start-now ? by " who ": " substr($3, RSTART + 5 + length(who)) }
       if (!(key in owed)) order[++c] = key
-      owed[key] = who
+      owed[key] = who; line[key] = text
     }
-    END { for (i = 1; i <= c; i++) if (order[i] in owed) { split(order[i], k, " "); print (k[2] == "" ? k[1] : k[1] " " k[2]), "by", owed[order[i]]; delete owed[order[i]] } }'
+    END { for (i = 1; i <= c; i++) if (order[i] in owed) { print line[order[i]]; delete owed[order[i]] } }'
 }
 
 # hold_dispatch GOALS RUNNING

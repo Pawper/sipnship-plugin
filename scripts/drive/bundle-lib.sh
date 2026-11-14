@@ -84,13 +84,25 @@ past_spec_files() {
     END { flush() }' | sort -u
 }
 
+# changed_paths PATHS
+# PATHS are the paths an issue's body names, one a line. A body that names a
+# screen's files (packages/ or design/) and also mentions a plugin or CI path
+# in passing (the file of a size limit, say) is screen work: only its other
+# paths count, so it is not bundled with the plugin's drive scripts. A body
+# that names no screen file keeps every path.
+changed_paths() {
+  printf '%s\n' "$1" | awk '
+    { p[++n] = $0; if ($0 ~ /^(packages|design)\//) screen = 1 }
+    END { for (i = 1; i <= n; i++) if (!(screen && p[i] ~ /^(plugin|scripts\/ci|\.github)\//)) print p[i] }'
+}
+
 # guess_files BODY MOCKS PAST
 # The comma-separated, sorted, unique files an issue is guessed to touch:
 # the paths its body names, the files of any mocks line they hit, and the
 # past files of any spec it names. PAST is past_spec_files' output. Prints
 # nothing when the body names no path.
 guess_files() {
-  gf_paths=$(body_paths "$1")
+  gf_paths=$(changed_paths "$(body_paths "$1")")
   if [ -z "$gf_paths" ]; then
     # No path named, but plugin or CI work still shares one test suite: an issue that speaks of the plugin, the drive skill or the workflow file is guessed as plugin/, so it goes into the one bundle.
     if printf '%s\n' "$1" | grep -qiE '(^|[^a-z])(plugin|project-drive|ci\.yml|publish-round|plan\.sh|drive(.s)? (plan|round|script|skill)s?)([^a-z]|$)'; then printf 'plugin/\n'; fi
@@ -213,12 +225,14 @@ units_disjoint() {
 # When everything is held the stop line says so: work in flight when only
 # running work holds it, else what each hold line names.
 apply_units() {
-  printf '%s\n' "$1" | awk -v slots="${3:-2}" -v units="$2" -v machines="${4:-}" '
+  printf '%s\n' "$1" | awk -v slots="${3:-2}" -v units="$2" -v machines="${4:-}" -v first=" ${5:-} " '
     BEGIN {
       n = split(units, raw, "\n")
       # Bundles first: units carrying more issues rank ahead, in plan order
       # among equals, so a round fills with bundles before loose issues.
       for (i = 1; i <= n; i++) { ul[i] = raw[i]; split(raw[i], f, "\t"); w[i] = (f[1] == "unit") ? split(f[2], tmp, " ") : 0 }
+      # A unit with an issue that fixes a failure on main (the fifth argument) outranks every bundle.
+      for (i = 1; i <= n; i++) if (w[i] > 0) { split(raw[i], ff, "\t"); m = split(ff[2], tm, " "); for (j = 1; j <= m; j++) if (index(first, " " tm[j] " ")) w[i] += 1000 }
       for (i = 2; i <= n; i++) { v = ul[i]; c = w[i]; j = i - 1; while (j > 0 && w[j] < c) { ul[j + 1] = ul[j]; w[j + 1] = w[j]; j-- } ul[j + 1] = v; w[j + 1] = c }
       for (i = 1; i <= n; i++) {
         split(ul[i], f, "\t")

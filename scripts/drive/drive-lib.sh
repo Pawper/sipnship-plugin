@@ -9,7 +9,7 @@
 #   pr      NUMBER  TITLE  ci(green|red|pending)  merge(mergeable|conflicting|unknown)  class(app|other)  [reds  held(yes|no)]
 #           reds is how many times its checks failed, on different commits;
 #           held is yes when the queue holds it (a hold label or line)
-#           [busy(yes|no)]: yes when its head commit or newest comment is
+#           [busy(yes|no)]: yes when its head commit (never a comment) is
 #           under 30 minutes old; a busy one gets no agent (a "busy" line)
 #           [pending(yes|no)[mainred(none|fixed|waiting)]]: pending is yes when its head commit's checks are still
 #           running; a red from an older commit is then neither fixed nor set aside
@@ -31,7 +31,7 @@
 # last line is a "stop" line saying why the round would end. Nothing here
 # is done; a person approves first.
 propose_round() {
-  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v runners="${2:-2}" -v max_agents="${3:-4}" -v aside="${4:-2}" '
+  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v runners="${2:-2}" -v max_agents="${3:-4}" -v aside="${4:-2}" -v mf=" ${MAINFIX_ISSUES:-} " '
     $1 == "pr" && $4 == "green" && $5 == "mergeable" && $8 != "yes" { green[++g] = $2; if ($6 != "other") appgreen++ }
     $1 == "pr" && $4 == "red" && $8 == "yes" { next }
     $1 == "pr" && $4 == "red" {
@@ -52,13 +52,14 @@ propose_round() {
     }
     $1 == "pr" && ($4 == "pending" || $5 == "conflicting" || $5 == "unknown") && $4 != "red" { waiting_pr++ }
     $1 == "issue" && $4 == "ready" && $5 == "yes" { ask[++k] = $2 "\t" $3 }
-    $1 == "issue" && $4 == "ready" && $5 != "yes" { ready[++n] = $2 "\t" $3 }
+    $1 == "issue" && $4 == "ready" && $5 != "yes" { if (index(mf, " " $2 " ")) lead[++nl] = $2 "	" $3; else tail[++nt] = $2 "	" $3 }
     $1 == "issue" && $4 == "in-progress" { inprogress++ }
     $1 == "issue" && $4 == "waiting-on-owner" { onowner++ }
     $1 == "audit" && $2 != "" { audit = $2 }
     $1 == "red" { redmain = $2 }
     $1 == "queue" { queue = $2 }
     END {
+      for (i = 1; i <= nl; i++) ready[++n] = lead[i]; for (i = 1; i <= nt; i++) ready[++n] = tail[i]  # main fixes (MAINFIX_ISSUES) lead
       acted = 0
       if (g > 2 && appgreen > 2) {
         line = "merge-batch"; for (i = 1; i <= g; i++) line = line " " green[i]
@@ -69,7 +70,7 @@ propose_round() {
       for (i = 1; i <= r; i++) { print "fix-pr " red[i]; acted++ }
       for (i = 1; i <= sa; i++) { print "set-aside " setaside[i]; acted++ }
       for (i = 1; i <= bm; i++) { print "merge-main " behind[i]; acted++ }
-      for (i = 1; i <= bz; i++) { print "busy " busy[i] "\tpushed or commented on in the last 30 minutes; someone is likely on it"; waiting_pr++ }
+      for (i = 1; i <= bz; i++) { print "busy " busy[i] "\tpushed to in the last 30 minutes; someone is on it"; waiting_pr++ }
       for (i = 1; i <= wz; i++) { print "busy " waiting[i]; waiting_pr++ }
       for (i = 1; i <= k; i++) { print "ask-owner " ask[i]; acted++ }
       slots = (runners < max_agents) ? runners : max_agents

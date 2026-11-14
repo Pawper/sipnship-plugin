@@ -63,8 +63,8 @@ The drive works the ready list in rounds, so many issues land in little time wit
   `merge-main` goal, and a red one no unit owns is a `fix-pr` or `set-aside` goal like any other. Nobody has
   to ask for this. Never put two agents on the same pull request: one a running unit owns goes to that unit's
   agent, not a new one. And never send an agent to a pull request someone else is already working on: one
-  whose head commit or newest comment is under 30 minutes old is likely in an agent's hands in another
-  session, so the plan shows it on an unnumbered `busy` line instead of `merge-main` or `fix-pr`, and a later
+  whose head commit was pushed under 30 minutes ago has an agent at work (a comment, your own post, a worktree or a check re-run never counts: none ends when the agent does),
+  so the plan shows it on an unnumbered `busy` line instead of `merge-main` or `fix-pr`, and a later
   tick looks again.
 
 ## a. Read the state and the standing approval
@@ -114,7 +114,7 @@ need no proposal or reply. Read them on every tick, whatever `approval.sh` said:
 sh "${CLAUDE_PLUGIN_ROOT}/scripts/drive/work-requests.sh"
 ```
 
-It prints one line per request still owed, `start-next N by LOGIN`, `start-now N by LOGIN` (N is 0 for the round-wide button), `hold-agent N by LOGIN`
+It prints one line per request still owed, `start-next N by LOGIN`, `start-now N by LOGIN` (N is 0 for the round-wide button; one that carries the builder's own words prints as `start-now ? by LOGIN: WORDS`, one line each, so read the words and match each to its issue; `Queue answer: start-now #0: ...` spends them all), `hold-agent N by LOGIN`
 or `start-round by LOGIN`, or nothing. Do each (step c). Every request is answered on the drive issue in the fixed
 form `Queue answer: KIND #N: outcome` (start-round's N is 0), one comment each, saying what happened or what it
 waits on, so the dashboard's waiting line ends; a request still printed on the next tick is one you owe, so answer
@@ -181,8 +181,8 @@ The goal lines and what each means:
   agent (isolation, `dispatchModel`) to its branch's worktree: merge origin/main, keep both sides, regenerate
   any generated files, re-run the touched tests per file, and push. Never a second agent on a pull request
   that already has one; a unit's own pull request goes to that unit's agent.
-- **`busy N TITLE`** (unnumbered). The pull request would get `merge-main` or `fix-pr`, but its head commit or
-  newest comment is under 30 minutes old: someone is likely on it. Send nobody; a later tick looks again.
+- **`busy N TITLE`** (unnumbered). The pull request would get `merge-main` or `fix-pr`, but its head commit
+  is under 30 minutes old: an agent is at work. Send nobody; a later tick looks again. A red pull request with nobody on it is never a reason to hold the round: dispatch the units in other areas anyway, and say in the proposal's waits-on line what waits and since when once it passes an hour.
 - **`dispatch N`.** Start an agent for the issue with isolation (a worktree), the model `dispatchModel`
   names (or, when it is empty, the model the plugin's agent-model hook allows for its tier), and a brief that
   names the issue, the files it may touch, the rules in CLAUDE.md or AGENTS.md (install right after the
@@ -262,6 +262,9 @@ tab says it waits and on what instead of saying it starts on its own; `status: p
   dashboard's Needs you card can say it.
 - **`fix-main N`.** Treat the red run like a red pull request on main itself: fix within scope or report the
   cause on the issue.
+  A ready issue whose title or body says a test or check fails on main is ranked first as well: the plan puts its
+  dispatch ahead of every bundle, so it is never the one deferred for want of a runner. Whoever files such an issue
+  can also label it `ci-red`.
 - **`audit TEXT`.** When the facts are plain (an issue with no State whose title says what it is, an issue
   still ready after its pull request merged), set the state or close it. When they are not plain, leave it;
   the audit will say it again tomorrow.
@@ -278,7 +281,7 @@ tab says it waits and on what instead of saying it starts on its own; `status: p
   shape is not marked: ask the agent that wrote it to put it in the shape, and mark it then, so Ready holds only
   what can start. The plan checks this itself with the one reader before it proposes `mark-waiting`; an open
   question not in the shape comes out as `ask-fix N` instead, with what to change.
-- **`release X.Y.Z`.** Merged plugin changes sit unshipped. File a release issue first
+- **`release X.Y.Z`.** Merged plugin changes sit unshipped on the remote's main (the plan fetches it, so a stale checkout proposes the same release). When an open issue already names that release the plan prints an unnumbered `hold` naming it instead: never file a second release issue or open a second bump. File a release issue first
   (`sh scripts/issue-open.sh`, State ready). In a worktree run `sh plugin/scripts/release/bump.sh X.Y.Z`, run
   the plugin suite (`sh tests/run.sh` from `plugin/`), commit, open the pull request with `Closes #N` for that
   release issue, and queue it. Publishing the split to the public repository happens by the release procedure

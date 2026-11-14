@@ -32,6 +32,8 @@ here=$(dirname "$0")
 . "$here/area-plan-lib.sh"
 . "$here/plan-read-lib.sh"
 . "$here/stale-lib.sh"
+. "$here/release-lib.sh"
+. "$here/rank-lib.sh"
 
 show_snapshot=no; fast=no; facts_file=""
 while [ $# -gt 0 ]; do
@@ -163,14 +165,13 @@ while IFS="$us" read -r p_num p_ref p_labels p_hold p_closes p_refs; do
       fi
     fi
   fi
-  # Someone else on it? Only for one the drive would send an agent to (it conflicts or is red): a head commit or newest comment
-  # under 30 minutes old means an agent in another session is likely at work, so it gets none.
+  # Someone else on it? Only for one the drive would send an agent to (it conflicts or is red): a head commit under 30 minutes
+  # old means an agent is at work. Comments, the drive's own posts, a worktree and a check re-run never count: none ends when an
+  # agent does, so a pull request nobody works would wait for ever.
   p_busy=no
   if [ "$p_state" = dirty ] || [ "$p_ci" = red ]; then
     p_head=$(gh api "repos/{owner}/{repo}/commits/$p_sha" --jq '.commit.committer.date | fromdateiso8601' 2>/dev/null | tr -d '\r')
-    p_since=$(date -u -d "@$(( $(date +%s) - 1800 ))" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$(( $(date +%s) - 1800 ))" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null)
-    p_note=$(gh api "repos/{owner}/{repo}/issues/$p_num/comments?since=$p_since&per_page=100" --jq '[.[].created_at | fromdateiso8601] | max // empty' 2>/dev/null | tr -d '\r')
-    p_busy=$(recently_touched "$p_head" "$p_note" "$(date +%s)" 30)
+    p_busy=$(recently_touched "$p_head" "" "$(date +%s)" 30)
   fi
   p_pend=no; [ "$p_ci" = red ] && p_pend=$(head_checks_pending "$p_sha")  # a red from an older commit is not the newest commit failing
   rest_lines="${rest_lines}${p_num}${tab}${p_state}${tab}${p_reds}${tab}$(held_by "$p_labels" "$p_hold")${tab}${p_busy}${tab}${p_pend}${tab}${p_mainred}
@@ -214,6 +215,7 @@ if [ -n "$stale" ]; then
 fi
 units_per_round=$(setting "$settings" unitsPerRound)
 aside_after=$(setting "$settings" setAsideAfterReds)
+MAINFIX_ISSUES=$(mainfix_numbers "$facts"); export MAINFIX_ISSUES  # ready fixes for a failure on main lead (rank-lib.sh)
 round=$(propose_round "$snapshot" "$runners" "$max_agents" "$aside_after")
 # Plan the ready issues by the files they touch: overlapping guesses become
 # one bundle (one agent, one pull request), disjoint ones stay apart, and an
@@ -236,7 +238,7 @@ while IFS="$us" read -r kind num title a b c d e; do
     ready)
       case "$(printf '%s\n' "$snapshot" | awk -F'\t' -v n="$num" '$1 == "issue" && $2 == n { print $5 }')" in yes) continue ;; esac
       printf '%s\n' "$reasons" | grep -q "^hold	$num	" && continue
-      g=$(guess_files "$title $c" "$mocks_text" "$past"); [ -n "$g" ] || g=$(title_area_files "$title" "$areas_text")
+      g=$(guess_files "$title $c" "$mocks_text" "$past"); [ -n "$g" ] || g=$(title_area_files "$title $c" "$areas_text")
       guesses="${guesses}${num}${tab}${title}${tab}${g}
 " ;;
     in-progress)
@@ -262,7 +264,7 @@ if [ -n "$guesses" ] || [ -n "$reasons" ]; then
   # maxAgents), planned against the running round's files. It starts only
   # once the running round lands (approval.sh holds its dispatches).
   slots=$units_per_round; [ "$max_agents" -lt "$slots" ] && slots=$max_agents; [ "$runners" -lt "$slots" ] && slots=$runners
-  round=$(apply_units "$round" "$units" "$slots" "$machines")
+  round=$(apply_units "$round" "$units" "$slots" "$machines" "$MAINFIX_ISSUES")
 fi
 # A project whose queue lands green work by itself: rely on it; propose one drain only when green work has sat 15 minutes.
 green_prs=$(printf '%s\n' "$snapshot" | awk -F'\t' '$1 == "pr" && $4 == "green" && $5 == "mergeable" && $8 != "yes" { print $2 }')
@@ -278,12 +280,8 @@ if [ -f scripts/ci/merge-queue.sh ] && [ -n "$green_prs" ]; then
   done
   round=$(landing_goals "$round" "$ages" 15 "$batch_pr")
 fi
-# Unreleased plugin work: one release goal, from this repository's history.
-plugin_ver=$(json_field "$(cat plugin/.claude-plugin/plugin.json 2>/dev/null)" version)
-rel_line=$(release_goal "$plugin_ver" "$(plugin_unreleased_count)")
-# An open pull request that already carries that release (or closes its release issue) means no second release is proposed; its hold line says so.
-[ -n "$rel_line" ] && [ -n "$(open_release_pr "$facts" "$pull_links" "$(next_patch "$plugin_ver")")" ] && rel_line=""
-[ -n "$rel_line" ] && round=$(add_goal "$round" "$rel_line")
+# Unreleased plugin work, read from the remote's main (release-lib.sh): one release goal, or a hold naming the pull request or issue already making it.
+round=$(add_release "$round" "$(release_proposal "$facts" "$pull_links")")
 if [ -n "$extra" ]; then
   round=$(printf '%s\n%s\n' "$extra" "$round" | awk '/^stop: (nothing to propose|everything left waits|work is in flight)/ { print "stop: proposal ready for approval"; next } { print }')
 fi
