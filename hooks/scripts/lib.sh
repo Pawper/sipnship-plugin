@@ -275,11 +275,7 @@ generated_page_reason() {
   done
 }
 
-# task_tier SUBAGENT_TYPE DESCRIPTION PROMPT
-# Print the tier a dispatched task needs: lookup, routine or hard.
-# A lookup finds, lists or reads something and has a short prompt. A hard
-# task designs, implements, debugs, reviews or plans. Everything else is
-# routine.
+# task_tier SUBAGENT_TYPE DESCRIPTION PROMPT: lookup (finds, lists or reads; short prompt), hard (designs, implements, debugs, reviews, plans) or routine.
 task_tier() {
   tt_type=$(printf '%s' "$1" | tr 'A-Z' 'a-z')
   tt_text=$(printf '%s %s' "$2" "$3" | tr 'A-Z' 'a-z')
@@ -292,6 +288,8 @@ task_tier() {
     echo hard
     return 0
   fi
+  # A prompt naming a brief to follow, a worktree or a pull request is a unit of work, never a lookup, whatever its length.
+  if printf '%s' "$tt_text" | grep -Eq '(worktree|pull request|your (full )?brief|the brief|brief file|\.scratch/)'; then echo routine; return 0; fi
   if [ "$tt_words" -le 120 ] && printf '%s' "$tt_text" | grep -Eq '(find|search|locate|list|grep|where is|look up|lookup|which file|read|check whether|does .* exist|count)'; then
     echo lookup
     return 0

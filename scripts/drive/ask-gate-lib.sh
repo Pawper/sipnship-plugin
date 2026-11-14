@@ -35,3 +35,30 @@ ask_verdicts_for() {
     printf '%s\t%s\n' "$av_n" "$(printf '%s\n' "$av_c" | ask_verdict)"
   done
 }
+
+# owner_waiting_holds ROUND EXTRA
+# An issue the proposal itself puts to the owner (EXTRA's "ask-fix N" or
+# "mark-waiting N": a question or a step only the owner can do) is not offered
+# to an agent in the same proposal. Its number leaves ROUND's dispatch lines
+# (a dispatch left with no issue goes), and a hold line says why, in the
+# builder's words: "hold N<TAB>TITLE<TAB>WHY". Other lines pass through.
+owner_waiting_holds() {
+  ow_nums=$(printf '%s\n' "$2" | sed -nE 's/^(ask-fix|mark-waiting) ([0-9]+).*/\2/p' | tr '\n' ' ')
+  [ -n "$ow_nums" ] || { printf '%s\n' "$1"; return 0; }
+  printf '%s\n' "$1" | awk -F'\t' -v owner=" $ow_nums" '
+    function flush(   i) { for (i = 1; i <= h; i++) print holds[i]; h = 0 }
+    /^dispatch / {
+      head = $1; rest = ""; for (i = 2; i <= NF; i++) rest = rest "\t" $i
+      m = split(substr(head, 10), w, / +/); keep = ""; kept = 0
+      for (k = 1; k <= m; k++) {
+        if (w[k] == "") continue
+        if (index(owner, " " w[k] " ")) holds[++h] = "hold " w[k] "\t" (m == 1 ? $2 : "") "\tWaits on your answer; not offered to an agent while it is open"
+        else { keep = keep (keep == "" ? "" : " ") w[k]; kept++ }
+      }
+      if (kept > 0) print "dispatch " keep rest
+      next
+    }
+    /^stop:/ { flush(); print; next }
+    { print }
+    END { flush() }'
+}

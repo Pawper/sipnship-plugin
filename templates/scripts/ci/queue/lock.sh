@@ -14,16 +14,22 @@ remote_lock_field() { printf '%s\n' "$1" | head -n 1 | awk -v k="$2" '{ for (i =
 # remote_lock_message MODE PID HOST RUN DIR NOW: the holder, in one line.
 remote_lock_message() { printf 'queue lock: --%s pid %s host %s run %s dir %s at %s\n' "$1" "$2" "$3" "${4:--}" "$5" "$6"; }
 
+# remote_lock_bound: how long a lock whose holder cannot be checked (another
+# machine) is believed: a drain is bounded by QUEUE_DRAIN_MINUTES, so the lock
+# goes stale after that plus thirty minutes, not three hours. QUEUE_LOCK_STALE
+# (seconds) overrides it.
+remote_lock_bound() { echo "${QUEUE_LOCK_STALE:-$(( (${QUEUE_DRAIN_MINUTES:-90} + 30) * 60 ))}"; }
+
 # remote_lock_reason MESSAGE NOW ALIVE [STALE_SECONDS]
 # Why a second queue must not start, naming the holder ("a --drain started 12
 # minute(s) ago is still running (pid 4242) on DESK, Queue drain run 77"), or
-# nothing when the lock is older than STALE_SECONDS (default three hours, as
-# the file lock) or ALIVE is not yes.
+# nothing when the lock is older than STALE_SECONDS (default remote_lock_bound,
+# not the file lock's three hours) or ALIVE is not yes.
 remote_lock_reason() {
   rl_pid=$(remote_lock_field "$1" pid); rl_at=$(remote_lock_field "$1" at)
   rl_mode=$(printf '%s\n' "$1" | head -n 1 | sed -n 's/^queue lock: \(--[a-z]*\) .*/\1/p')
   [ -n "$rl_pid" ] && [ -n "$rl_at" ] || return 0
-  rl_why=$(queue_lock_reason "$(printf '%s\t%s\t%s' "$rl_pid" "$rl_at" "${rl_mode:---queue}")" "$2" "$3" "${4:-${QUEUE_LOCK_STALE:-10800}}")
+  rl_why=$(queue_lock_reason "$(printf '%s\t%s\t%s' "$rl_pid" "$rl_at" "${rl_mode:---queue}")" "$2" "$3" "${4:-$(remote_lock_bound)}")
   [ -n "$rl_why" ] || return 0
   rl_host=$(remote_lock_field "$1" host); rl_run=$(remote_lock_field "$1" run)
   printf '%s on %s%s\n' "$rl_why" "${rl_host:-another machine}" "$([ -z "$rl_run" ] || [ "$rl_run" = - ] || printf ', Queue drain run %s' "$rl_run")"
@@ -78,7 +84,7 @@ remote_lock_take() {
     rt_why=$(remote_lock_reason "$rt_cur" "$(date +%s)" "$(remote_lock_alive "$rt_cur")")
     if [ -n "$rt_why" ] || [ -z "$rt_cur" ] || [ "$rt_try" -ge 2 ]; then
       [ -n "$rt_why" ] || rt_why="a queue left its lock on GitHub just now"
-      echo "Another queue is running: $rt_why. Wait for it to finish rather than starting a second one; a lock left by a crash ends on its own after three hours."
+      echo "Another queue is running: $rt_why. Wait for it to finish rather than starting a second one; a lock left by a crash ends on its own after $(( $(remote_lock_bound) / 60 )) minutes."
       exit 1
     fi
     # Its holder is gone or it is stale: take it over, once.

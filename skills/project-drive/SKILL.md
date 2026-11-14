@@ -189,6 +189,9 @@ The goal lines and what each means:
   worktree is made, run every touched test per file, keep test files inside `.scratch/`, merge origin/main
   before pushing, never run the queue or re-run CI), and the pull request it must open with `Closes #N`.
   Dispatch every unit of the round at once. Set the issue to `state:in-progress` with `scripts/state.sh`.
+  Keep the brief in a file and the prompt short: name the issue, the worktree and the pull request to open, and
+  point at the brief file ("read your brief first and follow it"). The agent-model hook reads such a prompt as a
+  unit of work, never a lookup, so `dispatchModel` is allowed for it whatever its length.
   The plan groups ready issues by the files they are guessed to touch (the paths and specs the body names,
   the project's mocks map, and the files past work on the same spec changed). `dispatch 12 14` with a
   third column "Why together: both change ..." is a bundle: one agent, one worktree, one pull request that
@@ -253,7 +256,11 @@ tab says it waits and on what instead of saying it starts on its own; `status: p
 - **`hold N TITLE Waits on ... (after: M)`.** The issue says it comes after #M, which waits on the owner or is
   still open. Do not start it; publish it as `hold: N | after: M | why: <those words>`. A hold the plan no
   longer prints has ended: start it like any ready issue.
-- **`ask-owner N`.** A ready issue whose words touch something the owner has said is theirs. Put one comment
+- **`ask-owner N`.** A ready issue whose words touch something the owner has said is theirs. The line says which
+  phrase matched and the sentence it matched in (`matched "prices" in: ...`), because a phrase also matches as an
+  ordinary verb. A match is a candidate, not a decision: read the issue with one reader first, and when it does
+  not leave that decision open, add its number to `.scratch/drive/no-ask.txt` (one `N` or `N<TAB>why` a line) so
+  the plan does not propose it again, and start it as an ordinary ready issue. Otherwise put one comment
   on it with the question, the options and a recommendation, and set `state:waiting-on-owner`. This is a
   proposal line so the person sees it, but it is the one goal that may run without approval, since it asks
   rather than acts. Ask once, then wait: the issue leaves the ready list and is never asked again until the

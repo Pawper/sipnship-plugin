@@ -34,6 +34,7 @@ here=$(dirname "$0")
 . "$here/stale-lib.sh"
 . "$here/release-lib.sh"
 . "$here/rank-lib.sh"
+. "$here/owner-lib.sh"
 
 show_snapshot=no; fast=no; facts_file=""
 while [ $# -gt 0 ]; do
@@ -99,10 +100,8 @@ printf '%s\n' "$facts" | tr '\t' '\037' | while IFS="$us" read -r kind num title
       case ",$a," in *",ci-red,"*) printf 'red\t%s\n' "$num" ;; esac
       case "$state" in
         ready)
-          owner=no
-          # Title and the start of the body, both from the one call.
-          if [ -n "$owner_phrases" ] && [ -n "$(owner_decision_hit "$title $c" "$owner_phrases")" ]; then owner=yes; fi
-          printf 'issue\t%s\t%s\tready\t%s\n' "$num" "$title" "$owner" ;;
+          # Title and the start of the body, both from the one call; an owner-decision match is a candidate with its sentence.
+          printf 'issue\t%s\t%s\tready\t%s\n' "$num" "$title" "$(owner_issue_fields "$num" "$title $c" "$owner_phrases")" ;;
         in-progress|waiting-on-owner|blocked)
           printf 'issue\t%s\t%s\t%s\tno\n' "$num" "$title" "$state" ;;
       esac
@@ -278,11 +277,12 @@ if [ -f scripts/ci/merge-queue.sh ] && [ -n "$green_prs" ]; then
     ages="${ages}${p}${tab}${m:-0}
 "
   done
-  round=$(landing_goals "$round" "$ages" 15 "$batch_pr")
+  round=$(plan_landing "$round" "$ages" "$batch_pr" "$snapshot" "$runs")  # batch members and held pull requests never count toward a drain
 fi
 # Unreleased plugin work, read from the remote's main (release-lib.sh): one release goal, or a hold naming the pull request or issue already making it.
 round=$(add_release "$round" "$(release_proposal "$facts" "$pull_links")")
 if [ -n "$extra" ]; then
+  round=$(owner_waiting_holds "$round" "$extra")
   round=$(printf '%s\n%s\n' "$extra" "$round" | awk '/^stop: (nothing to propose|everything left waits|work is in flight)/ { print "stop: proposal ready for approval"; next } { print }')
 fi
 number_proposal "$round"

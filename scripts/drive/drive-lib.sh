@@ -51,7 +51,7 @@ propose_round() {
       next
     }
     $1 == "pr" && ($4 == "pending" || $5 == "conflicting" || $5 == "unknown") && $4 != "red" { waiting_pr++ }
-    $1 == "issue" && $4 == "ready" && $5 == "yes" { ask[++k] = $2 "\t" $3 }
+    $1 == "issue" && $4 == "ready" && $5 == "yes" { ask[++k] = $2 "\t" $3 ($6 != "" ? "\t" $6 : "") }
     $1 == "issue" && $4 == "ready" && $5 != "yes" { if (index(mf, " " $2 " ")) lead[++nl] = $2 "	" $3; else tail[++nt] = $2 "	" $3 }
     $1 == "issue" && $4 == "in-progress" { inprogress++ }
     $1 == "issue" && $4 == "waiting-on-owner" { onowner++ }

@@ -152,6 +152,10 @@ drain_retry_once() {
   [ -f .github/workflows/queue-drain.yml ] || return 0
   dr_now=$(date +%s)
   dr_last=$(gh api "repos/{owner}/{repo}/actions/variables/QUEUE_DRAIN_RETRIED" --jq .value 2>/dev/null | tr -d '\r')
+  # A variable that does not exist answers 404 with a JSON body; that text
+  # once reached the arithmetic below and ended the drain with its lock held.
+  # Anything that is not a plain number reads as "not set".
+  case "$dr_last" in ''|*[!0-9]*) dr_last=0 ;; esac
   [ $(( dr_now - ${dr_last:-0} )) -ge "${QUEUE_RETRY_GAP:-1800}" ] 2>/dev/null || return 0
   set_repo_var QUEUE_DRAIN_RETRIED "$dr_now" || true
   if gh_write api -X POST "repos/{owner}/{repo}/actions/workflows/queue-drain.yml/dispatches" -f ref="$base" >/dev/null 2>&1; then
@@ -172,7 +176,6 @@ queue_exit() {
     echo "merge-queue.sh stopped (exit $qe_rc) during: $queue_step" >&2
     printf '%s %s\n' "$(date '+%H:%M')" "stopped (exit $qe_rc) during: $queue_step" >> "$log_file" 2>/dev/null || true
   fi
-  if [ "${mode:-}" = drain ] && { [ "$qe_rc" -ne 0 ] || [ -f "$flaky_dir/requests.failed" ]; }; then drain_retry_once || true; fi
   if [ -n "${local_drain_mark:-}" ]; then set_repo_var QUEUE_LOCAL_DRAIN_UNTIL "" >/dev/null 2>&1 || true; fi
   # The run's last word, in the log as well as the terminal, after the
   # deploy and after the lock goes: four watchers once waited on a "queue
@@ -182,6 +185,9 @@ queue_exit() {
     [ "$qe_rc" -ne 0 ] || echo "queue done"
     printf '%s %s\n' "$(date '+%H:%M')" "queue done (exit $qe_rc); lock released" >> "$log_file" 2>/dev/null || true
   fi
+  # The retry comes after the lock is gone: nothing it does can leave the
+  # lock behind, and the drain it starts finds the lock free.
+  if [ "${mode:-}" = drain ] && { [ "$qe_rc" -ne 0 ] || [ -f "$flaky_dir/requests.failed" ]; }; then drain_retry_once || true; fi
 }
 take_lock() {
   [ -z "$QUEUE_LOCKED" ] || return 0

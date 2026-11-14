@@ -872,6 +872,14 @@ eq "a second failure inside the gap starts none" "0" "$(grep -c 'queue-drain.yml
 rm -f "$rn/q/requests.open"
 ( cd "$rn/proj"; rn_retry 0 )
 eq "a failed drain with no requests open starts none" "0" "$(grep -c 'queue-drain.yml/dispatches' "$rn/log")"
+# A retry variable that does not exist answers 404 with a JSON body: it reads as not set, and the drain's exit goes on.
+: > "$rn/q/requests.open"
+( cd "$rn/proj"; rn_retry '{"message":"Not Found","documentation_url":"https://docs.github.com/rest/actions/variables#get-a-repository-variable","status":"404"}' ); rn_rc=$?
+eq "a missing retry variable reads as not set: the retry starts and the exit is clean" "0 1" "$rn_rc $(grep -c 'queue-drain.yml/dispatches' "$rn/log")"
+# The job's own token may not read a variable at all: a 403 body reads as not set as well.
+( cd "$rn/proj"; rn_retry '{"message":"Resource not accessible by integration","documentation_url":"https://docs.github.com/rest/actions/variables#get-a-repository-variable","status":"403"}' ); rn_rc=$?
+eq "a refused variable read reads as not set too" "0 1" "$rn_rc $(grep -c 'queue-drain.yml/dispatches' "$rn/log")"
+rm -f "$rn/q/requests.open"
 
 section 'the drain files rule requests (spec 016)'
 . "$root/templates/scripts/ci/queue/rule-issues.sh"
@@ -1315,6 +1323,15 @@ eq "owner decision found" "prices" "$(owner_decision_hit 'Set the Prices for the
 policy')"
 eq "owner decision absent" "" "$(owner_decision_hit 'Fix the date parser' 'prices
 policy')"
+. "$root/scripts/drive/owner-lib.sh"
+eq "the sentence an owner-decision phrase matched in" "Page B prices it as a hosted agent" "$(owner_decision_context 'Cost tab. Page B prices it as a hosted agent. Nothing else.' prices)"
+eq "no phrase, no sentence" "" "$(owner_decision_context 'Fix the date parser' prices)"
+od_note=$(mktemp)
+printf '1522\tonly the verb\n1600\n' > "$od_note"
+eq "an issue the drive judged needs no ask is declined, one never judged is not" "yes no" "$(owner_decision_declined 1522 "$od_note") $(owner_decision_declined 1523 "$od_note")"
+eq "a missing note declines nothing" "no" "$(owner_decision_declined 7 "$od_note.none")"
+eq "the ask-owner line carries what matched" "ask-owner 13	Set the price of the plan	matched \"prices\" in: Set the prices" "$(propose_round "$(printf 'issue\t13\tSet the price of the plan\tready\tyes\tmatched \"prices\" in: Set the prices\n')" 2 4 2 | grep '^ask-owner')"
+eq "the owner-decision line reads the declined note and says what matched" "1 1" "$(grep -c 'owner_decision_declined "\$1" .scratch/drive/no-ask.txt' "$root/scripts/drive/owner-lib.sh") $(grep -c 'owner_issue_fields' "$root/scripts/drive/plan.sh")"
 eq "report trimmed per section" "Merged:
 #1
 #2
@@ -1334,6 +1351,10 @@ eq "a short find is a lookup" "lookup" "$(task_tier general-purpose 'Find the pa
 eq "implement is hard" "hard" "$(task_tier general-purpose 'Add retries' 'Implement retries in the client')"
 eq "a long find is routine" "routine" "$(task_tier general-purpose 'Survey' "$(awk 'BEGIN { for (i = 0; i < 130; i++) printf "find word "; }')")"
 eq "a summary is routine" "routine" "$(task_tier general-purpose 'Summarize' 'Summarize the release notes in five lines')"
+eq "a short unit prompt pointing at a brief file is no lookup, with sonnet allowed" "routine" "$(task_tier general-purpose 'Unit A of the round' 'Your worktree is already made, on branch issue-1542-r47. Read your full brief first and follow it. Issue 1542.')"
+eq "and sonnet passes the agent-model rule for it" "" "$(agent_model_reason general-purpose 'Unit A of the round' 'Your worktree is already made, on branch issue-1542-r47. Read your full brief first and follow it. Issue 1542.' sonnet)"
+eq "read the brief file is not a lookup word, whatever the length" "routine" "$(task_tier general-purpose 'Unit B' 'Read the brief at .scratch/overnight/common.md and do the work it names.')"
+eq "a short find-where prompt with sonnet is still refused" "haiku lookup" "$(agent_model_reason general-purpose 'Find the parser' 'Find which file parses dates and report the path' sonnet)"
 eq "no model on a lookup" "haiku lookup" "$(agent_model_reason Explore 'Find x' 'Find x' '')"
 eq "no model on hard work" "opus hard" "$(agent_model_reason general-purpose 'Fix the bug' 'Debug the crash' '')"
 eq "opus on a lookup is heavier than needed" "haiku lookup" "$(agent_model_reason Explore 'Find x' 'Find x' opus)"
@@ -2587,6 +2608,7 @@ case "$*" in
   *"-X POST"*"git/commits"*) s="c$$$(date +%s)"; printf '%s' "$msg" > "$RL_DIR/commit-$s"; echo "$s" ;;
   *"-X POST"*"git/refs"*) if [ -f "$RL_DIR/ref" ]; then echo "HTTP 422: Reference already exists" >&2; exit 1; fi; echo "$rsha" > "$RL_DIR/ref" ;;
   *"-X DELETE"*"git/refs/queue/lock"*) rm -f "$RL_DIR/ref" ;;
+  *"actions/runs/"*) echo "${RL_RUN_STATUS:-in_progress}" ;;
   *"git/ref/queue/lock"*) [ -f "$RL_DIR/ref" ] && cat "$RL_DIR/ref" || exit 1 ;;
   *"git/commits/"*) cat "$RL_DIR/commit-${1##*/}" 2>/dev/null || for a in "$@"; do case "$a" in */git/commits/*) cat "$RL_DIR/commit-${a##*/}" ;; esac; done ;;
 esac
@@ -2623,6 +2645,15 @@ eq "the holder's words read as the file lock's do" "a --drain started 12 minute(
 eq "a finished Queue drain run is no holder" "" "$(. "$root/templates/scripts/ci/queue/rules-drain.sh"; . "$root/templates/scripts/ci/queue/lock.sh"; remote_lock_reason "$(remote_lock_message drain 4242 GARDEN-PC 77 1 1000)" 1720 no)"
 eq "the lock is released only by the queue that holds it" "gone kept" "$(cd "$rl/a" && . "$root/templates/scripts/ci/queue/state.sh" && . "$root/templates/scripts/ci/queue/lock.sh" && PATH="$rl/bin:$PATH" RL_DIR="$rl" && export PATH RL_DIR && { echo mine > "$rl/ref"; remote_lock_sha=mine; remote_lock_release; [ -f "$rl/ref" ] && printf 'kept' || printf 'gone'; echo theirs > "$rl/ref"; remote_lock_sha=mine; remote_lock_release; printf ' '; [ -f "$rl/ref" ] && printf 'kept' || printf 'gone'; })"
 eq "the merge queue and its unlock load and release it" "1 1 1" "$(grep -c 'queue/lock.sh' "$root/templates/scripts/ci/merge-queue.sh") $(grep -c 'remote_lock_take' "$root/templates/scripts/ci/queue/state.sh") $(grep -c 'remote_lock_release' "$root/templates/scripts/ci/queue/state.sh")"
+# A lock a crash left behind ends at the drain's own bound, not three hours later.
+rl_msg=$(. "$root/templates/scripts/ci/queue/lock.sh"; remote_lock_message drain 4242 GARDEN-PC - 1 1000)
+eq "another machine's lock still blocks inside the drain's bound plus a margin" "yes" "$(. "$root/templates/scripts/ci/queue/rules-drain.sh"; . "$root/templates/scripts/ci/queue/lock.sh"; [ -n "$(remote_lock_reason "$rl_msg" $((1000 + 100 * 60)) yes)" ] && echo yes || echo no)"
+eq "and ends past it (ninety minutes and thirty more by default)" "yes" "$(. "$root/templates/scripts/ci/queue/rules-drain.sh"; . "$root/templates/scripts/ci/queue/lock.sh"; [ -z "$(remote_lock_reason "$rl_msg" $((1000 + 130 * 60)) yes)" ] && echo yes || echo no)"
+eq "a drain bounded at twenty-five minutes leaves a lock for under an hour" "yes" "$(. "$root/templates/scripts/ci/queue/rules-drain.sh"; . "$root/templates/scripts/ci/queue/lock.sh"; QUEUE_DRAIN_MINUTES=25; [ -z "$(remote_lock_reason "$rl_msg" $((1000 + 60 * 60)) yes)" ] && echo yes || echo no)"
+rl_run=$(. "$root/templates/scripts/ci/queue/lock.sh"; remote_lock_message drain 4242 GARDEN-PC 77 1 1000)
+eq "a lock held by a GitHub run that has completed is dead" "no" "$(. "$root/templates/scripts/ci/queue/lock.sh"; PATH="$rl/bin:$PATH" RL_DIR="$rl" RL_RUN_STATUS=completed remote_lock_alive "$rl_run")"
+eq "a lock held by a GitHub run still going is alive" "yes" "$(. "$root/templates/scripts/ci/queue/lock.sh"; PATH="$rl/bin:$PATH" RL_DIR="$rl" RL_RUN_STATUS=in_progress remote_lock_alive "$rl_run")"
+eq "the refusal names the bound, not three hours" "0" "$(grep -c 'after three hours' "$root/templates/scripts/ci/queue/lock.sh")"
 # A batch whose member landed meanwhile is closed, never merged a second time.
 bm_dir=$(mktemp -d); mkdir -p "$bm_dir/bin"
 cat > "$bm_dir/bin/gh" <<'GH'
@@ -4941,6 +4972,20 @@ sr_drain_go='2026-11-04T03:00:30Z	maya-drive	Round started: 1 agent at work.\n\n
 '
 eq "Auto Drive keeps the numbered proposal's drain when the published round only restates its dispatches" "drain 231: the running round's change is green
 nothing" "$(sr_run "$sr_drain$sr_drain_go$sr_proposed" | sed -n '1p;$p' | sed 's/^nothing: .*/nothing/;s/^approved by .*/nothing/')"
+# The round published after the numbered proposal names other dispatches (bundled differently): the drain and the fix still go ahead, the dispatches wait.
+sr_two='2026-11-04T03:00:00Z	maya-drive	Proposal for Tuesday\n\n1. drain 231: the running round'"'"'s change is green\n2. fix-pr 232: its check is red\n3. dispatch 226: Land now\n4. dispatch 223: Seed list\nstop: proposal ready for approval
+'
+sr_two_round='2026-11-04T03:00:20Z	maya-drive	Proposed next round: 1 agent.\n\n- #226, #223, #241\n\n<!-- sipnship-proposal {"status":"proposed","units":[{"issues":[226,223,241],"whyTogether":"one list","areas":["seeds"]}],"held":[]} -->
+'
+eq "a numbered proposal keeps its drain and fix when a round with other dispatches is published after it" "drain 231: the running round's change is green
+fix-pr 232: its check is red
+held: 1 dispatch goal(s) wait for the running round (#214) to land
+approved by Auto Drive" "$(sr_run "$sr_started$sr_two$sr_two_round")"
+eq "the same, with no round running, adds the round's dispatches to the drain and the fix" "drain 231: the running round's change is green
+fix-pr 232: its check is red
+dispatch 226 223 241
+approved by Auto Drive" "$(sed -i 's/echo 214/true/' "$sr_dir/bin/gh"; sr_run "$sr_two$sr_two_round")"
+sed -i 's/\*labels=state:in-progress\*) true/*labels=state:in-progress*) echo 214/' "$sr_dir/bin/gh"
 
 section 'drive sets right an In progress issue nobody works'
 . "$root/scripts/drive/drive-lib.sh"
@@ -5055,6 +5100,17 @@ eq "an ask in the shape is still proposed as mark-waiting" "mark-waiting 21	Plan
 eq "an ask with no recommended choice is proposed as ask-fix, with what to change" "ask-fix 22	Watering plan (not marked waiting: its ask gives choices and none is recommended. End the one you would pick with \"Recommended.\" and a short reason why, in the same comment)" "$(printf '%s\n' "$mw_out" | sed -n 2p)"
 eq "other goals pass through" "set-ready 23	Shade cloth (the owner answered)" "$(printf '%s\n' "$mw_out" | sed -n 3p)"
 eq "an issue with no verdict is not marked waiting" "ask-fix 24" "$(mark_waiting_goals "$(printf 'mark-waiting 24\tRoof drains (a question to the owner is open)\n')" '' | cut -c1-10)"
+# An issue put to the owner is not also offered to an agent.
+ow_round=$(printf 'dispatch 31\tWatering plan\ndispatch 32 33\tSeed list\nstop: proposal ready for approval\n')
+ow_extra=$(printf 'ask-fix 31\tWatering plan (not marked waiting: no ask)\nmark-waiting 33\tSeed list (a question to the owner is open)\n')
+eq "an issue with ask-fix or mark-waiting leaves the dispatch lines, with a hold saying why" "dispatch 32	Seed list
+hold 31	Watering plan	Waits on your answer; not offered to an agent while it is open
+hold 33		Waits on your answer; not offered to an agent while it is open
+stop: proposal ready for approval" "$(owner_waiting_holds "$ow_round" "$ow_extra")"
+eq "a dispatch with no issue left goes, and goals unrelated to the owner's issues stay" "merge 9
+hold 31	Watering plan	Waits on your answer; not offered to an agent while it is open" "$(owner_waiting_holds "$(printf 'merge 9\ndispatch 31\tWatering plan\n')" 'ask-fix 31	x')"
+eq "with nothing put to the owner the round is unchanged" "$ow_round" "$(owner_waiting_holds "$ow_round" 'drain 5')"
+eq "plan.sh keeps an issue it asks the owner about out of its dispatches" "1" "$(grep -c 'owner_waiting_holds "\$round" "\$extra"' "$root/scripts/drive/plan.sh")"
 eq "plan.sh checks the ask before it proposes mark-waiting" "1" "$(grep -c 'mark_waiting_goals "\$extra"' "$root/scripts/drive/plan.sh")"
 printf 'status: proposed
 sized: 5 runners online, 4 free for agents
@@ -5117,6 +5173,21 @@ eq "green work under 15 minutes: the queue lands it" "landing 41 42 45: green; t
 eq "green work sat 15 minutes: one drain" "drain 41 42 45	(green for 16 minutes; one drain lands them)" "$(landing_goals "$rd_round" "$(printf '41\t16\n42\t9\n')" 15 | grep '^drain')"
 eq "a running batch lands them: no drain, even when green over 15 minutes" "landing 41 42 45: a queue batch (pull request 1400) is already landing them; no drain is proposed" "$(landing_goals "$rd_round" "$(printf '41\t40\n42\t9\n')" 15 1400 | grep '^landing')"
 eq "a running batch: no drain line at all" "" "$(landing_goals "$rd_round" "$(printf '41\t40\n')" 15 1400 | grep '^drain')"
+# Members of an open batch are landing, held ones are never counted, and the minutes run from when the queue last had nothing in flight.
+ld_ages=$(printf '41\t40\n42\t40\n45\t40\n')
+eq "a member of the open batch is landing, never in a drain" "landing 41 42: members of the queue batch already landing; no drain is proposed
+drain 45	(green for 40 minutes; one drain lands them)" "$(landing_goals "$rd_round" "$ld_ages" 15 '' '41 42' '' | grep '^landing\|^drain')"
+eq "a held pull request is neither landing nor in a drain" "drain 41 42	(green for 40 minutes; one drain lands them)" "$(landing_goals "$rd_round" "$ld_ages" 15 '' '' '45' | grep '^drain')"
+eq "a queue that finished five minutes ago has not left green work waiting fifteen" "landing 41 42 45: green; the queue lands them, and a drain is proposed if they sit 15 minutes" "$(landing_goals "$rd_round" "$ld_ages" 15 '' '' '' 5 | grep '^landing')"
+eq "a queue idle for twenty minutes proposes the drain" "drain 41 42 45	(green for 20 minutes; one drain lands them)" "$(landing_goals "$rd_round" "$ld_ages" 15 '' '' '' 20 | grep '^drain')"
+eq "a batch's members are read from its body" "1531 1532 1536" "$(batch_members "$(printf 'One integration run for the pull requests below.\n\n- #1536 b\n- #1531 a\n- #1532 c, and #1531 again\n')")"
+ld_runs=$(printf 'completed\t1000\t4000\t.github/workflows/queue-drain.yml\tschedule\tmain\ncompleted\t1000\t9000\t.github/workflows/ci.yml\tpush\tmain\n')
+eq "the queue's idle time counts from its last drain run ending" "50" "$(queue_idle_minutes "$ld_runs" 7000)"
+ld_busy=$(printf '%s
+in_progress	6000	6000	.github/workflows/queue-drain.yml	schedule	main
+' "$ld_runs")
+eq "a drain run still going is no idle time" "0" "$(queue_idle_minutes "$ld_busy" 7000)"
+eq "plan.sh hands landing_goals the batch's members, the held ones and the idle time" "1" "$(grep -c 'plan_landing "\$round" "\$ages" "\$batch_pr" "\$snapshot" "\$runs"' "$root/scripts/drive/plan.sh")"
 eq "only landing left: work is in flight" "landing 41: green; the queue lands them, and a drain is proposed if they sit 15 minutes
 stop: work is in flight; nothing to propose until it lands" "$(landing_goals "$(printf 'merge 41\nstop: proposal ready for approval\n')" "$(printf '41\t2\n')" 15)"
 eq "a landing line is not numbered" "landing 41: green" "$(number_proposal 'landing 41: green')"

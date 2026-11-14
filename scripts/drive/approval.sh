@@ -81,6 +81,24 @@ state=$(printf '%s\n' "$comments" | awk -F'\t' -v me="$me" '
     }
     return t
   }
+  # A numbered proposal and the round published after it in the same tick:
+  # the round names the dispatches, the proposal keeps every other goal
+  # (drain, merge, fix, audit, release), renumbered.
+  function merge_round(prop, gl,   n, a, i, line, s, out, c, m, g) {
+    n = split(prop, a, "\n"); out = ""; c = 0
+    for (i = 1; i <= n; i++) {
+      line = a[i]; s = line
+      if (line ~ /^[0-9]+\. /) {
+        sub(/^[0-9]+\. /, "", s)
+        if (s ~ /^dispatch /) continue
+        line = (++c) ". " s
+      }
+      out = out (out == "" ? "" : "\n") line
+    }
+    m = split(gl, g, "\n")
+    for (i = 1; i <= m; i++) if (g[i] != "") out = out "\n" (++c) ". " g[i]
+    return out
+  }
   function shares(a, b,   n, x, i) { n = split(a, x, " "); for (i = 1; i <= n; i++) if (index(b, " " x[i] " ")) return 1; return 0 }
   function within(a, b,   n, x, i) { n = split(a, x, " "); if (n == 0) return 0; for (i = 1; i <= n; i++) if (!index(b, " " x[i] " ")) return 0; return 1 }
   {
@@ -92,14 +110,19 @@ state=$(printf '%s\n' "$comments" | awk -F'\t' -v me="$me" '
         if (proposal != "" && shares(named, pissues)) { proposal = ""; pissues = " "; reply = ""; by = "" }
         next
       }
+      if (goals != "" && proposal != "" && !frommarker && !within(named, pissues)) {
+        proposal = merge_round(proposal, goals); pissues = named; at = $1; reply = ""; by = ""
+        next
+      }
       if (goals != "" && !(proposal != "" && within(named, pissues))) {
+        frommarker = 1
         proposal = "Proposal: the round published on the drive issue"; c = 0
         n = split(goals, g, "\n"); for (i = 1; i <= n; i++) if (g[i] != "") proposal = proposal "\n" (++c) ". " g[i]
         pissues = named; at = $1; reply = ""; by = ""
       }
       next
     }
-    if (body ~ /^Proposal/) { proposal = body; pissues = dispatched(body); at = $1; reply = ""; by = ""; next }
+    if (body ~ /^Proposal/) { frommarker = 0; proposal = body; pissues = dispatched(body); at = $1; reply = ""; by = ""; next }
     # The other requests and answers left here are not a reply to the proposal (work-requests.sh reads them).
     if (body ~ /^Queue (request: (start-next|start-now|hold-agent|land-next|land-now|deploy-now) ?|answer: )/) next
     if (proposal != "" && $2 != me) { first = body; sub(/\n.*/, "", first); reply = first; by = $2 }

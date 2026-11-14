@@ -137,7 +137,7 @@ green_minutes() {
     END { if (last > 0) print int((now - last) / 60) }'
 }
 
-# landing_goals ROUND AGES [AFTER]
+# landing_goals ROUND AGES [AFTER [BATCH [MEMBERS [HELD [IDLE]]]]]
 # For a project whose queue lands green work by itself. AGES is
 # "NUMBER<TAB>MINUTES" per green pull request. The merge and merge-batch
 # goals become one "drain N N" goal (one drain, in the background) when
@@ -145,22 +145,38 @@ green_minutes() {
 # unnumbered "landing" line saying the queue lands them. A round left with
 # no goal says work is in flight.
 #
-# A fourth argument, BATCH, is the number of an open pull request that
-# carries the queue's batch marker: its members are already landing, so no
-# drain is proposed (a second queue process would break the one-queue rule)
-# and the line names the batch.
+# BATCH is the number of an open pull request that carries the queue's batch
+# marker: its members are already landing, so no drain is proposed (a second
+# queue process would break the one-queue rule) and the line names the batch.
+# MEMBERS (space separated) are the pull requests that batch carries: each is
+# "landing", never part of a drain, whatever its age. HELD (space separated)
+# are pull requests held for the builder to read: never counted toward a
+# drain, never named as landing. IDLE is the whole minutes since the queue
+# last had nothing in flight (queue_idle_minutes); a green pull request is
+# counted green only from then, so a queue that has just finished is not
+# beaten to the next landing.
 landing_goals() {
-  printf '%s\n' "$1" | awk -v ages="$2" -v after="${3:-15}" -v batch="${4:-}" '
+  printf '%s\n' "$1" | awk -v ages="$2" -v after="${3:-15}" -v batch="${4:-}" -v members=" ${5:-} " -v held=" ${6:-} " -v idle="${7:-}" '
     BEGIN {
       n = split(ages, al, "\n")
-      for (i = 1; i <= n; i++) { split(al[i], f, "\t"); if (f[1] != "" && f[2] + 0 > oldest) oldest = f[2] + 0 }
+      for (i = 1; i <= n; i++) { split(al[i], f, "\t"); if (f[1] != "") age[f[1]] = f[2] + 0 }
     }
-    function land() {
+    function land(   w, k, m, mem, rest, oldest, a) {
       if (prs == "") return
-      if (batch != "") print "landing " prs ": a queue batch (pull request " batch ") is already landing them; no drain is proposed"
-      else if (oldest >= after) { print "drain " prs "\t(green for " oldest " minutes; one drain lands them)"; goals++ }
-      else print "landing " prs ": green; the queue lands them, and a drain is proposed if they sit " after " minutes"
+      m = split(prs, w, " "); mem = ""; rest = ""; oldest = 0
+      for (k = 1; k <= m; k++) {
+        if (index(held, " " w[k] " ")) continue
+        if (index(members, " " w[k] " ")) { mem = mem (mem == "" ? "" : " ") w[k]; continue }
+        rest = rest (rest == "" ? "" : " ") w[k]
+        a = age[w[k]] + 0; if (a > oldest) oldest = a
+      }
+      if (idle != "" && idle + 0 < oldest) oldest = idle + 0
+      if (mem != "") print "landing " mem ": members of the queue batch" (batch != "" ? " (pull request " batch ")" : "") " already landing; no drain is proposed"
       prs = ""
+      if (rest == "") return
+      if (batch != "") print "landing " rest ": a queue batch (pull request " batch ") is already landing them; no drain is proposed"
+      else if (oldest >= after) { print "drain " rest "\t(green for " oldest " minutes; one drain lands them)"; goals++ }
+      else print "landing " rest ": green; the queue lands them, and a drain is proposed if they sit " after " minutes"
     }
     /^merge(-batch)? / { for (i = 2; i <= NF; i++) prs = prs (prs == "" ? "" : " ") $i; next }
     { land() }
@@ -170,6 +186,37 @@ landing_goals() {
     }
     !/^(defer |hold |landing |busy )/ && NF > 0 { goals++ }
     { print }'
+}
+
+# batch_members BODY
+# The pull request numbers an open batch pull request's body names, once each,
+# space separated.
+batch_members() {
+  printf '%s\n' "$1" | tr -d '\r' | grep -o '#[0-9][0-9]*' | tr -d '#' | sort -un | tr '\n' ' ' | sed 's/ $//'
+}
+
+# queue_idle_minutes RUNS NOW
+# RUNS as green_minutes reads them. Nothing when the queue has not run; 0 while
+# a Queue drain run is in progress or queued (something is in flight); else the
+# whole minutes since the newest one ended.
+queue_idle_minutes() {
+  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v now="$2" '
+    $4 ~ /queue-drain\.yml$/ {
+      if ($1 != "completed") { busy = 1; next }
+      if ($3 + 0 > last) last = $3 + 0
+    }
+    END { if (busy) print 0; else if (last > 0) print int((now - last) / 60) }'
+}
+
+# plan_landing ROUND AGES BATCH_PR SNAPSHOT RUNS
+# landing_goals with what plan.sh knows: the open batch's members (one REST
+# read of its body), the held pull requests of SNAPSHOT, and the queue's idle
+# minutes from RUNS.
+plan_landing() {
+  pl_members=""
+  [ -z "$3" ] || pl_members=$(batch_members "$(gh api "repos/{owner}/{repo}/pulls/$3" --jq '.body // ""' 2>/dev/null)")
+  pl_held=$(printf '%s\n' "$4" | awk -F'\t' '$1 == "pr" && $8 == "yes" { printf "%s ", $2 }')
+  landing_goals "$1" "$2" 15 "$3" "$pl_members" "$pl_held" "$(queue_idle_minutes "$5" "$(date +%s)")"
 }
 
 # comment_pages COUNT
