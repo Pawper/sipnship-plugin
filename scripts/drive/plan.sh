@@ -31,6 +31,7 @@ here=$(dirname "$0")
 . "$here/areas-lib.sh"
 . "$here/area-plan-lib.sh"
 . "$here/plan-read-lib.sh"
+. "$here/plan-green-lib.sh"
 . "$here/stale-lib.sh"
 . "$here/release-lib.sh"
 . "$here/rank-lib.sh"
@@ -136,7 +137,7 @@ printf 'queue\t%s\n' "$queue_state" >> "$tmp"
 snapshot=$(cat "$tmp")
 # Every open pull request keeps moving: REST lists them, each one's mergeable_state says whether it conflicts with main, and a red one
 # also gets how many times it was red.
-rest_lines=""
+rest_lines=""; pr_shas=""
 pr_list=$(gh api "repos/{owner}/{repo}/pulls?state=open&per_page=100" --jq '.[] | [(.number | tostring), .head.ref, ([.labels[].name] | join(",")), ((.body // "") | [splits("\r?\n")] | map(select(test("^Queue: hold"; "i"))) | first // ""), ((.body // "") | [scan("(?i)(?:closes|fixes|resolves) #([0-9]+)") | .[0]] | join(",")), ((.body // "") | [scan("(?i)\\b(?:refs?|references|spec for|part of|relates to|related to):? #([0-9]+)") | .[0]] | join(","))] | join("\u001f")' 2>/dev/null | tr -d '\r')
 # One separator that is not whitespace, so a pull request with no hold line or no labels keeps its empty field; a tab would collapse it and shift the Closes numbers left.
 pull_links=$(pull_link_row "$pr_list")
@@ -144,7 +145,10 @@ while IFS="$us" read -r p_num p_ref p_labels p_hold p_closes p_refs; do
   [ -n "$p_num" ] || continue
   p_info=$(gh api "repos/{owner}/{repo}/pulls/$p_num" --jq '[(.mergeable_state // ""), .head.sha] | @tsv' 2>/dev/null | tr -d '\r')
   p_state=$(printf '%s' "$p_info" | cut -f1); p_sha=$(printf '%s' "$p_info" | cut -f2)
-  p_reds=0; p_ci=$(printf '%s\n' "$snapshot" | awk -F'\t' -v n="$p_num" '$1 == "pr" && $2 == n { print $4 }')
+  pr_shas="${pr_shas}${p_num}${tab}${p_sha}
+"; p_reds=0; p_ci=$(printf '%s\n' "$snapshot" | awk -F'\t' -v n="$p_num" '$1 == "pr" && $2 == n { print $4 }')
+  # A rollup still reading pending after every check ended and one failed or was cancelled is red.
+  if [ "$p_ci" = pending ] && [ "$(head_settled_red "$p_sha")" = yes ]; then p_ci=red; snapshot=$(printf '%s\n' "$snapshot" | awk -F'\t' -v OFS='\t' -v n="$p_num" '$1 == "pr" && $2 == n { $4 = "red" } { print }'); fi
   p_mainred=none
   if [ "$p_ci" = red ]; then
     p_runs=$(gh api "repos/{owner}/{repo}/actions/runs?branch=$p_ref&event=pull_request&status=failure&per_page=100" --jq '.workflow_runs[] | [(.id | tostring), .head_sha, (.created_at | fromdateiso8601 | tostring)] | @tsv' 2>/dev/null | tr -d '\r')
@@ -206,7 +210,9 @@ echo "proposal for $(date '+%A %Y-%m-%d'), the owner's local day (${runners_say}
 # The round file's own line for it (publish-round.sh's "sized:"), so the Work band says how many agents and why.
 echo "sized: ${runners_say}"
 # In progress is not taken on faith: an issue nobody works, or whose pull request is held for the owner, is set right first (./stale-lib.sh).
-stale=$(stale_lines "$facts" "$pull_links" "$(git for-each-ref --format='%(committerdate:unix)%09%(refname:short)' refs/heads refs/remotes 2>/dev/null)" "$(date +%s)" 2)
+drive_line=$(gh api "$AUTO_DRIVE_QUERY" --jq "$AUTO_DRIVE_JQ" 2>/dev/null | tr -d '\r')
+drive_comments=$(read_drive_comments "$drive_line")
+stale=$(stale_lines "$facts" "$pull_links" "$(git for-each-ref --format='%(committerdate:unix)%09%(refname:short)' refs/heads refs/remotes 2>/dev/null)" "$(date +%s)" 2 "$(started_units "$drive_comments")")
 if [ -n "$stale" ]; then
   stale_say "$stale" 2
   stale_apply "$stale" "$facts"
@@ -228,8 +234,6 @@ reasons=$(hold_reasons "$facts")
 # An open pull request that already closes a Ready issue means no agent is started on it again, held or batched (stale-lib.sh).
 reasons=$(printf '%s\n%s\n' "$reasons" "$(carried_holds "$facts" "$pull_links")" | sed '/^$/d')
 # A started unit counts as running while its pull request is open, whatever State its issues show: none of its Ready issues is proposed for dispatch (one hold line each).
-drive_line=$(gh api "$AUTO_DRIVE_QUERY" --jq "$AUTO_DRIVE_JQ" 2>/dev/null | tr -d '\r')
-drive_comments=$(read_drive_comments "$drive_line")
 reasons=$(printf '%s\n%s\n' "$reasons" "$(started_ready_holds "$drive_comments" "$(printf '%s\n' "$pr_list" | cut -d"$us" -f1)" "$facts" "$snapshot")" | sed '/^$/d')
 while IFS="$us" read -r kind num title a b c d e; do
   [ "$kind" = issue ] || continue
@@ -269,14 +273,8 @@ fi
 green_prs=$(printf '%s\n' "$snapshot" | awk -F'\t' '$1 == "pr" && $4 == "green" && $5 == "mergeable" && $8 != "yes" { print $2 }')
 runs=""
 if [ -f scripts/ci/merge-queue.sh ] && [ -n "$green_prs" ]; then
-  runs=$(gh api "repos/{owner}/{repo}/actions/runs?per_page=50" --jq '.workflow_runs[] | [.status, (.run_started_at // .created_at | fromdateiso8601), (.updated_at | fromdateiso8601), .path, .event, .head_branch] | @tsv' 2>/dev/null | tr -d '\r')
-  ages=""
-  for p in $green_prs; do
-    p_ref=$(printf '%s\n' "$facts" | awk -F'\t' -v n="$p" '$1 == "pr" && $2 == n { print $6; exit }')
-    m=$(green_minutes "$runs" "$p_ref" "$(date +%s)")
-    ages="${ages}${p}${tab}${m:-0}
-"
-  done
+  runs=$(gh api "repos/{owner}/{repo}/actions/workflows/queue-drain.yml/runs?per_page=20" --jq '.workflow_runs[] | [.status, (.run_started_at // .created_at | fromdateiso8601), (.updated_at | fromdateiso8601), .path, .event, .head_branch] | @tsv' 2>/dev/null | tr -d '\r')
+  ages=$(green_ages "$(printf '%s' "$green_prs" | tr '\n' ' ')" "$pr_shas" "$(date +%s)")  # each head commit's own check runs (plan-green-lib.sh), never a window of recent runs
   round=$(plan_landing "$round" "$ages" "$batch_pr" "$snapshot" "$runs")  # batch members and held pull requests never count toward a drain
 fi
 # Unreleased plugin work, read from the remote's main (release-lib.sh): one release goal, or a hold naming the pull request or issue already making it.
@@ -285,6 +283,7 @@ if [ -n "$extra" ]; then
   round=$(owner_waiting_holds "$round" "$extra")
   round=$(printf '%s\n%s\n' "$extra" "$round" | awk '/^stop: (nothing to propose|everything left waits|work is in flight)/ { print "stop: proposal ready for approval"; next } { print }')
 fi
+round=$(say_every_pr "$round" "$snapshot")  # every open pull request has a line, whatever its checks say
 number_proposal "$round"
 # Auto Drive, from the drive issue's label drive:auto: one REST call. On is a
 # standing approval; off, the proposal is posted and waits for a reply.

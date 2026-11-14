@@ -48,8 +48,10 @@ The drive works the ready list in rounds, so many issues land in little time wit
   says so on a `held:` line; landing, fixing and asking go ahead meanwhile.
 - **In progress is not taken on faith.** An issue is In progress only while an agent is on it. Before it judges
   whether the round has landed, the plan checks each In progress issue: with no open pull request and nothing
-  touched in two hours (no comment, no commit on a branch named for it), or with its pull request held for the
-  person, it is not a running unit. The plan prints a `stale:` line naming it and sets it right over REST: back
+  touched in two hours (no comment, no commit on a branch named for it or for any issue of its unit), or with
+  its pull request held for the person, it is not a running unit. The issues of one started unit are touched
+  together and go back together, and an open pull request that names an issue in a `Part of` line, or is its
+  unit's own `pr`, counts as its pull request. The plan prints a `stale:` line naming it and sets it right over REST: back
   to Ready, or to Waiting on you when its pull request is held, with the hold's ask on it (one question,
   numbered choices, exactly one recommended). The queue does the same at a merge: an issue a merged pull request
   left In progress returns to Ready. Never leave an issue In progress with nobody on it.
@@ -167,7 +169,8 @@ The goal lines and what each means:
 - **`landing N N: ...`** (unnumbered). In a project whose queue drains by itself, green pull requests are
   left to it; nothing to do. When the `queue` fact reads `batch N`, an open pull request carries the queue's
   batch marker and its members are already landing: no drain is proposed while it is open.
-- **`drain N N`.** Green pull requests have sat 15 minutes without landing: run `sh
+- **`drain N N`.** Green pull requests have sat 15 minutes without landing (their age is read from each head
+  commit's own check runs; one whose age cannot be read counts as old enough, and the line says so): run `sh
   scripts/ci/merge-queue.sh --drain` once, in the background, and end the tick. One drain, never a loop.
 - **`fix-pr N`.** Read the failing check. If the cause is inside the pull request's own scope or is a
   test-environment problem (a flaky test, a cancelled run, a missing fixture), fix it on that branch (or have
@@ -183,6 +186,9 @@ The goal lines and what each means:
   that already has one; a unit's own pull request goes to that unit's agent.
 - **`busy N TITLE`** (unnumbered). The pull request would get `merge-main` or `fix-pr`, but its head commit
   is under 30 minutes old: an agent is at work. Send nobody; a later tick looks again. A red pull request with nobody on it is never a reason to hold the round: dispatch the units in other areas anyway, and say in the proposal's waits-on line what waits and since when once it passes an hour.
+- **`busy N TITLE` and `hold N TITLE` for the rest.** Every open pull request gets one line: one whose checks are
+  still running or whose merge state is not known yet is `busy`, one held for the builder's read is `hold`.
+  Nothing is sent to either.
 - **`dispatch N`.** Start an agent for the issue with isolation (a worktree), the model `dispatchModel`
   names (or, when it is empty, the model the plugin's agent-model hook allows for its tier), and a brief that
   names the issue, the files it may touch, the rules in CLAUDE.md or AGENTS.md (install right after the

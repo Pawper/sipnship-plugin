@@ -28,11 +28,17 @@ stale_epoch() {
   date -u -d "$1" +%s 2>/dev/null || date -j -u -f '%Y-%m-%dT%H:%M:%SZ' "$1" +%s 2>/dev/null || true
 }
 
-# stale_lines FACTS PULLS BRANCHES NOW [HOURS]
+# stale_lines FACTS PULLS BRANCHES NOW [HOURS [UNITS]]
 # FACTS are board-now's lines. PULLS are the open pull requests, one per line:
-# NUMBER<TAB>HELD(yes|no)<TAB>CLOSES (issue numbers, comma separated).
-# BRANCHES are "EPOCH<TAB>REF" for each branch's newest commit. Prints one
-# line per In progress issue that is not a running unit:
+# NUMBER<TAB>HELD(yes|no)<TAB>CLOSES (issue numbers, comma separated)[<TAB>REFS
+# (issues it only names, as "Part of #N")]. BRANCHES are "EPOCH<TAB>REF" for
+# each branch's newest commit. UNITS are the started round's units, one
+# "PR<TAB>ISSUES" line each (round-state-lib's started_units): the issues of
+# one unit are one piece of work, so a commit on the unit's branch (named for its
+# first issue), a comment on any of its issues, or its open pull request, named
+# in a Part of line or as the unit's own "pr", counts for all of them, and they
+# go back together or not at all. Prints one line per In progress issue that
+# is not a running unit:
 #   stale<TAB>ISSUE<TAB>ready|waiting<TAB>PULL<TAB>TITLE
 stale_lines() {
   # Tab is whitespace to read, which collapses an empty field and shifts the
@@ -41,16 +47,25 @@ stale_lines() {
   printf '%s\n' "$1" | tr -d '\r' | tr '\t' '\037' | while IFS="$sl_tab" read -r sl_kind sl_num sl_title sl_labels sl_updated sl_rest; do
     [ "$sl_kind" = issue ] || continue
     [ "$(state_of_labels "$sl_labels")" = in-progress ] || continue
-    sl_pull=$(printf '%s\n' "$2" | awk -F'\t' -v n="$sl_num" '{ k = split($3, a, ","); for (i = 1; i <= k; i++) if (a[i] == n) { print $1 "\t" $2 } }')
-    sl_has=no; sl_held=no; sl_pr=""
-    if [ -n "$sl_pull" ]; then
-      sl_has=yes
-      sl_pr=$(printf '%s\n' "$sl_pull" | head -n 1 | cut -f1)
-      if printf '%s\n' "$sl_pull" | cut -f2 | grep -qx yes; then sl_held=yes; sl_pr=$(printf '%s\n' "$sl_pull" | awk -F'\t' '$2 == "yes" { print $1; exit }'); fi
-    fi
-    sl_touch=$(stale_epoch "$sl_updated")
-    sl_branch=$(printf '%s\n' "$3" | awk -F'\t' -v n="$sl_num" '$1 + 0 > m && $2 ~ ("(^|[^0-9])" n "([^0-9]|$)") { m = $1 + 0 } END { if (m > 0) print m }')
-    if [ -n "$sl_branch" ] && { [ -z "$sl_touch" ] || [ "$sl_branch" -gt "$sl_touch" ]; }; then sl_touch=$sl_branch; fi
+    sl_members=$(printf '%s\n' "${6:-}" | awk -F'\t' -v n="$sl_num" '{ k = split($2, a, " "); for (i = 1; i <= k; i++) if (a[i] == n) { print $2; exit } }')
+    [ -n "$sl_members" ] || sl_members=$sl_num
+    sl_unitpr=$(printf '%s\n' "${6:-}" | awk -F'\t' -v n="$sl_num" '$1 != "" { k = split($2, a, " "); for (i = 1; i <= k; i++) if (a[i] == n) { print $1; exit } }')
+    sl_has=no; sl_held=no; sl_pr=""; sl_touch=""
+    for sl_m in $sl_members; do
+      sl_pull=$(printf '%s\n' "$2" | awk -F'\t' -v n="$sl_m" '{ k = split($3, a, ","); for (i = 1; i <= k; i++) if (a[i] == n) { print $1 "\t" $2; next } k = split($4, a, ","); for (i = 1; i <= k; i++) if (a[i] == n) print $1 "\t" $2 }')
+      if [ -n "$sl_pull" ]; then
+        sl_has=yes
+        [ -n "$sl_pr" ] || sl_pr=$(printf '%s\n' "$sl_pull" | head -n 1 | cut -f1)
+        if printf '%s\n' "$sl_pull" | cut -f2 | grep -qx yes; then sl_held=yes; sl_pr=$(printf '%s\n' "$sl_pull" | awk -F'\t' '$2 == "yes" { print $1; exit }'); fi
+      fi
+      sl_up=$(printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v n="$sl_m" '$1 == "issue" && $2 == n { print $5; exit }')
+      sl_t=$(stale_epoch "$sl_up")
+      if [ -n "$sl_t" ] && { [ -z "$sl_touch" ] || [ "$sl_t" -gt "$sl_touch" ]; }; then sl_touch=$sl_t; fi
+      sl_b=$(printf '%s\n' "$3" | awk -F'\t' -v n="$sl_m" '$1 + 0 > m && $2 ~ ("(^|[^0-9])" n "([^0-9]|$)") { m = $1 + 0 } END { if (m > 0) print m }')
+      if [ -n "$sl_b" ] && { [ -z "$sl_touch" ] || [ "$sl_b" -gt "$sl_touch" ]; }; then sl_touch=$sl_b; fi
+    done
+    # The unit's own open pull request, whatever its body calls the issue.
+    if [ "$sl_has" = no ] && [ -n "$sl_unitpr" ] && printf '%s\n' "$2" | cut -f1 | grep -qx "$sl_unitpr"; then sl_has=yes; sl_pr=$sl_unitpr; fi
     case "$(stale_judge "$sl_has" "$sl_held" "$sl_touch" "$4" "${5:-2}")" in
       ready) printf 'stale\t%s\tready\t\t%s\n' "$sl_num" "$sl_title" ;;
       waiting) printf 'stale\t%s\twaiting\t%s\t%s\n' "$sl_num" "$sl_pr" "$sl_title" ;;

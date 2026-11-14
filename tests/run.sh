@@ -5868,6 +5868,47 @@ scripts/ci/hotspots.txt" "$(changed_paths "$(printf 'plugin/scripts/drive/plan.s
 eq "so a screen issue is not bundled with the drive scripts" "2" "$(plan_units "$(printf '1\tScreen\t%s\n2\tDrive fix\tplugin/scripts/drive/plan.sh\n' "$(guess_files 'Rows: packages/web/src/work-rows.ts, limits in scripts/ci/hotspots.txt' '' '')")" '' | grep -c '^unit')"
 eq "plan.sh places an issue by its title and the start of its body" "1" "$(grep -c 'title_area_files "$title $c"' "$root/scripts/drive/plan.sh")"
 
+section 'the drive reads every open pull request from its own facts (drive)'
+. "$root/scripts/drive/plan-green-lib.sh"
+. "$root/scripts/drive/stale-lib.sh"
+gp_t=$(printf '\t')
+# A green pull request's age comes from its head commit's own check runs, so a window of recent runs that lacks them changes nothing.
+eq "the age is the whole minutes since the newest finished check run" "20" "$(head_green_minutes "$(printf 'completed\t1000\ncompleted\t1300\nin_progress\t2000\n')" 2500)"
+eq "no finished check run: the age is not read, never 0" "" "$(head_green_minutes "$(printf 'in_progress\t\n')" 2500)"
+eq "an empty read is no age" "" "$(head_green_minutes '' 2500)"
+gp_round=$(printf 'merge-batch 41 42 45\nstop: proposal ready for approval\n')
+eq "green pull requests whose runs are not among the latest runs still get the drain" "drain 41 42 45${gp_t}(green, for how long is not known; one drain lands them)" "$(landing_goals "$gp_round" "$(printf '41\t?\n42\t?\n45\t?\n')" 15 | grep '^drain')"
+eq "one known age beside unknown ones: the drain still stands" "1" "$(landing_goals "$gp_round" "$(printf '41\t3\n42\t?\n45\t4\n')" 15 | grep -c '^drain')"
+eq "a queue that just finished still holds an unknown age back" "landing 41 42 45: green; the queue lands them, and a drain is proposed if they sit 15 minutes" "$(landing_goals "$gp_round" "$(printf '41\t?\n42\t?\n45\t?\n')" 15 '' '' '' 2 | grep '^landing')"
+eq "plan.sh reads each age from the head commit and never from a window of runs" "1 0" "$(grep -c 'green_ages "' "$root/scripts/drive/plan.sh") $(grep -c 'actions/runs?per_page=50' "$root/scripts/drive/plan.sh")"
+# A rollup that reads pending after every check ended and one failed or was cancelled is red.
+eq "all finished with a failure and a cancelled part: red" "yes" "$(settled_red "$(printf 'completed\tfailure\ncompleted\tcancelled\ncompleted\tsuccess\n')")"
+eq "one still running: not settled" "no" "$(settled_red "$(printf 'completed\tfailure\nin_progress\t\n')")"
+eq "all passed: not red" "no" "$(settled_red "$(printf 'completed\tsuccess\ncompleted\tskipped\n')")"
+# Every open pull request has exactly one line.
+gp_snap=$(printf 'pr\t60\tWatering page\tpending\tmergeable\tapp\t0\tno\tno\tno\tnone\npr\t61\tSeed list\tgreen\tmergeable\tapp\t0\tyes\tno\tno\tnone\npr\t62\tBed map\tred\tmergeable\tapp\t0\tno\tno\tno\tnone\n')
+gp_out=$(say_every_pr "$(propose_round "$gp_snap" 2 4 2)" "$gp_snap")
+eq "a pull request whose checks are running gets a busy line" "busy 60${gp_t}Watering page${gp_t}its checks are still running" "$(printf '%s\n' "$gp_out" | grep '^busy 60')"
+eq "a held one gets a hold line" "hold 61${gp_t}Seed list${gp_t}Its pull request is held for your read; nothing is sent to it" "$(printf '%s\n' "$gp_out" | grep '^hold 61')"
+eq "a red one still gets its fix-pr, and exactly one line each" "1 1 1" "$(printf '%s\n' "$gp_out" | grep -c ' 60') $(printf '%s\n' "$gp_out" | grep -c ' 61') $(printf '%s\n' "$gp_out" | grep -c '^fix-pr 62')"
+eq "a pull request already named is not said twice" "1" "$(say_every_pr "$(printf 'busy 60\tWatering page\tpushed\nstop: work is in flight\n')" "$gp_snap" | grep -c ' 60')"
+eq "the extra lines come before the stop line" "stop: proposal ready for approval" "$(printf '%s\n' "$gp_out" | tail -n 1)"
+eq "plan.sh says every pull request, and reads a settled red from the head commit" "1 1" "$(grep -c 'say_every_pr "' "$root/scripts/drive/plan.sh") $(grep -c 'head_settled_red "' "$root/scripts/drive/plan.sh")"
+# An issue of a running unit is not stale while its unit is at work.
+gs_now=1793926800
+gs_old=$(date -u -d "@$(( gs_now - 18000 ))" +%Y-%m-%dT%H:%M:%SZ)
+gs_facts=$(printf 'issue\t1\tOne\tstate:in-progress\t%s\tb\nissue\t2\tTwo\tstate:in-progress\t%s\tb\nissue\t3\tThree\tstate:in-progress\t%s\tb\n' "$gs_old" "$gs_old" "$gs_old")
+gs_units=$(printf '\t1 2 3\n')
+eq "a bundle of three whose branch is named for the first and had a commit 20 minutes ago: none is stale" "0" "$(stale_lines "$gs_facts" '' "$(printf '%s\tissue-1-r48\n' "$(( gs_now - 1200 ))")" "$gs_now" 2 "$gs_units" | grep -c '^stale')"
+eq "the same branch with no started round is the old reading: only the first is kept" "2 3" "$(stale_lines "$gs_facts" '' "$(printf '%s\tissue-1-r48\n' "$(( gs_now - 1200 ))")" "$gs_now" 2 '' | cut -f2 | tr '\n' ' ' | sed 's/ $//')"
+eq "a bundle quiet for two hours with no pull request goes back to Ready whole" "1 2 3" "$(stale_lines "$gs_facts" '' '' "$gs_now" 2 "$gs_units" | cut -f2 | tr '\n' ' ' | sed 's/ $//')"
+eq "a comment on one issue of the unit counts for all of them" "0" "$(stale_lines "$(printf 'issue\t1\tOne\tstate:in-progress\t%s\tb\nissue\t2\tTwo\tstate:in-progress\t%s\tb\n' "$gs_old" "$(date -u -d "@$(( gs_now - 600 ))" +%Y-%m-%dT%H:%M:%SZ)")" '' '' "$gs_now" 2 "$(printf '\t1 2\n')" | grep -c '^stale')"
+# An open pull request that names the issue as a part, or is its unit's own, is the work in hand.
+eq "a pull request naming it in a Part of line means it is not stale" "0" "$(stale_lines "$gs_facts" "$(printf '70\tno\t\t1\n')" '' "$gs_now" 2 | grep -c '	1	')"
+eq "the unit's own pull request, named by the started round, keeps all its issues" "0" "$(stale_lines "$gs_facts" "$(printf '71\tno\t9\n')" '' "$gs_now" 2 "$(printf '71\t1 2 3\n')" | grep -c '^stale')"
+eq "a unit pull request that is no longer open does not" "3" "$(stale_lines "$gs_facts" "$(printf '72\tno\t9\n')" '' "$gs_now" 2 "$(printf '71\t1 2 3\n')" | grep -c '^stale')"
+eq "plan.sh hands the started round's units to the stale reading" "1" "$(grep -c 'started_units "$drive_comments")' "$root/scripts/drive/plan.sh")"
+
 # --- end of blocks: the summary, kept in every part.
 eq "no test wrote into the checkout's own queue state" "$queue_picture_before" "$([ "$queue_picture_before" = skipped ] && echo skipped || queue_picture)"
 eq "no process started by this suite is still running" "" "$(spawned_alive)"

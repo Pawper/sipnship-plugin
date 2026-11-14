@@ -154,28 +154,29 @@ green_minutes() {
 # drain, never named as landing. IDLE is the whole minutes since the queue
 # last had nothing in flight (queue_idle_minutes); a green pull request is
 # counted green only from then, so a queue that has just finished is not
-# beaten to the next landing.
+# beaten to the next landing. An age of "?" (its head commit's checks could
+# not be read) is never 0: it counts as old enough, and the line says so.
 landing_goals() {
   printf '%s\n' "$1" | awk -v ages="$2" -v after="${3:-15}" -v batch="${4:-}" -v members=" ${5:-} " -v held=" ${6:-} " -v idle="${7:-}" '
     BEGIN {
       n = split(ages, al, "\n")
-      for (i = 1; i <= n; i++) { split(al[i], f, "\t"); if (f[1] != "") age[f[1]] = f[2] + 0 }
+      for (i = 1; i <= n; i++) { split(al[i], f, "\t"); if (f[1] != "") { if (f[2] == "?") { unk[f[1]] = 1; age[f[1]] = after + 0 } else age[f[1]] = f[2] + 0 } }
     }
     function land(   w, k, m, mem, rest, oldest, a) {
       if (prs == "") return
-      m = split(prs, w, " "); mem = ""; rest = ""; oldest = 0
+      m = split(prs, w, " "); mem = ""; rest = ""; oldest = 0; anyunk = 0
       for (k = 1; k <= m; k++) {
         if (index(held, " " w[k] " ")) continue
         if (index(members, " " w[k] " ")) { mem = mem (mem == "" ? "" : " ") w[k]; continue }
         rest = rest (rest == "" ? "" : " ") w[k]
-        a = age[w[k]] + 0; if (a > oldest) oldest = a
+        a = age[w[k]] + 0; if (a > oldest) { oldest = a; anyunk = (w[k] in unk) }
       }
-      if (idle != "" && idle + 0 < oldest) oldest = idle + 0
+      if (idle != "" && idle + 0 < oldest) { oldest = idle + 0; anyunk = 0 }
       if (mem != "") print "landing " mem ": members of the queue batch" (batch != "" ? " (pull request " batch ")" : "") " already landing; no drain is proposed"
       prs = ""
       if (rest == "") return
       if (batch != "") print "landing " rest ": a queue batch (pull request " batch ") is already landing them; no drain is proposed"
-      else if (oldest >= after) { print "drain " rest "\t(green for " oldest " minutes; one drain lands them)"; goals++ }
+      else if (oldest >= after) { print "drain " rest "\t(green" (anyunk ? ", for how long is not known" : " for " oldest " minutes") "; one drain lands them)"; goals++ }
       else print "landing " rest ": green; the queue lands them, and a drain is proposed if they sit " after " minutes"
     }
     /^merge(-batch)? / { for (i = 2; i <= NF; i++) prs = prs (prs == "" ? "" : " ") $i; next }
