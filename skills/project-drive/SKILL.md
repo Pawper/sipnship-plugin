@@ -288,7 +288,11 @@ tab says it waits and on what instead of saying it starts on its own; `status: p
   cause on the issue.
   A ready issue whose title or body says a test or check fails on main is ranked first as well: the plan puts its
   dispatch ahead of every bundle, so it is never the one deferred for want of a runner. Whoever files such an issue
-  can also label it `ci-red`.
+  can also label it `ci-red`. Its goal also opens the proposal and carries `First: A fix for a failure on main`, so
+  `approval.sh` never holds it behind the running round (the round it blocks could not land without it), and
+  the plan proposes no `drain` while one is ready: it prints a `landing` line saying the round waits on the fix.
+  When the plan's last line says `auto drive: not known`, the lookup of the drive issue failed; it does not mean
+  there is no drive issue or that Auto Drive is off, so run the plan again.
 - **`audit TEXT`.** When the facts are plain (an issue with no State whose title says what it is, an issue
   still ready after its pull request merged), set the state or close it. When they are not plain, leave it;
   the audit will say it again tomorrow.

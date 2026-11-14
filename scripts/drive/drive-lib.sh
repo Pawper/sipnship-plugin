@@ -263,38 +263,3 @@ add_goal() {
     { print }
     END { if (!done) print goal }'
 }
-
-# auto_drive_state LINE
-# Auto Drive, read from the open issue labeled drive: LINE is that issue as
-# one REST call gives it, "NUMBER<tab>LABEL,LABEL,..." (empty when there is
-# no drive issue). Prints "on NUMBER" when the issue carries drive:auto,
-# "off NUMBER" when it does not, and "none" when there is no drive issue.
-# On is a standing approval: the drive starts the next round by itself when
-# the current one lands. Off, it posts the proposal and waits for a reply.
-auto_drive_state() {
-  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' '
-    !seen && $1 ~ /^[0-9]+$/ {
-      seen = 1; on = "off"
-      n = split($2, l, ",")
-      for (i = 1; i <= n; i++) if (l[i] == "drive:auto") on = "on"
-      print on " " $1
-    }
-    END { if (!seen) print "none" }'
-}
-
-# auto_line STATE
-# The plan's last proposal line about Auto Drive, from auto_drive_state's
-# output: what the round does with the proposal.
-auto_line() {
-  case "$1" in
-    on\ *) printf 'auto drive: on (issue %s); approval is standing, so pursue the proposal once the current round has landed\n' "${1#on }" ;;
-    off\ *) printf 'auto drive: off (issue %s); post the proposal on the drive issue and wait for a reply\n' "${1#off }" ;;
-    *) printf 'auto drive: off; there is no open issue labeled drive, so ask in the session\n' ;;
-  esac
-}
-
-# The one REST call that reads it: the open issue labeled drive, its number,
-# its labels and its comment count, in the shape auto_drive_state reads
-# (the count, a third field, tells approval.sh which pages are newest).
-AUTO_DRIVE_QUERY='repos/{owner}/{repo}/issues?labels=drive&state=open&per_page=1'
-AUTO_DRIVE_JQ='.[0] // empty | [(.number | tostring), ([.labels[].name] | join(",")), (.comments | tostring)] | @tsv'

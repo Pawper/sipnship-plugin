@@ -77,7 +77,7 @@ audit_unless_part_of() {
 # last two pages of 100), from the one-line issue read of AUTO_DRIVE_QUERY.
 read_drive_comments() {
   rdc_n=$(printf '%s\n' "$1" | head -n 1 | cut -f1)
-  [ -n "$rdc_n" ] || return 0
+  case "$rdc_n" in ""|*[!0-9]*) return 0 ;; esac
   rdc_all=""
   for rdc_page in $(comment_pages "$(printf '%s\n' "$1" | head -n 1 | cut -f3)"); do
     rdc_all="${rdc_all}$(gh api "repos/{owner}/{repo}/issues/$rdc_n/comments?per_page=100&page=$rdc_page" --jq '.[] | [.created_at, .user.login, (.body | gsub("\t"; " ") | gsub("\r"; ""))] | @tsv' 2>/dev/null)

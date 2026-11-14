@@ -12,6 +12,7 @@
 # Everything here is REST. Needs gh signed in.
 here=$(dirname "$0")
 . "$here/drive-lib.sh"
+. "$here/auto-lib.sh"
 . "$here/round-lib.sh"
 cmd=${1:-}; shift 2>/dev/null
 file=""; issue=""
@@ -23,9 +24,9 @@ while [ $# -gt 0 ]; do
 done
 command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1 || { echo "gh is not available or not signed in" >&2; exit 1; }
 
-drive_line=$(gh api "$AUTO_DRIVE_QUERY" --jq "$AUTO_DRIVE_JQ" 2>/dev/null | tr -d '\r')
+drive_line=$(drive_issue_line)
 auto=$(auto_drive_state "$drive_line")
-[ -n "$issue" ] || { [ "$auto" = none ] || issue=${auto#* }; }
+[ -n "$issue" ] || { [ "$auto" = none ] || [ "$auto" = failed ] || issue=${auto#* }; }
 
 case "$cmd" in
   last)

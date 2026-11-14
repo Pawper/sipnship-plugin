@@ -23,6 +23,7 @@ here=$(dirname "$0")
 . "$here/../../hooks/scripts/lib.sh"
 . "$here/../../hooks/scripts/session-brief-lib.sh"
 . "$here/drive-lib.sh"
+. "$here/auto-lib.sh"
 . "$here/bundle-lib.sh"
 . "$here/round-lib.sh"
 . "$here/round-notes-lib.sh"
@@ -209,7 +210,7 @@ echo "proposal for $(date '+%A %Y-%m-%d'), the owner's local day (${runners_say}
 # The round file's own line for it (publish-round.sh's "sized:"), so the Work band says how many agents and why.
 echo "sized: ${runners_say}"
 # In progress is not taken on faith: an issue nobody works, or whose pull request is held for the owner, is set right first (./stale-lib.sh).
-drive_line=$(gh api "$AUTO_DRIVE_QUERY" --jq "$AUTO_DRIVE_JQ" 2>/dev/null | tr -d '\r')
+drive_line=$(drive_issue_line)
 drive_comments=$(read_drive_comments "$drive_line")
 stale=$(stale_lines "$facts" "$pull_links" "$(git for-each-ref --format='%(committerdate:unix)%09%(refname:short)' refs/heads refs/remotes 2>/dev/null)" "$(date +%s)" 2 "$(started_units "$drive_comments")")
 if [ -n "$stale" ]; then
@@ -267,6 +268,7 @@ if [ -n "$guesses" ] || [ -n "$reasons" ]; then
   # once the running round lands (approval.sh holds its dispatches).
   slots=$units_per_round; [ "$max_agents" -lt "$slots" ] && slots=$max_agents; [ "$runners" -lt "$slots" ] && slots=$runners
   round=$(apply_units "$round" "$units" "$slots" "$machines" "$MAINFIX_ISSUES" "$(priority_issues "$priorities" "$guesses" "$facts" "$areas_text")")  # a project's priority areas lead, after a fix for main
+  round=$(lead_main_fixes "$round")  # the fix for a failure on main opens the proposal and the approval never holds it behind the round it blocks (rank-lib.sh)
 fi
 # A project whose queue lands green work by itself: rely on it; propose one drain only when green work has sat 15 minutes.
 green_prs=$(printf '%s\n' "$snapshot" | awk -F'\t' '$1 == "pr" && $4 == "green" && $5 == "mergeable" && $8 != "yes" { print $2 }')
@@ -275,6 +277,7 @@ if [ -f scripts/ci/merge-queue.sh ] && [ -n "$green_prs" ]; then
   runs=$(gh api "repos/{owner}/{repo}/actions/workflows/queue-drain.yml/runs?per_page=20" --jq '.workflow_runs[] | [.status, (.run_started_at // .created_at | fromdateiso8601), (.updated_at | fromdateiso8601), .path, .event, .head_branch] | @tsv' 2>/dev/null | tr -d '\r')
   ages=$(green_ages "$(printf '%s' "$green_prs" | tr '\n' ' ')" "$pr_shas" "$(date +%s)")  # each head commit's own check runs (plan-green-lib.sh), never a window of recent runs
   round=$(plan_landing "$round" "$ages" "$batch_pr" "$snapshot" "$runs")  # batch members and held pull requests never count toward a drain
+  round=$(hold_drain_for_main "$round" "$MAINFIX_ISSUES")  # no drain while main fails the test a batch would fail on (rank-lib.sh)
 fi
 # Unreleased plugin work, read from the remote's main (release-lib.sh): one release goal, or a hold naming the pull request or issue already making it.
 round=$(add_release "$round" "$(release_proposal "$facts" "$pull_links")")

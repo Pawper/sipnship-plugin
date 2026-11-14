@@ -1261,6 +1261,7 @@ eq "places counted" "2 2" "$(worktree_places "$pairs" | cut -f1 | tr '\n' ' ' | 
 
 section 'project drive'
 . "$root/scripts/drive/drive-lib.sh"
+. "$root/scripts/drive/auto-lib.sh"
 snap=$(cat "$fx/drive-snapshot.tsv")
 eq "a full proposal, in order" "merge-batch 41 42 45 46
 fix-pr 47	Broken build
@@ -3840,6 +3841,7 @@ done
 
 section 'drive release goal'
 . "$root/scripts/drive/drive-lib.sh"
+. "$root/scripts/drive/auto-lib.sh"
 eq "next patch bumps the last part" "0.23.8" "$(next_patch 0.23.7)"
 eq "next patch carries no overflow" "1.0.10" "$(next_patch 1.0.9)"
 eq "next patch refuses a non-version" "" "$(next_patch latest)"
@@ -4894,6 +4896,7 @@ eq "a round that changed is posted as a new comment" "1|0" "$(pr_run "$pr_dir/no
 
 section 'drive reads Auto Drive'
 . "$root/scripts/drive/drive-lib.sh"
+. "$root/scripts/drive/auto-lib.sh"
 eq "the drive issue with drive:auto is on" "on 99" "$(auto_drive_state "$(printf '99\tdrive,drive:auto')")"
 eq "the drive issue without it is off" "off 99" "$(auto_drive_state "$(printf '99\tdrive,state:ready')")"
 eq "a label that only starts the same is not it" "off 99" "$(auto_drive_state "$(printf '99\tdrive,drive:automatic')")"
@@ -4989,6 +4992,7 @@ sed -i 's/\*labels=state:in-progress\*) true/*labels=state:in-progress*) echo 21
 
 section 'drive sets right an In progress issue nobody works'
 . "$root/scripts/drive/drive-lib.sh"
+. "$root/scripts/drive/auto-lib.sh"
 . "$root/scripts/drive/round-lib.sh"
 . "$root/scripts/drive/stale-lib.sh"
 sl_now=1793926800
@@ -5047,6 +5051,7 @@ eq "plan.sh reads the refers-to numbers" "1" "$(grep -c 'refs?|references|spec f
 eq "plan.sh adds the carried issues to its hold lines" "1" "$(grep -c 'carried_holds "\$facts" "\$pull_links"' "$root/scripts/drive/plan.sh")"
 section 'drive runs rounds of units'
 . "$root/scripts/drive/drive-lib.sh"
+. "$root/scripts/drive/auto-lib.sh"
 . "$root/scripts/drive/bundle-lib.sh"
 . "$root/scripts/drive/round-lib.sh"
 . "$root/scripts/drive/round-notes-lib.sh"
@@ -5831,6 +5836,31 @@ eq "an answer on #0 spends the round-wide ones, not the issue's" "start-now 1462
 2026-11-13T19:05:00Z${nb_t}maya${nb_t}Queue answer: start-now #0: started-now" 2026-11-13T00:00:00Z 2026-11-13T00:00:00Z)"
 eq "a round-wide start-now with no words still reads as start-now 0" "start-now 0 by maya" "$(work_requests "2026-11-13T19:00:00Z${nb_t}maya${nb_t}Queue request: start-now by maya" 2026-11-13T00:00:00Z 2026-11-13T00:00:00Z)"
 
+# A fix for a failure on main never waits behind the round it blocks, and a failed drive-issue lookup says so.
+mf_facts=$(printf 'issue\t70\tWater schedule row\tstate:ready\t2026-11-14T10:00:00Z\tShows the next watering\nissue\t71\tTwo test files fail on main\tstate:ready\t2026-11-14T10:00:00Z\tThe seed list test and the bed map test fail on main.\n')
+eq "an issue saying tests fail on main is a fix for main" "71" "$(mainfix_numbers "$mf_facts")"
+mf_units=$(printf 'unit\t70\tWater schedule row\t\tsrc/water/row.ts\nunit\t71\tTwo test files fail on main\t\ttest/seed.test.ts\n')
+mf_round=$(apply_units "$(printf 'merge 41\ndispatch 70\tWater schedule row\ndispatch 71\tTwo test files fail on main\nstop: proposal ready for approval')" "$mf_units" 2 yes 71)
+eq "the plan puts the fix for main first, marked, then the rest" "dispatch 71${nb_t}Two test files fail on main${nb_t}First: A fix for a failure on main
+merge 41
+dispatch 70${nb_t}Water schedule row
+stop: proposal ready for approval" "$(lead_main_fixes "$mf_round")"
+eq "the approval holds the feature work behind the running round and not the fix for main" "dispatch 71${nb_t}Two test files fail on main${nb_t}First: A fix for a failure on main
+merge 41
+held: 1 dispatch goal(s) wait for the running round (#9) to land" "$(hold_dispatch "$(lead_main_fixes "$mf_round" | sed '/^stop:/d')" 9)"
+eq "no drain while a fix for main is ready: the round waits on it, naming each pull request" "landing 41 42: green, but main fails the same test; the round waits on the fix for main (#71) before they are batched
+stop: proposal ready for approval" "$(hold_drain_for_main "$(printf 'drain 41 42\t(green for 30 minutes; one drain lands them)\nstop: proposal ready for approval')" 71)"
+eq "with main right a drain goes on as it came" "drain 41 42${nb_t}(green)" "$(hold_drain_for_main "$(printf 'drain 41 42\t(green)')" '')"
+eq "plan.sh puts the fix for main first and holds the drain" "1 1" "$(grep -c 'lead_main_fixes "\$round"' "$root/scripts/drive/plan.sh") $(grep -c 'hold_drain_for_main "\$round" "\$MAINFIX_ISSUES"' "$root/scripts/drive/plan.sh")"
+eq "a drive issue found reads as on" "on 12" "$(auto_drive_state "$(printf '12\tdrive,drive:auto\t3')")"
+eq "no drive issue reads as none" "none" "$(auto_drive_state '')"
+eq "a failed lookup reads as failed, never as none" "failed" "$(auto_drive_state 'lookup-failed')"
+eq "and the plan says the lookup failed, not that Auto Drive is off" "auto drive: not known; the lookup of the drive issue failed (it may still exist), so try the round again or ask in the session" "$(auto_line failed)"
+eq "the one reader of the drive issue is used by every script" "4" "$(grep -l 'drive_line=$(drive_issue_line)' "$root"/scripts/drive/approval.sh "$root"/scripts/drive/plan.sh "$root"/scripts/drive/work-requests.sh "$root"/scripts/drive/handoff.sh | wc -l | tr -d ' ')"
+eq "a short unit prompt that points at a brief and a pull request is no lookup" "routine" "$(task_tier general-purpose 'Unit B' 'Read the brief at .scratch/drive/brief.md in full and do what it says for unit B. Find your issues there.')"
+eq "a prompt naming a branch to work on is no lookup either" "routine" "$(task_tier general-purpose 'Unit C' 'List the failing tests on your branch issue-9-r51 and report them.')"
+eq "a find with no branch, worktree or pull request is still a lookup" "lookup" "$(task_tier general-purpose 'Find the parser' 'Find which file parses dates and list the callers')"
+
 # A release already underway is a hold naming its issue, never a second goal.
 nb_facts=$(printf 'issue\t1450\tRelease the plugin as 0.43.12\tstate:in-progress\t2026-11-13T21:00:00Z\tbump\nissue\t1451\tRelease the plugin as 0.43.121\tstate:ready\t2026-11-13T21:00:00Z\tx\nissue\t1452\tScreen fix\tstate:ready\t2026-11-13T21:00:00Z\tx\n')
 eq "an open issue that names the release is found" "1450${nb_t}Release the plugin as 0.43.12" "$(open_release_issue "$nb_facts" 0.43.12)"
@@ -5859,7 +5889,7 @@ eq "a failing check named in the Main card is not main failing" "no" "$(fixes_ma
 eq "the ready issues that fix main are found in the facts" "9 11" "$(mainfix_numbers "$(printf 'issue\t9\tFix the failing test on main\tstate:ready\tt\tx\nissue\t10\tAdd a row\tstate:ready\tt\tx\nissue\t11\tx\tstate:ready\tt\tThe build is red on main\nissue\t12\tFix main test\tstate:in-progress\tt\tx\n')")"
 eq "a ready fix for main leads, so it is the one that is not deferred" "dispatch 9${nb_t}Fix main test
 defer 1 ready issue(s): no free runner this round" "$(MAINFIX_ISSUES=9 propose_round "$(printf 'issue\t8\tFeature\tready\tno\nissue\t9\tFix main test\tready\tno\n')" 1 4 2 | sed -n '1,2p')"
-eq "a bundle with a main fix outranks a larger bundle" "dispatch 9${nb_t}Fix main" "$(apply_units "$(printf 'dispatch 1\ndispatch 9\nstop: proposal ready\n')" "$(printf 'unit\t3 4\tA | B\twhy\tx\nunit\t9\tFix main\t\ty\n')" 1 no 9 | sed -n 1p)"
+eq "a bundle with a main fix outranks a larger bundle" "dispatch 9${nb_t}Fix main${nb_t}First: A fix for a failure on main" "$(apply_units "$(printf 'dispatch 1\ndispatch 9\nstop: proposal ready\n')" "$(printf 'unit\t3 4\tA | B\twhy\tx\nunit\t9\tFix main\t\ty\n')" 1 no 9 | sed -n 1p)"
 nb_p=$(printf 'packages/web/src/work-rows.ts\nscripts/ci/hotspots.txt\nspecs/010-work/')
 eq "a screen issue that only mentions a CI file in passing is not plugin or CI work" "packages/web/src/work-rows.ts
 specs/010-work/" "$(changed_paths "$nb_p")"
@@ -5972,7 +6002,7 @@ dispatch 3${pz_t}Faster queue${pz_t}First: it makes your rounds faster
 defer 2 unit(s): only 2 free runners this round (#1, #4)" "$(apply_units "$pz_round" "$pz_units" 2 yes '' "$pz_pri" | grep -v '^stop:')"
 eq "without priorities the order is the plan's own" "dispatch 1${pz_t}Tint the beds
 dispatch 4${pz_t}Water schedule" "$(apply_units "$pz_round" "$pz_units" 2 yes '' '' | grep '^dispatch')"
-eq "a fix for main still leads a priority" "dispatch 1${pz_t}Tint the beds
+eq "a fix for main still leads a priority" "dispatch 1${pz_t}Tint the beds${pz_t}First: A fix for a failure on main
 dispatch 2${pz_t}Show the review drawer${pz_t}First: it unblocks your reviews" "$(apply_units "$pz_round" "$pz_units" 2 yes ' 1 ' "$pz_pri" | grep '^dispatch')"
 eq "an approved dispatch that went First is not held behind the running round" "dispatch 2${pz_t}Drawer${pz_t}First: it unblocks your reviews
 held: 1 dispatch goal(s) wait for the running round (#9) to land" "$(hold_dispatch "$(printf 'dispatch 2\tDrawer\tFirst: it unblocks your reviews\ndispatch 3\tBeds\n')" 9)"

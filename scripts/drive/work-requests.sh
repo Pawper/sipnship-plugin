@@ -8,13 +8,14 @@
 # Usage, from the project root: sh "$CLAUDE_PLUGIN_ROOT/scripts/drive/work-requests.sh"
 here=$(dirname "$0")
 . "$here/drive-lib.sh"
+. "$here/auto-lib.sh"
 . "$here/round-lib.sh"
 . "$here/comment-lib.sh"
 
 command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1 || exit 0
-drive_line=$(gh api "$AUTO_DRIVE_QUERY" --jq "$AUTO_DRIVE_JQ" 2>/dev/null | tr -d '\r')
+drive_line=$(drive_issue_line)
 auto=$(auto_drive_state "$drive_line")
-[ "$auto" != none ] || exit 0
+case "$auto" in none|failed) exit 0 ;; esac
 issue=${auto#* }
 count=$(printf '%s\n' "$drive_line" | head -n 1 | cut -f3)
 comments=""

@@ -289,7 +289,7 @@ task_tier() {
     return 0
   fi
   # A prompt naming a brief to follow, a worktree or a pull request is a unit of work, never a lookup, whatever its length.
-  if printf '%s' "$tt_text" | grep -Eq '(worktree|pull request|your (full )?brief|the brief|brief file|\.scratch/)'; then echo routine; return 0; fi
+  if printf '%s' "$tt_text" | grep -Eq '(worktree|pull request|open a pr|(on|your|its|new) branch|your (full )?brief|the brief|brief file|\.scratch/)'; then echo routine; return 0; fi
   if [ "$tt_words" -le 120 ] && printf '%s' "$tt_text" | grep -Eq '(find|search|locate|list|grep|where is|look up|lookup|which file|read|check whether|does .* exist|count)'; then
     echo lookup
     return 0

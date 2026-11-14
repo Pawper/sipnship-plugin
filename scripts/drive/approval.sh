@@ -28,6 +28,7 @@
 # reply yet, or a reply that approved nothing.
 here=$(dirname "$0")
 . "$here/drive-lib.sh"
+. "$here/auto-lib.sh"
 . "$here/round-lib.sh"
 . "$here/comment-lib.sh"
 . "$here/round-state-lib.sh"
@@ -37,8 +38,9 @@ if ! command -v gh >/dev/null 2>&1 || ! gh auth status >/dev/null 2>&1; then
   exit 0
 fi
 
-drive_line=$(gh api "$AUTO_DRIVE_QUERY" --jq "$AUTO_DRIVE_JQ" 2>/dev/null | tr -d '\r')
+drive_line=$(drive_issue_line)
 auto=$(auto_drive_state "$drive_line")
+[ "$auto" != failed ] || { echo "nothing: the lookup of the drive issue failed, so no reply could be read; try again"; exit 0; }
 [ "$auto" != none ] || { echo "nothing: no open issue labeled drive"; exit 0; }
 issue=${auto#* }
 auto=${auto%% *}
