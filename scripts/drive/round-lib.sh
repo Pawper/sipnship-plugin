@@ -185,7 +185,7 @@ landing_goals() {
       if (goals == 0 && $0 ~ /proposal ready/) { print "stop: work is in flight; nothing to propose until it lands"; next }
       print; next
     }
-    !/^(defer |hold |landing |busy )/ && NF > 0 { goals++ }
+    !/^(defer |hold |landing |busy |note: )/ && NF > 0 { goals++ }
     { print }'
 }
 
@@ -231,9 +231,12 @@ comment_pages() {
 
 # start_request LINE
 # The login in a "Start this round" request, "Queue request: start-round by
-# LOGIN" ("#0" after start-round allowed); nothing for any other line.
+# LOGIN" ("#0" after start-round allowed), or in the round-wide Start now,
+# "Queue request: start-now by LOGIN" with or without ": WORDS" after it (it
+# names no issue, so it starts the round as start-round does); nothing for any
+# other line, and none for a start-now that names an issue.
 start_request() {
-  printf '%s\n' "$1" | tr -d '\r' | sed -nE 's/^Queue request: start-round( #0)? by ([A-Za-z0-9][A-Za-z0-9-]{0,38})(: .*)?$/\2/p' | head -n 1
+  printf '%s\n' "$1" | tr -d '\r' | sed -nE 's/^Queue request: (start-round|start-now)( #0)? by ([A-Za-z0-9][A-Za-z0-9-]{0,38})(: .*)?$/\3/p' | head -n 1
 }
 
 # work_requests COMMENTS START_SINCE HOLD_SINCE

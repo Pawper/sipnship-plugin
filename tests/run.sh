@@ -5138,10 +5138,10 @@ eq "a comment under 30 minutes old is not someone at work (the plan passes none)
 eq "both older is nobody" "no" "$(recently_touched 1000 2000 11000 30)"
 eq "no times is nobody" "no" "$(recently_touched '' '' 11000 30)"
 rd_busy=$(overlay_rest "$rd_snap" "$(printf '52\tdirty\t0\tno\tyes\n53\tunstable\t1\tno\tyes\n')")
-eq "a busy pull request gets no agent: neither merge-main nor fix-pr, only a busy line" "0 2 busy 52	Frost alert	pushed to in the last 30 minutes; someone is on it" "$(p=$(propose_round "$rd_busy" 2 4 2); printf '%s ' "$(printf '%s\n' "$p" | grep -cE '^(merge-main|fix-pr) 5[23]')"; printf '%s ' "$(printf '%s\n' "$p" | grep -c '^busy 5[23]')"; printf '%s\n' "$p" | grep '^busy 52')"
+eq "a busy pull request gets no agent: neither merge-main nor fix-pr, only a busy line" "0 2 busy 52	Frost alert	its last push is recent (a red change waits 10 minutes from its last push, a conflicting one 30); someone is on it" "$(p=$(propose_round "$rd_busy" 2 4 2); printf '%s ' "$(printf '%s\n' "$p" | grep -cE '^(merge-main|fix-pr) 5[23]')"; printf '%s ' "$(printf '%s\n' "$p" | grep -c '^busy 5[23]')"; printf '%s\n' "$p" | grep '^busy 52')"
 eq "a busy line is not numbered" "busy 52	Frost alert" "$(number_proposal "$(printf 'busy 52\tFrost alert')")"
 eq "red too often is set aside once its newest commit is neither new nor waiting on checks" "set-aside 53	Seed list	(red 2 times)" "$(propose_round "$(overlay_rest "$rd_snap" "$(printf '53\tunstable\t2\tno\tno\tno\n')")" 2 4 2 | grep '53')"
-eq "red twice before, but a head commit under 30 minutes old: busy, not set aside" "busy 53	Seed list	pushed to in the last 30 minutes; someone is on it" "$(propose_round "$(overlay_rest "$rd_snap" "$(printf '53\tunstable\t2\tno\tyes\tno\n')")" 2 4 2 | grep '53')"
+eq "red twice before, but a head commit under 30 minutes old: busy, not set aside" "busy 53	Seed list	its last push is recent (a red change waits 10 minutes from its last push, a conflicting one 30); someone is on it" "$(propose_round "$(overlay_rest "$rd_snap" "$(printf '53\tunstable\t2\tno\tyes\tno\n')")" 2 4 2 | grep '53')"
 eq "red twice before, a pending head commit: no set-aside, and no fix, only a busy line saying why" "busy 53	Seed list	its newest commit is still waiting on its checks" "$(propose_round "$(overlay_rest "$rd_snap" "$(printf '53\tunstable\t2\tno\tno\tyes\n')")" 2 4 2 | grep '53')"
 eq "a pending head commit is read from its check runs: any not completed" "yes no" "$(checks_pending "$(printf 'completed\tfailure\nqueued\t\n')") $(checks_pending "$(printf 'completed\tfailure\ncompleted\tsuccess\n')")"
 eq "plan.sh reads the head commit's check runs before it proposes set-aside" "1" "$(grep -c 'head_checks_pending "\$p_sha"' "$root/scripts/drive/pr-read-lib.sh")"
@@ -5165,7 +5165,7 @@ eq "a commit failing two checks is main's only when both failed on main" "" "$(m
 eq "main is right again when its newest result for each failed check is not a failure" "yes no" "$(main_now_green "$rd_pf" "$rd_mc") $(main_now_green "$rd_pf" "$(printf '900\tplugin tests\tfailure\n')")"
 rd_mred=$(overlay_rest "$rd_snap" "$(printf '53\tunstable\t0\tno\tno\tno\tfixed\n')")
 eq "reds from main that main has since put right: merge-main, never set-aside or fix-pr" "merge-main 53	Seed list" "$(propose_round "$rd_mred" 2 4 2 | grep '53')"
-eq "the same pull request touched in the last 30 minutes is busy" "busy 53	Seed list	pushed to in the last 30 minutes; someone is on it" "$(propose_round "$(overlay_rest "$rd_snap" "$(printf '53\tunstable\t0\tno\tyes\tno\tfixed\n')")" 2 4 2 | grep '53')"
+eq "the same pull request touched in the last 30 minutes is busy" "busy 53	Seed list	its last push is recent (a red change waits 10 minutes from its last push, a conflicting one 30); someone is on it" "$(propose_round "$(overlay_rest "$rd_snap" "$(printf '53\tunstable\t0\tno\tyes\tno\tfixed\n')")" 2 4 2 | grep '53')"
 eq "reds from main while main is still red: a busy line, no fix and no set-aside" "busy 53	Seed list	its reds came from a test broken on main, which is not put right yet; it needs main merged in once it is" "$(propose_round "$(overlay_rest "$rd_snap" "$(printf '53\tunstable\t0\tno\tno\tno\twaiting\n')")" 2 4 2 | grep '53')"
 eq "plan.sh discounts reds main caused before it proposes set-aside" "1 1" "$(grep -c 'main_reds "\$p_fails"' "$root/scripts/drive/pr-read-lib.sh") $(grep -c 'main_finished_checks' "$root/scripts/drive/pr-read-lib.sh")"
 eq "a re-run of one commit counts once" "2" "$(red_count "$(printf 'aaa\naaa\nbbb\n')")"
@@ -5255,6 +5255,22 @@ case "$*" in
   *issues/99/comments*)
     printf '2026-10-31T07:30:00Z\tmaya-drive\tRound started.\\n<!-- sipnship-proposal {"status":"started","units":[{"issues":[214],"areas":[]}],"held":[]} -->\n'
     printf '2026-10-31T07:40:00Z\tmaya-drive\tProposal for Friday\\n1. dispatch 223 Seed packets\\nstop: proposal ready for approval\n' ;;
+esac
+exit 0
+FAKE
+ad_run 'unused' '')"
+eq "the same started round published again after a proposal naming its issue spends no proposal" "dispatch 214 Seed packets
+approved by Auto Drive" "$(cat > "$ad_dir/bin/gh" <<'FAKE'
+#!/bin/sh
+case "$*" in
+  "auth status") exit 0 ;;
+  *labels=drive*) printf '99\tdrive,drive:auto\t3\n' ;;
+  "api user --jq .login") echo maya-drive ;;
+  *labels=state:in-progress*) ;;
+  *issues/99/comments*)
+    printf '2026-10-31T07:30:00Z\tmaya-drive\tRound started.\\n<!-- sipnship-proposal {"status":"started","units":[{"issues":[214],"areas":[]}],"held":[]} -->\n'
+    printf '2026-10-31T07:40:00Z\tmaya-drive\tProposal for Friday\\n1. dispatch 214 Seed packets\\nstop: proposal ready for approval\n'
+    printf '2026-10-31T07:50:00Z\tmaya-drive\tRound started.\\n<!-- sipnship-proposal {"status":"started","units":[{"issues":[214],"areas":[],"pr":531}],"held":[]} -->\n' ;;
 esac
 exit 0
 FAKE
@@ -5819,6 +5835,11 @@ nb_t=$(printf '\t')
 eq "the plan passes no comment time to the busy reading" "0" "$(grep -c 'issues/$p_num/comments' "$root/scripts/drive/pr-read-lib.sh")"
 eq "red, last push 2 hours ago: nobody is on it" "no" "$(recently_touched 1000 '' 8200 30)"
 eq "red, pushed 10 minutes ago: someone is" "yes" "$(recently_touched 7600 '' 8200 30)"
+eq "a red change waits 10 minutes from its last push, a conflicting one 30" "1" "$(grep -c 'red \] && echo 10 || echo 30' "$root/scripts/drive/pr-read-lib.sh")"
+eq "red, last push 42 minutes ago, is past the red wait" "no" "$(recently_touched 5680 '' 8200 10)"
+eq "leftover remote branches are an unnumbered note, never a goal" "note: 300 branch(es) are still on the remote after their pull request merged or closed. run it
+stop: nothing to propose" "$(propose_round "$(printf 'audit\t300 branch(es) are still on the remote after their pull request merged or closed. run it\n')" 2 4 2 | number_proposal "$(cat)")"
+eq "a held change holds no round: the approval leaves queue:hold pull requests out of the running ones" "1" "$(grep -c 'queue:hold' "$root/scripts/drive/approval.sh")"
 # A round held behind one pull request for over an hour says so, with the time; the other areas' units start anyway.
 eq "held 2 hours 5 minutes is named with its time" "waits: the round has been held behind pull request 53 for 2 hours 5 minutes; units in other areas start anyway" "$(held_wait_note "$(printf '53\t1000\n')" 8500)"
 eq "held 70 minutes reads as one hour" "waits: the round has been held behind pull request 53 for 1 hour 10 minutes; units in other areas start anyway" "$(held_wait_note "$(printf '53\t1000\n')" 5200)"
@@ -5829,7 +5850,7 @@ nb_snap=$(printf 'pr\t53\tSeed list\tred\tmergeable\tapp\nissue\t9\tReady thing\
 eq "red and quiet gets a fix sent, and the ready issues are dispatched beside it" "fix-pr 53${nb_t}Seed list
 dispatch 9${nb_t}Ready thing" "$(propose_round "$(overlay_rest "$nb_snap" "$(printf '53\tunstable\t0\tno\tno\tno\n')")" 2 4 2 | sed -n '1,2p')"
 eq "red after two fixes is set aside, the round moves on" "set-aside 53${nb_t}Seed list${nb_t}(red 2 times)" "$(propose_round "$(overlay_rest "$nb_snap" "$(printf '53\tunstable\t2\tno\tno\tno\n')")" 2 4 2 | sed -n 1p)"
-eq "red with a recent push is a busy line, the other issues still dispatch" "busy 53${nb_t}Seed list${nb_t}pushed to in the last 30 minutes; someone is on it
+eq "red with a recent push is a busy line, the other issues still dispatch" "busy 53${nb_t}Seed list${nb_t}its last push is recent (a red change waits 10 minutes from its last push, a conflicting one 30); someone is on it
 dispatch 9${nb_t}Ready thing" "$(propose_round "$(overlay_rest "$nb_snap" "$(printf '53\tunstable\t0\tno\tyes\tno\n')")" 2 4 2 | sed -n '1,2p')"
 
 # Start-now requests that carry the builder's own words are printed with them, one line each.
@@ -5842,6 +5863,9 @@ start-now 1462 by maya" "$(work_requests "$nb_c" 2026-11-13T00:00:00Z 2026-11-13
 eq "an answer on #0 spends the round-wide ones, not the issue's" "start-now 1462 by maya" "$(work_requests "$nb_c
 2026-11-13T19:05:00Z${nb_t}maya${nb_t}Queue answer: start-now #0: started-now" 2026-11-13T00:00:00Z 2026-11-13T00:00:00Z)"
 eq "a round-wide start-now with no words still reads as start-now 0" "start-now 0 by maya" "$(work_requests "2026-11-13T19:00:00Z${nb_t}maya${nb_t}Queue request: start-now by maya" 2026-11-13T00:00:00Z 2026-11-13T00:00:00Z)"
+eq "approval reads a round-wide Start now as it reads Start this round, with or without words" "maya maya maya" "$(start_request 'Queue request: start-now by maya') $(start_request 'Queue request: start-now by maya: the reviews are blocked') $(start_request 'Queue request: start-now #0 by maya')"
+eq "a Start now that names an issue does not start the round" "" "$(start_request 'Queue request: start-now #301 by maya')"
+eq "approval.sh counts a number-less Start now as the reply that starts the round" "1" "$(grep -c 'start-now( #0)? by' "$root/scripts/drive/approval.sh")"
 
 # A fix for a failure on main never waits behind the round it blocks, and a failed drive-issue lookup says so.
 mf_facts=$(printf 'issue\t70\tWater schedule row\tstate:ready\t2026-11-14T10:00:00Z\tShows the next watering\nissue\t71\tTwo test files fail on main\tstate:ready\t2026-11-14T10:00:00Z\tThe seed list test and the bed map test fail on main.\n')

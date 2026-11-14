@@ -35,13 +35,13 @@ read_open_pull_requests() {
         fi
       fi
     fi
-    # Someone else on it? Only for one the drive would send an agent to (it conflicts or is red): a head commit under 30 minutes
+    # Someone else on it? Only for one the drive would send an agent to (it conflicts or is red): a head commit under 10 minutes (red) or 30 (conflicting)
     # old means an agent is at work. Comments, the drive's own posts, a worktree and a check re-run never count: none ends when an
     # agent does, so a pull request nobody works would wait for ever.
     p_busy=no; p_head=
     if [ "$p_state" = dirty ] || [ "$p_ci" = red ]; then
       p_head=$(gh api "repos/{owner}/{repo}/commits/$p_sha" --jq '.commit.committer.date | fromdateiso8601' 2>/dev/null | tr -d '\r')
-      p_busy=$(recently_touched "$p_head" "" "$(date +%s)" 30)
+      p_busy=$(recently_touched "$p_head" "" "$(date +%s)" "$( [ "$p_ci" = red ] && echo 10 || echo 30)")
     fi
     p_pend=no; [ "$p_ci" = red ] && p_pend=$(head_checks_pending "$p_sha")  # a red from an older commit is not the newest commit failing
     # A red the round waits on (its newest commit's checks still running, or its reds from main) is timed from that commit.

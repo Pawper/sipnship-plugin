@@ -70,7 +70,7 @@ propose_round() {
       for (i = 1; i <= r; i++) { print "fix-pr " red[i]; acted++ }
       for (i = 1; i <= sa; i++) { print "set-aside " setaside[i]; acted++ }
       for (i = 1; i <= bm; i++) { print "merge-main " behind[i]; acted++ }
-      for (i = 1; i <= bz; i++) { print "busy " busy[i] "\tpushed to in the last 30 minutes; someone is on it"; waiting_pr++ }
+      for (i = 1; i <= bz; i++) { print "busy " busy[i] "\tits last push is recent (a red change waits 10 minutes from its last push, a conflicting one 30); someone is on it"; waiting_pr++ }
       for (i = 1; i <= wz; i++) { print "busy " waiting[i]; waiting_pr++ }
       for (i = 1; i <= k; i++) { print "ask-owner " ask[i]; acted++ }
       slots = (runners < max_agents) ? runners : max_agents
@@ -79,7 +79,9 @@ propose_round() {
       for (i = 1; i <= n && dispatched < slots; i++) { print "dispatch " ready[i]; dispatched++; acted++ }
       if (n > dispatched) print "defer " (n - dispatched) " ready issue(s): no free runner this round"
       if (redmain != "") { print "fix-main " redmain; acted++ }
-      if (audit != "") { print "audit " audit; acted++ }
+      # Branches left on the remote are a note, never a goal: nothing the drive may do ends one, and the nightly audit keeps reporting them.
+      if (audit ~ /^[0-9]+ branch\(es\) are still on the remote after their pull request/) print "note: " audit
+      else if (audit != "") { print "audit " audit; acted++ }
       if (queue == "stale") { print "restart-queue"; acted++ }
       if (acted == 0) {
         if (onowner > 0 && n == 0) print "stop: everything left waits on a person"
@@ -98,7 +100,7 @@ propose_round() {
 number_proposal() {
   printf '%s\n' "$1" | awk '
     NF == 0 { next }
-    /^(defer |hold |landing |busy |stop:)/ { print; next }
+    /^(defer |hold |landing |busy |note: |stop:)/ { print; next }
     { printf "%d. %s\n", ++n, $0 }'
 }
 

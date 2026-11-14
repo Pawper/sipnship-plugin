@@ -65,7 +65,7 @@ The drive works the ready list in rounds, so many issues land in little time wit
   `merge-main` goal, and a red one no unit owns is a `fix-pr` or `set-aside` goal like any other. Nobody has
   to ask for this. Never put two agents on the same pull request: one a running unit owns goes to that unit's
   agent, not a new one. And never send an agent to a pull request someone else is already working on: one
-  whose head commit was pushed under 30 minutes ago has an agent at work (a comment, your own post, a worktree or a check re-run never counts: none ends when the agent does),
+  whose last push (the head commit's time, never the pull request's update time) is under 10 minutes old when red, or under 30 when it conflicts, has an agent at work (a comment, your own post, a worktree or a check re-run never counts: none ends when the agent does),
   so the plan shows it on an unnumbered `busy` line instead of `merge-main` or `fix-pr`, and a later
   tick looks again.
 
@@ -190,7 +190,7 @@ The goal lines and what each means:
   any generated files, re-run the touched tests per file, and push. Never a second agent on a pull request
   that already has one; a unit's own pull request goes to that unit's agent.
 - **`busy N TITLE`** (unnumbered). The pull request would get `merge-main` or `fix-pr`, but its head commit
-  is under 30 minutes old: an agent is at work. Send nobody; a later tick looks again. A red pull request with nobody on it is never a reason to hold the round: dispatch the units in other areas anyway, and say in the proposal's waits-on line what waits and since when once it passes an hour.
+  is recent (under 10 minutes when red, 30 when conflicting): an agent is at work. The wait runs from the last push alone; a comment, label or check finishing never restarts it, and once it passes, a fix agent goes at the next tick. Send nobody; a later tick looks again. A red pull request with nobody on it is never a reason to hold the round: dispatch the units in other areas anyway, and say in the proposal's waits-on line what waits and since when once it passes an hour.
 - **`busy N TITLE` and `hold N TITLE` for the rest.** Every open pull request gets one line: one whose checks are
   still running or whose merge state is not known yet is `busy`, one held for the builder's read is `hold`.
   Nothing is sent to either.
@@ -293,6 +293,8 @@ tab says it waits and on what instead of saying it starts on its own; `status: p
   the plan proposes no `drain` while one is ready: it prints a `landing` line saying the round waits on the fix.
   When the plan's last line says `auto drive: not known`, the lookup of the drive issue failed; it does not mean
   there is no drive issue or that Auto Drive is off, so run the plan again.
+- **`note: N branch(es) are still on the remote ...`** (unnumbered, never a goal). Branches left on the remote after their pull request ended are the nightly audit's to report; nothing the drive may do ends one, so the plan shows the count as a note and proposes no action for it.
+- **A round never waits on an unrelated ask.** With Auto Drive on, a proposed round starts as soon as its areas and runners are free. A change held for the owner's read, or a red change waiting on a fix agent, holds no runner and does not count as the running round (`approval.sh` leaves a `queue:hold` pull request out of the running ones); only its areas stay taken. A unit waits on another only when it truly depends on it (the same files or area, or it needs the answer to be built), and the band's "Waits on" names that dependency, never "the current round has not finished".
 - **`audit TEXT`.** When the facts are plain (an issue with no State whose title says what it is, an issue
   still ready after its pull request merged), set the state or close it. When they are not plain, leave it;
   the audit will say it again tomorrow.
