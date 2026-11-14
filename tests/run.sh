@@ -5030,7 +5030,7 @@ sl_open=$(pull_link_row "$sl_list")
 sl_two=$(printf 'issue\t1022\tWatering follows the season\tstate:in-progress\t%s\tbody\nissue\t1069\tBed photos in the list\tstate:in-progress\t%s\tbody\n' "$sl_old" "$sl_old")
 eq "so the issues of those open pull requests are not stale" "" "$(stale_lines "$sl_two" "$sl_open" '' "$sl_now" 2)"
 eq "and read through the old tab-collapsing way they were" "stale	1022	ready		Watering follows the season" "$(stale_lines "$sl_two" "$(printf '1201\tno\t\n')" '' "$sl_now" 2 | head -n 1)"
-eq "plan.sh reads the list with a separator that is not whitespace" "1 1 0" "$(grep -c 'join("\\u001f")' "$root/scripts/drive/plan.sh") $(grep -c 'pull_link_row "\$pr_list"' "$root/scripts/drive/plan.sh") $(grep -c 'IFS="\$tab" read -r p_num' "$root/scripts/drive/plan.sh")"
+eq "plan.sh reads the list with a separator that is not whitespace" "1 1 0" "$(grep -c 'join("\\u001f")' "$root/scripts/drive/pr-read-lib.sh") $(grep -c 'pull_link_row "\$pr_list"' "$root/scripts/drive/pr-read-lib.sh") $(grep -c 'IFS="\$tab" read -r p_num' "$root/scripts/drive/pr-read-lib.sh")"
 # A Ready issue an open pull request already closes is never started again.
 sl_ready=$(printf 'issue\t1022\tWatering follows the season\tstate:ready\t%s\tbody\nissue\t1069\tBed photos in the list\tstate:ready\t%s\tbody\nissue\t1110\tFrost alerts\tstate:ready\t%s\tbody\nissue\t1112\tCompost reminders\tstate:ready\t%s\tbody\n' "$sl_old" "$sl_old" "$sl_old" "$sl_old")
 sl_carried=$(carried_holds "$sl_ready" "$sl_open")
@@ -5047,7 +5047,7 @@ eq "a pull request that refers to an issue carries it as a fourth field" "1301	y
 sl_rf=$(printf 'issue\t1120\tRooftop watering plan\tstate:ready\t%s\tbody\nissue\t1121\tFrost alerts\tstate:ready\t%s\tbody\n' "$sl_old" "$sl_old")
 eq "a Ready issue only a held draft refers to gets a hold line naming the draft" "hold	1120	Rooftop watering plan	Its pull request (#1301) is held for your read; no agent is started on it" "$(carried_holds "$sl_rf" "$sl_rp" | sed -n 1p)"
 eq "one referred to by a draft that is not held is not held" "0" "$(carried_holds "$sl_rf" "$sl_rp" | grep -c '	1121	')"
-eq "plan.sh reads the refers-to numbers" "1" "$(grep -c 'refs?|references|spec for' "$root/scripts/drive/plan.sh")"
+eq "plan.sh reads the refers-to numbers" "1" "$(grep -c 'refs?|references|spec for' "$root/scripts/drive/pr-read-lib.sh")"
 eq "plan.sh adds the carried issues to its hold lines" "1" "$(grep -c 'carried_holds "\$facts" "\$pull_links"' "$root/scripts/drive/plan.sh")"
 section 'drive runs rounds of units'
 . "$root/scripts/drive/drive-lib.sh"
@@ -5144,7 +5144,7 @@ eq "red too often is set aside once its newest commit is neither new nor waiting
 eq "red twice before, but a head commit under 30 minutes old: busy, not set aside" "busy 53	Seed list	pushed to in the last 30 minutes; someone is on it" "$(propose_round "$(overlay_rest "$rd_snap" "$(printf '53\tunstable\t2\tno\tyes\tno\n')")" 2 4 2 | grep '53')"
 eq "red twice before, a pending head commit: no set-aside, and no fix, only a busy line saying why" "busy 53	Seed list	its newest commit is still waiting on its checks" "$(propose_round "$(overlay_rest "$rd_snap" "$(printf '53\tunstable\t2\tno\tno\tyes\n')")" 2 4 2 | grep '53')"
 eq "a pending head commit is read from its check runs: any not completed" "yes no" "$(checks_pending "$(printf 'completed\tfailure\nqueued\t\n')") $(checks_pending "$(printf 'completed\tfailure\ncompleted\tsuccess\n')")"
-eq "plan.sh reads the head commit's check runs before it proposes set-aside" "1" "$(grep -c 'head_checks_pending "\$p_sha"' "$root/scripts/drive/plan.sh")"
+eq "plan.sh reads the head commit's check runs before it proposes set-aside" "1" "$(grep -c 'head_checks_pending "\$p_sha"' "$root/scripts/drive/pr-read-lib.sh")"
 rd_held_green=$(printf 'pr\t61\tSeed list\tgreen\tmergeable\tapp\t0\tyes\tno\tno\npr\t62\tBed map\tgreen\tmergeable\tapp\t0\tyes\tno\tno\npr\t63\tFrost alert\tgreen\tmergeable\tapp\t0\tyes\tno\tno\nqueue\tnone\n')
 eq "green pull requests that are all held for the owner propose no merge and no drain" "stop: nothing to propose" "$(propose_round "$rd_held_green" 2 4 2)"
 eq "a held green one is left out and the rest still lands" "merge 64" "$(propose_round "$(printf '%s\npr\t64\tWatering copy\tgreen\tmergeable\tapp\t0\tno\tno\tno\n' "$rd_held_green")" 2 4 2 | grep '^merge')"
@@ -5167,7 +5167,7 @@ rd_mred=$(overlay_rest "$rd_snap" "$(printf '53\tunstable\t0\tno\tno\tno\tfixed\
 eq "reds from main that main has since put right: merge-main, never set-aside or fix-pr" "merge-main 53	Seed list" "$(propose_round "$rd_mred" 2 4 2 | grep '53')"
 eq "the same pull request touched in the last 30 minutes is busy" "busy 53	Seed list	pushed to in the last 30 minutes; someone is on it" "$(propose_round "$(overlay_rest "$rd_snap" "$(printf '53\tunstable\t0\tno\tyes\tno\tfixed\n')")" 2 4 2 | grep '53')"
 eq "reds from main while main is still red: a busy line, no fix and no set-aside" "busy 53	Seed list	its reds came from a test broken on main, which is not put right yet; it needs main merged in once it is" "$(propose_round "$(overlay_rest "$rd_snap" "$(printf '53\tunstable\t0\tno\tno\tno\twaiting\n')")" 2 4 2 | grep '53')"
-eq "plan.sh discounts reds main caused before it proposes set-aside" "1 1" "$(grep -c 'main_reds "\$p_fails"' "$root/scripts/drive/plan.sh") $(grep -c 'main_finished_checks' "$root/scripts/drive/plan.sh")"
+eq "plan.sh discounts reds main caused before it proposes set-aside" "1 1" "$(grep -c 'main_reds "\$p_fails"' "$root/scripts/drive/pr-read-lib.sh") $(grep -c 'main_finished_checks' "$root/scripts/drive/pr-read-lib.sh")"
 eq "a re-run of one commit counts once" "2" "$(red_count "$(printf 'aaa\naaa\nbbb\n')")"
 eq "a hold label holds" "yes" "$(held_by 'bug,queue:hold' '')"
 eq "a Queue: hold line holds" "yes" "$(held_by 'bug' 'Queue: hold')"
@@ -5767,6 +5767,7 @@ eq "the plan's output then passes publish-round's own area check" "" "$(area_pro
 eq "a unit that is part of the running unit is left alone" "unit${da_t}301${da_t}Water the beds${da_t}${da_t}src/water/a.ts" "$(area_units "$da_list" "$(printf 'unit\t301\tWater the beds\t\tsrc/water/a.ts\n')" "$(printf '301\twatering\n')" "$da_titles")"
 eq "two ready issues in one area become one unit" "unit${da_t}402 404${da_t}Water the beds on a timer | Fix the schedule page${da_t}both change the watering area${da_t}src/water/timer.ts,src/schedule.ts" "$(area_units "$da_list" "$(printf 'unit\t402\tWater the beds on a timer\t\tsrc/water/timer.ts\nunit\t404\tFix the schedule page\t\tsrc/schedule.ts\n')" '' "$da_titles")"
 eq "two ready issues in the tooling area become one unit" "unit${da_t}405 406${da_t}Tune the build | Fix the scripts${da_t}both change the tooling area${da_t}ci/a.sh,scripts/b.sh" "$(area_units "$da_list" "$(printf 'unit\t405\tTune the build\t\tci/a.sh\nunit\t406\tFix the scripts\t\tscripts/b.sh\n')" '' "$da_titles")"
+eq "three issues a partial landing returned to Ready, one area, come out as one unit" "unit${da_t}402 404 407" "$(area_units "$da_list" "$(printf 'unit\t402\tWater the beds on a timer\t\tsrc/water/timer.ts\nunit\t404\tFix the schedule page\t\tsrc/schedule.ts\nunit\t407\tShow the next watering\t\tsrc/water/next.ts\n')" '' "$da_titles" | cut -f1,2)"
 eq "units in different areas stay apart" "2" "$(area_units "$da_list" "$(printf 'unit\t402\tWater\t\tsrc/water/t.ts\nunit\t403\tTint\t\tsrc/beds/t.ts\n')" '' "$da_titles" | grep -c '^unit')"
 eq "with no areas list the lines pass unchanged" "unit${da_t}402${da_t}Water${da_t}${da_t}x" "$(area_units '' "$(printf 'unit\t402\tWater\t\tx\n')" "$(printf '301\twatering\n')" '')"
 eq "a hold line passes through" "hold${da_t}9${da_t}Seeds${da_t}After: Pots" "$(area_units "$da_list" "$(printf 'hold\t9\tSeeds\tAfter: Pots\n')" '' '')"
@@ -5815,9 +5816,15 @@ section 'the drive reads a red pull request nobody works, a stale main, and a re
 . "$root/scripts/drive/rank-lib.sh"
 nb_t=$(printf '\t')
 # A red pull request is busy only for a push in the last 30 minutes: a comment, the drive's own post or a re-run never counts.
-eq "the plan passes no comment time to the busy reading" "0" "$(grep -c 'issues/$p_num/comments' "$root/scripts/drive/plan.sh")"
+eq "the plan passes no comment time to the busy reading" "0" "$(grep -c 'issues/$p_num/comments' "$root/scripts/drive/pr-read-lib.sh")"
 eq "red, last push 2 hours ago: nobody is on it" "no" "$(recently_touched 1000 '' 8200 30)"
 eq "red, pushed 10 minutes ago: someone is" "yes" "$(recently_touched 7600 '' 8200 30)"
+# A round held behind one pull request for over an hour says so, with the time; the other areas' units start anyway.
+eq "held 2 hours 5 minutes is named with its time" "waits: the round has been held behind pull request 53 for 2 hours 5 minutes; units in other areas start anyway" "$(held_wait_note "$(printf '53\t1000\n')" 8500)"
+eq "held 70 minutes reads as one hour" "waits: the round has been held behind pull request 53 for 1 hour 10 minutes; units in other areas start anyway" "$(held_wait_note "$(printf '53\t1000\n')" 5200)"
+eq "held under an hour says nothing" "" "$(held_wait_note "$(printf '53\t1000\n')" 4000)"
+eq "nothing held says nothing" "" "$(held_wait_note '' 8500)"
+eq "plan.sh prints the held-behind note" "1" "$(grep -c 'held_wait_note "' "$root/scripts/drive/plan.sh")"
 nb_snap=$(printf 'pr\t53\tSeed list\tred\tmergeable\tapp\nissue\t9\tReady thing\tready\tno\nissue\t10\tAnother\tready\tno\n')
 eq "red and quiet gets a fix sent, and the ready issues are dispatched beside it" "fix-pr 53${nb_t}Seed list
 dispatch 9${nb_t}Ready thing" "$(propose_round "$(overlay_rest "$nb_snap" "$(printf '53\tunstable\t0\tno\tno\tno\n')")" 2 4 2 | sed -n '1,2p')"
@@ -5923,7 +5930,7 @@ eq "a held one gets a hold line" "hold 61${gp_t}Seed list${gp_t}Its pull request
 eq "a red one still gets its fix-pr, and exactly one line each" "1 1 1" "$(printf '%s\n' "$gp_out" | grep -c ' 60') $(printf '%s\n' "$gp_out" | grep -c ' 61') $(printf '%s\n' "$gp_out" | grep -c '^fix-pr 62')"
 eq "a pull request already named is not said twice" "1" "$(say_every_pr "$(printf 'busy 60\tWatering page\tpushed\nstop: work is in flight\n')" "$gp_snap" | grep -c ' 60')"
 eq "the extra lines come before the stop line" "stop: proposal ready for approval" "$(printf '%s\n' "$gp_out" | tail -n 1)"
-eq "plan.sh says every pull request, and reads a settled red from the head commit" "1 1" "$(grep -c 'say_every_pr "' "$root/scripts/drive/plan.sh") $(grep -c 'head_settled_red "' "$root/scripts/drive/plan.sh")"
+eq "plan.sh says every pull request, and reads a settled red from the head commit" "1 1" "$(grep -c 'say_every_pr "' "$root/scripts/drive/plan.sh") $(grep -c 'head_settled_red "' "$root/scripts/drive/pr-read-lib.sh")"
 # An issue of a running unit is not stale while its unit is at work.
 gs_now=1793926800
 gs_old=$(date -u -d "@$(( gs_now - 18000 ))" +%Y-%m-%dT%H:%M:%SZ)
@@ -6033,7 +6040,7 @@ eq "plan.sh keeps an ask-fix already tried quiet" "1" "$(grep -c 'add_owner_goal
 eq "the skill gives the drive its own action for an ask-fix nobody can reach" "1 1" "$(grep -c 'ask-fix-seen.sh' "$root/skills/project-drive/SKILL.md" | awk '$1 > 0 { print 1 }') $(grep -c 'A scheduled tick has no such agent' "$root/skills/project-drive/SKILL.md")"
 # The plan says what it is reading while it reads.
 eq "the plan prints a progress line on stderr, never on stdout" "plan: reading pull request 5" "$(plan_say 'reading pull request 5' 2>&1 >/dev/null)"
-eq "plan.sh says what it has read" "1 1" "$(grep -c 'plan_say "read the board' "$root/scripts/drive/plan.sh") $(grep -c 'plan_say "reading pull request' "$root/scripts/drive/plan.sh")"
+eq "plan.sh says what it has read" "1 1" "$(grep -c 'plan_say "read the board' "$root/scripts/drive/plan.sh") $(grep -c 'plan_say "reading pull request' "$root/scripts/drive/pr-read-lib.sh")"
 eq "the answers reader is bounded and says why" "1" "$(grep -c 'timeout 90' "$root/scripts/drive/answers.sh")"
 
 # --- end of blocks: the summary, kept in every part.

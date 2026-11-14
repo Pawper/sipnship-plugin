@@ -30,6 +30,20 @@ health_line() {
 }
 
 
+# held_wait_note LINES NOW
+# LINES hold one "NUMBER<TAB>SINCE" per pull request the round is held behind (SINCE is the epoch of its
+# newest commit, when its red began); NOW is the epoch now. Prints one "waits:" line, in the shape the
+# round file reads, naming each held over an hour with how long; nothing when none is. Units in other
+# areas start whatever this says; it only makes the wait visible.
+held_wait_note() {
+  printf '%s\n' "$1" | awk -F'\t' -v now="$2" '
+    NF >= 2 && $2 + 0 > 0 && now - $2 > 3600 {
+      m = int((now - $2) / 60); d = int(m / 60) " hour" (m >= 120 ? "s " : " ") (m % 60) " minutes"
+      say = say (say == "" ? "" : "; ") "pull request " $1 " for " d
+    }
+    END { if (say != "") print "waits: the round has been held behind " say "; units in other areas start anyway" }'
+}
+
 # The once-a-day summary, when summaryAt is set: due at that local time
 # until a comment "Summary for <today>" is on the drive issue (one REST
 # call, for the last day's comments only).
