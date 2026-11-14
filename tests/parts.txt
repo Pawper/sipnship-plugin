@@ -76,7 +76,7 @@ shell-2 the CI template is three jobs on a pull request, and the screens job whe
 shell-2 set -e never swallows a return code
 shell-2 what an agent did after a refusal
 shell-3 one design source for every platform
-shell-3 a screen and its mock change together
+shell-2 a screen and its mock change together
 shell-3 copy from the mocks
 shell-3 token names a stylesheet defines for itself
 shell-3 a screen beside its mock
@@ -85,23 +85,23 @@ shell-3 deploys: keeping the host's build CPU down
 shell-3 drive skill scheduling
 shell-3 drive release goal
 shell-3 drive bundles issues by the files they touch
-shell-3 drive publishes its rounds
+shell-2 drive publishes its rounds
 shell-3 drive reads Auto Drive
-shell-3 drive sets right an In progress issue nobody works
+shell-2 drive sets right an In progress issue nobody works
 shell-3 drive runs rounds of units
 shell-3 hook counterparts
-shell-3 rule switches in the hooks
+shell-2 rule switches in the hooks
 shell-3 block-rule-switch
 shell-3 rule switches in the checks
 shell-3 the rules guard
 shell-3 one list of rules builds the table
-shell-3 a rule switch reaches the repository
+shell-2 a rule switch reaches the repository
 shell-3 the delete check
 shell-3 workspace install
 shell-3 a draft tokens file seeded from the mocks
 shell-3 deploy targets
 shell-3 a deploy that met a brief provider outage tries again
-shell-3 test parts: only for the classes touched, side by side, stopping at the first red
+shell-2 test parts: only for the classes touched, side by side, stopping at the first red
 shell-2 a failing job says what failed, and a failed check cancels the run
 shell-2 main is gated by one full run after a quiet hour
 shell-2 the brief says when the installed plugin lags
