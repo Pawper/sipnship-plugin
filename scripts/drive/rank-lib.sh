@@ -19,6 +19,6 @@ fixes_main() {
 # issues that fix a failure on main (fixes_main on the title and body start).
 mainfix_numbers() {
   printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' '$1 == "issue" && ("," $4 ",") ~ /,(state: ?)?ready,/ { print $2 "\t" $3 " " $6 }' | while IFS='	' read -r mn_n mn_t; do
-    [ "$(fixes_main "$mn_t")" = yes ] && printf '%s ' "$mn_n"
+    if [ "$(fixes_main "$mn_t")" = yes ]; then printf '%s ' "$mn_n"; fi
   done | sed 's/ $//'
 }
