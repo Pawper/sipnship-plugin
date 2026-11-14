@@ -9,6 +9,7 @@
 here=$(dirname "$0")
 . "$here/drive-lib.sh"
 . "$here/round-lib.sh"
+. "$here/comment-lib.sh"
 
 command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1 || exit 0
 drive_line=$(gh api "$AUTO_DRIVE_QUERY" --jq "$AUTO_DRIVE_JQ" 2>/dev/null | tr -d '\r')
@@ -23,4 +24,4 @@ for page in $(comment_pages "$count"); do
 done
 ago() { date -u -d "@$(( $(date +%s) - $1 ))" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$(( $(date +%s) - $1 ))" +%Y-%m-%dT%H:%M:%SZ; }
 # As long as the service waits before it says nothing came of one (core's WAIT_MS).
-work_requests "$comments" "$(ago 86400)" "$(ago 3600)"
+work_requests "$(without_bare_path_comments "$comments")" "$(ago 86400)" "$(ago 3600)"

@@ -11,6 +11,7 @@
 # Usage, from the project root: sh "$CLAUDE_PLUGIN_ROOT/scripts/drive/answers.sh" [--all]
 here=$(dirname "$0")
 . "$here/answers-lib.sh"
+. "$here/comment-lib.sh"
 
 all=no
 [ "$1" = --all ] && all=yes
@@ -20,9 +21,14 @@ since=$(date -u -d "@$(( $(date +%s) - 86400 ))" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null
 open=$(gh api "repos/{owner}/{repo}/issues?state=open&per_page=100&since=$since" \
   --jq '.[] | select([.labels[].name | ascii_downcase | test("^state: ?(waiting-on-owner|ready)$")] | any) | .number' 2>/dev/null | tr -d '\r')
 [ -n "$open" ] || exit 0
-comments=$(gh api "repos/{owner}/{repo}/issues/comments?since=$since&per_page=100" --paginate \
+# This is the slow step: GitHub lists every comment in the repository for the day, a page of 100 at a time, and a busy
+# project has hundreds. It is bounded: past 90 seconds it says why and reads nothing this tick (the next tick tries again).
+comments=$(if command -v timeout >/dev/null 2>&1; then t="timeout 90"; else t=""; fi
+  $t gh api "repos/{owner}/{repo}/issues/comments?since=$since&per_page=100" --paginate \
   --jq '.[] | [(.id | tostring), .created_at, .user.login, (.issue_url | sub(".*/"; "")), (.body | gsub("\t"; " ") | gsub("\r"; ""))] | @tsv' 2>/dev/null)
-owed=$(owed_answers "$comments" "$open")
+rc=$?
+[ "$rc" -ne 124 ] || { echo "answers: the day's comments (every comment in the repository, 100 a page) took over 90 seconds to list; no answers read this tick" >&2; exit 0; }
+owed=$(owed_answers "$(without_bare_path_comments "$comments")" "$open")
 [ -n "$owed" ] || exit 0
 if [ "$all" = yes ]; then printf '%s\n' "$owed"; exit 0; fi
 

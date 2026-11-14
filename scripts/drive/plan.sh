@@ -32,6 +32,9 @@ here=$(dirname "$0")
 . "$here/area-plan-lib.sh"
 . "$here/plan-read-lib.sh"
 . "$here/plan-green-lib.sh"
+. "$here/comment-lib.sh"
+. "$here/priority-lib.sh"
+. "$here/ask-gate-lib.sh"
 . "$here/stale-lib.sh"
 . "$here/release-lib.sh"
 . "$here/rank-lib.sh"
@@ -47,7 +50,7 @@ while [ $# -gt 0 ]; do
   shift
 done
 
-runners=2; runners_cap=0; max_agents=4; max_minutes=90; queue_glob=""; owner_phrases=""
+runners=2; runners_cap=0; max_agents=4; max_minutes=90; queue_glob=""; owner_phrases=""; priorities=""
 settings=$(drive_settings '{}')
 if [ -f .claude/project-drive.json ]; then
   cfg=$(cat .claude/project-drive.json)
@@ -55,7 +58,7 @@ if [ -f .claude/project-drive.json ]; then
   n=$(json_number "$cfg" maxAgents); [ -n "$n" ] && max_agents=$n
   n=$(json_number "$cfg" maxMinutes); [ -n "$n" ] && max_minutes=$n
   queue_glob=$(json_field "$cfg" queueLogGlob)
-  settings=$(drive_settings "$cfg")
+  settings=$(drive_settings "$cfg"); priorities=$(drive_priorities "$cfg")
   owner_phrases=$(printf '%s' "$cfg" | awk 'BEGIN { RS = "\001" } { i = index($0, "\"ownerDecisions\""); if (!i) exit; s = substr($0, i); j = index(s, "["); k = index(s, "]"); if (!j || !k) exit; print substr(s, j + 1, k - j - 1) }' \
     | tr ',' '\n' | sed 's/^[ \t"]*//;s/[ \t"]*$//' | sed '/^$/d')
 fi
@@ -77,6 +80,7 @@ if [ -z "$facts" ]; then
   exit 0
 fi
 rm -f "${TMPDIR:-/tmp}/board-now.$$.err" 2>/dev/null
+plan_say "read the board: $(printf '%s\n' "$facts" | grep -c '^issue') issues, $(printf '%s\n' "$facts" | grep -c '^pr') pull requests"
 
 rules=""
 [ -f scripts/ci/classes.txt ] && [ -f scripts/ci/lib.sh ] && rules=$(cat scripts/ci/classes.txt)
@@ -111,13 +115,7 @@ printf '%s\n' "$facts" | tr '\t' '\037' | while IFS="$us" read -r kind num title
 done >> "$tmp"
 
 # The audit issue's latest comment: one extra call, skipped with --fast.
-if [ "$fast" = no ]; then
-  audit_issue=$(printf '%s\n' "$facts" | awk -F'\t' '$1 == "issue" && ("," $4 ",") ~ /,audit,/ { print $2; exit }')
-  if [ -n "$audit_issue" ]; then
-    last=$(gh issue view "$audit_issue" --json comments --jq '.comments[-1].body // ""' 2>/dev/null | tr '\n' ' ' | cut -c1-200)
-    [ -n "$last" ] && last=$(audit_unless_part_of "$last") && [ -n "$last" ] && printf 'audit\t%s\n' "$last" >> "$tmp"
-  fi
-fi
+if [ "$fast" = no ]; then audit_last_line "$facts" >> "$tmp"; fi
 
 queue_state=none
 if [ -n "$queue_glob" ]; then
@@ -143,6 +141,7 @@ pr_list=$(gh api "repos/{owner}/{repo}/pulls?state=open&per_page=100" --jq '.[] 
 pull_links=$(pull_link_row "$pr_list")
 while IFS="$us" read -r p_num p_ref p_labels p_hold p_closes p_refs; do
   [ -n "$p_num" ] || continue
+  plan_say "reading pull request $p_num"
   p_info=$(gh api "repos/{owner}/{repo}/pulls/$p_num" --jq '[(.mergeable_state // ""), .head.sha] | @tsv' 2>/dev/null | tr -d '\r')
   p_state=$(printf '%s' "$p_info" | cut -f1); p_sha=$(printf '%s' "$p_info" | cut -f2)
   pr_shas="${pr_shas}${p_num}${tab}${p_sha}
@@ -267,7 +266,7 @@ if [ -n "$guesses" ] || [ -n "$reasons" ]; then
   # maxAgents), planned against the running round's files. It starts only
   # once the running round lands (approval.sh holds its dispatches).
   slots=$units_per_round; [ "$max_agents" -lt "$slots" ] && slots=$max_agents; [ "$runners" -lt "$slots" ] && slots=$runners
-  round=$(apply_units "$round" "$units" "$slots" "$machines" "$MAINFIX_ISSUES")
+  round=$(apply_units "$round" "$units" "$slots" "$machines" "$MAINFIX_ISSUES" "$(priority_issues "$priorities" "$guesses" "$facts" "$areas_text")")  # a project's priority areas lead, after a fix for main
 fi
 # A project whose queue lands green work by itself: rely on it; propose one drain only when green work has sat 15 minutes.
 green_prs=$(printf '%s\n' "$snapshot" | awk -F'\t' '$1 == "pr" && $4 == "green" && $5 == "mergeable" && $8 != "yes" { print $2 }')
@@ -279,10 +278,7 @@ if [ -f scripts/ci/merge-queue.sh ] && [ -n "$green_prs" ]; then
 fi
 # Unreleased plugin work, read from the remote's main (release-lib.sh): one release goal, or a hold naming the pull request or issue already making it.
 round=$(add_release "$round" "$(release_proposal "$facts" "$pull_links")")
-if [ -n "$extra" ]; then
-  round=$(owner_waiting_holds "$round" "$extra")
-  round=$(printf '%s\n%s\n' "$extra" "$round" | awk '/^stop: (nothing to propose|everything left waits|work is in flight)/ { print "stop: proposal ready for approval"; next } { print }')
-fi
+[ -z "$extra" ] || round=$(add_owner_goals "$round" "$extra" "$facts" .scratch/drive/ask-fix.txt)  # an ask-fix the drive already tried stays a hold (ask-fix-seen.sh)
 round=$(say_every_pr "$round" "$snapshot")  # every open pull request has a line, whatever its checks say
 number_proposal "$round"
 # Auto Drive, from the drive issue's label drive:auto: one REST call. On is a

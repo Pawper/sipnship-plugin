@@ -215,7 +215,7 @@ units_disjoint() {
     }'
 }
 
-# apply_units ROUND UNITS SLOTS
+# apply_units ROUND UNITS SLOTS [MACHINES [MAINFIX [PRIORITY]]]
 # Swap the "dispatch N TITLE" goals of a propose_round result for the
 # units: one goal per unit, bundles ranked before loose issues (more issues
 # first), at most SLOTS of them (the rest deferred, named by their issues),
@@ -225,14 +225,20 @@ units_disjoint() {
 # When everything is held the stop line says so: work in flight when only
 # running work holds it, else what each hold line names.
 apply_units() {
-  printf '%s\n' "$1" | awk -v slots="${3:-2}" -v units="$2" -v machines="${4:-}" -v first=" ${5:-} " '
+  printf '%s\n' "$1" | awk -v slots="${3:-2}" -v units="$2" -v machines="${4:-}" -v first=" ${5:-} " -v prio="${6:-}" '
+    # The place in the project priorities of the best-placed issue of NUMS (0 when none is in one).
+    function best(nums,   x, k, i, b) { k = split(nums, x, " "); b = 0; for (i = 1; i <= k; i++) if ((x[i] in pr) && (b == 0 || pr[x[i]] < b)) b = pr[x[i]]; return b }
+    function bestwhy(nums,   x, k, i, b) { k = split(nums, x, " "); b = best(nums); for (i = 1; i <= k; i++) if ((x[i] in pr) && pr[x[i]] == b) return pw[x[i]]; return "" }
     BEGIN {
+      np = split(prio, pl, "\n"); for (i = 1; i <= np; i++) { split(pl[i], pf, "\t"); if (pf[1] != "") { pr[pf[1]] = pf[2] + 0; pw[pf[1]] = pf[3] } }
       n = split(units, raw, "\n")
       # Bundles first: units carrying more issues rank ahead, in plan order
       # among equals, so a round fills with bundles before loose issues.
       for (i = 1; i <= n; i++) { ul[i] = raw[i]; split(raw[i], f, "\t"); w[i] = (f[1] == "unit") ? split(f[2], tmp, " ") : 0 }
       # A unit with an issue that fixes a failure on main (the fifth argument) outranks every bundle.
       for (i = 1; i <= n; i++) if (w[i] > 0) { split(raw[i], ff, "\t"); m = split(ff[2], tm, " "); for (j = 1; j <= m; j++) if (index(first, " " tm[j] " ")) w[i] += 1000 }
+      # A unit in a project priority (the sixth argument) comes next, the first entry first: after a fix for main, before any bundle.
+      for (i = 1; i <= n; i++) if (w[i] > 0) { split(raw[i], ff, "\t"); b = best(ff[2]); if (b > 0) w[i] += 500 - b }
       for (i = 2; i <= n; i++) { v = ul[i]; c = w[i]; j = i - 1; while (j > 0 && w[j] < c) { ul[j + 1] = ul[j]; w[j + 1] = w[j]; j-- } ul[j + 1] = v; w[j + 1] = c }
       for (i = 1; i <= n; i++) {
         split(ul[i], f, "\t")
@@ -240,6 +246,7 @@ apply_units() {
           if (++started <= slots) {
             line = "dispatch " f[2] "\t" f[3]
             if (f[4] != "") line = line "\tWhy together: " f[4]
+            if (best(f[2]) > 0 && bestwhy(f[2]) != "") line = line "\tFirst: " bestwhy(f[2])
             goals[++g] = line
           } else { deferred++; piece = "#" f[2]; gsub(/ /, " #", piece); dn = dn (dn == "" ? "" : ", ") piece }
         } else if (f[1] == "hold") { holds[++h] = "hold " f[2] "\t" f[3] "\t" f[4]; if (f[4] !~ /^After: /) reasoned++ }

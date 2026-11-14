@@ -29,6 +29,7 @@
 here=$(dirname "$0")
 . "$here/drive-lib.sh"
 . "$here/round-lib.sh"
+. "$here/comment-lib.sh"
 . "$here/round-state-lib.sh"
 
 if ! command -v gh >/dev/null 2>&1 || ! gh auth status >/dev/null 2>&1; then
@@ -51,7 +52,7 @@ for page in $(comment_pages "$count"); do
   comments="${comments}$(gh api "repos/{owner}/{repo}/issues/$issue/comments?per_page=100&page=$page" --jq '.[] | [.created_at, .user.login, (.body | gsub("\t"; " ") | gsub("\r"; ""))] | @tsv' 2>/dev/null)
 "
 done
-comments=$(printf '%s\n' "$comments" | sed '/^$/d')
+comments=$(without_bare_path_comments "$(printf '%s\n' "$comments" | sed '/^$/d')")  # a body that is only a file name is no reply
 [ -n "$comments" ] || { echo "nothing: no proposal on issue $issue yet"; exit 0; }
 
 proposal=""; proposal_at=""; reply=""; reply_by=""

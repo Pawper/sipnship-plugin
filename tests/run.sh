@@ -5110,7 +5110,7 @@ stop: proposal ready for approval" "$(owner_waiting_holds "$ow_round" "$ow_extra
 eq "a dispatch with no issue left goes, and goals unrelated to the owner's issues stay" "merge 9
 hold 31	Watering plan	Waits on your answer; not offered to an agent while it is open" "$(owner_waiting_holds "$(printf 'merge 9\ndispatch 31\tWatering plan\n')" 'ask-fix 31	x')"
 eq "with nothing put to the owner the round is unchanged" "$ow_round" "$(owner_waiting_holds "$ow_round" 'drain 5')"
-eq "plan.sh keeps an issue it asks the owner about out of its dispatches" "1" "$(grep -c 'owner_waiting_holds "\$round" "\$extra"' "$root/scripts/drive/plan.sh")"
+eq "plan.sh keeps an issue it asks the owner about out of its dispatches" "1" "$(grep -c 'add_owner_goals "\$round" "\$extra"' "$root/scripts/drive/plan.sh")"
 eq "plan.sh checks the ask before it proposes mark-waiting" "1" "$(grep -c 'mark_waiting_goals "\$extra"' "$root/scripts/drive/plan.sh")"
 printf 'status: proposed
 sized: 5 runners online, 4 free for agents
@@ -5299,7 +5299,7 @@ eq "any other audit comment names none" "" "$(audit_stale_prs 'Open issues with 
 eq "every one said Part of: the audit's line is no goal" "yes" "$(audit_only_part_of "$au_line" "$(printf '1385\tPart of #1273. Part of #1364 and #1340. Closes #1380.\n')")"
 eq "one the pull request closed is still a goal" "no" "$(audit_only_part_of "$au_line" "$(printf '1385\tPart of #1273 and #1364. Closes #1340.\n')")"
 eq "a body the plan could not read is still a goal" "no" "$(audit_only_part_of "$au_line" '')"
-eq "plan.sh drops an audit line of only Part of entries" "1" "$(grep -c 'audit_unless_part_of "\$last"' "$root/scripts/drive/plan.sh")"
+eq "plan.sh drops an audit line of only Part of entries" "1 1" "$(grep -c 'audit_unless_part_of "\$al_last"' "$root/scripts/drive/plan-read-lib.sh") $(grep -c 'audit_last_line "\$facts"' "$root/scripts/drive/plan.sh")"
 
 section 'temp files stay in the run, and nothing it starts outlives it'
 eq "every block's temp folder is inside the run's own root" "yes" "$(case "$TMPDIR" in */.scratch/tests-tmp/run-*) echo yes ;; *) echo no ;; esac)"
@@ -5908,6 +5908,103 @@ eq "a pull request naming it in a Part of line means it is not stale" "0" "$(sta
 eq "the unit's own pull request, named by the started round, keeps all its issues" "0" "$(stale_lines "$gs_facts" "$(printf '71\tno\t9\n')" '' "$gs_now" 2 "$(printf '71\t1 2 3\n')" | grep -c '^stale')"
 eq "a unit pull request that is no longer open does not" "3" "$(stale_lines "$gs_facts" "$(printf '72\tno\t9\n')" '' "$gs_now" 2 "$(printf '71\t1 2 3\n')" | grep -c '^stale')"
 eq "plan.sh hands the started round's units to the stale reading" "1" "$(grep -c 'started_units "$drive_comments")' "$root/scripts/drive/plan.sh")"
+
+section 'the drive posts a file by its contents and ignores a bare file name (drive)'
+. "$root/scripts/drive/comment-lib.sh"
+cm_dir=$(mktemp -d)
+mkdir -p "$cm_dir/bin"
+cat > "$cm_dir/bin/gh" <<'FAKE'
+#!/bin/sh
+printf '%s\n' "$*" >> "$CM_DIR/log"
+case "$*" in
+  *auth\ status*) exit 0 ;;
+  *-X\ POST*comments*) for a in "$@"; do case "$a" in body=@*) cp "${a#body=@}" "$CM_DIR/posted" ;; esac; done; echo "https://github.com/maya/rooftop/issues/7#issuecomment-1" ;;
+esac
+exit 0
+FAKE
+chmod +x "$cm_dir/bin/gh"
+cm_run() { CM_DIR="$cm_dir" PATH="$cm_dir/bin:$PATH" sh "$root/scripts/drive/comment.sh" "$@" 2>&1; }
+printf 'Watered the beds; two sensors need a new battery.\n' > "$cm_dir/answer.md"
+: > "$cm_dir/log"
+eq "a file is posted by its contents, through -F" "1 Watered the beds; two sensors need a new battery." "$(cm_run 7 "$cm_dir/answer.md" > /dev/null; printf '%s ' "$(grep -c -- '-F body=@' "$cm_dir/log")"; cat "$cm_dir/posted")"
+eq "the comment's link is printed" "https://github.com/maya/rooftop/issues/7#issuecomment-1" "$(cm_run 7 "$cm_dir/answer.md")"
+printf '@.scratch/drive-answer.md\n' > "$cm_dir/bare.md"
+: > "$cm_dir/log"
+eq "a body that is only a file name is refused, and nothing is posted" "1 0" "$(cm_run 7 "$cm_dir/bare.md" | grep -c 'only a file name') $(grep -c 'POST' "$cm_dir/log")"
+: > "$cm_dir/empty.md"
+eq "an empty file is refused" "1" "$(cm_run 7 "$cm_dir/empty.md" | grep -c 'is empty')"
+eq "a missing file is refused" "1" "$(cm_run 7 "$cm_dir/nothing.md" | grep -c 'no file')"
+eq "a path-like first word beside other words is a real comment" "" "$(printf '@maya the beds are done\n' > "$cm_dir/at.md"; comment_refusal "$cm_dir/at.md")"
+eq "a comment line whose whole body is a bare path is dropped, others stay" "a	maya	Reply: all
+c	maya	Reply: 2" "$(without_bare_path_comments "$(printf 'a\tmaya\tReply: all\nb\tmaya\t@.scratch/drive-answer.md\nc\tmaya\tReply: 2\n')")"
+eq "a body that starts with @ and has words stays" "b	maya	@maya all of them" "$(without_bare_path_comments "$(printf 'b\tmaya\t@maya all of them\n')")"
+eq "the readers of the drive issue drop a bare path" "4" "$(grep -c 'without_bare_path_comments' "$root/scripts/drive/approval.sh" "$root/scripts/drive/work-requests.sh" "$root/scripts/drive/answers.sh" "$root/scripts/drive/plan-read-lib.sh" | awk -F: '{ s += $2 } END { print s }')"
+eq "the skill posts from a file through comment.sh, never a hand-written gh call" "1" "$(grep -c 'scripts/drive/comment.sh' "$root/skills/project-drive/SKILL.md" | awk '$1 > 0 { print 1 }')"
+eq "nothing in the drive posts a body from a file with -f" "0" "$(grep -c -- '-f body=@' "$root"/scripts/drive/*.sh | awk -F: '{ s += $2 } END { print s + 0 }')"
+
+section 'the drive puts priority work first and keeps a hopeless ask-fix quiet (drive)'
+. "$root/scripts/drive/priority-lib.sh"
+. "$root/scripts/drive/ask-gate-lib.sh"
+. "$root/scripts/drive/bundle-lib.sh"
+. "$root/scripts/drive/round-lib.sh"
+. "$root/scripts/drive/plan-read-lib.sh"
+. "$root/scripts/drive/areas-lib.sh"
+. "$root/scripts/drive/area-plan-lib.sh"
+pz_t=$(printf '\t')
+pz_cfg='{"ownerDecisions": ["prices"], "priorities": ["review: it unblocks your reviews", "queue: it makes your rounds faster"], "unitsPerRound": 2}'
+eq "the config's priorities are read in order, each with its words" "review${pz_t}it unblocks your reviews
+queue${pz_t}it makes your rounds faster" "$(drive_priorities "$pz_cfg")"
+eq "no priorities key, no entries" "" "$(drive_priorities '{"unitsPerRound": 2}')"
+pz_areas="review specs/024/ packages/web/src/review-
+queue packages/core/src/queue-
+beds packages/web/src/beds-"
+pz_guess=$(printf '1\tTint the beds\tpackages/web/src/beds-card.ts\n2\tShow the review drawer\tpackages/web/src/review-drawer.ts\n3\tFaster queue\tpackages/core/src/queue-rows.ts\n4\tWater schedule\tpackages/web/src/beds-water.ts\n')
+pz_facts=$(printf 'issue\t1\tTint\tstate:ready\t2026-11-14T00:00:00Z\tb\nissue\t2\tDrawer\tstate:ready\t2026-11-14T00:00:00Z\tb\nissue\t3\tQueue\tstate:ready\t2026-11-14T00:00:00Z\tb\nissue\t4\tWater\tstate:ready,Garden\t2026-11-14T00:00:00Z\tb\n')
+pz_pri=$(priority_issues "$(drive_priorities "$pz_cfg")" "$pz_guess" "$pz_facts" "$pz_areas")
+eq "an issue in a priority area gets its entry's place and words, one outside gets none" "2${pz_t}1${pz_t}it unblocks your reviews
+3${pz_t}2${pz_t}it makes your rounds faster" "$pz_pri"
+eq "a priority can be a label" "4${pz_t}1${pz_t}it matters" "$(priority_issues "$(printf 'garden%sit matters\n' "$pz_t")" "$pz_guess" "$pz_facts" "$pz_areas")"
+eq "no priorities, no lines" "" "$(priority_issues '' "$pz_guess" "$pz_facts" "$pz_areas")"
+pz_units=$(printf 'unit\t1\tTint the beds\t\tpackages/web/src/beds-card.ts\nunit\t4\tWater schedule\t\tpackages/web/src/beds-water.ts\nunit\t3\tFaster queue\t\tpackages/core/src/queue-rows.ts\nunit\t2\tShow the review drawer\t\tpackages/web/src/review-drawer.ts\n')
+pz_round=$(printf 'dispatch 1\tTint\nstop: proposal ready for approval\n')
+eq "with priorities the first slots go to the priority areas, the first entry first, each saying why" "dispatch 2${pz_t}Show the review drawer${pz_t}First: it unblocks your reviews
+dispatch 3${pz_t}Faster queue${pz_t}First: it makes your rounds faster
+defer 2 unit(s): only 2 free runners this round (#1, #4)" "$(apply_units "$pz_round" "$pz_units" 2 yes '' "$pz_pri" | grep -v '^stop:')"
+eq "without priorities the order is the plan's own" "dispatch 1${pz_t}Tint the beds
+dispatch 4${pz_t}Water schedule" "$(apply_units "$pz_round" "$pz_units" 2 yes '' '' | grep '^dispatch')"
+eq "a fix for main still leads a priority" "dispatch 1${pz_t}Tint the beds
+dispatch 2${pz_t}Show the review drawer${pz_t}First: it unblocks your reviews" "$(apply_units "$pz_round" "$pz_units" 2 yes ' 1 ' "$pz_pri" | grep '^dispatch')"
+eq "an approved dispatch that went First is not held behind the running round" "dispatch 2${pz_t}Drawer${pz_t}First: it unblocks your reviews
+held: 1 dispatch goal(s) wait for the running round (#9) to land" "$(hold_dispatch "$(printf 'dispatch 2\tDrawer\tFirst: it unblocks your reviews\ndispatch 3\tBeds\n')" 9)"
+eq "plan.sh reads the config's priorities and hands them to the units" "1 1" "$(grep -c 'drive_priorities "$cfg"' "$root/scripts/drive/plan.sh") $(grep -c 'priority_issues "$priorities"' "$root/scripts/drive/plan.sh")"
+if [ -f "$root/../.claude/project-drive.json" ]; then
+  pz_pri_cfg=$(drive_priorities "$(cat "$root/../.claude/project-drive.json")")
+  eq "this project's config names review and speed work first" "review 1 1" "$(printf '%s\n' "$pz_pri_cfg" | head -n 1 | cut -f1) $(printf '%s\n' "$pz_pri_cfg" | grep -c 'it unblocks your reviews' | awk '$1 > 0 { print 1 }') $(printf '%s\n' "$pz_pri_cfg" | grep -c 'it makes your rounds faster' | awk '$1 > 0 { print 1 }')"
+fi
+if [ -f "$root/../scripts/ci/cross-cutting.txt" ]; then
+  # The tests a screen change can break run on the pull request, and a push is refused when one fails.
+  eq "the field-meaning test runs on a pull request that changes a screen or core" "1" "$(grep -c 'packages/web/src/\*.*packages/web/test/mote-field-card.test.ts' "$root/../scripts/ci/cross-cutting.txt")"
+  eq "the checks job runs the cross-cutting step on a pull request" "1" "$(grep -c 'scripts/ci/cross-cutting.sh' "$root/../.github/workflows/ci.yml")"
+  eq "the pull request template says a suite run counts only if nothing changed after it" "1" "$(grep -c 'counts only if nothing changed after it' "$root/../.github/pull_request_template.md")"
+fi
+# An ask-fix the drive could do nothing about is a hold, not a goal on every tick.
+pz_extra=$(printf 'ask-fix 31\tMeasure the soil probe (not marked waiting: no ask in the shape)\nask-fix 32\tPick the label colour (not marked waiting: no ask in the shape)\n')
+pz_ff=$(printf 'issue\t31\tMeasure the soil probe\tstate:ready\t2026-11-13T20:00:00Z\tb\nissue\t32\tPick the label colour\tstate:ready\t2026-11-13T21:00:00Z\tb\n')
+pz_note=$(mktemp)
+printf '31\t2026-11-13T20:00:00Z\n32\t2026-11-13T18:00:00Z\n' > "$pz_note"
+eq "an ask-fix tried and unchanged becomes a hold, a changed issue is proposed again" "hold 31${pz_t}Measure the soil probe${pz_t}Its open question is not in the ask shape, and the drive could not put it there; it waits for your answer or for the issue to change
+ask-fix 32${pz_t}Pick the label colour (not marked waiting: no ask in the shape)" "$(quiet_ask_fixes "$pz_extra" "$pz_ff" "$pz_note")"
+eq "with no note every ask-fix is a goal" "$pz_extra" "$(quiet_ask_fixes "$pz_extra" "$pz_ff" "$pz_note.none")"
+pz_round2=$(printf 'dispatch 31\tMeasure the soil probe\nstop: proposal ready for approval\n')
+eq "a quiet ask-fix alone leaves nothing to approve, and still keeps the issue out of dispatch" "hold 31${pz_t}Measure the soil probe${pz_t}Its open question is not in the ask shape, and the drive could not put it there; it waits for your answer or for the issue to change
+stop: proposal ready for approval" "$(add_owner_goals "$pz_round2" "$(printf 'ask-fix 31\tMeasure the soil probe (not marked waiting: x)\n')" "$pz_ff" "$pz_note")"
+eq "ask-fix-seen.sh records the issue and its updated time" "1" "$(grep -c 'updated_at' "$root/scripts/drive/ask-fix-seen.sh")"
+eq "plan.sh keeps an ask-fix already tried quiet" "1" "$(grep -c 'add_owner_goals "$round" "$extra" "$facts" .scratch/drive/ask-fix.txt' "$root/scripts/drive/plan.sh")"
+eq "the skill gives the drive its own action for an ask-fix nobody can reach" "1 1" "$(grep -c 'ask-fix-seen.sh' "$root/skills/project-drive/SKILL.md" | awk '$1 > 0 { print 1 }') $(grep -c 'A scheduled tick has no such agent' "$root/skills/project-drive/SKILL.md")"
+# The plan says what it is reading while it reads.
+eq "the plan prints a progress line on stderr, never on stdout" "plan: reading pull request 5" "$(plan_say 'reading pull request 5' 2>&1 >/dev/null)"
+eq "plan.sh says what it has read" "1 1" "$(grep -c 'plan_say "read the board' "$root/scripts/drive/plan.sh") $(grep -c 'plan_say "reading pull request' "$root/scripts/drive/plan.sh")"
+eq "the answers reader is bounded and says why" "1" "$(grep -c 'timeout 90' "$root/scripts/drive/answers.sh")"
 
 # --- end of blocks: the summary, kept in every part.
 eq "no test wrote into the checkout's own queue state" "$queue_picture_before" "$([ "$queue_picture_before" = skipped ] && echo skipped || queue_picture)"

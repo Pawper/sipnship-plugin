@@ -36,6 +36,34 @@ ask_verdicts_for() {
   done
 }
 
+# quiet_ask_fixes EXTRA FACTS FILE
+# An `ask-fix N` the drive already looked at and could do nothing about (FILE, one
+# "N<TAB>UPDATED_AT" per line, written by ask-fix-seen.sh) is not a numbered goal on every
+# tick: while the issue is as it was then (FACTS' updated time for N is the one in FILE) its
+# line becomes a hold saying what it waits on. Another change to the issue proposes it again.
+quiet_ask_fixes() {
+  { [ ! -f "$3" ] || tr -d '\r' < "$3" | sed 's/^/S\t/'; printf '%s\n' "$2" | tr -d '\r' | sed 's/^/F\t/'; printf '%s\n' "$1" | sed 's/^/E\t/'; } | awk -F'\t' '
+    $1 == "S" { seen[$2] = $3 }
+    $1 == "F" && $2 == "issue" { upd[$3] = $6 }
+    $1 == "E" && $2 ~ /^ask-fix [0-9]+$/ && (substr($2, 9) in seen) && seen[substr($2, 9)] == upd[substr($2, 9)] {
+      t = $3; sub(/ \(not marked waiting:.*$/, "", t)
+      printf "hold %s\t%s\tIts open question is not in the ask shape, and the drive could not put it there; it waits for your answer or for the issue to change\n", substr($2, 9), t; next }
+    $1 == "E" && $2 != "" { print substr($0, 3) }'
+}
+
+# add_owner_goals ROUND EXTRA FACTS FILE
+# What the digest adds to ROUND: an issue the proposal puts to the owner is not offered to an agent
+# (owner_waiting_holds), an ask-fix already tried is quiet (quiet_ask_fixes), and the proposal is
+# ready for approval only when a goal besides holds was added.
+add_owner_goals() {
+  ao_round=$(owner_waiting_holds "$1" "$2")
+  ao_extra=$(quiet_ask_fixes "$2" "$3" "$4")
+  # One hold line for an issue: a quiet ask-fix's own wins over the general one.
+  if [ -n "$(printf '%s\n' "$ao_extra" | sed '/^$/d' | grep -v '^hold ')" ]; then
+    printf '%s\n%s\n' "$ao_extra" "$ao_round" | awk '/^hold / { split($0, a, /[ \t]/); if (seen[a[2]]++) next } /^stop: (nothing to propose|everything left waits|work is in flight)/ { print "stop: proposal ready for approval"; next } { print }'
+  else printf '%s\n%s\n' "$ao_extra" "$ao_round" | awk 'NF == 0 { next } /^hold / { split($0, a, /[ \t]/); if (seen[a[2]]++) next } { print }'; fi
+}
+
 # owner_waiting_holds ROUND EXTRA
 # An issue the proposal itself puts to the owner (EXTRA's "ask-fix N" or
 # "mark-waiting N": a question or a step only the owner can do) is not offered

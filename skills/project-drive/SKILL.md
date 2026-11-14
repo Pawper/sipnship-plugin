@@ -153,6 +153,11 @@ when a health note is set (below).
   approve, all, none, or all but some." Then end the round. The person answers on the issue; the next round
   reads it.
 
+Every comment the drive writes from a file goes through `sh "$CLAUDE_PLUGIN_ROOT/scripts/drive/comment.sh" ISSUE
+FILE`, never a hand-written `gh` call: `gh api -f body=@file` posts the file's name, so the script posts with `-F`
+and refuses a missing or empty file and a body that is only a path. The readers of the drive issue skip a
+comment whose whole text is a bare `@path`, so one slip is never read as an answer.
+
 If the proposal is the same as the one already posted and unanswered, do not post it again; end the round in
 one line. If the proposal's only lines are `defer` and `stop`, end in one line.
 
@@ -189,7 +194,8 @@ The goal lines and what each means:
 - **`busy N TITLE` and `hold N TITLE` for the rest.** Every open pull request gets one line: one whose checks are
   still running or whose merge state is not known yet is `busy`, one held for the builder's read is `hold`.
   Nothing is sent to either.
-- **`dispatch N`.** Start an agent for the issue with isolation (a worktree), the model `dispatchModel`
+- **`dispatch N`.** (A `First: why` field on the line says the project's priorities put it first; keep it in
+  the posted proposal: "First: it unblocks your reviews".) Start an agent for the issue with isolation (a worktree), the model `dispatchModel`
   names (or, when it is empty, the model the plugin's agent-model hook allows for its tier), and a brief that
   names the issue, the files it may touch, the rules in CLAUDE.md or AGENTS.md (install right after the
   worktree is made, run every touched test per file, keep test files inside `.scratch/`, merge origin/main
@@ -238,9 +244,14 @@ tab says it waits and on what instead of saying it starts on its own; `status: p
   several rushed issues with each other first (`RUSH_ISSUES="N M" sh "${CLAUDE_PLUGIN_ROOT}/scripts/drive/plan.sh"`
   puts that unit first). Dispatch the unit this tick when no running unit or open pull request touches its area;
   otherwise it leads the next round. Publish the proposal again so the dashboard shows the bundle.
-- **`start-now N by LOGIN`.** Dispatch every unit of the proposed round that shares no area with a pull request
-  still landing, this tick; the rest wait for what they share. Answer `Queue answer: start-now #N: started-now`,
-  or say what it waits on. The dashboard's round-wide button leaves `Queue request: start-now by LOGIN` with no
+- **`start-now N by LOGIN`, N above 0.** The press was on that one issue: start that issue, at once, as its own
+  unit when it shares no area with a running unit or an open pull request (bundled only with what it shares an
+  area with), even when the proposal posted a moment ago did not include it. Never answer it with a new
+  proposal. Answer `Queue answer: start-now #N: started-now`, or, when it waits, say what for (the running
+  unit and area it shares) in that same answer.
+- **`start-now 0 by LOGIN`.** Dispatch every unit of the proposed round that shares no area with a pull request
+  still landing, this tick; the rest wait for what they share. Answer it as below, or say what it waits on.
+  The dashboard's round-wide button leaves `Queue request: start-now by LOGIN` with no
   issue, which prints as `start-now 0 by LOGIN`: it names no rush, so it means exactly this, for every unit,
   and its answer is `Queue answer: start-now #0: started-now` (or what it waits on).
 - **`start-round by LOGIN`.** Answer it once the round started: `Queue answer: start-round #0: started-round`.
@@ -294,6 +305,17 @@ tab says it waits and on what instead of saying it starts on its own; `status: p
   shape is not marked: ask the agent that wrote it to put it in the shape, and mark it then, so Ready holds only
   what can start. The plan checks this itself with the one reader before it proposes `mark-waiting`; an open
   question not in the shape comes out as `ask-fix N` instead, with what to change.
+- **`ask-fix N`.** An open question to the owner that is not in the ask shape. Ask the agent that wrote it to put
+  it in the shape when that agent is reachable (an interactive session). A scheduled tick has no such agent: the
+  agent that wrote it ended long ago. Then the drive acts itself, after one reader confirms what the issue
+  really waits on. A decision becomes an ask with choices, written from the issue's own words (below, "How to
+  write an ask"); a step only the owner can do outside the app (a measurement that needs an administrator, a
+  secret, a runner) becomes an `Instructions:` comment with numbered steps. Post it with `comment.sh`, then set
+  `state:waiting-on-owner` with `scripts/state.sh`. When the reader cannot tell, or the drive cannot write it
+  without guessing, leave the issue and run `sh "${CLAUDE_PLUGIN_ROOT}/scripts/drive/ask-fix-seen.sh" N`: the
+  plan then prints it as an unnumbered `hold` (not a goal) until the issue changes, so it is not proposed again
+  every tick. An issue with an `ask-fix` or `mark-waiting` line is never in a `dispatch` line of the same
+  proposal; it is a `hold` that says it waits on the owner.
 - **`release X.Y.Z`.** Merged plugin changes sit unshipped on the remote's main (the plan fetches it, so a stale checkout proposes the same release). When an open issue already names that release the plan prints an unnumbered `hold` naming it instead: never file a second release issue or open a second bump. File a release issue first
   (`sh scripts/issue-open.sh`, State ready). In a worktree run `sh plugin/scripts/release/bump.sh X.Y.Z`, run
   the plugin suite (`sh tests/run.sh` from `plugin/`), commit, open the pull request with `Closes #N` for that
@@ -456,6 +478,12 @@ first round finds the reply and pursues it.
 - `queueLogGlob`: where the merge queue writes its logs
 - `ownerDecisions`: short phrases naming what is always the owner's, for example `["prices", "policy",
   "holders to ask"]`; a ready issue whose title or body contains one is asked about, never dispatched
+- `priorities`: an ordered list of the kinds of work that go first, after fixes for a failure on main. Each entry
+  is one string, `"NAME: why"`: NAME an area from the project's areas file or a label, and why the words a unit
+  says for going first, for example `["review: it unblocks your reviews", "queue: it makes your rounds faster"]`.
+  The plan fills free slots from these first (the earliest entry first), and prints `First: why` on the unit's
+  `dispatch` line, so say it in the proposal. A unit that went first is not held behind a running round (the
+  plan already holds one that shares an area with it); on approval its dispatch goes ahead beside the round.
 - `unitsPerRound`: the most units one round holds, within `maxAgents` (default 2)
 - `dispatchModel`: the model each unit's agent runs on, for example `"sonnet"` (default empty: the model the
   agent-model hook allows for the issue's tier)

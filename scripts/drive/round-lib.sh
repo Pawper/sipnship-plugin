@@ -275,12 +275,12 @@ work_requests() {
 
 # hold_dispatch GOALS RUNNING
 # While a round runs (RUNNING names its issues), approved dispatch goals
-# wait for it to land; every other goal goes ahead. Prints the goals left,
+# wait for it to land, except a unit that went First (a project priority, with its own area: apply_units); every other goal goes ahead. Prints the goals left,
 # then one "held:" line when any dispatch waited.
 hold_dispatch() {
   if [ -z "$2" ]; then printf '%s\n' "$1"; return 0; fi
   printf '%s\n' "$1" | awk -v r="$2" '
-    /^dispatch / { held++; next }
+    /^dispatch / { if (index($0, "	First: ")) { print; next } held++; next }
     NF > 0 { print }
     END { if (held) { gsub(/ /, ", #", r); print "held: " held " dispatch goal(s) wait for the running round (#" r ") to land" } }'
 }

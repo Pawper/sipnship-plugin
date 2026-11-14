@@ -78,9 +78,12 @@ audit_unless_part_of() {
 read_drive_comments() {
   rdc_n=$(printf '%s\n' "$1" | head -n 1 | cut -f1)
   [ -n "$rdc_n" ] || return 0
+  rdc_all=""
   for rdc_page in $(comment_pages "$(printf '%s\n' "$1" | head -n 1 | cut -f3)"); do
-    gh api "repos/{owner}/{repo}/issues/$rdc_n/comments?per_page=100&page=$rdc_page" --jq '.[] | [.created_at, .user.login, (.body | gsub("\t"; " ") | gsub("\r"; ""))] | @tsv' 2>/dev/null
+    rdc_all="${rdc_all}$(gh api "repos/{owner}/{repo}/issues/$rdc_n/comments?per_page=100&page=$rdc_page" --jq '.[] | [.created_at, .user.login, (.body | gsub("\t"; " ") | gsub("\r"; ""))] | @tsv' 2>/dev/null)
+"
   done
+  without_bare_path_comments "$rdc_all" | sed '/^$/d'  # a body that is only a file name is no comment
 }
 
 # run_failed_checks RUNS_JQ_LINES
@@ -116,3 +119,20 @@ open_batch_pr() {
   [ -f scripts/ci/merge-queue.sh ] || return 0
   gh api "repos/{owner}/{repo}/pulls?state=open&per_page=100" --jq '[.[] | select((.body // "") | (contains("<!-- merge-queue:batch -->") or startswith("One integration run for the pull requests below"))) | .number][0] // empty' 2>/dev/null | tr -d '\r'
 }
+
+# audit_last_line FACTS
+# The audit issue's latest comment as the plan's `audit<TAB>TEXT` line (one gh call), or
+# nothing when there is none or it only says "Part of".
+audit_last_line() {
+  al_issue=$(printf '%s\n' "$1" | awk -F'\t' '$1 == "issue" && ("," $4 ",") ~ /,audit,/ { print $2; exit }')
+  [ -n "$al_issue" ] || return 0
+  al_last=$(gh issue view "$al_issue" --json comments --jq '.comments[-1].body // ""' 2>/dev/null | tr '\n' ' ' | cut -c1-200)
+  [ -n "$al_last" ] || return 0
+  al_last=$(audit_unless_part_of "$al_last")
+  [ -z "$al_last" ] || printf 'audit\t%s\n' "$al_last"
+}
+
+# plan_say TEXT
+# One progress line on stderr as the plan reads, so a tick that watches the clock can tell a
+# slow plan from a hung one: the proposal itself is printed only at the end, on stdout.
+plan_say() { printf 'plan: %s\n' "$1" >&2; }
