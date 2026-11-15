@@ -104,7 +104,7 @@ propose_round() {
 number_proposal() {
   printf '%s\n' "$1" | awk '
     NF == 0 { next }
-    /^(defer |hold |landing |busy |note: |stop:)/ { print; next }
+    /^(defer |hold |held |landing |busy |note: |stop:)/ { print; next }
     { printf "%d. %s\n", ++n, $0 }'
 }
 

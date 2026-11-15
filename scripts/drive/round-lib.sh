@@ -188,7 +188,7 @@ landing_goals() {
       if (goals == 0 && $0 ~ /proposal ready/) { print "stop: work is in flight; nothing to propose until it lands"; next }
       print; next
     }
-    !/^(defer |hold |landing |busy |note: )/ && NF > 0 { goals++ }
+    !/^(defer |hold |held |landing |busy |note: )/ && NF > 0 { goals++ }
     { print }'
 }
 

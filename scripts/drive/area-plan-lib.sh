@@ -9,10 +9,20 @@
 # unit_areas LIST FILES
 # The area names (comma separated) of the comma-separated FILES, by the
 # project's areas LIST (the areas file's text). Nothing when LIST is empty or
-# a file is on no area.
+# a file is on no area. A file on no area is left out and the others still
+# count: round_areas refuses the whole value for one unplaced path, which
+# would leave a unit with no area at all, and a plan that sees none proposes
+# a start the publisher then refuses.
 unit_areas() {
   [ -n "$1" ] && [ -n "$2" ] || return 0
-  printf '%s\n' "$(round_areas "$1" "unit: 1 | areas: $2")" | sed -n 's/^unit: 1 | areas: //p' | tr -d ' '
+  ua_seen=","; ua_out=""
+  for ua_f in $(printf '%s' "$2" | tr ',' ' '); do
+    for ua_a in $(printf '%s\n' "$(round_areas "$1" "unit: 1 | areas: $ua_f")" | sed -n 's/^unit: 1 | areas: //p' | tr -d ' ' | tr ',' ' '); do
+      case "$ua_seen" in *",$ua_a,"*) continue ;; esac
+      ua_seen="$ua_seen$ua_a,"; ua_out="${ua_out}${ua_out:+,}$ua_a"
+    done
+  done
+  printf '%s\n' "$ua_out"
 }
 
 # areas_meet A B

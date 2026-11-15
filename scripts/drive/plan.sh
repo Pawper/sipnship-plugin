@@ -247,6 +247,7 @@ if [ -f scripts/ci/merge-queue.sh ] && [ -n "$green_prs" ]; then
   round=$(plan_landing "$round" "$ages" "$batch_pr" "$snapshot" "$runs")  # batch members and held pull requests never count toward a drain
   round=$(hold_drain_for_main "$round" "$MAINFIX_ISSUES")  # no drain while main fails the test a batch would fail on (rank-lib.sh)
 fi
+round=$(held_green_line "$round" "$snapshot")  # green pull requests held for the builder's read: one line of their own, never landing and never toward a drain
 # Unreleased plugin work, read from the remote's main (release-lib.sh): one release goal, or a hold naming the pull request or issue already making it.
 round=$(add_release "$round" "$(release_proposal "$facts" "$pull_links")")
 [ -z "$extra" ] || round=$(add_owner_goals "$round" "$extra" "$facts" .scratch/drive/ask-fix.txt)  # an ask-fix the drive already tried stays a hold (ask-fix-seen.sh)

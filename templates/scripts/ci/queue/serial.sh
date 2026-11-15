@@ -142,7 +142,7 @@ serial_one() {
 # when it is clean. The branch itself is kept. Quiet when there is none.
 tidy_worktree() {
   [ -n "$1" ] && [ -f "$here/../worktrees.sh" ] || return 0
-  sh "$here/../worktrees.sh" prune --apply --branch "$1" 2>/dev/null | grep '^removed' || true
+  sh "$here/../worktrees.sh" prune --apply --branch "$1" 2>/dev/null | grep -E '^(removed|skipped)' || true
 }
 
 # queue_serial: the --serial mode, run by merge-queue.sh once the lock is taken.

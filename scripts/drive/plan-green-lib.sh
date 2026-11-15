@@ -54,7 +54,7 @@ head_settled_red() {
 # "hold" for a held one, a "busy" for the rest. Other lines pass through.
 say_every_pr() {
   { printf '%s\n' "$1" | sed 's/^/R	/'; printf '%s\n' "$2" | sed 's/^/S	/'; } | tr -d '\r' | awk -F'\t' '
-    $1 == "R" { line[++n] = $2; for (i = 3; i <= NF; i++) line[n] = line[n] "\t" $i; head = $2; if (head ~ /^(merge|merge-batch|fix-pr|set-aside|merge-main|busy|landing|drain|hold) /) { sub(/[:\t].*/, "", head); k = split(head, w, / +/); for (j = 2; j <= k; j++) said[w[j]] = 1 } next }
+    $1 == "R" { line[++n] = $2; for (i = 3; i <= NF; i++) line[n] = line[n] "\t" $i; head = $2; if (head ~ /^(merge|merge-batch|fix-pr|set-aside|merge-main|busy|landing|drain|hold|held) /) { sub(/[:\t].*/, "", head); k = split(head, w, / +/); for (j = 2; j <= k; j++) said[w[j]] = 1 } next }
     $1 == "S" && $2 == "pr" && !($3 in said) {
       if ($9 == "yes") extra = extra "hold " $3 "\t" $4 "\tIts pull request is held for your read; nothing is sent to it\n"
       else extra = extra "busy " $3 "\t" $4 "\t" (($5 == "pending") ? "its checks are still running" : "GitHub has not said yet whether it can merge") "\n"
@@ -63,4 +63,19 @@ say_every_pr() {
       for (i = 1; i <= n; i++) { if (line[i] ~ /^stop:/ && !done) { printf "%s", extra; done = 1 } print line[i] }
       if (!done) printf "%s", extra
     }'
+}
+
+# held_green_line ROUND SNAPSHOT
+# A green pull request held for the builder's read (the queue:hold label or a
+# Queue: hold line) is never landed by the queue, so it is neither on the
+# "landing" line nor counted toward a drain. It still shows, on one
+# unnumbered line before the stop line: "held 41 42: green, waiting for the
+# builder's read". Nothing is added when none is green and held.
+held_green_line() {
+  hg_nums=$(printf '%s\n' "$2" | tr -d '\r' | awk -F'\t' '$1 == "pr" && $4 == "green" && $8 == "yes" { printf "%s ", $2 }' | sed 's/ $//')
+  if [ -z "$hg_nums" ]; then printf '%s\n' "$1"; return 0; fi
+  printf '%s\n' "$1" | awk -v line="held $hg_nums: green, waiting for the builder's read" '
+    /^stop:/ && !done { print line; done = 1 }
+    { print }
+    END { if (!done) print line }'
 }

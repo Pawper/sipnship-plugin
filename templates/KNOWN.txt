@@ -177,6 +177,7 @@ scripts/ci/RUNNERS.md d5646a8456981d41f04f23f2cb0587c2e0058c0d
 scripts/ci/RUNNERS.md fec74088e19aef259de09805f9ab225b2e65bf96
 scripts/ci/add-runner.ps1 049eac842370a86d2d27f10434b07b43cf826696
 scripts/ci/add-runner.ps1 06ca6c99639b12e03efa3a17540400881d827dc7
+scripts/ci/add-runner.ps1 372b863bdf5a0126c849736448a5b9618793b72e
 scripts/ci/add-runner.ps1 4888e2e3acdc0ad3e0373b8a87f7119b0d5d4df1
 scripts/ci/add-runner.ps1 594a0847ecd0f902ebfa77eb13e84e44dcb0a0d3
 scripts/ci/add-runner.ps1 721f00bcf6ab79a6d8a9aaa2ca14317722b42265
@@ -574,6 +575,7 @@ scripts/ci/queue/rush.sh b8d6eb39edebd05488629643ee2eecea12ed9a3a
 scripts/ci/queue/serial.sh 04dacd52db5a2bcf2634bdc6ebd54c4209668a2b
 scripts/ci/queue/serial.sh 309361e6465f70ac565635eaf5b2be2b5c985bd3
 scripts/ci/queue/serial.sh 87e72347dacfdab43be8481dc44f096c09b895dc
+scripts/ci/queue/serial.sh d6109b02032773e23d7b980ba366c5c2bc1f6c80
 scripts/ci/queue/serial.sh f28a33c1f8e0b04047cae76aa20a3368788906cc
 scripts/ci/queue/serial.sh f67518a0dd6a77254f79d9c5e3a0410bc8e9cfec
 scripts/ci/queue/settle.sh 02d64c5f769241e3761e22f700f7dd1323b8fea8

@@ -91,6 +91,14 @@ function Grant-WorktreesAccess([string]$Dir, [bool]$Dry) {
     return
   }
   New-Item -ItemType Directory -Force -Path $Dir | Out-Null
+  # Say before the slow part what is about to happen: the permission is written onto every file of every
+  # worktree's installed packages, so a folder with many worktrees is quiet for minutes and looks stuck.
+  $found = @(Get-ChildItem -LiteralPath $Dir -Directory -ErrorAction SilentlyContinue).Count
+  if ($found -gt 5) {
+    Write-Output "Found $found worktrees in $Dir. Giving the runners access may take a few minutes with this many; it is working, not stuck. Worktrees whose pull request has ended can be cleared first with: sh scripts/worktrees.sh prune --apply"
+  } else {
+    Write-Output "Found $found worktrees in $Dir; giving the runners access now."
+  }
   & icacls $Dir /grant "${ServiceSid}:(OI)(CI)M" | Out-Null
   if ($LASTEXITCODE -ne 0) { throw "icacls could not grant access to $Dir (exit code $LASTEXITCODE)" }
   Write-Output "Network Service can now make worktrees in $Dir (modify access, this folder only)."

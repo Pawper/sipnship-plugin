@@ -557,6 +557,9 @@ rename (1)" "$(leftover_summary "$(printf 'main\t0 0\nretries\t3 12\nparser\t0 4
 eq "nothing ahead, nothing said" "" "$(leftover_summary "$(printf 'main\t0 0\nparser\t0 4\n')" 5)"
 porcelain=$(cat "$fx/worktrees.porcelain")
 eq "worktrees counted with their folders, the agent runtime's apart" "Worktrees: 2 besides the main checkout, in 1 folder, and 2 made by Claude Code for dispatched agents in .claude/worktrees." "$(worktree_summary "$porcelain")"
+wt_many=$(printf 'worktree /repo\nbranch refs/heads/main\n'; i=1; while [ $i -le 12 ]; do printf '\nworktree /repo-wt/water-%s\nbranch refs/heads/water-%s\n' "$i" "$i"; i=$((i + 1)); done)
+eq "a backlog of worktrees is named with the one command that clears the ended ones" "Worktrees: 12 besides the main checkout, in 1 folder. That is a backlog: worktrees go when their pull request ends, and the ended ones clear with: sh scripts/worktrees.sh prune --apply" "$(worktree_summary "$wt_many")"
+eq "a few worktrees are no backlog" "Worktrees: 2 besides the main checkout, in 1 folder, and 2 made by Claude Code for dispatched agents in .claude/worktrees." "$(worktree_summary "$porcelain")"
 eq "only the main checkout, nothing said" "" "$(worktree_summary 'worktree /repo
 branch refs/heads/main')"
 eq "a cached line read under a minute ago" "as of just now" "$(cache_age 1000 1030)"
@@ -4486,6 +4489,8 @@ eq "add-runner -Count takes one to twenty and not with -Name" "1 1 1" "$(grep -c
 eq "-Count names runners by the next free names, counting GitHub's list and the folders under the root" "1 1 1" "$(grep -c 'function Get-FreeRunnerNames' "$root/templates/scripts/ci/add-runner.ps1") $(grep -c 'actions/runners" --paginate' "$root/templates/scripts/ci/add-runner.ps1") $(grep -c 'Get-ChildItem -Path \$Root -Directory' "$root/templates/scripts/ci/add-runner.ps1")"
 eq "all the runners share one elevated run and one exclusion, set after the last is installed" "1 1" "$(grep -c '^foreach (\$runnerName in \$names)' "$root/templates/scripts/ci/add-runner.ps1") $(grep -c '^if (\$installed.Count -gt 0) {' "$root/templates/scripts/ci/add-runner.ps1")"
 eq "the worktrees grant happens once, inside that same elevated run" "1 1" "$(grep -c 'Grant-WorktreesAccess (Get-WorktreesDir' "$root/templates/scripts/ci/add-runner.ps1") $(awk '/^if \(\$installed.Count -gt 0\) \{/{b=1} b&&/Grant-WorktreesAccess \(Get-WorktreesDir/{n++} /^}/{b=0} END{print n+0}' "$root/templates/scripts/ci/add-runner.ps1")"
+eq "the worktrees grant says how many worktrees it found and that it may take minutes, before it starts" "1 1" "$(awk '/Found \$found worktrees in \$Dir\. Giving the runners access may take a few minutes/ { a++ } /& icacls \$Dir \/grant/ { if (a == 1) b++ } END { print a + 0, b + 0 }' "$root/templates/scripts/ci/add-runner.ps1")"
+eq "the queue's tidy says when a worktree could not be removed, not only when one was" "1" "$(grep -c "grep -E '^(removed|skipped)' || true" "$root/templates/scripts/ci/queue/serial.sh")"
 eq "a runner that failed is named after the others keep their exclusion" "1" "$(grep -c 'Runner \$runnerName was not added' "$root/templates/scripts/ci/add-runner.ps1")"
 eq "the brief names an old runners key once" "1|" "$(brief_runner_key_line '{ "runners": 3 }' | grep -c 'no longer read')|$(brief_runner_key_line '{}')"
 eq "the brief reads no count from the file" "0" "$(cat "$root"/hooks/scripts/session-brief*.sh | grep -c 'runner_count')"
@@ -5849,6 +5854,24 @@ eq "units in different areas stay apart" "2" "$(area_units "$da_list" "$(printf 
 eq "with no areas list the lines pass unchanged" "unit${da_t}402${da_t}Water${da_t}${da_t}x" "$(area_units '' "$(printf 'unit\t402\tWater\t\tx\n')" "$(printf '301\twatering\n')" '')"
 eq "a hold line passes through" "hold${da_t}9${da_t}Seeds${da_t}After: Pots" "$(area_units "$da_list" "$(printf 'hold\t9\tSeeds\tAfter: Pots\n')" '' '')"
 eq "plan.sh reads the running units' areas and plans by area" "1 1" "$(grep -c 'running_units "' "$root/scripts/drive/plan.sh") $(grep -c 'area_units "$areas_text"' "$root/scripts/drive/plan.sh")"
+# A file on no area never hides the areas of the others, so a unit beside a running unit is a hold, not a start the publisher refuses (areas file: Maya's rooftop-garden app).
+eq "a file on no area is left out, the others still name their areas" "watering,beds" "$(unit_areas "$da_list" 'src/water/timer.ts,notes/loose.txt,src/beds/tint.ts')"
+eq "files on no area at all name none" "" "$(unit_areas "$da_list" 'notes/loose.txt')"
+eq "two ready issues, one with a file on no area, beside a running unit: two holds, no start" "hold${da_t}402${da_t}Water the beds on a timer${da_t}After: Water the beds
+hold${da_t}404${da_t}Fix the schedule page${da_t}After: Water the beds" "$(area_units "$da_list" "$(printf 'unit\t402\tWater the beds on a timer\t\tnotes/loose.txt,src/water/timer.ts\nunit\t404\tFix the schedule page\t\tsrc/schedule.ts\n')" "$(printf '301\twatering\n')" "$da_titles")"
+eq "two ready issues in one area with none running are one bundle" "1" "$(area_units "$da_list" "$(printf 'unit\t402\tWater the beds on a timer\t\tnotes/loose.txt,src/water/timer.ts\nunit\t404\tFix the schedule page\t\tsrc/schedule.ts\n')" '' "$da_titles" | grep -c '^unit')"
+# A green pull request held for the builder's read is not landing and never counts toward a drain (spec 010).
+. "$root/scripts/drive/plan-green-lib.sh"
+hl_snap=$(printf 'pr\t41\tWater the beds\tgreen\tmergeable\tapp\t0\tno\tno\tno\tnone\npr\t42\tTint the beds\tgreen\tmergeable\tapp\t0\tyes\tno\tno\tnone\n')
+hl_round=$(propose_round "$hl_snap" 2 4 2)
+hl_all=$(held_green_line "$(landing_goals "$hl_round" "$(printf '41\t3\n')" 15 '' '' 42)" "$hl_snap")
+eq "a free green pull request is landing; the held one is not on that line" "landing 41: green; the queue lands them, and a drain is proposed if they sit 15 minutes" "$(printf '%s\n' "$hl_all" | grep '^landing')"
+eq "the held green pull request has a line of its own" "held 42: green, waiting for the builder's read" "$(printf '%s\n' "$hl_all" | grep '^held')"
+hl_only=$(propose_round "$(printf 'pr\t42\tTint the beds\tgreen\tmergeable\tapp\t0\tyes\tno\tno\tnone\n')" 2 4 2)
+hl_only=$(landing_goals "$hl_only" "$(printf '42\t40\n')" 15 '' '' 42)
+eq "only held ones: no drain is proposed however long they sit" "0" "$(held_green_line "$hl_only" "$(printf 'pr\t42\tTint the beds\tgreen\tmergeable\tapp\t0\tyes\tno\tno\tnone\n')" | grep -c '^drain')"
+eq "a held pull request is named once, as held, never as busy or hold" "1 0" "$(say_every_pr "$hl_all" "$hl_snap" | grep -c '^held') $(say_every_pr "$hl_all" "$hl_snap" | grep -c '^hold 42')"
+eq "the held line is information, not a numbered goal" "held 42: green, waiting for the builder's read" "$(number_proposal "$hl_all" | grep '^held')"
 # A deferred issue in a running unit's area waits on that unit.
 da_round=$(printf 'dispatch 1\tWater the beds\ndefer 2 unit(s): only 1 free runner this round (#402, #403 #404)\nstop: proposal ready\n')
 eq "a deferred unit in a running unit's area is held after that unit; the rest wait for a runner" "hold: 402 | after: 301 | why: Its area, watering, is owned by the running unit
@@ -6197,6 +6220,7 @@ worktree C:/c/y")"
 eq "the script says ok when the check is off" "ok" "$(WORKTREE_ACCESS_CHECK=off sh "$root/scripts/drive/worktree-access.sh")"
 eq "approval.sh holds the dispatches through the check" "1" "$(grep -c 'hold_no_worktree "$approved"' "$root/scripts/drive/approval.sh")"
 eq "the skill tells the drive to check first" "1" "$(grep -c 'Check the worktrees folder before any agent starts' "$root/skills/project-drive/SKILL.md")"
+eq "the skill names the held line and the tidy of ended worktrees" "1 1" "$(grep -c "held N N: green, waiting for the builder's read" "$root/skills/project-drive/SKILL.md") $(grep -c 'Tidy ended worktrees without being asked' "$root/skills/project-drive/SKILL.md")"
 
 # --- end of blocks: the summary, kept in every part.
 eq "no test wrote into the checkout's own queue state" "$queue_picture_before" "$([ "$queue_picture_before" = skipped ] && echo skipped || queue_picture)"

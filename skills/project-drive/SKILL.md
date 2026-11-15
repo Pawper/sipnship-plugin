@@ -199,6 +199,13 @@ The goal lines and what each means:
 - **`busy N TITLE` and `hold N TITLE` for the rest.** Every open pull request gets one line: one whose checks are
   still running or whose merge state is not known yet is `busy`, one held for the builder's read is `hold`.
   Nothing is sent to either.
+- **`held N N: green, waiting for the builder's read`.** A green pull request held for the builder (the
+  `queue:hold` label or a `Queue: hold` line) is never landed by the queue, so it is off the `landing` line and out
+  of the count that proposes a `drain`; this one unnumbered line keeps it in the proposal. Nothing is sent to it.
+- **Tidy ended worktrees without being asked.** When the brief names a backlog of worktrees (more than ten besides
+  the main checkout), run `sh scripts/worktrees.sh prune --apply` once in the round's tidying step. It removes only
+  clean worktrees whose pull request ended, keeps every commit in its branch, and names each one it skipped and why;
+  it never deletes a folder with uncommitted files, and the drive does not remove anything by hand.
 - **Check the worktrees folder before any agent starts.** A tick woken on a self-hosted runner runs as the runner's
   service account, which may not reach the folder worktrees live in, and every agent it started would fail at its
   first step. `approval.sh` runs `sh "$CLAUDE_PLUGIN_ROOT/scripts/drive/worktree-access.sh"` and drops `dispatch`,

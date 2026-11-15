@@ -154,7 +154,7 @@ worktree_summary() {
       printf "Worktrees: %d besides the main checkout, in %d %s", extra - agent, np, (np == 1 ? "folder" : "folders")
       if (agent > 0) printf ", and %d made by Claude Code for dispatched agents in .claude/worktrees", agent
       printf "."
-      if (np > 1 || extra > 20) printf " Tidy with: sh scripts/worktrees.sh prune"
+      if (extra - agent > 10) printf " That is a backlog: worktrees go when their pull request ends, and the ended ones clear with: sh scripts/worktrees.sh prune --apply"; else if (np > 1 || extra > 20) printf " Tidy with: sh scripts/worktrees.sh prune"
       printf "\n"
     }'
 }
