@@ -37,7 +37,7 @@ finds it by that line:
 Handoff, Thursday 2026-11-05, 4:10 PM
 What landed: ...one line each, by what a person gets
 What is open and where it stands: ...each pull request or task, whose turn it is
-What waits on the owner: ...each, with the question
+What waits on the owner: ...each, with the question in their words (what happened, the decision about their project)
 Standing rules in force: ...for example a usage limit, a freeze, a hold, until when
 Still running: ...each agent, what it is doing, what is left of it
 ```

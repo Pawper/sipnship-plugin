@@ -40,6 +40,7 @@ here=$(dirname "$0")
 . "$here/priority-lib.sh"
 . "$here/held-round-lib.sh"
 . "$here/ask-gate-lib.sh"
+. "$here/../../templates/scripts/ci/ask-lib.sh"  # held_ask for the stale issues' asks, from the plugin's own copy
 . "$here/stale-lib.sh"
 . "$here/release-lib.sh"
 . "$here/deploy-goal-lib.sh"
@@ -170,6 +171,8 @@ if [ -f .scratch/board/digest.tsv ] && [ -f "$here/../board/board-lib.sh" ]; the
 else
   note="digest: none yet; run /project-status so the proposal reads bodies and comments, not only labels"
 fi
+# An issue waiting on the builder with no question on it is the drive's to set right, never the builder's (ask-gate-lib.sh).
+extra=$(printf '%s\n%s\n' "$extra" "$(unasked_goals "$facts" "$here/../../templates/scripts/ci/ask-audit.sh")" | sed '/^$/d')
 
 # How many agents may work at once is what GitHub's registered runners say: online and not busy, less one kept for the queue.
 listing=$(gh api 'repos/{owner}/{repo}/actions/runners?per_page=100' --jq '.runners[] | [.status, (.busy | tostring)] | @tsv' 2>/dev/null | tr -d '\r')

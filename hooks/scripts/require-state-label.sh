@@ -2,12 +2,14 @@
 # PreToolUse hook for Bash: refuses `gh issue create` without a State label.
 # The rule it enforces: every issue carries its state from the moment it is
 # filed, so the board and the audits can trust the label.
-# It holds a second rule: a decision gives choices and recommends exactly one.
-# Setting an issue to waiting on the owner is refused while the ask it was just
-# left with gives choices and none, or more than one, is recommended, is a
-# question with no choices at all, or is a step the owner does outside the app
-# dressed as a choice between doing it and setting it aside. A comment that
-# starts "Instructions:" is steps, not a decision, and passes without choices.
+# It holds a second rule: an issue waits on the owner only with an ask they can
+# answer. Setting an issue to waiting on the owner is refused when no ask was
+# left on it in the last ten minutes, or while that ask gives choices and none,
+# or more than one, is recommended, is a question with no choices at all, is a
+# step the owner does outside the app dressed as a choice between doing it and
+# setting it aside, offers reading as a choice, or has words a builder who is
+# not technical cannot answer as written (ask_check). A comment that starts
+# "Instructions:" is steps, not a decision, and passes without choices.
 here=$(dirname "$0")
 . "$here/lib.sh"
 . "$here/refusal-log.sh"
@@ -28,7 +30,7 @@ waiting=""
 if [ -n "$waiting" ] && rule_on ask-recommends-one; then
   fix=$(ask_fix "$(ask_of_issue "$waiting")")
   if [ -n "$fix" ]; then
-    printf '%s\n' "Blocked setting #$waiting to waiting on the owner, because $fix. Edit that comment (or post the ask again, fixed), then set the state again. The project-drive skill's \"How to write an ask\" shows the shape." >&2
+    printf '%s\n' "Blocked setting #$waiting to waiting on the owner, because $fix. Then set the state again. The project-drive skill's \"How to write an ask\" shows the shape, with a bad ask and its rewrite." >&2
     exit 2
   fi
 elif [ -n "$waiting" ]; then

@@ -114,8 +114,26 @@ unit_issues() {
 ask_verdicts_for() {
   for av_n in $(printf '%s\n' "$1" | sed -n 's/^mark-waiting \([0-9]*\).*/\1/p'); do
     av_c=$(gh api "repos/{owner}/{repo}/issues/$av_n/comments?per_page=100" --jq "[.[].body] | reverse | join(\"\\n$ASK_NEXT\\n\")" 2>/dev/null | tr -d '\r')
-    printf '%s\t%s\n' "$av_n" "$(printf '%s\n' "$av_c" | ask_verdict)"
+    printf '%s\t%s\n' "$av_n" "$(printf '%s\n' "$av_c" | ask_check)"
   done
+}
+
+# unasked_goals FACTS AUDIT
+# An issue waiting on the owner with no ask in force (AUDIT is ask-audit.sh,
+# read as the dashboard reads it: no ask or Instructions comment since the State
+# was set or in the ten minutes before) is the drive's to set right, never the
+# builder's: one "unasked N<TAB>TITLE (...)" goal each. REST, a few calls per
+# waiting issue; nothing when none waits.
+unasked_goals() {
+  ug_tab=$(printf '\t')
+  ug_rows=$(printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' '$1 == "issue" { print $2 "\t" $4 "\t" $3 }' | while IFS="$ug_tab" read -r ug_n ug_l ug_t; do
+    [ "$(state_of_labels "$ug_l")" = waiting-on-owner ] && printf '%s\t%s\n' "$ug_n" "$ug_t"; done)
+  [ -n "$ug_rows" ] && [ -f "$2" ] || return 0
+  ug_none=$(sh "$2" --verdicts $(printf '%s\n' "$ug_rows" | cut -f1) | awk -F'\t' '$2 == "none" { print $1 }')
+  for ug_n in $ug_none; do
+    printf 'unasked %s\t%s (waits on you, but no question is on it for you)\n' "$ug_n" "$(printf '%s\n' "$ug_rows" | awk -F'\t' -v n="$ug_n" '$1 == n { print $2; exit }')"
+  done
+  return 0
 }
 
 # quiet_ask_fixes EXTRA FACTS FILE

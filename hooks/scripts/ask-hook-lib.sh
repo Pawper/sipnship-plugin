@@ -51,15 +51,16 @@ waiting_on_owner_issue() {
 }
 
 # ask_of_issue NUMBER
-# The verdict of the ask an issue would be shown with if it were set to
+# ask_check's word for the ask an issue would be shown with if it were set to
 # waiting on the owner now: the newest comment that carries an ask, posted in
 # the last ten minutes (whoever sets the state comments first, and an older
-# comment is not this wait's reason). One REST call. Prints nothing when
-# GitHub cannot be asked, so a hook never refuses on a failed read.
+# comment is not this wait's reason); "none" when there is none, which is
+# refused too. One REST call. Prints nothing when GitHub cannot be asked, so a
+# hook never refuses on a failed read.
 ask_of_issue() {
   # Comments touched in the last ten minutes, so a long issue's newest are read in one page.
   ao_since=$(date -u -d '10 minutes ago' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -v-10M +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || true)
   ao_out=$(gh api "repos/{owner}/{repo}/issues/$1/comments?per_page=100${ao_since:+&since=$ao_since}" \
     --jq "[.[] | select((.created_at | fromdateiso8601) >= (now - 600))] | reverse | .[] | .body, \"$ASK_NEXT\"" 2>/dev/null) || return 0
-  printf '%s\n' "$ao_out" | ask_verdict
+  printf '%s\n' "$ao_out" | ask_check
 }

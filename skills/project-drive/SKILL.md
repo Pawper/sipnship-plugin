@@ -232,7 +232,9 @@ The goal lines and what each means:
   names (or, when it is empty, the model the plugin's agent-model hook allows for its tier), and a brief that
   names the issue, the files it may touch, the rules in CLAUDE.md or AGENTS.md (install right after the
   worktree is made, run every touched test per file, keep test files inside `.scratch/`, merge origin/main
-  before pushing, never run the queue or re-run CI), and the pull request it must open with `Closes #N`.
+  before pushing, never run the queue or re-run CI), the pull request it must open with `Closes #N`, and, when
+  it must ask the owner, to write the ask for a builder who is not technical as "How to write an ask" below
+  says (what happened, the question about their project, short-named choices, the reason as their benefit).
   Dispatch every unit of the round at once. Set the issue to `state:in-progress` with `scripts/state.sh`.
   Keep the brief in a file and the prompt short: name the issue, the worktree and the pull request to open, and
   point at the brief file ("read your brief first and follow it"). The agent-model hook reads such a prompt as a
@@ -311,7 +313,8 @@ tab says it waits and on what instead of saying it starts on its own; `status: p
   ordinary verb. A match is a candidate, not a decision: read the issue with one reader first, and when it does
   not leave that decision open, add its number to `.scratch/drive/no-ask.txt` (one `N` or `N<TAB>why` a line) so
   the plan does not propose it again, and start it as an ordinary ready issue. Otherwise put one comment
-  on it with the question, the options and a recommendation, and set `state:waiting-on-owner`. This is a
+  on it written for the builder as "How to write an ask" says (what happened, the question about their
+  project, short-named choices, the recommendation's reason as their benefit), and set `state:waiting-on-owner`. This is a
   proposal line so the person sees it, but it is the one goal that may run without approval, since it asks
   rather than acts. Ask once, then wait: the issue leaves the ready list and is never asked again until the
   owner answers (`set-ready`). The same goes for an issue that turns out, on reading it in full, to need a
@@ -334,7 +337,9 @@ tab says it waits and on what instead of saying it starts on its own; `status: p
 - **`set-ready N`.** The digest says the owner has answered an issue still labeled waiting on owner. Confirm it
   by having one reader re-read that issue, then set it to ready with `scripts/state.sh`.
 - **`mark-waiting N`.** The digest says a question to the owner is open on an issue labeled ready or in
-  progress. Confirm the same way, then set `state:waiting-on-owner`. When the reader finds no open question
+  progress. Confirm the same way; when the ask is more than ten minutes old, post it again (rewritten for the
+  builder, below, when it is not already), then set `state:waiting-on-owner`: an older ask is not read as the
+  wait's reason, and the hook refuses the State without a fresh one. When the reader finds no open question
   (a design note or a list "to settle in the spec" is not an ask), leave the State alone and run
   `sh "${CLAUDE_PLUGIN_ROOT}/scripts/board/digest.sh" no-question N`, which records it in the digest, so the same
   `mark-waiting` is not proposed on every tick until the issue changes. Like `ask-owner`, it runs without approval,
@@ -359,6 +364,12 @@ tab says it waits and on what instead of saying it starts on its own; `status: p
   every tick. When the one reader finds the comment is only a note of what was left, not a question, run
   the digest's `no-question` word for that issue (as for `mark-waiting`) and leave the issue as it is. An issue with an `ask-fix` or `mark-waiting` line is never in a `dispatch` line of the same
   proposal; it is a `hold` that says it waits on the owner.
+- **`unasked N`.** The issue is set to waiting on the owner, but no ask or `Instructions:` comment is in force
+  on it (none was left since the State was set or in the ten minutes before), so the builder's card has nothing
+  to answer. It is the drive's to set right on this tick, never the builder's, and it runs without approval.
+  Have one reader say what the issue waits on. When a decision or an owner's step is open, write it (as for
+  `ask-fix`, below in "How to write an ask") and post it with `comment.sh`; the issue keeps its State. Otherwise
+  set it back to Ready with `scripts/state.sh`, with a one-line comment saying nothing waits on the builder.
 - **`release X.Y.Z`.** Merged plugin changes sit unshipped on the remote's main (the plan fetches it, so a stale checkout proposes the same release). When an open issue already names that release the plan prints an unnumbered `hold` naming it instead: never file a second release issue or open a second bump. File a release issue first
   (`sh scripts/issue-open.sh`, State ready). In a worktree run `sh plugin/scripts/release/bump.sh X.Y.Z`, run
   the plugin suite (`sh tests/run.sh` from `plugin/`), commit, open the pull request with `Closes #N` for that
@@ -389,34 +400,76 @@ Three kinds, three moves, never a fourth.
    round. Widening is a new proposal, next round.
 
 **How to write an ask.** Whoever sets `state:waiting-on-owner`, the drive or a coordinator, leaves one comment
-the dashboard reads onto the issue's Needs you card. Context first, as much as the owner needs; then, at the
-end, the ask in this shape:
+the dashboard reads onto the issue's Needs you card. Its reader is the builder the mission names: someone who
+is not yet technical, who knows their project and not our machinery. Write it for them, in this order:
+
+1. **What happened**, in one or two plain sentences about their project: "A change that broke the watering
+   schedule was added to your app, and nothing warned you." Not the agent's working words ("the skip
+   detection", "both gaps").
+2. **The question**, as a decision about their project, not about our tools: "Should every change to the
+   watering schedule be tested before it is added?", not "Should the CI template close both gaps?".
+3. **The choices**, two to four. Each starts with a short name of a few words, then a colon, then what it
+   means for them: what they get, what it costs in time or money, what stays as it is.
+4. **The recommendation**: end the one you would pick with "Recommended" and its reason as a benefit to them
+   ("Recommended, so a broken schedule never reaches your beds"), never where something is written ("since
+   the issue's Done when line asks for it").
+
+A term such as CI, spec or pull request is allowed, never forbidden: make it easier where it stands ("a pull
+request, the proposed change with what it does") and link it when it names something they can open. Never leave
+it bare, and never put a script name, file name, label name or path in the question or a choice's name.
+
+A bad ask, written in our words (the builder cannot tell what happened, what each choice changes for them or
+what it costs; the reason points at a line in an issue; two choices have no short name, so the card cuts them):
 
 ```
-Keep a year of watering history, or ninety days?
-1. A year: older entries move to the archive each night. Recommended.
-2. Ninety days: older entries are dropped, and the spec changes to match.
+Should the watering job close both gaps at once?
+1. Yes, fix both: tighten the skip detection so the moisture job never skips when the sensor source changed, and make the nightly run open beds-red. Recommended, since the issue's own "Done when" line asks for exactly this.
+2. Only add the automatic beds-red filing for a red nightly run; leave the skip detection as it is for now.
+3. Leave the watering template alone for now; treat Saturday's case as a one-off and do nothing more.
 ```
+
+The same ask, rewritten for the builder:
+
+```
+On Saturday a change that broke the watering schedule was added to the garden app, and nothing warned you: the test that would have caught it was skipped. It showed up an hour later, when the nightly run failed.
+
+Should every change to the watering schedule be tested before it is added?
+1. Test every change first: a broken change never gets in, and each change takes about five more minutes to land. Recommended, so a broken schedule never reaches your beds.
+2. Warn me within minutes: changes land as fast as now, and you hear the moment one breaks something.
+3. Keep it as it is: nothing changes, and a break like Saturday's can happen again.
+```
+
+Both are fixtures of the check (the plugin's `tests/fixtures/ask-plain/`). The shape, which the card reads:
 
 - The question is one line ending in a question mark, right before the choices. Name the decision in it:
   "Keep a year of watering history, or ninety days?", not "Which would you like?". The card shows that line
   alone, cut at 160 characters.
 - The choices are a numbered list starting at 1, right after the question, no more than four. Start each with
-  a short name, then a colon, then the detail: the card shows the name, cut at 80 characters.
+  a short name, then a colon, then what it means for them: the card shows the name whole only up to 80
+  characters, and a choice with no colon is named by its first sentence, so a long one is cut mid-sentence.
 - Every ask with choices recommends exactly one, however many there are: end the one you would pick with
-  "Recommended." and a short reason why ("Recommended, since the spec you approved says a year."). The card
-  marks it in words and always shows it, even past the fourth choice; an ask with none recommended says "No
-  choice was recommended." on the card. Setting `state:waiting-on-owner` is refused while the ask left in
-  the last ten minutes gives choices and none, or more than one, is recommended, or is a question with no
-  choices (the `require-state-label` hook; the nightly audit names any that got through another way). Fix the
-  comment, then set the state.
-- Reading is never a choice. An ask about something to read (a spec, a mock, a held change) names the file
-  or files to read, with a link that opens it, and its choices are the outcomes that follow the read:
-  "Approve it as written", "Ask for changes" (the builder says what, and the agent takes it from there), and
-  any real alternative ("Split it: the spec waits for your read, the rest lands now"). Never "Read it first",
-  "Look at it later" or "Decide later" as a choice: the builder is in the drawer to read it, and a choice
-  that only puts the decision off decides nothing. The hook and the audit refuse such an ask, saying what
-  to write instead. An open ask in the old shape is rewritten once, keeping its place in line.
+  "Recommended." and its reason as a benefit ("Recommended, so the watering log covers a whole season."). The
+  card marks it in words and always shows it, even past the fourth choice; an ask with none recommended says
+  "No choice was recommended." on the card.
+- Setting `state:waiting-on-owner` is refused when no ask or `Instructions:` comment was left in the last ten
+  minutes (the builder would find nothing to answer), and while that ask gives choices and none, or more than
+  one, is recommended, is a question with no choices, offers reading as a choice, has a choice whose short name
+  the card would cut, gives a reason that points at an issue's section, a file or a number, or carries a script,
+  file, label or path in its question or a choice's name (the `require-state-label` hook, in all three forms:
+  `gh issue edit`, the REST labels call and `sh scripts/state.sh`; the nightly audit names any that got there
+  another way, and the plan proposes them as `unasked N`). Each refusal says how to fix the ask. Fix the
+  comment, then set the state. Whether the words read plainly beyond these is your judgement: read the ask
+  once as the builder before you post it.
+- Reading is never a choice. An ask about something to read (a spec, a mock, a held change) names it by its
+  title, with a link that opens it, and its choices are the outcomes that follow the read: "Approve it",
+  "Ask for changes" (the builder says what, and the agent takes it from there), and any real alternative
+  ("Split it: the spec waits for your read, the rest lands now"). No choice reads: never "Read it first",
+  "Read it and let it land", "Look at it later" or "Decide later": the builder is in the drawer to read it,
+  and a choice that only puts the decision off decides nothing. The hook and the audit refuse such an ask,
+  saying what to write instead. An open ask in an old shape is rewritten once, keeping its place in line.
+- The scripts' own ask about a held change (the queue's and the plan's, `held_ask` in `scripts/ci/ask-lib.sh`)
+  is written this way and goes on the issue the held pull request closes, once; never on an issue it only
+  names or one that was In progress in the same round.
 - A step asked of the builder is one that exists. Never write an Instructions step naming a permission the
   builder cannot grant, such as a "Checks" permission on a fine-grained token (GitHub offers none): the
   drive reads checks from the Actions runs and commit statuses, so its token needs Actions, Administration
@@ -431,7 +484,8 @@ Keep a year of watering history, or ninety days?
   2. I will write my own on the issue.
   ```
 - Comment and set the State together: a comment more than ten minutes older than the State is not read as its
-  reason, and a later ask on the issue replaces an earlier one.
+  reason, and a later ask on the issue replaces an earlier one. To put an issue in front of the builder for an
+  ask left earlier, post it again (rewritten in this shape when it is not), then set the State.
 - A step the owner does outside the app (add a secret, bring a runner online, run a command) is Instructions,
   never a decision. Start the comment's first line with the word `Instructions:` and a short title, then the
   steps as a numbered list (what to do, where, any value or command in code), with no choices and no

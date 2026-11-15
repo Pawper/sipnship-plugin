@@ -1,0 +1,11 @@
+# One ask per case beside this file, and what ask_check says of it: one, or
+# why a builder who is not technical could not answer it as written
+# (longname, pointer, jargon). Maya's rooftop-garden app.
+bad-technical longname
+rewritten one
+long-name longname
+reason-points-at-issue pointer
+reason-points-at-file pointer
+script-in-question jargon
+label-in-choice jargon
+plain-term one

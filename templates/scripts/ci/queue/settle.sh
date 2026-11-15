@@ -8,9 +8,9 @@
 #                      In progress returns to Ready (a pull request that merges
 #                      without a Closes line, or one GitHub did not close).
 #   settle_held PR     PR is held for the owner (pr_held says so): the issue it
-#                      names moves from In progress to Waiting on you, with an
-#                      ask: one question, numbered choices, exactly one ending
-#                      "Recommended.".
+#                      closes moves from In progress to Waiting on you, with an
+#                      ask naming it as a link (held_ask), left once; exactly one
+#                      choice ends "Recommended.". An issue it only names is not asked.
 #
 # All REST, and quiet on any failure: the queue goes on, and the drive's own
 # plan sets right whatever is left (plugin/scripts/drive/stale-lib.sh).
@@ -63,11 +63,25 @@ settle_set() {
   state_labels_json "$ss_cur" "$(state_label "$2" "$(project_label_form)")" | gh_write api -X PUT "repos/{owner}/{repo}/issues/$1/labels" --input - >/dev/null 2>&1
 }
 
-# settle_ask PR: the question left on an issue whose pull request is held.
+# settle_closes PR: the issues a pull request closes, one number a line (its
+# Closes / Fixes / Resolves lines). A hold's ask goes on these only.
+settle_closes() {
+  gh api "repos/{owner}/{repo}/pulls/$1" --jq '.body // ""' 2>/dev/null | tr -d '\r' | grep -oiE '(closes|fixes|resolves) #[0-9]+' | grep -oE '[0-9]+' | sort -un
+}
+
+# settle_ask PR: the question left on the issue a held pull request closes
+# (held_ask in ask-lib.sh: what is held as a link, then Approve it or Ask for changes).
 settle_ask() {
-  printf 'Pull request #%s is held for you, and this issue was marked In progress, so nothing started the next work. Should it land?\n\n' "$1"
-  printf '1. Read it and let it land. Recommended. It waits only for your read, and the drive can start the next work once it lands.\n'
-  printf '2. Tell your agent what to change first. The issue stays here until you have said.\n'
+  command -v held_ask >/dev/null 2>&1 || . "${here:-scripts/ci}/ask-lib.sh"
+  sa_row=$(gh api "repos/{owner}/{repo}/pulls/$1" --jq '[.title, .html_url] | @tsv' 2>/dev/null | tr -d '\r')
+  [ -n "$sa_row" ] || return 1
+  held_ask "$1" "$(printf '%s' "$sa_row" | cut -f1)" "$(printf '%s' "$sa_row" | cut -f2)"
+}
+
+# settle_asked ISSUE PR: yes when the issue already carries the ask about PR.
+settle_asked() {
+  command -v held_ask_mark >/dev/null 2>&1 || . "${here:-scripts/ci}/ask-lib.sh"
+  if gh api "repos/{owner}/{repo}/issues/$1/comments?per_page=100" --jq '.[].body' 2>/dev/null | grep -qF "$(held_ask_mark "$2")"; then echo yes; else echo no; fi
 }
 
 # settle_merged PR: put back any issue the merge left In progress.
@@ -83,14 +97,17 @@ settle_merged() {
   done
 }
 
-# settle_held PR: move the issue of a pull request held for the owner to Waiting on you, once.
+# settle_held PR: move the issue a pull request held for the owner closes to
+# Waiting on you, with the ask, once: never an issue it only names, never twice.
 settle_held() {
   sh_seen="${flaky_dir:-${TMPDIR:-/tmp}}/settled-held"
   grep -qx "$1" "$sh_seen" 2>/dev/null && return 0
   printf '%s\n' "$1" >> "$sh_seen" 2>/dev/null || true
-  for sh_n in $(settle_issues "$1"); do
+  for sh_n in $(settle_closes "$1"); do
     [ "$(settle_in_progress "$sh_n")" = yes ] || continue
-    gh_write api -X POST "repos/{owner}/{repo}/issues/$sh_n/comments" -f body="$(settle_ask "$1")" >/dev/null 2>&1 || continue
+    [ "$(settle_asked "$sh_n" "$1")" = no ] || continue
+    sh_ask=$(settle_ask "$1") || continue
+    gh_write api -X POST "repos/{owner}/{repo}/issues/$sh_n/comments" -f body="$sh_ask" >/dev/null 2>&1 || continue
     settle_set "$sh_n" waiting-on-owner && say "  #$sh_n: its pull request #$1 is held for you; moved to Waiting on you." || true
   done
 }

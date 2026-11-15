@@ -1665,6 +1665,8 @@ case "$*" in
   *"-X POST"*"/issues/"*"/comments"*) n=$(num "$@"); printf 'POST %s %s\n' "$n" "$(printf '%s' "$*" | sed 's/.*-f body=//' | tr '\n' ' ')" >> "$ST_LOG" ;;
   *"labels=drive"*) [ -f "$ST_DIR/drive-comments" ] && printf '99\t1\n' ;;
   *"/issues/99/comments"*) cat "$ST_DIR/drive-comments" ;;
+  *"/issues/"*"/comments"*) n=$(num "$@"); cat "$ST_DIR/comments-$n" 2>/dev/null ;;
+  *"pulls/"*"html_url"*) n=$(printf '%s' "$*" | sed 's|.*pulls/\([0-9]*\).*|\1|'); printf 'Sortable shed list\thttps://github.com/maya/rooftop-garden/pull/%s\n' "$n" ;;
   *"pulls/500"*) printf 'issue-226\nMakes the shed list sortable.\n\nCloses #226\n' ;;
   *"pulls/501"*) printf 'issue-230\nMakes the shed list sortable.\n\nCloses #230\n' ;;
   *"pulls?state=open"*) cat "$ST_DIR/open-pulls" 2>/dev/null ;;
@@ -1708,10 +1710,17 @@ rm -f "$st/drive-comments"
 printf 'open\tstate:in-progress\n' > "$st/issue-230"; : > "$st/log"; rm -f "$st/q/settled-held"
 st_run settle_held 501
 eq "a held pull request moves its issue to Waiting on you" ". 1" "$(st_in_progress 230) $(grep -c '^PUT 230 {"labels":\["state:waiting-on-owner"\]}' "$st/log")"
-eq "with an ask: one question, numbered choices, exactly one recommended" "one" "$(grep '^POST 230 ' "$st/log" | sed 's/^POST 230 //;s/ 1\. /\n1. /;s/ 2\. /\n2. /' | ask_verdict)"
+eq "with an ask that passes the same check an agent's ask does" "one" "$(grep '^POST 230 ' "$st/log" | sed 's/^POST 230 //;s/ 1\. /\n1. /;s/ 2\. /\n2. /;s/? /?\n/' | ask_check)"
+eq "naming what is held by its title, as a link, with Approve it recommended" "1 1" "$(grep -c '^POST 230 .*\[Sortable shed list\](https://github.com/maya/rooftop-garden/pull/501)' "$st/log") $(grep -c '1\. Approve it: .* Recommended, so ' "$st/log")"
 : > "$st/log"; printf 'open\tstate:in-progress\n' > "$st/issue-230"
 st_run settle_held 501
 eq "a held pull request is asked about once" "0" "$(wc -l < "$st/log" | tr -d ' ')"
+rm -f "$st/q/settled-held"; held_ask 501 'Sortable shed list' u > "$st/comments-230"
+st_run settle_held 501
+eq "an issue that already carries the ask is never asked again, by another queue run either" "0" "$(wc -l < "$st/log" | tr -d ' ')"
+printf 'open\tstate:in-progress\n' > "$st/issue-240"; : > "$st/log"; rm -f "$st/q/settled-held"
+st_run settle_held 503
+eq "a held pull request that only names an issue (Part of) asks nothing on it" "0" "$(wc -l < "$st/log" | tr -d ' ')"
 eq "the queue settles after a serial merge, a batch merge and a hold" "1 1 1" "$(grep -c 'settle_merged' "$root/templates/scripts/ci/queue/serial.sh") $(grep -c 'settle_merged' "$root/templates/scripts/ci/queue/batch.sh") $(grep -c 'settle_held' "$root/templates/scripts/ci/queue/choose.sh")"
 eq "the copies under the templates are the queue's own" "yes" "$(for f in settle choose serial batch; do cmp -s "$root/../scripts/ci/queue/$f.sh" "$root/templates/scripts/ci/queue/$f.sh" || { echo "no $f"; exit; }; done; echo yes)"
 
@@ -5095,8 +5104,29 @@ eq "a commit on a branch named for the issue in the last two hours keeps it runn
 eq "the plan says so on a stale line, in plain words" "stale: #796 \"Seed packets list their sowing month\" was In progress with no open pull request and nothing touched in 2 hours, so nobody is on it; it is back to Ready." "$(stale_say "$(stale_lines "$sl_facts" "$sl_pulls" '' "$sl_now" 2)" 2 | sed -n 1p)"
 eq "the held one's line names the pull request" "stale: #1106 \"Review drawer\" was In progress, but its pull request #1201 is held for you; it is moved to Waiting on you, with the question on it." "$(stale_say "$(stale_lines "$sl_facts" "$sl_pulls" '' "$sl_now" 2)" 2 | grep 1106)"
 . "$root/templates/scripts/ci/ask-lib.sh"
-eq "the hold's ask is one question with numbered choices and exactly one recommended" "one" "$(stale_ask 1201 | ask_verdict)"
-eq "the ask is one question line, then the choices" "Pull request #1201 is held for you, and this issue was marked In progress, so nothing started the next work. Should it land?|1|2" "$(stale_ask 1201 | awk 'NR == 1 { printf "%s", $0 } /^[0-9]\. / { printf "|%s", substr($0, 1, 1) }')"
+sl_url=https://github.com/maya/rooftop-garden/pull/1201
+eq "the hold's ask passes the same check an agent's ask does" "one" "$(stale_ask 1201 'Frost alerts for the rooftop beds' "$sl_url" | ask_check)"
+eq "it names what is held by its title, as a link, then asks to approve it or ask for changes" "1 Should this change go into your project?|1. Approve it|2. Ask for changes" "$(stale_ask 1201 'Frost alerts for the rooftop beds' "$sl_url" | grep -c "\[Frost alerts for the rooftop beds\]($sl_url)") $(stale_ask 1201 'x' "$sl_url" | awk '/\?$/ { printf "%s", $0 } /^[0-9]\. / { s = $0; sub(/:.*/, "", s); printf "|%s", s }')"
+eq "no choice in it is reading" "0" "$(stale_ask 1201 'x' "$sl_url" | grep -ci '^[0-9]\. read')"
+# Its pull request held and closing another issue of the unit: the ask goes on that issue, never on this one.
+eq "an issue of a unit whose held pull request closes another of its issues is not asked" "stale	1110	waiting	1201	Frost alerts" "$(stale_lines "$sl_facts" "$(printf '1201\tyes\t1110\n')" '' "$sl_now" 2 "$(printf '\t1106 1110\n')" | grep waiting)"
+# stale_apply: the ask once, on the issue, with the pull request's title read over REST.
+sa_dir=$(mktemp -d); mkdir -p "$sa_dir/bin"
+cat > "$sa_dir/bin/gh" <<'GH'
+#!/bin/sh
+case "$*" in
+  *"-X POST"*) printf 'POST %s\n' "$*" >> "$SA_DIR/log" ;;
+  *"-X PUT"*) cat > /dev/null; printf 'PUT %s\n' "$*" >> "$SA_DIR/log" ;;
+  *"/comments"*) cat "$SA_DIR/comments" 2>/dev/null ;;
+  *"pulls/1201"*) printf 'Frost alerts for the rooftop beds\thttps://github.com/maya/rooftop-garden/pull/1201\n' ;;
+esac
+GH
+chmod +x "$sa_dir/bin/gh"
+sa_line=$(printf 'stale\t1106\twaiting\t1201\tReview drawer')
+(PATH="$sa_dir/bin:$PATH" SA_DIR="$sa_dir"; export PATH SA_DIR; stale_apply "$sa_line" "$sl_facts" >/dev/null)
+eq "a waiting issue gets the ask naming the held change, then its State" "1 1 1 1" "$(grep -c 'POST .*issues/1106/comments' "$sa_dir/log") $(grep -c '\[Frost alerts for the rooftop beds\](https://github.com/maya/rooftop-garden/pull/1201)' "$sa_dir/log") $(grep -c 'sipnship-held-ask #1201' "$sa_dir/log") $(grep -c 'PUT .*issues/1106/labels' "$sa_dir/log")"
+: > "$sa_dir/log"; held_ask 1201 'Frost alerts for the rooftop beds' "$sl_url" > "$sa_dir/comments"
+eq "an issue that already carries that ask is never asked twice" "0 stale: #1106 already carries the question about #1201; it is left as it is." "$(PATH="$sa_dir/bin:$PATH" SA_DIR="$sa_dir"; export PATH SA_DIR; sa_out=$(stale_apply "$sa_line" "$sl_facts"); printf '%s %s' "$(wc -l < "$sa_dir/log" | tr -d ' ')" "$sa_out")"
 eq "the facts and the snapshot read the stale issues as they now are" "state:ready,task|ready|state:waiting-on-owner" "$(sl_stale=$(stale_lines "$sl_facts" "$sl_pulls" '' "$sl_now" 2); sl_f=$(stale_facts "$sl_facts" "$sl_stale"); sl_s=$(stale_snapshot "$(printf 'issue\t796\tSeed\tin-progress\tno\nissue\t1106\tDrawer\tin-progress\tno\n')" "$sl_stale"); printf '%s|%s|%s' "$(printf '%s\n' "$sl_f" | awk -F'\t' '$2 == 1022 { print $4 }')" "$(printf '%s\n' "$sl_s" | awk -F'\t' '$2 == 796 { print $4 }')" "$(printf '%s\n' "$sl_f" | awk -F'\t' '$2 == 1106 { print $4 }')")"
 eq "a spaced state label stays spaced" "state: ready" "$(stale_facts "$(printf 'issue\t5\tT\tstate: in progress\tx\n')" "$(printf 'stale\t5\tready\t\tT')" | cut -f4)"
 eq "the labels PUT drops the old State, keeps the rest and adds the new one" '{"labels":["task","state:ready"]}' "$(stale_labels_json "$(printf 'task\nstate:in-progress\n')" ready)"
@@ -5736,7 +5766,7 @@ section 'an ask with choices recommends one'
 # The shared cases: the dashboard's reader is tested against the same list.
 ak_fx="$fx/ask"
 ak_cases=$(grep -v '^#' "$ak_fx/verdicts.txt" | tr -d '\r')
-eq "the shared list has its cases" "14" "$(printf '%s\n' "$ak_cases" | grep -c .)"
+eq "the shared list has its cases" "16" "$(printf '%s\n' "$ak_cases" | grep -c .)"
 printf '%s\n' "$ak_cases" | while read -r ak_name ak_want; do
   [ -n "$ak_name" ] || continue
   eq "the shared case $ak_name reads $ak_want" "$ak_want" "$(ask_verdict < "$ak_fx/$ak_name.md")"
@@ -5746,7 +5776,8 @@ eq "the newest comment that asks decides; a later reply that asks nothing does n
 eq "an older comment is read only when the newer ones ask nothing" "one" \
   "$({ cat "$ak_fx/one-recommended.md"; printf '%s\n' "$ASK_NEXT"; cat "$ak_fx/two-unrecommended.md"; } | ask_verdict)"
 eq "no comments: no ask" "none" "$(printf '' | ask_verdict)"
-eq "a verdict that keeps the rule has nothing to fix" "" "$(ask_fix one)$(ask_fix none)"
+eq "a verdict that keeps the rule has nothing to fix" "" "$(ask_fix one)$(ask_fix instructions)"
+eq "no ask at all says to leave one first, in plain words, then set the state" "yes" "$(ask_fix none | grep -q '^no ask or Instructions comment was left on it in the last ten minutes, so the builder would find nothing to answer. First leave one comment: what happened' && echo yes)"
 eq "a question with no choices says how to turn it into choices, one recommended" "yes" "$(ask_fix question | grep -q 'question with no choices. Turn it into choices: .*your best guess first, ending "Recommended."' && echo yes)"
 eq "none recommended says what to write" "yes" "$(ask_fix unrecommended | grep -q 'End the one you would pick with "Recommended."' && echo yes)"
 eq "two recommended says to keep one" "yes" "$(ask_fix several | grep -q 'more than one says "Recommended"' && echo yes)"
@@ -5755,7 +5786,19 @@ eq "Instructions needs no fix" "" "$(ask_fix instructions)"
 eq "an action and a deferral says to write Instructions" "yes" "$(ask_fix actiondefer | grep -q 'Write it as Instructions instead' && echo yes)"
 eq "a choice that is only to read it, or to decide later, is fixed by naming what to read and offering outcomes" "putoff putoff one" "$(ask_verdict < "$ak_fx/read-first.md") $(ask_verdict < "$ak_fx/decide-later.md") $(ask_verdict < "$ak_fx/read-then-land.md")"
 eq "a put-off says reading is never a choice and what to write" "yes" "$(ask_fix putoff | grep -q 'Reading is never a choice' && ask_fix putoff | grep -q 'Ask for changes' && echo yes)"
-eq "Read it and let it land is an outcome, not a put-off" "one" "$(printf 'Should it land?\n\n1. Read it and let it land. Recommended. It waits only for your read.\n2. Tell your agent what to change first. Nothing lands.\n' | ask_verdict)"
+eq "Read it and let it land is reading offered as a choice, so a put-off" "putoff" "$(printf 'Should it land?\n\n1. Read it and let it land. Recommended. It waits only for your read.\n2. Tell your agent what to change first. Nothing lands.\n' | ask_verdict)"
+eq "a choice that starts with another word is not reading" "one" "$(printf 'Should the beds be watered?\n\n1. Ready the hose: it runs at six. Recommended, so the beds stay damp.\n2. Wait: nothing runs.\n' | ask_verdict)"
+# The words of an ask in the shape, held to what a builder who is not technical can answer (Maya's rooftop-garden app).
+ap_fx="$fx/ask-plain"
+ap_cases=$(grep -v '^#' "$ap_fx/checks.txt" | tr -d '\r')
+eq "the plain-words list has its cases" "8" "$(printf '%s\n' "$ap_cases" | grep -c .)"
+printf '%s\n' "$ap_cases" | while read -r ap_name ap_want; do
+  [ -n "$ap_name" ] || continue
+  eq "the plain-words case $ap_name reads $ap_want" "$ap_want" "$(ask_check < "$ap_fx/$ap_name.md")"
+done
+eq "ask_verdict reads only the shape: the bad ask is still one" "one" "$(ask_verdict < "$ap_fx/bad-technical.md")"
+eq "each plain-words fault says how to fix it, with an example" "yes yes yes" "$(ask_fix longname | grep -q 'Start every choice with a name of a few words' && echo yes) $(ask_fix pointer | grep -q 'Give it as their benefit' && echo yes) $(ask_fix jargon | grep -q 'Say it as a decision about their project' && echo yes)"
+eq "the skill carries the bad ask and its rewrite, and both read as the check says" "2 longname one" "$(grep -c -e 'Should the watering job close both gaps at once?' -e 'Should every change to the watering schedule be tested before it is added?' "$root/skills/project-drive/SKILL.md") $(ask_check < "$ap_fx/bad-technical.md") $(ask_check < "$ap_fx/rewritten.md")"
 eq "the hook refuses a put-off the same way as a missing recommendation" "yes" "$([ -n "$(ask_fix putoff)" ] && echo yes)"
 
 # Which command sets an issue to waiting on the owner.
@@ -5792,7 +5835,12 @@ eq "one recommended goes through" "0" "$(ak_hook "$ak_fx/one-recommended.md" "$a
 eq "a recommended fifth goes through" "0" "$(ak_hook "$ak_fx/fifth-recommended.md" "$ak_set")"
 eq "a question alone is refused" "2" "$(ak_hook "$ak_fx/question-only.md" "$ak_set")"
 eq "the refusal shows how to turn it into choices" "yes" "$(grep -q '^Blocked setting #207 to waiting on the owner, because its ask is a question with no choices. Turn it into choices' "$ak_dir/err" && grep -q 'How to write an ask' "$ak_dir/err" && echo yes)"
-eq "no ask in the last ten minutes goes through" "0" "$(ak_hook "$ak_fx/no-question.md" "$ak_set")"
+eq "no ask in the last ten minutes is refused: the builder would have nothing to answer" "2" "$(ak_hook "$ak_fx/no-question.md" "$ak_set")"
+eq "the refusal says to leave the ask first, then set the state" "yes" "$(grep -q '^Blocked setting #207 to waiting on the owner, because no ask or Instructions comment was left on it in the last ten minutes' "$ak_dir/err" && grep -q 'Then set the state again' "$ak_dir/err" && echo yes)"
+eq "no comments at all is refused the same way, in all three forms" "2 2 2" "$(: > "$ak_dir/empty.md"; ak_hook "$ak_dir/empty.md" "$ak_set") $(ak_hook "$ak_dir/empty.md" 'gh api repos/{owner}/{repo}/issues/207/labels -f labels[]=state:waiting-on-owner') $(ak_hook "$ak_dir/empty.md" 'sh scripts/state.sh 3 maya 207 \"Waiting on owner\"')"
+eq "an Instructions comment goes through" "0" "$(ak_hook "$ak_fx/instructions.md" "$ak_set")"
+eq "an ask whose choice is cut off on the card is refused" "2" "$(ak_hook "$fx/ask-plain/bad-technical.md" "$ak_set")"
+eq "the plain rewrite goes through" "0" "$(ak_hook "$fx/ask-plain/rewritten.md" "$ak_set")"
 eq "GitHub not answering never refuses" "0" "$(ak_hook "$ak_dir/missing.md" "$ak_set")"
 eq "the state script form is refused too" "2" "$(ak_hook "$ak_fx/two-unrecommended.md" 'sh scripts/state.sh 3 maya 207 \"Waiting on owner\"')"
 printf 'ask-recommends-one 2026-11-05\n' > "$ak_dir/proj/.claude/rules-off.txt"
@@ -5807,6 +5855,20 @@ eq "the audit names a question with no choices too" "1" \
   "$(AK_COMMENTS="$ak_fx/question-only.md" PATH="$ak_dir/bin:$PATH" GH_REPO=maya/rooftop-garden sh "$root/templates/scripts/ci/ask-audit.sh" | grep -c '^#207: its ask is a question with no choices')"
 eq "the audit is quiet when the ask recommends one" "" \
   "$(AK_COMMENTS="$ak_fx/one-recommended.md" PATH="$ak_dir/bin:$PATH" GH_REPO=maya/rooftop-garden sh "$root/templates/scripts/ci/ask-audit.sh")"
+eq "the audit names an issue waiting with no ask on it" "1" \
+  "$(AK_COMMENTS="$ak_fx/no-question.md" PATH="$ak_dir/bin:$PATH" GH_REPO=maya/rooftop-garden sh "$root/templates/scripts/ci/ask-audit.sh" | grep -c '^#207: no ask or Instructions comment was left on it')"
+eq "and an ask a builder could not answer as written" "1" \
+  "$(AK_COMMENTS="$fx/ask-plain/bad-technical.md" PATH="$ak_dir/bin:$PATH" GH_REPO=maya/rooftop-garden sh "$root/templates/scripts/ci/ask-audit.sh" | grep -c '^#207: a choice has no short name')"
+eq "with issue numbers it reads only those, with its words, and needs no repository named" "207	none" \
+  "$(AK_COMMENTS="$ak_fx/no-question.md" PATH="$ak_dir/bin:$PATH" GH_REPO= sh "$root/templates/scripts/ci/ask-audit.sh" --verdicts 207)"
+# The drive's plan: waiting on the builder with no question is the drive's to set right.
+. "$root/scripts/drive/ask-gate-lib.sh"
+ak_facts=$(printf 'issue\t207\tFrost alerts\tstate:waiting-on-owner\tx\tb\nissue\t208\tSeed list\tstate:ready\tx\tb\n')
+eq "the plan names an issue waiting with no question as its own goal" "unasked 207	Frost alerts (waits on you, but no question is on it for you)" \
+  "$(AK_COMMENTS="$ak_fx/no-question.md" PATH="$ak_dir/bin:$PATH" unasked_goals "$ak_facts" "$root/templates/scripts/ci/ask-audit.sh")"
+eq "and none when its ask is in force" "" \
+  "$(AK_COMMENTS="$ak_fx/one-recommended.md" PATH="$ak_dir/bin:$PATH" unasked_goals "$ak_facts" "$root/templates/scripts/ci/ask-audit.sh")"
+eq "plan.sh adds those goals, and the skill says what to do with one" "1 1" "$(grep -c 'unasked_goals "\$facts"' "$root/scripts/drive/plan.sh") $(grep -c '^- \*\*`unasked N`.\*\*' "$root/skills/project-drive/SKILL.md")"
 eq "the audit workflow runs it and adds its lines" "1 1" "$(grep -c 'asks=\$(sh scripts/ci/ask-audit.sh' "$root/templates/.github/workflows/audit.yml") $(grep -c 'if \[ -n "\$asks" \]' "$root/templates/.github/workflows/audit.yml")"
 
 # The nightly audit names an issue In progress with nothing on it (Maya's rooftop-garden app).

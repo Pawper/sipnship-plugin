@@ -1,5 +1,7 @@
 .claude/rules.txt 302bcd5e29321b6f03639be2940432cea0f9816b
 .claude/rules.txt 41651f1b74636b2f4be9347c377b1c0d72f63411
+.claude/rules.txt 532c2186219314f129ad6caeb57a201a72ee316d
+.claude/rules.txt 59509b6d30c8a479477849e105014a50824c361d
 .claude/rules.txt 7982c57baed3cc923bd3f2a2c97d9146b463af15
 .claude/rules.txt b5f8cafd973e77bf9707a9f14bd27fc4ad4d59c0
 .github/workflows/audit.yml 00ddf6c8379ebc42d1e07aba5e6dccb0a2ff58c6
@@ -16,6 +18,7 @@
 .github/workflows/audit.yml 356d601fbccdab03761b084c2a3a46d57e75b7ea
 .github/workflows/audit.yml 3e3c809ecec3acdfaa7cd3e8dfac7383fc62c861
 .github/workflows/audit.yml 5a6c61afda718116c66cfa3ebd85320e69d9255d
+.github/workflows/audit.yml 618090d028383645c7cd2e6e81ff6fef15160641
 .github/workflows/audit.yml 6735d19e0f0baa83a05f0506bb15626dcfab3830
 .github/workflows/audit.yml 746f464f2c7561513ca2144443def9aa357f9698
 .github/workflows/audit.yml 74dacf7dea2391f9d19ccefe2d7423758ef69118
@@ -185,12 +188,14 @@ scripts/ci/add-runner.ps1 721f00bcf6ab79a6d8a9aaa2ca14317722b42265
 scripts/ci/add-runner.ps1 a6a94bc7e67002f4d79f6229b4c5b503b9414444
 scripts/ci/add-runner.ps1 acee7e1e56ef8f4878d04f01c96d52683e8ed62d
 scripts/ci/add-runner.ps1 f8abcc98063f7ae333c8d4062e029b2c8a591e03
+scripts/ci/ask-audit.sh 87f3c7eef51345e52bfb46a5108d131ce7123f90
 scripts/ci/ask-audit.sh a46f87ac2f28db195d54cd64dea6b0b626de7a55
 scripts/ci/ask-audit.sh f33329b0f6995496914745b67295e7216a04800a
 scripts/ci/ask-lib.sh 0b29b024b3e69559150f82f5791c2c6e834292da
 scripts/ci/ask-lib.sh 26e4e363ca6d4e88f4a40124312b6b18fb6de29a
 scripts/ci/ask-lib.sh 366910657643abfae0d303c97d656c470ef98d63
 scripts/ci/ask-lib.sh 84f4052c60eb944519330a7dce6fec8e5e115ca1
+scripts/ci/ask-lib.sh b5f2cc6350be610e680121a34f0c36eebe700ca2
 scripts/ci/batch-lib.sh 04e0a0b65fbbabe00cefd734a79aabb45fb70934
 scripts/ci/batch-lib.sh 07c23e7392dfc8e304db89557f5c513d4ff6f7e8
 scripts/ci/batch-lib.sh 0dc6f8c947f76bb048097736bf7a0f4b6a975cf9
@@ -588,6 +593,7 @@ scripts/ci/queue/serial.sh f28a33c1f8e0b04047cae76aa20a3368788906cc
 scripts/ci/queue/serial.sh f67518a0dd6a77254f79d9c5e3a0410bc8e9cfec
 scripts/ci/queue/settle.sh 02d64c5f769241e3761e22f700f7dd1323b8fea8
 scripts/ci/queue/settle.sh 0c178697aea719c4dc465182dd0ee2ec8fedd90c
+scripts/ci/queue/settle.sh 4e61a1d498da3a3df9a780fe6e310e2708446052
 scripts/ci/queue/settle.sh 5e6a6e691682e7ddeb7bdd436358afb395ec7b57
 scripts/ci/queue/state.sh 40cf87c66ba7f3e01bae1a501ffb7bd225408937
 scripts/ci/queue/state.sh 4863a0697509815eef9d4959c83c9f995dd72727
