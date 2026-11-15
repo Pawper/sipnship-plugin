@@ -19,6 +19,16 @@ batch_failed_test() {
   failed_tests_from_log "$(gh run view "$bft_id" --log-failed 2>/dev/null)" | head -n 1
 }
 
+# batch_suspect PR: the failure points at this change, so it waits for a new
+# push. Its head commit goes in $flaky_dir/suspects.tsv; the drain leaves out
+# a change whose head is still that commit (drop_suspects), so the same
+# change is not tried again, together with the others, for the same failure.
+batch_suspect() {
+  bs_sha=$(gh api "repos/{owner}/{repo}/pulls/$1" --jq .head.sha 2>/dev/null | tr -d '\r')
+  [ -n "$bs_sha" ] || return 0
+  printf '%s\t%s\n' "$1" "$bs_sha" >> "$flaky_dir/suspects.tsv" 2>/dev/null || true
+}
+
 # batch_half_run MEMBERS: one half, as a batch of its own inside this queue's
 # lock; its exit status is the batch's (zero when it landed).
 batch_half_run() {
@@ -35,6 +45,7 @@ batch_red() {
   [ -z "$br_test" ] || echo "The batch's full run failed at: $br_test"
   if [ "$br_n" -lt 2 ] || [ -n "${QUEUE_NO_HALVING:-}" ]; then
     echo "The batch run is not green; nothing merged. Fix it on $1 or drop a PR and run again."
+    [ "$br_n" -ne 1 ] || batch_suspect "$br_members"
     exit 1
   fi
   set -- $br_members
@@ -46,6 +57,7 @@ batch_red() {
   if [ "$br_rc" -eq 0 ] && [ "$br_single" = yes ]; then
     # The first half is green and the other is one pull request: it is the one.
     gh_write api -X POST "repos/{owner}/{repo}/issues/$br_b/comments" -f body="$(halving_say "$br_b" "$br_test")" >/dev/null 2>&1 || true
+    batch_suspect "$br_b"
     batch_line "$br_b" "dropped" "the batch went red with it and green without it${br_test:+ ($br_test)}"
     serial_one "$br_b" || true
   else

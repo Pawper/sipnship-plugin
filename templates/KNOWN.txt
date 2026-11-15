@@ -446,8 +446,10 @@ scripts/ci/merge-queue.sh ea72af6883353138f50b5ae06dcf6fb6072da859
 scripts/ci/merge-queue.sh ec438df3966d0266bd8a173fdefe76776cb520c8
 scripts/ci/merge-queue.sh ecc02294d5de78b2c9119733e60e297ed4b23f3c
 scripts/ci/merge-queue.sh ecf00a65e3736860910f7b3d399e7c0e72d4dd93
+scripts/ci/merge-queue.sh f4188a763ca9d65b60744ac39cef2e9801307b5d
 scripts/ci/merge-queue.sh f68b1440eead6b5687e815b9d3c0d6f017bc87f1
 scripts/ci/merge-queue.sh f7c81e45d871c8ad4b87d9086022d735f03b75be
+scripts/ci/merge-queue.sh fa6a88f4200c68272748b1d894eccc7e0e362100
 scripts/ci/merge-queue.sh febd00633d1436eed305e047a2f17f771c1bd418
 scripts/ci/merge-queue.sh ff8bc31c8f9ed9b3d78f0db62941d377db87247a
 scripts/ci/numbering-check.sh 14732fadc0a69998e4dc1d3d879be2704ba89e05
@@ -517,7 +519,9 @@ scripts/ci/queue/deploy.sh 2fba418eed08e229c70c6fd8f9890c09c1ce35c5
 scripts/ci/queue/deploy.sh 352f46c5fa76482713ce4bf65e419f6d8f1c3d9b
 scripts/ci/queue/deploy.sh 40c14f50653cdc086e826c67348148172b39d8b9
 scripts/ci/queue/deploy.sh 61a5fd4b46195f2a32e81964e165a358843f8566
+scripts/ci/queue/halve.sh 2b9b385d89f489148d2b6d0ccb25837e7af8dff3
 scripts/ci/queue/halve.sh 567a5b19f986fd568e481b08d2122e0498b2c3c1
+scripts/ci/queue/held.sh 131d1317a7fc4e892df47d7f866cb6590a436b5c
 scripts/ci/queue/held.sh 961635f65cfa68d2cb39590b3f36d90af79edbc2
 scripts/ci/queue/overlaps.sh 08515e29a12df47f524644e926f75dc156a6ea9e
 scripts/ci/queue/overlaps.sh 7530b0c2b389cce044b4bee47f5308cd3dbd65e8
@@ -566,6 +570,7 @@ scripts/ci/queue/rules-rerun.sh 46bafd8b189efef2bbb175bb4139570a98085885
 scripts/ci/queue/rules-rerun.sh 59b89571b61ec380d780ff559dd4fe24cc35099a
 scripts/ci/queue/rules-rescue.sh 2553d53ddef38ca0ee458a1e066c72a55f6c3f46
 scripts/ci/queue/rules-serial.sh 367d29dc3143c91ce1d0f4fcb7a5ffa410769f0c
+scripts/ci/queue/rules-serial.sh 620357a5deb98869d98438946c8c44c1b479454a
 scripts/ci/queue/rules-serial.sh bc0e925dddfd6f722624120fdc5bdf4f2b80a4cd
 scripts/ci/queue/runs.sh 8b09e164f36aa22ec3a73fe0f1d4f19ec41656bc
 scripts/ci/queue/runs.sh a8ea8a3d859fe95bef28dea870c8241623e2e6ca

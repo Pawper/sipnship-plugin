@@ -2539,6 +2539,9 @@ eq "a batch body's members" "303
 eq "the drain drops an open batch's members" "301	false	sha	main" "$(drop_members "$(printf '301\tfalse\tsha\tmain\n303\tfalse\tsha\tmain\n305\tfalse\tsha\tmain')" '303 305')"
 eq "and the batch itself" "" "$(drop_members "$(printf '306\tfalse\tsha\tmain')" '303 305 306')"
 eq "no batch open, nothing dropped" "301	false	sha	main" "$(drop_members "$(printf '301\tfalse\tsha\tmain')" '')"
+eq "a change a stopped batch's failure pointed at waits while its head is that commit" "302	false	b2	main" "$(drop_suspects "$(printf '301\tfalse\ta1\tmain\n302\tfalse\tb2\tmain')" "$(printf '301\ta1\n')")"
+eq "and goes back in with a new push" "301	false	a9	main" "$(drop_suspects "$(printf '301\tfalse\ta9\tmain')" "$(printf '301\ta1\n')")"
+eq "nothing suspected, nothing dropped" "301	false	a1	main" "$(drop_suspects "$(printf '301\tfalse\ta1\tmain')" '')"
 eq "jobs waiting on machines are said with a rough time" "6 job(s) queued, 2 of 2 runner(s) busy; about 12 minute(s) at one job per runner. Waiting on machines, not on a failure." "$(queue_eta 6 2 2 4)"
 eq "queued with no runner online" "3 job(s) queued and no runner online." "$(queue_eta 3 0 0)"
 eq "nothing queued, nothing said" "" "$(queue_eta 0 2 2)"
@@ -2723,7 +2726,7 @@ GH
 chmod +x "$bm_dir/bin/gh"
 eq "a batch whose members are all open goes on" "0" "$(. "$root/templates/scripts/ci/queue/lock.sh"; close_pr() { echo "closed $1"; }; PATH="$bm_dir/bin:$PATH"; batch_members_open 9 "$(printf '41\tbeds\n')"; echo $?)"
 eq "the batch checks its members just before it merges" "1" "$(grep -c 'wait_quiet_main; batch_members_open' "$root/templates/scripts/ci/queue/batch.sh")"
-eq "the drain reads a pull request's labels and body with a separator that is not whitespace, so no labels never hides a hold line" "1 0" "$(grep -cF 'printf '"'"'\037'"'"')" read -r h_num h_labels h_body' "$root/templates/scripts/ci/merge-queue.sh") $(grep -cF 'IFS="$tab" read -r h_num' "$root/templates/scripts/ci/merge-queue.sh")"
+eq "the drain reads a pull request's labels and body with a separator that is not whitespace, so no labels never hides a hold line" "1 0" "$(grep -cF 'printf '"'"'\037'"'"')" read -r h_num h_labels h_body' "$root/templates/scripts/ci/queue/held.sh") $(grep -cF 'IFS="$tab" read -r h_num' "$root/templates/scripts/ci/queue/held.sh")"
 rm -f "$rl/ref"; ( cd "$rl/b" && git update-ref -d refs/remotes/origin/main )
 eq "a queue with nothing to anchor the lock on goes on with its own lock" "yes" "$(rl_c=$(rl_take b); case "$rl_c" in *"going on with this machine's lock alone"*"took the lock") echo yes ;; *) echo "no: $rl_c" ;; esac)"
 eq "a batch with a member that landed is closed and not merged" "$(printf "closed 9

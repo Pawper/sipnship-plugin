@@ -106,6 +106,16 @@ drop_members() {
   printf '%s\n' "$1" | awk -F'\t' -v m=" $(printf '%s' "$2" | tr '\n' ' ') " 'NF && index(m, " " $1 " ") == 0'
 }
 
+# drop_suspects LISTED SUSPECTS
+# LISTED is the drain's list of open pull requests (number, draft, head
+# commit, base, tab separated); SUSPECTS is the lines "number<tab>commit"
+# of changes a stopped batch's failure pointed at. A change waits while its
+# head commit is the one that failed, and goes back in with its next push,
+# so the queue does not spend runner minutes on the same failing change.
+drop_suspects() {
+  printf '%s\n' "$1" | awk -F'\t' -v s="$(printf '%s' "$2" | tr '\n' ' ')" 'BEGIN { n = split(s, a, / +/); for (i = 1; i <= n; i++) if (a[i] != "") hold[a[i]] = 1 } NF { if (!(($1 "\t" $3) in hold)) print }'
+}
+
 # queue_eta QUEUED BUSY RUNNERS [AVG_MINUTES]
 # One line on a run that waits on machines rather than tests: how many
 # jobs are queued, how many runners are busy, and a rough time to clear

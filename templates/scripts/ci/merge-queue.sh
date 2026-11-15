@@ -239,20 +239,7 @@ if [ "$mode" = drain ]; then
       say "Listing the open pull requests failed (${l_err:-no detail}); trying again in 60 seconds."
       sleep 60
     done
-    queue_step="drain round $round: reading holds"
-    # Held pull requests (a queue:hold label or a "Queue: hold" line) wait,
-    # however green.
-    held=$(gh api "repos/{owner}/{repo}/pulls?state=open&per_page=100" --jq '.[] | "\(.number)\u001f\([.labels[].name] | join(","))\u001f\((.body // "") | gsub("[\r\n]+"; " | "))"' 2>/dev/null \
-      | while IFS="$(printf '\037')" read -r h_num h_labels h_body; do
-        h_why=$(held_reason "$(printf '%s' "$h_labels" | tr ',' '\n')" "$(printf '%s' "$h_body" | sed 's/ | /\
-/g')")
-        if [ -n "$h_why" ]; then printf '%s ' "$h_num"; fi
-      done)
-    if [ -n "$held" ]; then
-      [ "$held" = "${last_held:-}" ] || say "round $round: held, not merged:$(printf ' #%s' $held)"
-      last_held=$held
-      listed=$(drop_members "$listed" "$held")
-    fi
+    drain_drop_waiting
     queue_step="drain round $round: settling open batches"
     # Open batches: their members are theirs, not the drain's. A batch one of
     # whose members has landed on its own no longer matches main; close it.

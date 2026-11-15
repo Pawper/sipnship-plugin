@@ -79,3 +79,33 @@ EOF
   mv -f "$hs_out" "$flaky_dir/after.tsv" 2>/dev/null || true
   return 0
 }
+
+# One drain round: set aside held pull requests and the changes a stopped
+# batch's failure pointed at, from $listed. Uses the drain loop's variables.
+drain_drop_waiting() {
+  queue_step="drain round $round: reading holds"
+  # Held pull requests (a queue:hold label or a "Queue: hold" line) wait,
+  # however green.
+  held=$(gh api "repos/{owner}/{repo}/pulls?state=open&per_page=100" --jq '.[] | "\(.number)\u001f\([.labels[].name] | join(","))\u001f\((.body // "") | gsub("[\r\n]+"; " | "))"' 2>/dev/null \
+    | while IFS="$(printf '\037')" read -r h_num h_labels h_body; do
+      h_why=$(held_reason "$(printf '%s' "$h_labels" | tr ',' '\n')" "$(printf '%s' "$h_body" | sed 's/ | /\
+/g')")
+      if [ -n "$h_why" ]; then printf '%s ' "$h_num"; fi
+    done)
+  if [ -n "$held" ]; then
+    [ "$held" = "${last_held:-}" ] || say "round $round: held, not merged:$(printf ' #%s' $held)"
+    last_held=$held
+    listed=$(drop_members "$listed" "$held")
+  fi
+  # A change a stopped batch's failure pointed at waits for a new push; the others batch without it.
+  if [ -s "$flaky_dir/suspects.tsv" ]; then
+    waiting=$(printf '%s\n' "$listed" | awk -F'\t' 'NF { print $1 }' | while read -r w_pr; do
+      [ -n "$(drop_suspects "$(printf '%s\n' "$listed" | awk -F'\t' -v n="$w_pr" '$1 == n')" "$(cat "$flaky_dir/suspects.tsv")")" ] || printf '%s ' "$w_pr"
+    done)
+    if [ -n "$waiting" ]; then
+      [ "$waiting" = "${last_waiting:-}" ] || say "round $round: waiting for a new push, since a batch's failure pointed at them:$(printf ' #%s' $waiting)"
+      last_waiting=$waiting
+      listed=$(drop_suspects "$listed" "$(cat "$flaky_dir/suspects.tsv")")
+    fi
+  fi
+}
