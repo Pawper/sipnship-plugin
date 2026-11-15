@@ -38,15 +38,15 @@ propose_round() {
       # A red from an older commit is not the newest commit failing: while the head commit is under 30
       # minutes old (busy) or its checks are still running (pending), it is neither fixed nor set aside.
       if ($10 == "yes") waiting[++wz] = $2 "\t" $3 "\tits newest commit is still waiting on its checks"
-      else if ($9 == "yes") busy[++bz] = $2 "\t" $3
+      else if ($9 == "yes") { busy[++bz] = $2 "\t" $3; bw[bz] = ($12 != "" ? $12 "\t" $13 : "") }
       # Reds that came from a test broken on main are not its own: once main is right it needs main merged in, never a fix or a set-aside.
       else if ($11 == "fixed") behind[++bm] = $2 "\t" $3
       else if ($11 == "waiting") waiting[++wz] = $2 "\t" $3 "\tits reds came from a test broken on main, which is not put right yet; it needs main merged in once it is"
-      else if (aside > 0 && $7 + 0 >= aside) setaside[++sa] = $2 "\t" $3 "\t(red " ($7 + 0) " times)"
+      else if (aside > 0 && $7 + 0 >= aside) setaside[++sa] = $2 "\t" $3 "\t(red " ($7 + 0) " times" ($14 != "" ? ": " $14 : "") ")"
       else red[++r] = $2 "\t" $3
     }
     $1 == "pr" && $4 != "red" && $5 == "conflicting" && $8 != "yes" {
-      if ($9 == "yes") busy[++bz] = $2 "\t" $3
+      if ($9 == "yes") { busy[++bz] = $2 "\t" $3; bw[bz] = ($12 != "" ? $12 "\t" $13 : "") }
       else behind[++bm] = $2 "\t" $3
       next
     }
@@ -70,7 +70,11 @@ propose_round() {
       for (i = 1; i <= r; i++) { print "fix-pr " red[i]; acted++ }
       for (i = 1; i <= sa; i++) { print "set-aside " setaside[i]; acted++ }
       for (i = 1; i <= bm; i++) { print "merge-main " behind[i]; acted++ }
-      for (i = 1; i <= bz; i++) { print "busy " busy[i] "\tits last push is recent (a red change waits 10 minutes from its last push, a conflicting one 30); someone is on it"; waiting_pr++ }
+      for (i = 1; i <= bz; i++) {
+        split(bw[i], bp, "\t")
+        # The real reason and the time: the last push (never a comment or a check), and when an agent goes if nobody is on it.
+        print "busy " busy[i] "\t" (bp[1] != "" ? "its last push was at " bp[1] ", so an agent goes at " bp[2] " if nobody is on it (a red change waits 10 minutes from its last push, a conflicting one 30)" : "its last push is recent (a red change waits 10 minutes from its last push, a conflicting one 30); someone is on it"); waiting_pr++
+      }
       for (i = 1; i <= wz; i++) { print "busy " waiting[i]; waiting_pr++ }
       for (i = 1; i <= k; i++) { print "ask-owner " ask[i]; acted++ }
       slots = (runners < max_agents) ? runners : max_agents

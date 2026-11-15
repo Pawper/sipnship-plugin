@@ -140,7 +140,9 @@ answer above it.
 
 The plan's closing lines also say the round's settings (`rounds:`, with the units per round, the dispatch
 model and the red limit), `summary: due` when the daily summary should be written (below), and `health:`
-when a health note is set (below).
+when a health note is set (below). A `plugin:` line says the copy running the drive is older than the latest
+release; carry it into the report on the drive issue, since faults already fixed come back in the plan until
+the installed copy is updated.
 
 ## b. Propose, or pursue
 
@@ -365,6 +367,17 @@ Keep a year of watering history, or ninety days?
   the last ten minutes gives choices and none, or more than one, is recommended, or is a question with no
   choices (the `require-state-label` hook; the nightly audit names any that got through another way). Fix the
   comment, then set the state.
+- Reading is never a choice. An ask about something to read (a spec, a mock, a held change) names the file
+  or files to read, with a link that opens it, and its choices are the outcomes that follow the read:
+  "Approve it as written", "Ask for changes" (the builder says what, and the agent takes it from there), and
+  any real alternative ("Split it: the spec waits for your read, the rest lands now"). Never "Read it first",
+  "Look at it later" or "Decide later" as a choice: the builder is in the drawer to read it, and a choice
+  that only puts the decision off decides nothing. The hook and the audit refuse such an ask, saying what
+  to write instead. An open ask in the old shape is rewritten once, keeping its place in line.
+- A step asked of the builder is one that exists. Never write an Instructions step naming a permission the
+  builder cannot grant, such as a "Checks" permission on a fine-grained token (GitHub offers none): the
+  drive reads checks from the Actions runs and commit statuses, so its token needs Actions, Administration
+  (read, to list runners), Commit statuses, Contents, Issues, Pull requests and Workflows.
 - A question that starts out open is turned into choices too, your best guess first, so the card always has
   buttons and a suggested one. Write the draft you would send as the first choice, and let the last be the
   builder's own words:

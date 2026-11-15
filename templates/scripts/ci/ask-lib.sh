@@ -14,6 +14,10 @@
 #   - two choices that are an action and a deferral ("Lift it and add the
 #     secret" / "Set it aside") are an owner action dressed as a decision:
 #     they are to be written as Instructions.
+#   - a choice that is only to read the thing, or to decide later ("Read it
+#     first", "Decide later"), decides nothing: reading is never a choice, so an
+#     ask about something to read names it and offers the outcomes that follow
+#     the read (approve it, ask for changes).
 # The dashboard's reader keeps the same definition in TypeScript; both are
 # tested against the same fixtures, one comment per case, in the plugin's
 # tests/fixtures/ask/, so the two never drift.
@@ -29,6 +33,7 @@ ASK_NEXT="--- next comment ---"
 #   none           no comment carries an ask
 #   instructions   steps for the owner, marked "Instructions:" (no choice)
 #   actiondefer    two choices that are an action and a deferral
+#   putoff         a choice that is only to read it, or to decide later
 #   question       a question with no choices
 #   one            choices, exactly one recommended
 #   unrecommended  choices, none recommended
@@ -70,12 +75,19 @@ ask_verdict() {
     # full stop, lowercased.
     function cname(l,   s) {
       s = tolower(plain(l)); sub(/^[0-9][0-9]?[.)][ \t]+/, "", s)
-      sub(/[:.].*$/, "", s)
+      sub(/[:.].*$/, "", s); sub(/[ 	]+$/, "", s)
       return trim(s)
     }
     function is_go(s) { return s ~ /^(lift it|do it|go ahead|yes)([^a-z]|$)/ }
     function has_action(s) { return s ~ /(^|[^a-z])(add|install|run|create|set up|press|open|configure|connect|download|enable)([^a-z]|$)/ }
     function is_defer(s) { return s ~ /^(set it aside|not now|defer|leave it|skip|keep it held|park it)([^a-z]|$)/ }
+    # A choice that only reads the thing or puts the decision off. Same words as isPutOff in the core reader.
+    function is_putoff(l,   s) {
+      s = tolower(plain(l)); sub(/^[0-9][0-9]?[.)][ \t]+/, "", s)
+      sub(/[ \t]*\(.*$/, "", s); sub(/[ \t]+[—-][ \t].*$/, "", s); sub(/[.:!\t ]+$/, "", s)
+      sub(/[:.].*$/, "", s); sub(/[ 	]+$/, "", s)
+      return s ~ /^(read it( first| now| over)?|read the (spec|mock|change|summary)( first)?|let me read( it)?( first)?|look at it( first| later)?|look it over|have a look|decide later|decide it later|i will decide later|later|not yet|think about it|let me think( about it)?)$/
+    }
     function verdict(text,   raw, n, k, m, L, at, before, items, recs, num, q, c1, c2) {
       text = cut(text, "<!--", "-->")
       text = cut(text, "```", "```")
@@ -94,7 +106,7 @@ ask_verdict() {
         before = at - 1
         while (before >= 1 && L[before] == "") before--
         if (before < 1 || !asks(L[before])) continue
-        items = 0; recs = 0
+        items = 0; recs = 0; offs = 0
         for (k = at; k <= n; k++) {
           if (L[k] == "") continue
           if (!is_choice(L[k])) break
@@ -102,6 +114,7 @@ ask_verdict() {
           if (num + 0 != items + 1) break
           items++
           if (recommended(L[k])) recs++
+          if (is_putoff(L[k])) offs++
         }
         if (items < 2) continue
         if (items == 2) {
@@ -109,6 +122,7 @@ ask_verdict() {
           for (k = at + 1; k <= n; k++) if (is_choice(L[k])) { c2 = cname(L[k]); break }
           if ((is_go(c1) && has_action(c1) && is_defer(c2)) || (is_go(c2) && has_action(c2) && is_defer(c1))) return "actiondefer"
         }
+        if (offs > 0) return "putoff"
         return recs == 1 ? "one" : recs == 0 ? "unrecommended" : "several"
       }
       for (k = n; k >= 1; k--) if (asks(L[k])) return "question"
@@ -139,6 +153,7 @@ ask_fix() {
   case "$1" in
     question) printf '%s\n' 'its ask is a question with no choices. Turn it into choices: keep the question on its own line, then a numbered list of two to four, your best guess first, ending "Recommended." and a short reason why; for an open question, give a draft to say yes to and a last choice such as "I will write my own on the issue."' ;;
     actiondefer) printf '%s\n' 'its ask is a step the owner does outside the app, dressed as a choice between doing it and setting it aside. Write it as Instructions instead: start the comment with the word "Instructions:" and give the steps as a numbered list (what to do, where, any value or command), with no choices and no "Recommended."; if the steps are already done, say so on the issue and move it on instead of waiting' ;;
+    putoff) printf '%s\n' 'one of its choices is only to read the thing, or to decide later. Reading is never a choice: the builder is there to read it. Name the file or files to read in the comment (a link that opens it), and make every choice an outcome that follows the read: "Approve it as written", "Ask for changes" (the builder says what), and any real alternative such as "Split it: the spec waits for your read, the rest lands now"' ;;
     unrecommended) printf '%s\n' 'its ask gives choices and none is recommended. End the one you would pick with "Recommended." and a short reason why, in the same comment' ;;
     several) printf '%s\n' 'its ask gives choices and more than one says "Recommended". Keep the word on the one you would pick, with a short reason why, and take it off the others' ;;
   esac

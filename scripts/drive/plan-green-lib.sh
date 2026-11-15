@@ -44,7 +44,7 @@ settled_red() {
 
 # head_settled_red SHA: settled_red for a head commit (one REST call).
 head_settled_red() {
-  settled_red "$(gh api "repos/{owner}/{repo}/commits/$1/check-runs?per_page=100" --jq '.check_runs[] | [.status, (.conclusion // "")] | @tsv' 2>/dev/null)"
+  settled_red "$(head_check_lines "$1")"  # check runs, or the Actions runs and statuses when the token has no Checks permission (board-checks-lib.sh)
 }
 
 # say_every_pr ROUND SNAPSHOT

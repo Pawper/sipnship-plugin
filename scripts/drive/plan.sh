@@ -22,11 +22,14 @@
 here=$(dirname "$0")
 . "$here/../../hooks/scripts/lib.sh"
 . "$here/../../hooks/scripts/session-brief-lib.sh"
+. "$here/../../hooks/scripts/board-checks-lib.sh"
+. "$here/../../hooks/scripts/session-brief-versions.sh"
 . "$here/drive-lib.sh"
 . "$here/auto-lib.sh"
 . "$here/bundle-lib.sh"
 . "$here/round-lib.sh"
 . "$here/round-notes-lib.sh"
+. "$here/round-words-lib.sh"
 . "$here/round-sizing-lib.sh"
 . "$here/round-state-lib.sh"
 . "$here/areas-lib.sh"
@@ -74,6 +77,9 @@ if [ -z "$facts" ]; then
   if [ "$(gh_refusal "$(cat "${TMPDIR:-/tmp}/board-now.$$.err" 2>/dev/null)")" = yes ]; then
     echo "GitHub refused the board read for its rate limit (GraphQL's secondary limit; REST may still be fine); try the round again in a few minutes, and keep one queue and one drive at a time."
     echo "stop: rate-limited"
+  elif [ "$(token_refusal "$(cat "${TMPDIR:-/tmp}/board-now.$$.err" 2>/dev/null)")" = yes ]; then
+    echo "GitHub refused the board read for this token's permissions ($(tr -d '\r' < "${TMPDIR:-/tmp}/board-now.$$.err" | head -n 1 | cut -c1-160)); gh is signed in, but the token cannot read what the round needs. Give it Actions, Administration (read, to list runners), Commit statuses, Contents, Issues, Pull requests and Workflows."
+    echo "stop: token permissions"
   else
     echo "gh is not available or not signed in; the round cannot read the project."
     echo "stop: unavailable"
@@ -81,6 +87,7 @@ if [ -z "$facts" ]; then
   rm -f "${TMPDIR:-/tmp}/board-now.$$.err" 2>/dev/null
   exit 0
 fi
+grep -q "can't read check results" "${TMPDIR:-/tmp}/board-now.$$.err" 2>/dev/null && plan_say "this token can't read check results; the checks are read from the Actions runs and commit statuses instead"
 rm -f "${TMPDIR:-/tmp}/board-now.$$.err" 2>/dev/null
 plan_say "read the board: $(printf '%s\n' "$facts" | grep -c '^issue') issues, $(printf '%s\n' "$facts" | grep -c '^pr') pull requests"
 
@@ -108,7 +115,7 @@ printf '%s\n' "$facts" | tr '\t' '\037' | while IFS="$us" read -r kind num title
       case "$state" in
         ready)
           # Title and the start of the body, both from the one call; an owner-decision match is a candidate with its sentence.
-          printf 'issue\t%s\t%s\tready\t%s\n' "$num" "$title" "$(owner_issue_fields "$num" "$title $c" "$owner_phrases")" ;;
+          printf 'issue\t%s\t%s\tready\t%s\n' "$num" "$title" "$(owner_issue_fields "$num" "$title" "$c" "$owner_phrases")" ;;
         in-progress|waiting-on-owner|blocked)
           printf 'issue\t%s\t%s\t%s\tno\n' "$num" "$title" "$state" ;;
       esac
@@ -249,3 +256,4 @@ held_wait_note "${held_since:-}" "$(date +%s)"
 summary_note
 health_note
 wake_note
+[ "$fast" = yes ] || plugin_note

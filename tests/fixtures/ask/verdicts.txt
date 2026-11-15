@@ -13,3 +13,6 @@ question-only question
 no-question none
 instructions instructions
 action-defer actiondefer
+read-first putoff
+decide-later putoff
+read-then-land one

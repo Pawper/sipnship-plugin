@@ -1,4 +1,5 @@
 .claude/rules.txt 302bcd5e29321b6f03639be2940432cea0f9816b
+.claude/rules.txt 41651f1b74636b2f4be9347c377b1c0d72f63411
 .claude/rules.txt 7982c57baed3cc923bd3f2a2c97d9146b463af15
 .claude/rules.txt b5f8cafd973e77bf9707a9f14bd27fc4ad4d59c0
 .github/workflows/audit.yml 00ddf6c8379ebc42d1e07aba5e6dccb0a2ff58c6
@@ -101,6 +102,7 @@ scripts/board-lib.sh 4ae9a93b899d7f9168df903d4f7b75c3e03e1e86
 scripts/board-lib.sh 9f2c5209a59f45c56b6ce7f4f2aae95ffa3f83bd
 scripts/board-lib.sh a25bbb511b28ddacc126a9bb34645c4dd83c6507
 scripts/board-lib.sh b21fdae9dbcc33f8536e74d81d5e7a480bb317c9
+scripts/board-lib.sh e3bf00886896c688504ff9ff73855eb547fbbc1c
 scripts/board-lib.sh fe39f0cb0aff6362ea756545ced9430d38920f2f
 scripts/board-sync.sh ace03b7cee3e324bcdf7ee235c470a85fa27ae06
 scripts/board-sync.sh fe0ca4facc76d2f97cb2874d1d615b11063248ca
@@ -182,6 +184,7 @@ scripts/ci/add-runner.ps1 acee7e1e56ef8f4878d04f01c96d52683e8ed62d
 scripts/ci/ask-audit.sh a46f87ac2f28db195d54cd64dea6b0b626de7a55
 scripts/ci/ask-audit.sh f33329b0f6995496914745b67295e7216a04800a
 scripts/ci/ask-lib.sh 0b29b024b3e69559150f82f5791c2c6e834292da
+scripts/ci/ask-lib.sh 26e4e363ca6d4e88f4a40124312b6b18fb6de29a
 scripts/ci/ask-lib.sh 366910657643abfae0d303c97d656c470ef98d63
 scripts/ci/ask-lib.sh 84f4052c60eb944519330a7dce6fec8e5e115ca1
 scripts/ci/batch-lib.sh 04e0a0b65fbbabe00cefd734a79aabb45fb70934

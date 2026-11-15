@@ -12,24 +12,38 @@
 # and the board reader all read this; none makes another call per pull
 # request or per issue. Exits non-zero and prints nothing when gh is
 # missing, signed out or offline, so callers can say "(unavailable)".
+#
+# A token that may not read check results (a fine-grained token cannot be
+# given the Checks permission) is refused for that one field. The board is
+# then read again without it and each pull request's checks come from the
+# Actions runs and commit statuses (board-checks-lib.sh), so the board never
+# fails for one refused field; a line on stderr says so.
 command -v gh >/dev/null 2>&1 || exit 1
+here_bn=$(dirname "$0")
+. "$here_bn/board-checks-lib.sh"
 
-query='query($owner:String!,$name:String!){repository(owner:$owner,name:$name){
+# board_query COMMIT_FIELD: the query, with the field read from the head commit.
+board_query() {
+  printf '%s' 'query($owner:String!,$name:String!){repository(owner:$owner,name:$name){
   pullRequests(states:OPEN,first:30,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{
     number title mergeable headRefName updatedAt
-    commits(last:1){nodes{commit{statusCheckRollup{state}}}}
+    commits(last:1){nodes{commit{'"$1"'}}}
     files(first:50){nodes{path}}
   }}
   issues(states:OPEN,first:100,orderBy:{field:UPDATED_AT,direction:DESC}){totalCount nodes{
     number title updatedAt bodyText labels(first:10){nodes{name}}
   }}
 }}'
+}
 
-gh api graphql -F owner='{owner}' -F name='{repo}' -f query="$query" --jq '
+# board_read COMMIT_FIELD: the facts; the fourth field of a pull request is its
+# rollup, or its head commit's oid when the rollup was not asked for.
+board_read() {
+  gh api graphql -F owner='{owner}' -F name='{repo}' -f query="$(board_query "$1")" --jq '
   .data.repository as $r
   | ($r.pullRequests.nodes[] | [
       "pr", .number, (.title | gsub("[\\t\\n\\r]"; " ")),
-      (.commits.nodes[0].commit.statusCheckRollup.state // "NONE"),
+      (.commits.nodes[0].commit | (.statusCheckRollup.state // .oid // "NONE")),
       .mergeable, .headRefName,
       ([.files.nodes[]?.path] | join(",")),
       .updatedAt
@@ -41,4 +55,17 @@ gh api graphql -F owner='{owner}' -F name='{repo}' -f query="$query" --jq '
       ((.bodyText // "")[0:300] | gsub("[\\t\\n\\r]"; " "))
     ] | @tsv),
     (["total", $r.issues.totalCount] | @tsv)
-' 2>/dev/null
+'
+}
+
+bn_err=$(mktemp); trap 'rm -f "$bn_err"' EXIT
+if bn_out=$(board_read 'statusCheckRollup{state}' 2>"$bn_err"); then
+  printf '%s\n' "$bn_out"
+elif [ "$(token_refusal "$(cat "$bn_err")")" = yes ]; then
+  echo "this token can't read check results; the checks are read from the Actions runs and commit statuses instead" >&2
+  bn_out=$(board_read 'oid' 2>"$bn_err") || { cat "$bn_err" >&2; exit 1; }
+  pr_rollups "$bn_out"
+else
+  cat "$bn_err" >&2
+  exit 1
+fi

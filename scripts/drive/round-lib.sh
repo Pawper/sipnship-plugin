@@ -50,16 +50,19 @@ setting() {
 # "unknown" or nothing leaves what the board said; anything else is
 # mergeable. REDS, HELD, BUSY and PENDING (its head commit's checks are
 # still running) and MAINRED (none, fixed or waiting: its reds came from a test broken on main, and main is
-# right again, or not yet) become the pull request's seventh to eleventh fields. Every
-# other line passes through.
+# right again, or not yet) become the pull request's seventh to eleventh fields; two more may follow
+# in LINES, the clock time of the head commit (a push), when an agent goes, and the reds counted in words, which become its
+# twelfth to fourteenth. Every other line passes through.
 overlay_rest() {
   { printf '%s\n' "$2" | sed 's/^/R	/'; printf '%s\n' "$1" | sed 's/^/S	/'; } | tr -d '\r' | awk -F'\t' -v OFS='\t' '
-    $1 == "R" && $2 != "" { st[$2] = $3; reds[$2] = $4; held[$2] = $5; busy[$2] = $6; pend[$2] = $7; mred[$2] = $8; next }
+    $1 == "R" && $2 != "" { st[$2] = $3; reds[$2] = $4; held[$2] = $5; busy[$2] = $6; pend[$2] = $7; mred[$2] = $8; ps[$2] = $9; gs[$2] = $10; rw[$2] = $11; next }
     $1 == "S" && $2 == "pr" && ($3 in st) {
       m = $6
       if (st[$3] == "dirty") m = "conflicting"
       else if (st[$3] != "" && st[$3] != "unknown") m = "mergeable"
-      print $2, $3, $4, $5, m, $7, (reds[$3] == "" ? 0 : reds[$3] + 0), (held[$3] == "yes" ? "yes" : "no"), (busy[$3] == "yes" ? "yes" : "no"), (pend[$3] == "yes" ? "yes" : "no"), (mred[$3] == "" ? "none" : mred[$3])
+      line = $2 OFS $3 OFS $4 OFS $5 OFS m OFS $7 OFS (reds[$3] == "" ? 0 : reds[$3] + 0) OFS (held[$3] == "yes" ? "yes" : "no") OFS (busy[$3] == "yes" ? "yes" : "no") OFS (pend[$3] == "yes" ? "yes" : "no") OFS (mred[$3] == "" ? "none" : mred[$3])
+      if (ps[$3] != "" || rw[$3] != "") line = line OFS ps[$3] OFS gs[$3] OFS rw[$3]
+      print line
       next
     }
     $1 == "S" && NF > 1 { sub(/^S\t/, ""); print }'

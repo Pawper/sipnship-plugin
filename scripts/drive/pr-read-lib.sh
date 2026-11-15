@@ -16,16 +16,18 @@ read_open_pull_requests() {
   "; p_reds=0; p_ci=$(printf '%s\n' "$snapshot" | awk -F'\t' -v n="$p_num" '$1 == "pr" && $2 == n { print $4 }')
     # A rollup still reading pending after every check ended and one failed or was cancelled is red.
     if [ "$p_ci" = pending ] && [ "$(head_settled_red "$p_sha")" = yes ]; then p_ci=red; snapshot=$(printf '%s\n' "$snapshot" | awk -F'\t' -v OFS='\t' -v n="$p_num" '$1 == "pr" && $2 == n { $4 = "red" } { print }'); fi
-    p_mainred=none
+    p_mainred=none; p_redsay=""; p_mainn=0
     if [ "$p_ci" = red ]; then
       p_runs=$(gh api "repos/{owner}/{repo}/actions/runs?branch=$p_ref&event=pull_request&status=failure&per_page=100" --jq '.workflow_runs[] | [(.id | tostring), .head_sha, (.created_at | fromdateiso8601 | tostring)] | @tsv' 2>/dev/null | tr -d '\r')
       p_reds=$(red_count "$(printf '%s\n' "$p_runs" | cut -f2)")
+      p_redsay=$(printf '%s\n' "$p_runs" | cut -f2)
       # A red that main itself had at the time (the same check failing there) is not the pull request's own: it does not count
       # toward set-aside, and once main is right the pull request needs main merged in (the mainred field, round-lib.sh).
       if [ "$p_reds" -gt 0 ]; then
         [ -n "${main_checks_read:-}" ] || { main_checks=$(main_finished_checks); main_checks_read=yes; }
         p_fails=$(run_failed_checks "$p_runs")
         p_main=$(main_reds "$p_fails" "$main_checks" | grep -c .)
+        p_mainn=$p_main
         if [ "$p_main" -gt 0 ]; then
           p_reds=$(( p_reds - p_main ))
           if [ "$p_reds" -le 0 ]; then
@@ -38,10 +40,10 @@ read_open_pull_requests() {
     # Someone else on it? Only for one the drive would send an agent to (it conflicts or is red): a head commit under 10 minutes (red) or 30 (conflicting)
     # old means an agent is at work. Comments, the drive's own posts, a worktree and a check re-run never count: none ends when an
     # agent does, so a pull request nobody works would wait for ever.
-    p_busy=no; p_head=
+    p_busy=no; p_head=; p_wait=$( [ "$p_ci" = red ] && echo 10 || echo 30)
     if [ "$p_state" = dirty ] || [ "$p_ci" = red ]; then
       p_head=$(gh api "repos/{owner}/{repo}/commits/$p_sha" --jq '.commit.committer.date | fromdateiso8601' 2>/dev/null | tr -d '\r')
-      p_busy=$(recently_touched "$p_head" "" "$(date +%s)" "$( [ "$p_ci" = red ] && echo 10 || echo 30)")
+      p_busy=$(recently_touched "$p_head" "" "$(date +%s)" "$p_wait")
     fi
     p_pend=no; [ "$p_ci" = red ] && p_pend=$(head_checks_pending "$p_sha")  # a red from an older commit is not the newest commit failing
     # A red the round waits on (its newest commit's checks still running, or its reds from main) is timed from that commit.
@@ -50,7 +52,7 @@ read_open_pull_requests() {
       held_since="${held_since:-}${p_num}${tab}${p_head}
 "
     fi
-    rest_lines="${rest_lines}${p_num}${tab}${p_state}${tab}${p_reds}${tab}$(held_by "$p_labels" "$p_hold")${tab}${p_busy}${tab}${p_pend}${tab}${p_mainred}
+    rest_lines="${rest_lines}${p_num}${tab}${p_state}${tab}${p_reds}${tab}$(held_by "$p_labels" "$p_hold")${tab}${p_busy}${tab}${p_pend}${tab}${p_mainred}${tab}$(clock_of "$p_head")${tab}$(clock_of "$( [ -n "$p_head" ] && echo $(( p_head + p_wait * 60 )) )")${tab}$(reds_words "$p_redsay" "$p_mainn")
 "
   done <<EOF_PRS
 $pr_list

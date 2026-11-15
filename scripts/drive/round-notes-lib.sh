@@ -86,3 +86,25 @@ wake_note() {
     [ -n "$secs" ] && echo "wake: $secs seconds, PR $pend_pr"
   fi
 }
+
+# plugin_behind_note INSTALLED RELEASED
+# One line when the plugin copy running the drive is older than the latest
+# release, with both versions, how far behind when that is a count of patch
+# releases, and how to update; nothing when it is current or either is not
+# known. A scheduled tick runs the installed copy, so fixes already released
+# come back in the plan until it is updated, and the drive reports the line.
+plugin_behind_note() {
+  [ -n "$1" ] && [ -n "$2" ] || return 0
+  [ "$(ver_lt "$1" "$2")" = yes ] || return 0
+  pb_n=$(awk -v a="$1" -v b="$2" 'BEGIN { split(a, x, "."); split(b, y, "."); if (x[1] == y[1] && x[2] == y[2]) print y[3] - x[3] }')
+  pb_how=""
+  if [ "$pb_n" = 1 ]; then pb_how=" (1 release behind)"; elif [ -n "$pb_n" ]; then pb_how=" ($pb_n releases behind)"; fi
+  echo "plugin: this drive runs $1, and $2 is released$pb_how. Faults fixed in a release come back in the plan until the installed copy is updated (sh plugin/scripts/release/update-installed.sh); say so in the report on the drive issue."
+}
+
+# plugin_note: the line above for the copy this plan runs from, one REST call.
+plugin_note() {
+  pn_have=$(sed -n 's/^ *"version": *"\([^"]*\)".*/\1/p' "$here/../../package.json" 2>/dev/null | head -n 1)
+  pn_rel=$(gh api repos/Pawper/sipnship-plugin/releases/latest --jq .tag_name 2>/dev/null | tr -d '\r' | sed 's/^plugin-//; s/^v//')
+  plugin_behind_note "$pn_have" "$pn_rel"
+}

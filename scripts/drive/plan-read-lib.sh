@@ -109,7 +109,7 @@ main_finished_checks() {
 # head_checks_pending SHA
 # "yes" when the head commit's check runs are not all completed (one REST call).
 head_checks_pending() {
-  checks_pending "$(gh api "repos/{owner}/{repo}/commits/$1/check-runs?per_page=100" --jq '.check_runs[] | [.status, (.conclusion // "")] | @tsv' 2>/dev/null)"
+  checks_pending "$(head_check_lines "$1")"  # board-checks-lib.sh
 }
 
 # open_batch_pr

@@ -38,7 +38,7 @@ board_load() {
   BOARD_ID=$(gh_project view "$1" --owner "$2" --format json --jq .id)
   BOARD_STATE_FIELD=$(board_fields '.fields[] | select(.name == "State") | .id')
   BOARD_STATUS_FIELD=$(board_fields '.fields[] | select(.name == "Status") | .id')
-  [ -n "$BOARD_STATE_FIELD" ] || { echo "Project $1 has no State field; run sh scripts/board.sh first." >&2; exit 1; }
+  [ -n "$BOARD_STATE_FIELD" ] || { echo "Project $1 has no State field; run sh scripts/board.sh first." >&2; return 1; }
 }
 
 # board_fields FILTER: the field list through gh's built-in jq, so nothing

@@ -1333,6 +1333,15 @@ eq "an issue the drive judged needs no ask is declined, one never judged is not"
 eq "a missing note declines nothing" "no" "$(owner_decision_declined 7 "$od_note.none")"
 eq "the ask-owner line carries what matched" "ask-owner 13	Set the price of the plan	matched \"prices\" in: Set the prices" "$(propose_round "$(printf 'issue\t13\tSet the price of the plan\tready\tyes\tmatched \"prices\" in: Set the prices\n')" 2 4 2 | grep '^ask-owner')"
 eq "the owner-decision line reads the declined note and says what matched" "1 1" "$(grep -c 'owner_decision_declined "\$1" .scratch/drive/no-ask.txt' "$root/scripts/drive/owner-lib.sh") $(grep -c 'owner_issue_fields' "$root/scripts/drive/plan.sh")"
+od_t1="Spec the cost page"; od_b1="Page B prices it as a hosted agent. Nothing else is open."
+eq "a phrase in passing asks nobody" "" "$(owner_decision_open "$od_t1" "$od_b1" prices)"
+eq "the phrase as a whole word in the title is a decision" "prices" "$(owner_decision_open "Set the prices for the plan" "Nothing." prices)"
+eq "the verb in a title is not the word" "" "$(owner_decision_open "Page B prices a hosted agent" "Nothing." price)"
+eq "a marked question holds the decision" "prices" "$(owner_decision_open "$od_t1" "Background. Should we change the prices? More text." prices)"
+eq "a decision line holds the decision" "prices" "$(owner_decision_open "$od_t1" "Background. Decision: the prices for the yearly plan." prices)"
+eq "an answer already on the issue ends the ask" "" "$(owner_decision_open "Set the prices for the plan" "Builder answer: ten dollars." prices)"
+eq "the snapshot says no for a passing mention" "no" "$(owner_issue_fields 1654 "$od_t1" "$od_b1" prices)"
+eq "the snapshot says yes for a titled decision" "yes" "$(owner_issue_fields 1655 "Set the prices for the plan" "Nothing." prices | cut -f1)"
 eq "report trimmed per section" "Merged:
 #1
 #2
@@ -5143,6 +5152,42 @@ eq "a busy line is not numbered" "busy 52	Frost alert" "$(number_proposal "$(pri
 eq "red too often is set aside once its newest commit is neither new nor waiting on checks" "set-aside 53	Seed list	(red 2 times)" "$(propose_round "$(overlay_rest "$rd_snap" "$(printf '53\tunstable\t2\tno\tno\tno\n')")" 2 4 2 | grep '53')"
 eq "red twice before, but a head commit under 30 minutes old: busy, not set aside" "busy 53	Seed list	its last push is recent (a red change waits 10 minutes from its last push, a conflicting one 30); someone is on it" "$(propose_round "$(overlay_rest "$rd_snap" "$(printf '53\tunstable\t2\tno\tyes\tno\n')")" 2 4 2 | grep '53')"
 eq "red twice before, a pending head commit: no set-aside, and no fix, only a busy line saying why" "busy 53	Seed list	its newest commit is still waiting on its checks" "$(propose_round "$(overlay_rest "$rd_snap" "$(printf '53\tunstable\t2\tno\tno\tyes\n')")" 2 4 2 | grep '53')"
+# The words on a red change's line: the last push and the reds a set-aside counted (#1645, #1621).
+. "$root/scripts/drive/round-words-lib.sh"
+eq "the reds a set-aside counted are named by commit, one each, with the ones main caused left out" "red on commits aaaaaaa, bbbbbbb; 1 red from main left out" "$(reds_words "$(printf 'aaaaaaaaaaaa\nbbbbbbbbbbbb\naaaaaaaaaaaa\n')" 1)"
+eq "one red names one commit" "red on commit ccccccc" "$(reds_words ccccccccccc 0)"
+eq "no commit, no words" "" "$(reds_words '' 0)"
+eq "an epoch becomes a clock time and a bad one nothing" "1 0" "$(clock_of 1700000000 | grep -Ec '^[0-9]{1,2}:[0-9]{2} (AM|PM)$') $(clock_of abc | grep -c .)"
+rd_words=$(overlay_rest "$rd_snap" "$(printf '53\tunstable\t3\tno\tno\tno\tnone\t11:13 AM\t11:23 AM\tred on commits aaaaaaa, bbbbbbb, ccccccc\n')")
+eq "the overlay carries the push time, when an agent goes and the reds counted" "11:13 AM	11:23 AM	red on commits aaaaaaa, bbbbbbb, ccccccc" "$(printf '%s\n' "$rd_words" | awk -F'\t' '$2 == 53 { print $12 "\t" $13 "\t" $14 }')"
+eq "the set-aside line says which reds it counted" "set-aside 53	Seed list	(red 3 times: red on commits aaaaaaa, bbbbbbb, ccccccc)" "$(propose_round "$rd_words" 2 4 2 | grep '^set-aside')"
+rd_wait=$(overlay_rest "$rd_snap" "$(printf '53\tunstable\t1\tno\tyes\tno\tnone\t11:13 AM\t11:23 AM\tred on commit aaaaaaa\n')")
+eq "a waiting red change says the last push and when an agent goes" "busy 53	Seed list	its last push was at 11:13 AM, so an agent goes at 11:23 AM if nobody is on it (a red change waits 10 minutes from its last push, a conflicting one 30)" "$(propose_round "$rd_wait" 2 4 2 | grep '^busy 53')"
+# board_load returns, so a project with no State field falls to the label (#1651).
+eq "board_load returns 1 when the project has no State field, and the caller carries on" "returned 1 carried-on" "$(sh -c 'gh() { case "$*" in *"project view"*) echo PVT_1 ;; esac; }; . "$0"; if board_load 1 maya 2>/dev/null; then echo loaded; else echo "returned $? carried-on"; fi' "$root/templates/scripts/board-lib.sh")"
+eq "the board library no longer exits from board_load" "0" "$(sed -n '/^board_load()/,/^}/p' "$root/templates/scripts/board-lib.sh" | grep -c 'exit ')"
+# Checks without a Checks permission (#1629).
+. "$root/hooks/scripts/board-checks-lib.sh"
+eq "a token refusal is named, a rate limit is not" "yes no" "$(token_refusal 'gh: Resource not accessible by personal access token (x)') $(token_refusal 'secondary rate limit')"
+eq "a rollup from runs: a failure wins" "FAILURE" "$(rollup_of "$(printf 'completed\tsuccess\nin_progress\t\ncompleted\tfailure\n')")"
+eq "a rollup from runs: one still running is pending" "PENDING" "$(rollup_of "$(printf 'completed\tsuccess\nqueued\t\n')")"
+eq "a rollup from runs: all done is success, none is none" "SUCCESS NONE" "$(rollup_of "$(printf 'completed\tsuccess\ncompleted\tskipped\n')") $(rollup_of '')"
+eq "commit statuses read as runs" "in_progress	
+completed	success
+completed	failure" "$(status_lines "$(printf 'pending\nsuccess\nerror\n')")"
+bc_gh() { gh() { case "$*" in *check-runs*) return 1 ;; *actions/runs*) printf 'completed\tsuccess\ncompleted\tfailure\n' ;; *status*) printf 'pending\n' ;; esac; }; }
+eq "check runs refused: the commit's checks come from the Actions runs and its statuses" "completed	success
+completed	failure
+in_progress	" "$(bc_gh; head_check_lines abc123)"
+eq "a board read with the rollup refused still carries every pull request, its state from the runs" "pr	7	Beds page	FAILURE	MERGEABLE	b	a.sh	t
+issue	9	Ready thing	state:ready	t	x" "$(bc_gh; pr_rollups "$(printf 'pr\t7\tBeds page\tabc123\tMERGEABLE\tb\ta.sh\tt\nissue\t9\tReady thing\tstate:ready\tt\tx\n')")"
+eq "the plan names the refusal and the board falls back without failing" "2" "$(grep -c "can't read check results" "$root/hooks/scripts/board-now.sh" "$root/scripts/drive/plan.sh" | awk -F: '$2 > 0' | wc -l | tr -d ' ')"
+# The installed plugin behind the latest release (#1626).
+. "$root/hooks/scripts/session-brief-versions.sh"
+eq "a copy twelve releases behind says so, with both versions and how to update" "plugin: this drive runs 0.43.5, and 0.43.17 is released (12 releases behind). Faults fixed in a release come back in the plan until the installed copy is updated (sh plugin/scripts/release/update-installed.sh); say so in the report on the drive issue." "$(plugin_behind_note 0.43.5 0.43.17)"
+eq "a current copy says nothing" "" "$(plugin_behind_note 0.43.17 0.43.17)$(plugin_behind_note 0.43.17 '')"
+eq "a copy a minor behind names no count" "plugin: this drive runs 0.42.9, and 0.43.1 is released. Faults fixed in a release come back in the plan until the installed copy is updated (sh plugin/scripts/release/update-installed.sh); say so in the report on the drive issue." "$(plugin_behind_note 0.42.9 0.43.1)"
+eq "plan.sh prints the behind line from one release read" "1" "$(grep -c '^\[ "\$fast" = yes \] || plugin_note' "$root/scripts/drive/plan.sh")"
 eq "a pending head commit is read from its check runs: any not completed" "yes no" "$(checks_pending "$(printf 'completed\tfailure\nqueued\t\n')") $(checks_pending "$(printf 'completed\tfailure\ncompleted\tsuccess\n')")"
 eq "plan.sh reads the head commit's check runs before it proposes set-aside" "1" "$(grep -c 'head_checks_pending "\$p_sha"' "$root/scripts/drive/pr-read-lib.sh")"
 rd_held_green=$(printf 'pr\t61\tSeed list\tgreen\tmergeable\tapp\t0\tyes\tno\tno\npr\t62\tBed map\tgreen\tmergeable\tapp\t0\tyes\tno\tno\npr\t63\tFrost alert\tgreen\tmergeable\tapp\t0\tyes\tno\tno\nqueue\tnone\n')
@@ -5589,7 +5634,7 @@ section 'an ask with choices recommends one'
 # The shared cases: the dashboard's reader is tested against the same list.
 ak_fx="$fx/ask"
 ak_cases=$(grep -v '^#' "$ak_fx/verdicts.txt" | tr -d '\r')
-eq "the shared list has its cases" "11" "$(printf '%s\n' "$ak_cases" | grep -c .)"
+eq "the shared list has its cases" "14" "$(printf '%s\n' "$ak_cases" | grep -c .)"
 printf '%s\n' "$ak_cases" | while read -r ak_name ak_want; do
   [ -n "$ak_name" ] || continue
   eq "the shared case $ak_name reads $ak_want" "$ak_want" "$(ask_verdict < "$ak_fx/$ak_name.md")"
@@ -5606,6 +5651,10 @@ eq "two recommended says to keep one" "yes" "$(ask_fix several | grep -q 'more t
 eq "Instructions is read only as the comment's first word" "none" "$(printf 'The change is held.\n\nInstructions: Set up the hub\n\n1. Add the secret.\n' | ask_verdict)"
 eq "Instructions needs no fix" "" "$(ask_fix instructions)"
 eq "an action and a deferral says to write Instructions" "yes" "$(ask_fix actiondefer | grep -q 'Write it as Instructions instead' && echo yes)"
+eq "a choice that is only to read it, or to decide later, is fixed by naming what to read and offering outcomes" "putoff putoff one" "$(ask_verdict < "$ak_fx/read-first.md") $(ask_verdict < "$ak_fx/decide-later.md") $(ask_verdict < "$ak_fx/read-then-land.md")"
+eq "a put-off says reading is never a choice and what to write" "yes" "$(ask_fix putoff | grep -q 'Reading is never a choice' && ask_fix putoff | grep -q 'Ask for changes' && echo yes)"
+eq "Read it and let it land is an outcome, not a put-off" "one" "$(printf 'Should it land?\n\n1. Read it and let it land. Recommended. It waits only for your read.\n2. Tell your agent what to change first. Nothing lands.\n' | ask_verdict)"
+eq "the hook refuses a put-off the same way as a missing recommendation" "yes" "$([ -n "$(ask_fix putoff)" ] && echo yes)"
 
 # Which command sets an issue to waiting on the owner.
 eq "gh issue edit adding the label" "207" "$(waiting_on_owner_issue 'gh issue edit 207 --add-label state:waiting-on-owner --remove-label state:in-progress')"
