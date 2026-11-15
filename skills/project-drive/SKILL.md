@@ -39,6 +39,11 @@ The drive works the ready list in rounds, so many issues land in little time wit
   the same rule: `publish-round.sh` refuses a unit in an area the running round owns.
 - **Bundles rank before loose issues**: a round fills with the units that carry the most issues first, up to
   `unitsPerRound`. Splitting one big issue into parts is not a bundle.
+- **A hold takes no slot twice.** An issue the drive published as a `hold:` in its last round, while its
+  reason is still true (what it waits on is still open, its pull request still open), is left out of the next
+  plan's slots, so they go to the next ready unit, after the project's `priorities`. The `defer` line says how
+  many held issues kept out of the round, so a small round is explained. A held issue's reason is read again
+  each run; when it ends, the issue is planned like any other.
 - **A project's plugin or CI work goes in one bundle.** Issues touching `plugin/`, `scripts/ci/` or
   `.github/` share one test suite, so they always clash; the plan puts every such issue into one bundle and
   holds plugin work while a plugin unit is running.

@@ -5418,6 +5418,25 @@ hold	302	Tint the beds	Its pull request (#531) is still open and its unit is run
 hold	303		Its pull request (#531) is still open and its unit is running; no agent is started on it" "$(started_pr_holds "$sr_comments" "$(printf '531\n')" "$(printf '301\tWater the beds\n302\tTint the beds\n')")"
 eq "a unit whose pull request is not open holds nothing" "" "$(started_pr_holds "$sr_comments" "$(printf '540\n')" '')"
 eq "plan.sh reads the started round and holds those issues out of dispatch" "1 1" "$(grep -c 'read_drive_comments "$drive_line"' "$root/scripts/drive/plan.sh") $(grep -c 'started_ready_holds "$drive_comments"' "$root/scripts/drive/plan.sh")"
+# The holds the drive published stay out of the next plan's slots (held-round-lib.sh).
+. "$root/scripts/drive/held-round-lib.sh"
+hr_t=$(printf '\t')
+hr_facts="issue${hr_t}301${hr_t}Water the beds${hr_t}state:ready${hr_t}x
+issue${hr_t}302${hr_t}Tint the beds${hr_t}state:ready${hr_t}x
+issue${hr_t}303${hr_t}Map the beds${hr_t}state:ready${hr_t}x
+issue${hr_t}304${hr_t}Plant list${hr_t}state:waiting-on-owner${hr_t}x
+issue${hr_t}305${hr_t}Seed order${hr_t}state:ready${hr_t}x"
+hr_c="2026-11-14T10:00:00Z${hr_t}sipnship[bot]${hr_t}<!-- sipnship-proposal {\"status\":\"proposed\",\"units\":[],\"held\":[{\"issues\":[301],\"waitsOn\":[304],\"areas\":[],\"why\":\"Waits on the plant list\"},{\"issues\":[302],\"waitsOn\":[],\"areas\":[],\"why\":\"No free runner this round\"},{\"issues\":[303],\"waitsOn\":[999],\"areas\":[]}],\"sized\":\"5 runners\"} -->"
+eq "a published hold whose reason is still true takes no slot; a deferral for a runner, and a hold whose wait ended, do not hold" "hold	301	Water the beds	Held in the last proposed round: Waits on the plant list; it takes no slot until that changes" "$(published_holds "$hr_c" "$hr_facts" '')"
+eq "a published hold on a pull request that is no longer open is released" "" "$(published_holds "$(printf '%s' "$hr_c" | sed 's/\"waitsOn\":\[304\]/\"waitsOn\":[],\"pr\":77/')" "$hr_facts" "$(printf '12\n')")"
+eq "a hold on an issue that is no longer ready is not repeated" "" "$(published_holds "$hr_c" "$(printf '%s\n' "$hr_facts" | sed 's/301\(.*\)state:ready/301\1state:in-progress/')" '')"
+eq "no published round holds nothing" "" "$(published_holds '' "$hr_facts" '')"
+hr_plan="dispatch 305${hr_t}Seed order
+defer 2 unit(s): only 1 free runner this round (#302, #303)"
+eq "the defer line says held issues took no slot, and still ends in its issue list" "dispatch 305${hr_t}Seed order
+defer 2 unit(s): only 1 free runner this round; the 1 issue held since the last round takes no slot (#302, #303)" "$(defer_note "$hr_plan" 1)"
+eq "the defer line is unchanged when nothing was held" "$hr_plan" "$(defer_note "$hr_plan" 0)"
+eq "plan.sh keeps the last round's holds out of the slots and says so" "1 1" "$(grep -c 'published_holds "$drive_comments"' "$root/scripts/drive/plan.sh") $(grep -c 'defer_note "$round"' "$root/scripts/drive/plan.sh")"
 # A request with no issue: the round-wide Start now.
 wq_r="2026-11-12T18:56:00Z${wq_t}sipnship[bot]${wq_t}Queue request: start-now by maya
 2026-11-12T18:57:00Z${wq_t}sipnship[bot]${wq_t}Queue request: start-now #301 by maya"
