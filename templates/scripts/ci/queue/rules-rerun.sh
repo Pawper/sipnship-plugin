@@ -113,9 +113,9 @@ rerun_marks() {
   printf '%s\n' "$1" | tr -d '\r' | sed -n 's/.*<!-- merge-queue:rerun \([0-9a-fA-F]*\) \([0-9]*\) -->.*/\1\t\2/p'
 }
 
-# rerun_note CALL HEAD MARK: the comment a drain leaves when it decides:
+# pr_rerun_note CALL HEAD MARK: the comment a drain leaves when it decides:
 # what it did, why, and the hidden mark rerun_marks reads back.
-rerun_note() {
+pr_rerun_note() {
   rn_what="Re-running the failed jobs of this pull request's newest run"
   case "$1" in skip\ *) rn_what="Not re-running this pull request's failed jobs" ;; esac
   printf '%s: %s.\n\n<!-- merge-queue:rerun %s %s -->\n' "$rn_what" "${1#* }" "$2" "$3"

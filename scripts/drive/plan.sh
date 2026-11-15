@@ -149,10 +149,16 @@ read_open_pull_requests
 # issue still labeled waiting on owner that the owner has answered. Only
 # summaries that are current count.
 extra=""
+# The drive issue's comments, read once: the started round's units and the time it started.
+drive_line=$(drive_issue_line)
+drive_comments=$(read_drive_comments "$drive_line")
 if [ -f .scratch/board/digest.tsv ] && [ -f "$here/../board/board-lib.sh" ]; then
   . "$here/../board/board-lib.sh"
   saved=$(cat .scratch/board/digest.tsv)
   extra=$(digest_goals "$facts" "$saved")
+  # An open question counts only while no answer follows it, and an issue a started unit owns is its agent's, not the owner's.
+  extra=$(drop_waiting_goals "$extra" "$(answered_for "$extra")")
+  extra=$(drop_waiting_goals "$extra" "$(unit_issues "$(started_units "$drive_comments")")")
   # An open question is proposed as mark-waiting only when its ask is in the shape (scripts/ci/ask-lib.sh); otherwise as ask-fix.
   if [ -f scripts/ci/ask-lib.sh ]; then . scripts/ci/ask-lib.sh; . "$here/ask-gate-lib.sh"; extra=$(mark_waiting_goals "$extra" "$(ask_verdicts_for "$extra")"); fi
   fresh=$(digest_freshness "$facts" "$saved")
@@ -171,14 +177,15 @@ echo "proposal for $(date '+%A %Y-%m-%d'), the owner's local day (${runners_say}
 # The round file's own line for it (publish-round.sh's "sized:"), so the Work band says how many agents and why.
 echo "sized: ${runners_say}"
 # In progress is not taken on faith: an issue nobody works, or whose pull request is held for the owner, is set right first (./stale-lib.sh).
-drive_line=$(drive_issue_line)
-drive_comments=$(read_drive_comments "$drive_line")
-stale=$(stale_lines "$facts" "$pull_links" "$(git for-each-ref --format='%(committerdate:unix)%09%(refname:short)' refs/heads refs/remotes 2>/dev/null)" "$(date +%s)" 2 "$(started_units "$drive_comments")")
+stale=$(stale_lines "$facts" "$pull_links" "$(git for-each-ref --format='%(committerdate:unix)%09%(refname:short)' refs/heads refs/remotes 2>/dev/null)" "$(date +%s)" 2 "$(started_units "$drive_comments")" "$(started_at "$drive_comments")")
 if [ -n "$stale" ]; then
   stale_say "$stale" 2
   stale_apply "$stale" "$facts"
   facts=$(stale_facts "$facts" "$stale"); snapshot=$(stale_snapshot "$snapshot" "$stale")
 fi
+# A held pull request whose question has been answered is said, so nobody reads the answer as the hold's release.
+held_answered=$(held_answered_lines "$pull_links")
+[ -z "$held_answered" ] || printf '%s\n' "$held_answered"
 units_per_round=$(setting "$settings" unitsPerRound)
 aside_after=$(setting "$settings" setAsideAfterReds)
 MAINFIX_ISSUES=$(mainfix_numbers "$facts"); export MAINFIX_ISSUES  # ready fixes for a failure on main lead (rank-lib.sh)

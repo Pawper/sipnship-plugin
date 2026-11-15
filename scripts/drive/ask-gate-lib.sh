@@ -26,6 +26,66 @@ mark_waiting_goals() {
   done
 }
 
+# ask_answered KINDS: "yes" when the builder's newest answer comes after the
+# newest ask. KINDS is one letter a comment, oldest first, separated by
+# spaces: q (an ask: it has a "Recommended." choice), a (a "Builder answer:"
+# line, the fixed form answers.sh reads), - (anything else). An ask that
+# follows an answer is a new question, so it is open again.
+ask_answered() {
+  printf '%s\n' "$1" | awk '{ for (i = 1; i <= NF; i++) { if ($i == "q") q = i; if ($i == "a") a = i } } END { print (a > q) ? "yes" : "no" }'
+}
+
+# answered_for EXTRA: the numbers (one a line) of the mark-waiting issues in
+# EXTRA whose newest ask has a builder's answer after it; REST, one call per
+# such issue. An issue the ask was answered on is Ready on purpose, whatever
+# a summary of its comments says.
+answered_for() {
+  for an_n in $(printf '%s\n' "$1" | sed -n 's/^mark-waiting \([0-9]*\).*/\1/p'); do
+    an_k=$(gh api "repos/{owner}/{repo}/issues/$an_n/comments?per_page=100" --jq '[.[] | .body | gsub("\r"; "") | if test("(^|\n)[ \t]*Builder answer: #[0-9]+ choice [0-9]") then "a" elif test("Recommended\\.") then "q" else "-" end] | join(" ")' 2>/dev/null | tr -d '\r')
+    if [ "$(ask_answered "$an_k")" = yes ]; then printf '%s\n' "$an_n"; fi
+  done
+  return 0
+}
+
+# held_answered_say PULL ISSUE: the plan's line for a held pull request whose
+# ask on ISSUE has been answered. An answer that lets a held change land
+# lifts the hold in the service when it is written (specs/022-asks), and the
+# drive never changes the label itself; so a hold still there means the
+# answer did not let it land, and it stays the builder's to release.
+held_answered_say() {
+  printf 'held: #%s is held for the builder, and the question on #%s has been answered. An answer that lets it land lifts the hold by itself; this one did not, so it stays held until the builder lets it land. The drive does not change the hold.\n' "$1" "$2"
+}
+
+# held_answered_lines PULLS: one held_answered_say line for each held pull
+# request (PULLS are NUMBER<TAB>HELD<TAB>CLOSES, as stale_lines reads them)
+# that closes an issue whose newest ask has been answered; REST, one call per
+# such issue. A pull request is named once.
+held_answered_lines() {
+  printf '%s\n' "$1" | tr -d '\r' | while IFS="$(printf '\t')" read -r ha_pr ha_held ha_closes ha_rest; do
+    [ "$ha_held" = yes ] || continue
+    for ha_n in $(printf '%s' "$ha_closes" | tr ',' ' '); do
+      ha_k=$(gh api "repos/{owner}/{repo}/issues/$ha_n/comments?per_page=100" --jq '[.[] | .body | gsub("\r"; "") | if test("(^|\n)[ \t]*Builder answer: #[0-9]+ choice [0-9]") then "a" elif test("Recommended\\.") then "q" else "-" end] | join(" ")' 2>/dev/null | tr -d '\r')
+      if [ "$(ask_answered "$ha_k")" = yes ]; then held_answered_say "$ha_pr" "$ha_n"; break; fi
+    done
+  done
+  return 0
+}
+
+# drop_waiting_goals EXTRA NUMBERS: EXTRA without the mark-waiting lines for
+# the issues in NUMBERS (one a line, or space separated).
+drop_waiting_goals() {
+  printf '%s\n' "$1" | awk -v drop=" $(printf '%s' "$2" | tr '\n' ' ') " '
+    /^mark-waiting [0-9]+/ { n = $2; sub(/\t.*/, "", n); if (index(drop, " " n " ")) next }
+    { print }'
+}
+
+# unit_issues UNITS: the issue numbers of the started round's units (as
+# started_units prints them), one a line; their agents are on them, so no
+# stale ask of an earlier tick moves them to the owner.
+unit_issues() {
+  printf '%s\n' "$1" | awk -F'\t' 'NF >= 2 { n = split($2, a, " "); for (i = 1; i <= n; i++) print a[i] }'
+}
+
 # ask_verdicts_for EXTRA: "NUMBER<TAB>WORD" for each mark-waiting issue in
 # EXTRA, from its comments (newest first, parted as ask_verdict reads them);
 # REST, one call per such issue, and none when there are none.

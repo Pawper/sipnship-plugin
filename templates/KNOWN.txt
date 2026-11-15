@@ -423,6 +423,7 @@ scripts/ci/merge-queue.sh b88828286224a777318a0dea6f07a6c290e68c91
 scripts/ci/merge-queue.sh ba36e239add4308a57e31d422d797794bac7e723
 scripts/ci/merge-queue.sh bc5239e3dd6dea273225f8164e56b64375d654d0
 scripts/ci/merge-queue.sh bcc63e4d2f7532449d5151be608d7856887ed1d0
+scripts/ci/merge-queue.sh c09594eb1efa4bb7a1bb50939acefe0075031e94
 scripts/ci/merge-queue.sh c1e4ed3c3abd85e447290e80c6181d94aba97031
 scripts/ci/merge-queue.sh c1f7882f9d0f2205addbb3f7471dc8d5cb321742
 scripts/ci/merge-queue.sh c2bf95d9566caa306bfeca21e9631cec1b80a72c
@@ -516,6 +517,7 @@ scripts/ci/queue/halve.sh 567a5b19f986fd568e481b08d2122e0498b2c3c1
 scripts/ci/queue/held.sh 961635f65cfa68d2cb39590b3f36d90af79edbc2
 scripts/ci/queue/overlaps.sh 08515e29a12df47f524644e926f75dc156a6ea9e
 scripts/ci/queue/overlaps.sh 7530b0c2b389cce044b4bee47f5308cd3dbd65e8
+scripts/ci/queue/requests.sh 0813fbd12a2f1e3f4dd7dbd42709d7be186fc4ec
 scripts/ci/queue/requests.sh 24d749f709d28b7f91cfa4f63080ad9051686f45
 scripts/ci/queue/requests.sh 313128c5f994a428b301c607677bb4bb0341929b
 scripts/ci/queue/requests.sh 36d19effc79fd0c312240f066051de5130131387
@@ -527,6 +529,7 @@ scripts/ci/queue/requests.sh f07baa8cc3e6bacb62e7de578985c35fc5875108
 scripts/ci/queue/requests.sh f73fabdf22193bd75131df060663bd46ccefa4a8
 scripts/ci/queue/requests.sh fdcfb4b7324a1be5f8d92984a7aa497d62eb54a1
 scripts/ci/queue/rerun.sh 0061016aad77b0ac0b94004eeb23d2da0731d1ba
+scripts/ci/queue/rerun.sh dc892744448e0c6423a637ce1ce3aeadc12a0962
 scripts/ci/queue/rescue.sh d09f82e8d2885b27b3cc5c30fa8579f39b122afd
 scripts/ci/queue/round.sh 4cce79aeeb3a31365a234f5c0ed6ff25dd9bdb6c
 scripts/ci/queue/round.sh b7b05fafb2ecfd00be67860e5f0d435315baebdd
@@ -551,10 +554,12 @@ scripts/ci/queue/rules-place.sh cd9d8c218dc74b0ba4f1de893dbd81e0b5dabf5d
 scripts/ci/queue/rules-requests.sh 164c14f11897e24fd1a08f3f2a167f324cc6c6c1
 scripts/ci/queue/rules-requests.sh 21ad16a647f24eac015b937158f10e9d909f0bc9
 scripts/ci/queue/rules-requests.sh 542fece8b5c8330978ef22271042f80de60b9e48
+scripts/ci/queue/rules-requests.sh a88169c009554236e8ead6aeeff9fceaa5438900
 scripts/ci/queue/rules-requests.sh edbc41a494795137892e53bb113cae941400ab52
 scripts/ci/queue/rules-requests.sh f78d260b156acf0761d1200f3fecde44baa022b7
 scripts/ci/queue/rules-rerun.sh 46bada87b630e88a1d214f339d18ce835d50cb03
 scripts/ci/queue/rules-rerun.sh 46bafd8b189efef2bbb175bb4139570a98085885
+scripts/ci/queue/rules-rerun.sh 59b89571b61ec380d780ff559dd4fe24cc35099a
 scripts/ci/queue/rules-rescue.sh 2553d53ddef38ca0ee458a1e066c72a55f6c3f46
 scripts/ci/queue/rules-serial.sh 367d29dc3143c91ce1d0f4fcb7a5ffa410769f0c
 scripts/ci/queue/rules-serial.sh bc0e925dddfd6f722624120fdc5bdf4f2b80a4cd

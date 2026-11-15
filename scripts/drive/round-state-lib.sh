@@ -50,6 +50,16 @@ started_units() {
       }'
 }
 
+# started_at COMMENTS
+# The epoch second the latest started round was published, from its comment's
+# time (COMMENTS are "created_at<TAB>login<TAB>body" lines); nothing when no
+# round was started or the time cannot be read.
+started_at() {
+  sa_iso=$(printf '%s\n' "$1" | tr -d '\r' | grep -F 'sipnship-proposal {"status":"started"' | tail -n 1 | cut -f1)
+  [ -n "$sa_iso" ] || return 0
+  date -u -d "$sa_iso" +%s 2>/dev/null || date -j -u -f '%Y-%m-%dT%H:%M:%SZ' "$sa_iso" +%s 2>/dev/null || true
+}
+
 # started_pr_holds COMMENTS OPEN_PRS TITLES
 # For plan.sh: every issue of a started unit whose pull request is open is
 # never proposed for dispatch. One "hold<TAB>NUMBER<TAB>TITLE<TAB>WHY" line

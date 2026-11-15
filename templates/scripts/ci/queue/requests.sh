@@ -224,7 +224,7 @@ requests_tick_body() {
           rq_batch=yes
           rq_over=$(classes_overlap "$(requests_classes "$rq_pr")" "$(for rq_m in $rt_members; do requests_classes "$rq_m"; echo; done)")
         fi
-        case "$(land_next_step "$(pr_rollup "$rq_sha")" "$rq_conf" "$rq_batch" "$rq_over")" in
+        case "$(land_next_step "$(pr_rollup "$rq_sha")" "$rq_conf" "$rq_batch" "$rq_over" "$(required_on "$rq_sha")")" in
           red) requests_answer "$rq_id" "$rq_kind" "$rq_pr" red ;;
           conflicts) requests_answer "$rq_id" "$rq_kind" "$rq_pr" conflicts ;;
           after-batch) requests_answer "$rq_id" "$rq_kind" "$rq_pr" next-after-batch ;;

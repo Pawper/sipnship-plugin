@@ -297,9 +297,9 @@ if [ "$mode" = drain ]; then
     done)
     rate_ok
     # While a rush list stands, the others are paused: only the rush ones
-    # are read, and only the first of them is merged by the round.
+    # are read, and only the first of them is merged by the round; one that cannot land yet pauses nothing.
     mkdir -p "$flaky_dir" 2>/dev/null || true
-    rush_now=$(tr -d '\r' < "$flaky_dir/rush.list" 2>/dev/null | tr '\n' ' ')
+    rush_now=$(rush_landable "$open" "$(tr -d '\r' < "$flaky_dir/rush.list" 2>/dev/null | tr '\n' ' ')" | tr '\n' ' ')
     if [ -n "$(printf '%s' "$rush_now" | tr -d ' ')" ]; then
       open=$(rush_only "$open" "$rush_now")
       [ "$rush_now" = "${last_rush:-}" ] || say "round $round: a rush change is landing ($(printf '#%s ' $rush_now)); the others are paused until it has."
@@ -320,7 +320,7 @@ if [ "$mode" = drain ]; then
     publish_now draining "$flaky_dir/open.tsv"
     queue_step="drain round $round: choosing what to merge"; round_read "$open"
     pick=$(drain_candidates "$round_pool_list" "$base" "$tried")
-    if [ -n "$(printf '%s' "$rush_now" | tr -d ' ')" ]; then pick=$(printf '%s\n' "$pick" | grep -x "$(printf '%s' "$rush_now" | awk '{print $1}')"); fi
+    if [ -n "$(printf '%s' "$rush_now" | tr -d ' ')" ]; then pick=$(rush_pick "$pick" "$(printf '%s' "$rush_now" | awk '{print $1}')"); fi
     waiting=$(( $(drain_waiting "$round_pool_list" "$base" "$retried") + round_out ))
     n=$(printf '%s\n' "$pick" | sed '/^$/d' | wc -l | tr -d ' ')
     elapsed=$(( $(date +%s) - d_start ))

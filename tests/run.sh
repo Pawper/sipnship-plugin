@@ -1854,8 +1854,8 @@ eq "no rule check failed names none" "" "$(rule_failed_what "$(cat "$us_fx/jobs-
 eq "a changed body changes the mark" "yes" "$([ "$(body_mark 'Water the beds')" != "$(body_mark 'Water the beds daily')" ] && echo yes)"
 eq "a later time is after" "yes" "$(time_after 2026-11-02T17:10:00Z 2026-11-02T17:05:00Z)"
 eq "an earlier or missing time is not" "no no" "$(time_after 2026-11-02T17:00:00Z 2026-11-02T17:05:00Z) $(time_after '' 2026-11-02T17:05:00Z)"
-eq "the marks are read back from the comments" "aaa111	100" "$(rerun_marks "$(rerun_note 'skip a rule check failed' aaa111 100)")"
-eq "the note says what it did and why" "Not re-running this pull request's failed jobs: a rule check failed." "$(rerun_note 'skip a rule check failed' aaa111 100 | head -n 1)"
+eq "the marks are read back from the comments" "aaa111	100" "$(rerun_marks "$(pr_rerun_note 'skip a rule check failed' aaa111 100)")"
+eq "the note says what it did and why" "Not re-running this pull request's failed jobs: a rule check failed." "$(pr_rerun_note 'skip a rule check failed' aaa111 100 | head -n 1)"
 eq "the drain hands its re-run to drain_rerun_one" "1" "$(grep -c 'drain_rerun_one "\$r"' "$mq_all")"
 # The checks job keeps the failed check's own lines (scripts/ci/check-log.sh).
 . "$root/templates/scripts/ci/failure-lib.sh"
@@ -2039,6 +2039,15 @@ eq "classes overlap" "yes" "$(classes_overlap "app other" "docs app")"
 eq "classes apart" "" "$(classes_overlap "docs" "app")"
 eq "land next: never red" "red" "$(land_next_step red "" no no)"
 eq "land next: waits for its checks" "wait" "$(land_next_step pending "" no no)"
+eq "land now: a failed job while the required check still runs is not red, it waits" "wait" "$(land_next_step red "" no no pending)"
+eq "land now: a finished failure is red" "red" "$(land_next_step red "" no no failed)"
+eq "a rush change still running does not pause the others" "" "$(rush_landable "51	false	MERGEABLE	pending	main
+52	false	MERGEABLE	green	main" "51")"
+eq "a green rush change is the one that lands" "51" "$(rush_landable "51	false	MERGEABLE	green	main
+52	false	MERGEABLE	green	main" "51")"
+eq "a rush change not among the green picks leaves the pick empty and never fails" "ok" "$(p=$(rush_pick "52
+53" 51) && [ -z "$p" ] && echo ok)"
+eq "no two queue files define the same function (a re-run note once hid another and the once-only mark was never written)" "" "$(for f in gate-lib.sh queue/rules-rerun.sh queue/rules-requests.sh queue/rules-drain.sh; do grep -h '^[a-z_]*() *{' "$root/templates/scripts/ci/$f"; done | sed 's/(.*//' | sort | uniq -d)"
 eq "land next: a clash with main ends it" "conflicts" "$(land_next_step green yes no no)"
 eq "land next: green between rounds lands at once" "serial-now" "$(land_next_step green "" no no)"
 eq "land next: beside a batch whose classes it does not share, at once" "serial-now" "$(land_next_step green "" yes "")"
@@ -2426,7 +2435,7 @@ eq "gh_write uses GH_TOKEN alone, then the queue token when set" "read-token mer
 rm -f "$qt_dir/gh" "$QT_LOG"
 rmdir "$qt_dir" 2>/dev/null || true
 eq "no change to GitHub bypasses gh_write" "0" "$(grep -v '^[[:space:]]*#' "$qt_mq" | grep -c 'gh api -X \(POST\|PUT\|PATCH\|DELETE\)\|gh run \(rerun\|cancel\)')"
-eq "the rush folder is made before the list is read" "yes" "$(grep -B1 'rush_now=\$(tr' "$qt_mq" | grep -q 'mkdir -p "\$flaky_dir"' && echo yes || echo no)"
+eq "the rush folder is made before the list is read" "yes" "$(grep -B1 'rush_now=\$(rush_landable' "$qt_mq" | grep -q 'mkdir -p "\$flaky_dir"' && echo yes || echo no)"
 eq "the queue note names the checks limit and the workflows permission" "1 1" "$(grep -c 'no such permission' "$root/templates/scripts/ci/QUEUE.md") $(grep -c 'Workflows read and write' "$root/templates/scripts/ci/QUEUE.md")"
 
 section 'board calls refused for a rate limit'
@@ -6020,7 +6029,26 @@ eq "a comment on one issue of the unit counts for all of them" "0" "$(stale_line
 eq "a pull request naming it in a Part of line means it is not stale" "0" "$(stale_lines "$gs_facts" "$(printf '70\tno\t\t1\n')" '' "$gs_now" 2 | grep -c '	1	')"
 eq "the unit's own pull request, named by the started round, keeps all its issues" "0" "$(stale_lines "$gs_facts" "$(printf '71\tno\t9\n')" '' "$gs_now" 2 "$(printf '71\t1 2 3\n')" | grep -c '^stale')"
 eq "a unit pull request that is no longer open does not" "3" "$(stale_lines "$gs_facts" "$(printf '72\tno\t9\n')" '' "$gs_now" 2 "$(printf '71\t1 2 3\n')" | grep -c '^stale')"
-eq "plan.sh hands the started round's units to the stale reading" "1" "$(grep -c 'started_units "$drive_comments")' "$root/scripts/drive/plan.sh")"
+eq "plan.sh hands the started round's units to the stale reading and to the unit filter" "2" "$(grep -c 'started_units "$drive_comments")' "$root/scripts/drive/plan.sh")"
+# A running unit gets no ask about a held pull request that only mentions its issues; one held pull request gets one ask.
+eq "a held pull request that only mentions the issue does not move it to waiting" "0" "$(stale_lines "$gs_facts" "$(printf '80\tyes\t\t1 2 3\n')" '' "$gs_now" 2 '' | grep -c 'waiting')"
+eq "a held pull request that closes two issues asks once, on the first" "1" "$(stale_lines "$(printf 'issue\t1\tOne\tstate:in-progress\t%s\tb\nissue\t2\tTwo\tstate:in-progress\t%s\tb\n' "$gs_old" "$gs_old")" "$(printf '80\tyes\t1,2\n')" '' "$gs_now" 2 '' | grep -c 'waiting')"
+eq "a unit started ten minutes ago is running, however old its issues' last touch" "0" "$(stale_lines "$gs_facts" '' '' "$gs_now" 2 "$gs_units" "$(( gs_now - 600 ))" | grep -c '^stale')"
+eq "the same unit started three hours ago, nothing touched, goes back to Ready" "3" "$(stale_lines "$gs_facts" '' '' "$gs_now" 2 "$gs_units" "$(( gs_now - 10800 ))" | grep -c '^stale')"
+eq "a held pull request that closes an issue of a unit started ten minutes ago asks nothing" "0" "$(stale_lines "$gs_facts" "$(printf '81\tyes\t1\n')" '' "$gs_now" 2 "$gs_units" "$(( gs_now - 600 ))" | grep -c 'waiting')"
+eq "the started round's time is read from its comment" "1793751000" "$(started_at "$(printf '2026-11-04T00:10:00Z\tbot\tsipnship-proposal {"status":"started","units":[]}\n')")"
+eq "no started round has no time" "" "$(started_at "$(printf '2026-11-04T00:10:00Z\tbot\tProposal\n')")"
+# An ask already answered is not an open question.
+eq "an answer after the ask means it is answered" "yes" "$(ask_answered '- q - a -')"
+eq "a new ask after the answer is open again" "no" "$(ask_answered 'q a q')"
+eq "an ask with no answer is open" "no" "$(ask_answered '- q -')"
+eq "no ask and no answer is not answered" "no" "$(ask_answered '- -')"
+eq "an answered issue's mark-waiting line is dropped, the others stay" "mark-waiting 8	Pick the planter" "$(drop_waiting_goals "$(printf 'mark-waiting 7\tWatering plan (a question to the owner is open)\nmark-waiting 8\tPick the planter\n')" "7" | sed 's/ (a question.*//')"
+eq "a unit's issues are listed one a line" "1 2 3" "$(unit_issues "$gs_units" | tr '\n' ' ' | sed 's/ $//')"
+eq "a unit's issue gets no mark-waiting" "" "$(drop_waiting_goals "$(printf 'mark-waiting 2\tTwo (a question to the owner is open)\n')" "$(unit_issues "$gs_units")" | sed '/^$/d')"
+eq "a held pull request whose question was answered is said, and the drive leaves the hold" "held: #80 is held for the builder, and the question on #7 has been answered. An answer that lets it land lifts the hold by itself; this one did not, so it stays held until the builder lets it land. The drive does not change the hold." "$(held_answered_say 80 7)"
+eq "plan.sh drops answered and unit-owned questions before the ask gate" "1 1 1" "$(grep -c 'answered_for "\$extra"' "$root/scripts/drive/plan.sh") $(grep -c 'unit_issues "\$(started_units' "$root/scripts/drive/plan.sh") $(grep -c 'held_answered_lines "\$pull_links"' "$root/scripts/drive/plan.sh")"
+eq "the skill says an answer's hold is the service's and a held line stays the builder's" "1" "$(grep -c 'you never do' "$root/skills/project-drive/SKILL.md")"
 
 section 'the drive posts a file by its contents and ignores a bare file name (drive)'
 . "$root/scripts/drive/comment-lib.sh"

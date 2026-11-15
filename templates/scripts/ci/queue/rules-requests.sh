@@ -49,9 +49,11 @@ classes_overlap() {
 # open; after-batch lands it first once the batch lands; serial-now runs the
 # serial path at once (between rounds, or beside a running batch whose
 # classes it does not share, the rule the queue already merges under).
+# A fifth word, the required check's state on the head, keeps a request
+# waiting while that check still runs: only a finished failure is red.
 land_next_step() {
   if [ "$2" = yes ]; then echo conflicts; return 0; fi
-  case "$1" in red) echo red; return 0 ;; green) ;; *) echo wait; return 0 ;; esac
+  case "$1" in red) if [ "${5:-}" = pending ]; then echo wait; else echo red; fi; return 0 ;; green) ;; *) echo wait; return 0 ;; esac
   if [ "$3" = yes ] && [ "$4" = yes ]; then echo after-batch; else echo serial-now; fi
 }
 
@@ -71,6 +73,22 @@ requests_waiting_on() {
 # against it and the drain's hold for others' CI never applies to it.
 rush_only() {
   printf '%s\n' "$1" | awk -F'\t' -v k=" $2 " 'NF && index(k, " " $1 " ")'
+}
+
+# rush_landable OPEN RUSH: the rush pull requests (a line each, in RUSH's
+# order) whose row in OPEN reads green. A rush change that cannot land yet
+# (its checks run, or failed) does not pause the others.
+rush_landable() {
+  for rl in $2; do
+    printf '%s\n' "$1" | awk -F'\t' -v n="$rl" '$1 == n && $4 == "green" { print $1 }'
+  done
+}
+
+# rush_pick PICK RUSH_FIRST: the lines of PICK equal to RUSH_FIRST; prints
+# nothing, and never fails, when the rush change is not among them (a
+# failing grep here once ended every drain with exit 1 and no reason).
+rush_pick() {
+  printf '%s\n' "$1" | grep -x "$2" || true
 }
 
 # --- Rush changes: "land this next" reserves the machines ---

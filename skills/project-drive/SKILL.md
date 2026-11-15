@@ -136,7 +136,10 @@ lists every answer still owed, read before or not. The answer is the builder's d
 that issue, in the next round's proposal or at once when the round already holds it, and say on the issue
 what you are doing with it. A comment from anyone else after the answer means it was acted on, and the line
 stops. The issue has already moved to Ready, so a round that missed the line still proposes it with the
-answer above it.
+answer above it. A held pull request: an answer whose choice lets it land already lifted its `queue:hold` in
+the service when it was written, so no session changes the label, and you never do. A plan line starting
+`held:` names a pull request still held although its question was answered: that answer did not let it land,
+so it stays held until the builder lets it land; say so on the issue, and do not try to release it.
 
 The plan's closing lines also say the round's settings (`rounds:`, with the units per round, the dispatch
 model and the red limit), `summary: due` when the daily summary should be written (below), and `health:`

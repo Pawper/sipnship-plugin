@@ -7,7 +7,7 @@
 # drain_rerun_one PR: re-run the failed jobs of PR's newest run on its head,
 # or say why not. Reads $open, $round and $cancel_heads from the drain and
 # records the head and text it looked at in a comment on the pull request
-# (rerun_note), so the next drain, which may start on a runner with nothing
+# (pr_rerun_note), so the next drain, which may start on a runner with nothing
 # remembered, does not re-run the same failure on the same commit.
 drain_rerun_one() {
   dr_pr=$1
@@ -29,7 +29,7 @@ drain_rerun_one() {
         dr_seen=$(rerun_marks "$(gh api "repos/{owner}/{repo}/issues/$dr_pr/comments?per_page=100" --jq '.[].body' 2>/dev/null)")
         dr_call=$(red_rerun "$(run_jobs_text "$dr_rid")" "$dr_seen" "$dr_head" "$dr_mark" "$dr_edited")
         if [ "$(rerun_seen "$dr_seen" "$dr_head" "$dr_mark")" != same ]; then
-          gh_write api -X POST "repos/{owner}/{repo}/issues/$dr_pr/comments" -f body="$(rerun_note "$dr_call" "$dr_head" "$dr_mark")" >/dev/null 2>&1 || true
+          gh_write api -X POST "repos/{owner}/{repo}/issues/$dr_pr/comments" -f body="$(pr_rerun_note "$dr_call" "$dr_head" "$dr_mark")" >/dev/null 2>&1 || true
         fi
         dr_why=${dr_call#* }
         if [ "${dr_call%% *}" = skip ]; then
