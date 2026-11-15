@@ -63,6 +63,20 @@ if command -v gh >/dev/null 2>&1; then
 $page"
   done
   ends=$(printf '%s\n' "$ends" | sed '/^$/d')
+  # A worktree whose branch no ended or open pull request above accounts for may belong to one older than
+  # the newest thousand: ask for it by its branch, one REST call each (a branch with no pull request ends nothing).
+  case "$cmd" in
+    audit|prune)
+      step="looking up older pull requests by branch"
+      open_all=$(gh api --paginate "repos/{owner}/{repo}/pulls?state=open&per_page=100" --jq '.[].head.ref' 2>/dev/null || true)
+      for b in $(unmatched_branches "$pairs" "$ends" "$open_all" "$default_local"); do
+        one=$(gh api "repos/{owner}/{repo}/pulls?state=all&head={owner}:$b&per_page=1" \
+          --jq '.[] | select(.state == "closed") | [(if .merged_at then "merged" else "closed" end), .head.ref] | @tsv' 2>/dev/null || true)
+        [ -z "$one" ] || ends="$ends
+$one"
+      done
+      ends=$(printf '%s\n' "$ends" | sed '/^$/d') ;;
+  esac
 fi
 # Merged means: its pull request merged, or git says it is merged AND the
 # branch has had commits of its own. Git also calls a branch "merged" when

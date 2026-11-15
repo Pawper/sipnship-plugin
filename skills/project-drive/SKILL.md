@@ -55,6 +55,13 @@ The drive works the ready list in rounds, so many issues land in little time wit
   to Ready, or to Waiting on you when its pull request is held, with the hold's ask on it (one question,
   numbered choices, exactly one recommended). The queue does the same at a merge: an issue a merged pull request
   left In progress returns to Ready. Never leave an issue In progress with nobody on it.
+  A round has landed when every unit's pull request has merged or closed, whatever its issues show: an issue
+  of such a unit that the pull request did not name (found already done, or left in part, with a closing note)
+  does not hold the next round, and the plan sets it back to Ready on that tick with a `stale:` line, not two
+  hours later. `approval.sh` holds a dispatch only while a unit has an open pull request (held ones too) or has
+  none yet and an issue In progress. A drive without this reading does it by hand on the tick: for each started
+  unit whose pull request is no longer open, put every issue of it still In progress back to Ready (one comment
+  saying the pull request landed without it), then plan.
   An issue that an open pull request already closes (a `Closes #N` line, in a member of the running batch or in
   a held one) is never proposed as `dispatch`: the plan prints a `hold` line naming the pull request instead.
 - **Every open pull request keeps moving**, except one held for the builder to read (`queue:hold`, or a

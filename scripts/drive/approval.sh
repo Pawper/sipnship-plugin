@@ -174,8 +174,10 @@ if [ -z "$started_by" ] && printf '%s\n' "$approved" | grep -q '^dispatch '; the
   inprog=$(gh api "repos/{owner}/{repo}/issues?state=open&labels=state:in-progress&per_page=100" --jq '.[].number' 2>/dev/null)
   # A started unit whose pull request is open is running too, whatever State its issues show (a held change leaves them Ready).
   # A change held for the owner's read holds no runner and no other unit (only its areas stay taken, areas-lib.sh), so it never keeps the round "running".
-  open_prs=$(gh api "repos/{owner}/{repo}/pulls?state=open&per_page=100" --jq '.[] | select(([.labels[].name | ascii_downcase] | index("queue:hold") // index("hold")) == null) | .number' 2>/dev/null | tr -d '\r')
-  approved=$(hold_dispatch "$approved" "$(running_round "$comments" "$inprog" "$open_prs")")
+  # A unit whose pull request has merged or closed has landed, whatever its issues still show (a unit's other issues stay In progress when the pull request did not name them): every open pull request, held ones too, is read once, and running_round drops a unit whose pull request is not among them.
+  all_open=$(gh api "repos/{owner}/{repo}/pulls?state=open&per_page=100" --jq '.[] | [.number, (([.labels[].name | ascii_downcase] | index("queue:hold") // index("hold")) != null)] | @tsv' 2>/dev/null | tr -d '\r')
+  open_prs=$(printf '%s\n' "$all_open" | awk -F'\t' '$2 == "false" { print $1 }')
+  approved=$(hold_dispatch "$approved" "$(running_round "$comments" "$inprog" "$open_prs" "$(printf '%s\n' "$all_open" | cut -f1)")")
 fi
 # An agent needs a worktree: when this run cannot make one (a scheduled run
 # under an account with no access to the worktrees folder), start none.

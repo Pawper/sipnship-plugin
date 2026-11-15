@@ -149,6 +149,9 @@ jobs:
       - name: Fail when a text file has CRLF endings
         # Every pull request: mixed endings make every diff a conflict.
         run: sh scripts/ci/check-log.sh sh scripts/ci/line-endings.sh
+      - name: Fail when a workflow step that runs a script has no name
+        # Every pull request: GitHub shows an unnamed step as its script, and the Queue's runner rows would read it as text.
+        run: sh scripts/ci/check-log.sh sh scripts/ci/step-names-check.sh
       - name: Fail when STATUS.md is stale
         # Every pull request: the page must never go stale.
         run: sh scripts/ci/check-log.sh sh status/check.sh

@@ -69,6 +69,21 @@ pr_ends() {
   printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v k="$2" '$1 == k && $2 != "" { print $2 }'
 }
 
+# unmatched_branches PATH_BRANCH ENDS OPEN_HEADS DEFAULT
+# The branches of worktrees that the newest ended pull requests (ENDS, as
+# pr_ends reads them) and the open ones (OPEN_HEADS, one branch per line) do
+# not account for, one per line, the default branch left out. Each is one
+# lookup by its own name: a pull request older than the newest thousand is
+# found that way, instead of its worktree staying in the folder for good.
+unmatched_branches() {
+  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v ends="$2" -v open="$3" -v def="$4" '
+    BEGIN {
+      n = split(ends, e, "\n"); for (i = 1; i <= n; i++) { split(e[i], kv, "\t"); if (kv[2] != "") seen[kv[2]] = 1 }
+      n = split(open, o, "\n"); for (i = 1; i <= n; i++) { b = o[i]; gsub(/\r/, "", b); if (b != "") seen[b] = 1 }
+    }
+    NF >= 2 && $2 != "" && $2 != def && !($2 in seen) && !($2 in done) { done[$2] = 1; print $2 }'
+}
+
 # mergeable_local_branches BRANCHES MERGED PATH_BRANCH DEFAULT
 # BRANCHES is one local branch per line. MERGED is the merged branch names.
 # Print the local branches that are merged, are not the default branch and

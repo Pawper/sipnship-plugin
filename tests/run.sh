@@ -1221,6 +1221,12 @@ ends=$(printf 'merged\tretries\nclosed\tparser\nmerged\tgone\n')
 eq "merged heads from ended pull requests" "retries
 gone" "$(pr_ends "$ends" merged)"
 eq "closed heads from ended pull requests" "parser" "$(pr_ends "$ends" closed)"
+um_pairs=$(printf '/w/beds\tbeds\n/w/old-watering\told-watering\n/w/shed\tshed\n/w/main-copy\tmain\n/w/beds-again\tbeds\n')
+eq "a worktree older than the newest ended pull requests is looked up by its branch; open, ended, default and repeated ones are not" "old-watering" "$(unmatched_branches "$um_pairs" "$(printf 'merged\tshed\n')" "$(printf 'beds\n')" main)"
+eq "no ended pull requests read at all: every branch but the default is looked up, once" "beds
+old-watering
+shed" "$(unmatched_branches "$um_pairs" '' '' main)"
+eq "worktrees.sh looks the unmatched ones up on audit and prune, over REST" "1 0" "$(grep -c 'unmatched_branches "\$pairs"' "$root/templates/scripts/worktrees.sh") $(grep -c '^ *[a-z_]*=\$(gh pr \|  gh pr ' "$root/templates/scripts/worktrees.sh")"
 eq "merged local branches with no worktree" "old-fix" "$(mergeable_local_branches 'main
 retries
 old-fix
@@ -1645,6 +1651,8 @@ num() { printf '%s' "$*" | head -n 1 | sed 's|.*/issues/\([0-9]*\).*|\1|'; }
 case "$*" in
   *"-X PUT"*"/issues/"*"/labels"*) n=$(num "$@"); j=$(cat); printf 'PUT %s %s\n' "$n" "$j" >> "$ST_LOG"; printf 'open\t%s\n' "$(printf '%s' "$j" | sed 's/.*\[//;s/\].*//;s/"//g;s/,/|/g')" > "$ST_DIR/issue-$n" ;;
   *"-X POST"*"/issues/"*"/comments"*) n=$(num "$@"); printf 'POST %s %s\n' "$n" "$(printf '%s' "$*" | sed 's/.*-f body=//' | tr '\n' ' ')" >> "$ST_LOG" ;;
+  *"labels=drive"*) [ -f "$ST_DIR/drive-comments" ] && printf '99\t1\n' ;;
+  *"/issues/99/comments"*) cat "$ST_DIR/drive-comments" ;;
   *"pulls/500"*) printf 'issue-226\nMakes the shed list sortable.\n\nCloses #226\n' ;;
   *"pulls/501"*) printf 'issue-230\nMakes the shed list sortable.\n\nCloses #230\n' ;;
   *"pulls?state=open"*) cat "$ST_DIR/open-pulls" 2>/dev/null ;;
@@ -1678,6 +1686,13 @@ printf 'bed-photos\nAnother part.\n\nPart of #241\n' > "$st/open-pulls"
 st_run settle_merged 503
 eq "a part another open pull request still names stays In progress" "241 . 1" "$(st_in_progress 240 241) $(grep -c '^PUT' "$st/log")"
 rm -f "$st/open-pulls"
+# A unit's issues the pull request did not name go back to Ready with it.
+printf 'Round started.\n<!-- sipnship-proposal {"status":"started","units":[{"issues":[240,241,242],"areas":[],"pr":503},{"issues":[250],"areas":[],"pr":504}],"held":[]} -->\n' > "$st/drive-comments"
+printf 'open\tstate:in-progress\n' > "$st/issue-240"; printf 'open\tstate:in-progress\n' > "$st/issue-241"; printf 'open\tstate:in-progress\n' > "$st/issue-242"; printf 'open\tstate:in-progress\n' > "$st/issue-250"; : > "$st/log"
+st_run settle_merged 503
+eq "an issue of the merged unit that its pull request did not name goes back to Ready too, and another unit's stays" ". 3" "$(st_in_progress 240 241 242) $(grep -c '^PUT 24[012] {"labels":\["state:ready"\]}' "$st/log")"
+eq "the other unit's issue is not touched" "250 ." "$(st_in_progress 250)"
+rm -f "$st/drive-comments"
 printf 'open\tstate:in-progress\n' > "$st/issue-230"; : > "$st/log"; rm -f "$st/q/settled-held"
 st_run settle_held 501
 eq "a held pull request moves its issue to Waiting on you" ". 1" "$(st_in_progress 230) $(grep -c '^PUT 230 {"labels":\["state:waiting-on-owner"\]}' "$st/log")"
@@ -3229,6 +3244,12 @@ eq "the drain drops what settling merged or closed" "1" "$(grep -c 'drop_members
 eq "a batch skips a pull request already merged" "1" "$(grep -c '"skipped" "already merged"' "$mq_all")"
 eq "settled batch and its members leave the list" "301	false	sha	main" "$(drop_members "$(printf '301\tfalse\tsha\tmain\n320\tfalse\tsha\tmain\n328\tfalse\tsha\tmain')" ' 328 320')"
 eq "a batch of one merges serially" "1" "$(grep -c 'merging it serially instead of opening a batch of one' "$mq_all")"
+sn_dir=$(mktemp -d)
+printf 'jobs:\n  a:\n    steps:\n      - uses: actions/checkout@v4\n      - name: Plant the beds\n        run: echo beds\n      - run: echo unnamed\n  b:\n    steps:\n      - name: Water\n        run: echo water\n' > "$sn_dir/bad.yml"
+printf 'jobs:\n  a:\n    steps:\n      - uses: actions/checkout@v4\n      - name: Plant the beds\n        run: echo beds\n' > "$sn_dir/good.yml"
+eq "a workflow step that runs a script with no name fails the check, naming its line" "1 bad.yml:7" "$(sh "$root/templates/scripts/ci/step-names-check.sh" "$sn_dir/bad.yml" >/dev/null 2>"$sn_dir/err"; echo "$? $(grep -o 'bad.yml:[0-9]*' "$sn_dir/err")")"
+eq "named steps, and a step that only uses an action, pass" "0" "$(sh "$root/templates/scripts/ci/step-names-check.sh" "$sn_dir/good.yml" >/dev/null 2>&1; echo $?)"
+eq "the checks job runs it, here and in the template" "1 1" "$(grep -c 'step-names-check.sh' "$root/../.github/workflows/ci.yml") $(grep -c 'step-names-check.sh' "$root/templates/.github/workflows/ci.yml")"
 eq "worktrees.sh never stops without a word" "1" "$(grep -c 'stopped with exit \$rc at' "$root/templates/scripts/worktrees.sh")"
 eq "no loop in worktrees.sh ends on a bare test" "0" "$(grep -c '^ *\[ [^]]*\] && printf' "$root/templates/scripts/worktrees.sh")"
 eq "close says a pull request was already closed" "1" "$(grep -c 'was already closed; added the reason' "$root/templates/scripts/worktrees.sh")"
@@ -5357,6 +5378,12 @@ eq "an In progress issue still counts, with or without an open pull request" "31
 eq "an approved dispatch is held while a unit's pull request is open" "merge 41
 held: 1 dispatch goal(s) wait for the running round (#301, #302, #303) to land" "$(hold_dispatch "$(printf 'merge 41\ndispatch 320\tSeed packets\n')" "$(running_round "$sr_comments" '' "$(printf '531\n')")")"
 eq "approval.sh reads the open pull requests, so the case prints held and no dispatch" "1" "$(grep -c 'running_round "\$comments" "\$inprog" "\$open_prs"' "$root/scripts/drive/approval.sh")"
+# A round has landed when every unit's pull request has merged or closed, whatever its issues still show.
+eq "a unit whose pull request merged does not hold the round for an issue it did not name" "310" "$(running_round "$sr_comments" "$(printf '302\n310\n')" "$(printf '532\n')" "$(printf '532\n')")"
+eq "every unit merged: In progress issues the pull requests did not name hold nothing" "" "$(running_round "$sr_comments" "$(printf '302\n310\n')" '' '')"
+eq "a unit whose pull request is held for the owner still holds the round, by its In progress issue" "302" "$(running_round "$sr_comments" "$(printf '302\n')" '' "$(printf '531\n')")"
+eq "a unit with no pull request yet still holds the round by its In progress issues" "320" "$(running_round "$(printf '2026-11-12T18:00:00Z\tmaya-drive\tRound started.\\n<!-- sipnship-proposal {"status":"started","units":[{"issues":[320],"areas":[]}],"held":[]} -->\n')" "$(printf '320\n')" '' '')"
+eq "approval.sh passes every open pull request, held ones too, as the fourth argument" "1" "$(grep -c 'running_round "\$comments" "\$inprog" "\$open_prs" "\$(printf' "$root/scripts/drive/approval.sh")"
 eq "the plan holds every issue of a unit whose pull request is open, one unnumbered hold line each" "hold	301	Water the beds	Its pull request (#531) is still open and its unit is running; no agent is started on it
 hold	302	Tint the beds	Its pull request (#531) is still open and its unit is running; no agent is started on it
 hold	303		Its pull request (#531) is still open and its unit is running; no agent is started on it" "$(started_pr_holds "$sr_comments" "$(printf '531\n')" "$(printf '301\tWater the beds\n302\tTint the beds\n')")"
@@ -6061,6 +6088,7 @@ eq "a comment on one issue of the unit counts for all of them" "0" "$(stale_line
 # An open pull request that names the issue as a part, or is its unit's own, is the work in hand.
 eq "a pull request naming it in a Part of line means it is not stale" "0" "$(stale_lines "$gs_facts" "$(printf '70\tno\t\t1\n')" '' "$gs_now" 2 | grep -c '	1	')"
 eq "the unit's own pull request, named by the started round, keeps all its issues" "0" "$(stale_lines "$gs_facts" "$(printf '71\tno\t9\n')" '' "$gs_now" 2 "$(printf '71\t1 2 3\n')" | grep -c '^stale')"
+eq "an issue of a unit whose pull request has merged goes back to Ready at once, though a closing note touched it a minute ago" "stale: #1 \"One\" was In progress, but its unit's pull request has merged or closed and did not name it, so nobody is on it; it is back to Ready." "$(stale_say "$(stale_lines "$(printf 'issue\t1\tOne\tstate:in-progress\t%s\tb\n' "$(date -u -d "@$(( gs_now - 60 ))" +%Y-%m-%dT%H:%M:%SZ)")" '' '' "$gs_now" 2 "$(printf '71\t1 2\n')" "$(( gs_now - 600 ))")" 2)"
 eq "a unit pull request that is no longer open does not" "3" "$(stale_lines "$gs_facts" "$(printf '72\tno\t9\n')" '' "$gs_now" 2 "$(printf '71\t1 2 3\n')" | grep -c '^stale')"
 eq "plan.sh hands the started round's units to the stale reading and to the unit filter" "2" "$(grep -c 'started_units "$drive_comments")' "$root/scripts/drive/plan.sh")"
 # A running unit gets no ask about a held pull request that only mentions its issues; one held pull request gets one ask.

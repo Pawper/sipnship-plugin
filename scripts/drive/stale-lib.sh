@@ -70,6 +70,10 @@ stale_lines() {
     # An issue of a unit the round was published as started with is touched from that moment: its agent is on it.
     if [ "$sl_inunit" = yes ] && [ -n "${7:-}" ] && { [ -z "$sl_touch" ] || [ "$7" -gt "$sl_touch" ]; }; then sl_touch=$7; fi
     if [ "$sl_inunit" = yes ] && [ -n "${7:-}" ] && [ $(( $4 - $7 )) -lt $(( ${5:-2} * 3600 )) ]; then sl_held=no; fi
+    # A unit whose own pull request is no longer open has landed (merged or closed): an issue it did not name is not worked on, however recently a closing note touched it, so it goes back to Ready now.
+    if [ "$sl_inunit" = yes ] && [ "$sl_has" = no ] && [ -n "$sl_unitpr" ]; then
+      printf 'stale\t%s\tready\t\t%s\tlanded\n' "$sl_num" "$sl_title"; continue
+    fi
     case "$(stale_judge "$sl_has" "$sl_held" "$sl_touch" "$4" "${5:-2}")" in
       ready) printf 'stale\t%s\tready\t\t%s\n' "$sl_num" "$sl_title" ;;
       waiting)
@@ -87,6 +91,7 @@ stale_say() {
   printf '%s\n' "$1" | awk -F'\t' -v h="${2:-2}" '
     $1 != "stale" { next }
     $3 == "waiting" { printf "stale: #%s \"%s\" was In progress, but its pull request #%s is held for you; it is moved to Waiting on you, with the question on it.\n", $2, $5, $4; next }
+    $6 == "landed" { printf "stale: #%s \"%s\" was In progress, but its unit'"'"'s pull request has merged or closed and did not name it, so nobody is on it; it is back to Ready.\n", $2, $5; next }
     { printf "stale: #%s \"%s\" was In progress with no open pull request and nothing touched in %s hours, so nobody is on it; it is back to Ready.\n", $2, $5, h }'
 }
 

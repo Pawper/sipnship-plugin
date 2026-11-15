@@ -17,15 +17,23 @@
 # Ready): OPEN_PRS, a third argument, is the open pull requests' numbers one
 # per line, and every issue of a started unit whose "pr" is among them is
 # running. It stops when the pull request merges or the unit is set aside.
+#
+# A unit has landed once its pull request has merged or closed, whatever State
+# its issues show: ALL_OPEN, a fourth argument, is every open pull request's
+# number (held ones too), one per line, and when it is given an issue of a unit
+# whose "pr" is not among them no longer holds the round. A unit with no "pr"
+# yet, or whose pull request is open (held or not), holds as before.
 running_round() {
   rr_units=$(started_units "$1")
   [ -n "$rr_units" ] || return 0
-  printf '%s\n' "$rr_units" | awk -F'\t' -v inprog="$2" -v open="${3:-}" '
+  printf '%s\n' "$rr_units" | awk -F'\t' -v inprog="$2" -v open="${3:-}" -v haveall="${4+yes}" -v all="${4:-}" '
     BEGIN {
+      n = split(all, a, "\n"); for (i = 1; i <= n; i++) { gsub(/\r/, "", a[i]); if (a[i] != "") ao[a[i]] = 1 }
       n = split(inprog, a, "\n"); for (i = 1; i <= n; i++) { gsub(/\r/, "", a[i]); if (a[i] != "") ip[a[i]] = 1 }
       n = split(open, a, "\n"); for (i = 1; i <= n; i++) { gsub(/\r/, "", a[i]); if (a[i] != "") op[a[i]] = 1 }
     }
     {
+      if (haveall == "yes" && $1 != "" && !($1 in ao)) next
       m = split($2, is, " ")
       for (i = 1; i <= m; i++) if ((is[i] in ip) || ($1 != "" && ($1 in op))) if (!(is[i] in seen)) { seen[is[i]] = 1; out = out (out == "" ? "" : " ") is[i] }
     }
