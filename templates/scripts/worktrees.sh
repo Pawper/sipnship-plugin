@@ -54,8 +54,8 @@ count=$(printf '%s\n' "$pairs" | sed '/^$/d' | wc -l | tr -d ' ')
 # One call for every ended pull request: merged or closed, with its branch.
 ends=""
 if command -v gh >/dev/null 2>&1; then
-  # REST, five pages of a hundred: gh pr list would spend GraphQL points.
-  for p in 1 2 3 4 5; do
+  # REST, ten pages of a hundred (the newest thousand ended pull requests): gh pr list would spend GraphQL points.
+  for p in 1 2 3 4 5 6 7 8 9 10; do
     page=$(gh api "repos/{owner}/{repo}/pulls?state=closed&per_page=100&page=$p" \
       --jq '.[] | [(if .merged_at then "merged" else "closed" end), .head.ref] | @tsv' 2>/dev/null || true)
     [ -n "$page" ] || break

@@ -203,8 +203,8 @@ The goal lines and what each means:
   `queue:hold` label or a `Queue: hold` line) is never landed by the queue, so it is off the `landing` line and out
   of the count that proposes a `drain`; this one unnumbered line keeps it in the proposal. Nothing is sent to it.
 - **Tidy ended worktrees without being asked.** When the brief names a backlog of worktrees (more than ten besides
-  the main checkout), run `sh scripts/worktrees.sh prune --apply` once in the round's tidying step. It removes only
-  clean worktrees whose pull request ended, keeps every commit in its branch, and names each one it skipped and why;
+  the main checkout), run `sh scripts/worktrees.sh prune --apply --closed` once in the round's tidying step. It removes only
+  clean worktrees whose pull request ended, keeps every commit in its branch (a closed one under a `closed/NAME` tag), and names each one it skipped and why;
   it never deletes a folder with uncommitted files, and the drive does not remove anything by hand.
 - **Check the worktrees folder before any agent starts.** A tick woken on a self-hosted runner runs as the runner's
   service account, which may not reach the folder worktrees live in, and every agent it started would fail at its
@@ -331,7 +331,10 @@ tab says it waits and on what instead of saying it starts on its own; `status: p
   the one reader, and the state-label hook refuses the change otherwise). An open question that is not in that
   shape is not marked: ask the agent that wrote it to put it in the shape, and mark it then, so Ready holds only
   what can start. The plan checks this itself with the one reader before it proposes `mark-waiting`; an open
-  question not in the shape comes out as `ask-fix N` instead, with what to change.
+  question not in the shape comes out as `ask-fix N` instead, with what to change. A closing note an agent left
+  of what it did not build (a comment with a `Left:` or `Not changed, because` line that asks nothing and offers
+  no choices) is not a question: the plan reads the newest comment and prints no `mark-waiting` or `ask-fix` for
+  it, so the issue stays as it is.
 - **`ask-fix N`.** An open question to the owner that is not in the ask shape. Ask the agent that wrote it to put
   it in the shape when that agent is reachable (an interactive session). A scheduled tick has no such agent: the
   agent that wrote it ended long ago. Then the drive acts itself, after one reader confirms what the issue
@@ -341,7 +344,8 @@ tab says it waits and on what instead of saying it starts on its own; `status: p
   `state:waiting-on-owner` with `scripts/state.sh`. When the reader cannot tell, or the drive cannot write it
   without guessing, leave the issue and run `sh "${CLAUDE_PLUGIN_ROOT}/scripts/drive/ask-fix-seen.sh" N`: the
   plan then prints it as an unnumbered `hold` (not a goal) until the issue changes, so it is not proposed again
-  every tick. An issue with an `ask-fix` or `mark-waiting` line is never in a `dispatch` line of the same
+  every tick. When the one reader finds the comment is only a note of what was left, not a question, run
+  the digest's `no-question` word for that issue (as for `mark-waiting`) and leave the issue as it is. An issue with an `ask-fix` or `mark-waiting` line is never in a `dispatch` line of the same
   proposal; it is a `hold` that says it waits on the owner.
 - **`release X.Y.Z`.** Merged plugin changes sit unshipped on the remote's main (the plan fetches it, so a stale checkout proposes the same release). When an open issue already names that release the plan prints an unnumbered `hold` naming it instead: never file a second release issue or open a second bump. File a release issue first
   (`sh scripts/issue-open.sh`, State ready). In a worktree run `sh plugin/scripts/release/bump.sh X.Y.Z`, run

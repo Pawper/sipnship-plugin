@@ -158,6 +158,8 @@ if [ -f .scratch/board/digest.tsv ] && [ -f "$here/../board/board-lib.sh" ]; the
   extra=$(digest_goals "$facts" "$saved")
   # An open question counts only while no answer follows it, and an issue a started unit owns is its agent's, not the owner's.
   extra=$(drop_waiting_goals "$extra" "$(answered_for "$extra")")
+  # A closing note of what an agent left is not a question to the owner, so it is neither marked waiting nor sent back to be reshaped (#1712).
+  extra=$(drop_waiting_goals "$extra" "$(closing_notes_for "$extra")")
   extra=$(drop_waiting_goals "$extra" "$(unit_issues "$(started_units "$drive_comments")")")
   # An open question is proposed as mark-waiting only when its ask is in the shape (scripts/ci/ask-lib.sh); otherwise as ask-fix.
   if [ -f scripts/ci/ask-lib.sh ]; then . scripts/ci/ask-lib.sh; . "$here/ask-gate-lib.sh"; extra=$(mark_waiting_goals "$extra" "$(ask_verdicts_for "$extra")"); fi

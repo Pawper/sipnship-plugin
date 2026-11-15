@@ -275,28 +275,6 @@ generated_page_reason() {
   done
 }
 
-# task_tier SUBAGENT_TYPE DESCRIPTION PROMPT: lookup (finds, lists or reads; short prompt), hard (designs, implements, debugs, reviews, plans) or routine.
-task_tier() {
-  tt_type=$(printf '%s' "$1" | tr 'A-Z' 'a-z')
-  tt_text=$(printf '%s %s' "$2" "$3" | tr 'A-Z' 'a-z')
-  tt_words=$(printf '%s' "$3" | wc -w | tr -d ' ')
-  case "$tt_type" in
-    explore|claude-code-guide) echo lookup; return 0 ;;
-    plan) echo hard; return 0 ;;
-  esac
-  if printf '%s' "$tt_text" | grep -Eq '(design|architect|refactor|implement|build|debug|fix|review|audit|security|prove|migrat|plan)'; then
-    echo hard
-    return 0
-  fi
-  # A prompt naming a brief to follow, a worktree or a pull request is a unit of work, never a lookup, whatever its length.
-  if printf '%s' "$tt_text" | grep -Eq '(worktree|pull request|open a pr|(on|your|its|new) branch|your (full )?brief|the brief|brief file|\.scratch/)'; then echo routine; return 0; fi
-  if [ "$tt_words" -le 120 ] && printf '%s' "$tt_text" | grep -Eq '(find|search|locate|list|grep|where is|look up|lookup|which file|read|check whether|does .* exist|count)'; then
-    echo lookup
-    return 0
-  fi
-  echo routine
-}
-
 # gh_refusal TEXT
 # Print "yes" when gh's error output means GitHub refused the call for a
 # rate limit rather than the user being signed out: "rate limit",
@@ -368,38 +346,6 @@ daemon_stop_reason() {
       if (c == "nx" && (t[i + 1] == "reset" || (t[i + 1] == "daemon" && t[i + 2] == "--stop"))) { print "nx " t[i + 1]; exit }
       if (c == "dotnet" && t[i + 1] == "build-server" && t[i + 2] == "shutdown") { print "dotnet build-server shutdown"; exit }
     }'
-}
-
-# model_rank MODEL
-# Print 1 for haiku, 2 for sonnet, 3 for opus, 4 for fable, 0 for unknown.
-model_rank() {
-  case $(printf '%s' "$1" | tr 'A-Z' 'a-z') in
-    *haiku*) echo 1 ;;
-    *sonnet*) echo 2 ;;
-    *opus*) echo 3 ;;
-    *fable*|*mythos*) echo 4 ;;
-    *) echo 0 ;;
-  esac
-}
-
-# agent_model_reason SUBAGENT_TYPE DESCRIPTION PROMPT MODEL
-# Print "MODEL_TO_USE TIER" when a dispatch would waste usage: no model was
-# set, or the model is heavier than the task's tier needs. Print nothing when
-# the dispatch is fine. A lighter model than the tier suggests is allowed.
-agent_model_reason() {
-  am_tier=$(task_tier "$1" "$2" "$3")
-  case "$am_tier" in
-    lookup) am_want=haiku; am_rank=1 ;;
-    routine) am_want=sonnet; am_rank=2 ;;
-    *) am_want=opus; am_rank=3 ;;
-  esac
-  if [ -z "$4" ]; then
-    printf '%s %s\n' "$am_want" "$am_tier"
-    return 0
-  fi
-  if [ "$(model_rank "$4")" -gt "$am_rank" ]; then
-    printf '%s %s\n' "$am_want" "$am_tier"
-  fi
 }
 
 # workflow_model_reason SCRIPT

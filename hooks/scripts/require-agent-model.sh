@@ -6,6 +6,7 @@
 # effort level, which this hook reports so the dispatcher can see it.
 here=$(dirname "$0")
 . "$here/lib.sh"
+. "$here/agent-model-lib.sh"
 . "$here/refusal-log.sh"
 . "$here/rule-switch.sh"
 

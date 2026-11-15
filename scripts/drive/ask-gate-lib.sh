@@ -47,6 +47,28 @@ answered_for() {
   return 0
 }
 
+# closing_note TEXT: "yes" when TEXT is an agent's closing note of what it left
+# undone ("Left: ...", "Not built: ...", "Not changed, because ...") and asks
+# nothing: no line ends in "?" and no numbered choice follows. Such a note is not
+# a question to the owner, whatever a reader made of it (#1712).
+closing_note() {
+  printf '%s\n' "$1" | tr -d '\r' | awk '
+    /^[ \t]*[0-9][0-9]?[.)][ \t]+[^ \t]/ { choice = 1 }
+    /\?[ \t*_`]*$/ { asks = 1 }
+    /^[ \t]*(\*\*)?(Left|Not built|Not changed|Not done)([ ,:*]|$)/ { left = 1 }
+    END { print (left && !asks && !choice) ? "yes" : "no" }'
+}
+
+# closing_notes_for EXTRA: the numbers (one a line) of the mark-waiting issues in
+# EXTRA whose newest comment is a closing note; REST, one call per such issue.
+closing_notes_for() {
+  for cn_n in $(printf '%s\n' "$1" | sed -n 's/^mark-waiting \([0-9]*\).*/\1/p'); do
+    cn_b=$(gh api "repos/{owner}/{repo}/issues/$cn_n/comments?per_page=100" --jq '.[-1].body // ""' 2>/dev/null | tr -d '\r')
+    if [ "$(closing_note "$cn_b")" = yes ]; then printf '%s\n' "$cn_n"; fi
+  done
+  return 0
+}
+
 # held_answered_say PULL ISSUE: the plan's line for a held pull request whose
 # ask on ISSUE has been answered. An answer that lets a held change land
 # lifts the hold in the service when it is written (specs/022-asks), and the

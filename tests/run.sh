@@ -12,6 +12,7 @@
 
 root=${RUN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}
 . "$root/hooks/scripts/lib.sh"
+. "$root/hooks/scripts/agent-model-lib.sh"
 . "$root/templates/status/lib.sh"
 . "$root/templates/scripts/ci/lib.sh"
 . "$root/tests/parts-lib.sh"
@@ -1369,6 +1370,9 @@ eq "a summary is routine" "routine" "$(task_tier general-purpose 'Summarize' 'Su
 eq "a short unit prompt pointing at a brief file is no lookup, with sonnet allowed" "routine" "$(task_tier general-purpose 'Unit A of the round' 'Your worktree is already made, on branch issue-1542-r47. Read your full brief first and follow it. Issue 1542.')"
 eq "and sonnet passes the agent-model rule for it" "" "$(agent_model_reason general-purpose 'Unit A of the round' 'Your worktree is already made, on branch issue-1542-r47. Read your full brief first and follow it. Issue 1542.' sonnet)"
 eq "read the brief file is not a lookup word, whatever the length" "routine" "$(task_tier general-purpose 'Unit B' 'Read the brief at .scratch/overnight/common.md and do the work it names.')"
+eq "a unit naming an issue, a branch and an area is no lookup, whatever its title says" "routine" "$(task_tier general-purpose 'Find the tip wording' 'You are one unit of round 67. Your branch: issue-1710-r67; your area: app. Issue #1710: read the issue and list where the tip is shown.')"
+eq "and sonnet passes the agent-model rule for it" "" "$(agent_model_reason general-purpose 'Find the tip wording' 'You are one unit of round 67. Your branch: issue-1710-r67; your area: app. Issue #1710: read the issue and list where the tip is shown.' sonnet)"
+eq "an issue number alone, with no branch or unit, still reads as a lookup" "lookup" "$(task_tier general-purpose 'Find it' 'Find which file mentions issue 1710 and report the path')"
 eq "a short find-where prompt with sonnet is still refused" "haiku lookup" "$(agent_model_reason general-purpose 'Find the parser' 'Find which file parses dates and report the path' sonnet)"
 eq "no model on a lookup" "haiku lookup" "$(agent_model_reason Explore 'Find x' 'Find x' '')"
 eq "no model on hard work" "opus hard" "$(agent_model_reason general-purpose 'Fix the bug' 'Debug the crash' '')"
@@ -2899,6 +2903,10 @@ eq "both drain jobs share one list of steps" "1 1" "$(grep -c 'steps: &drain-ste
 eq "the placeholder check reads whole words" "0" "$(printf 'runs-on: ${{ vars.QUEUE_RUNS_ON }}\n' | grep -cw 'RUNS_ON\|RUN_SHELL')"
 eq "only the guarded smoke check stays hosted" "smoke.yml" "$(cd "$root/templates/.github/workflows" && grep -l 'runs-on: ubuntu-latest' *.yml | paste -sd' ' -)"
 eq "state-label runs once per issue per burst" "1" "$(grep -c 'group: state-label-\${{ github.event.issue.number }}' "$root/templates/.github/workflows/state-label.yml")"
+# A landing starts a deploy: the queue's own start has a backstop, a run when a drain ends, and every step is named so the Queue never shows a script.
+unnamed_steps() { awk '/^      - / { if (inst && !named) n++; inst = 1; named = 0 } /^      - name:/ { named = 1 } /^        name:/ { named = 1 } END { if (inst && !named) n++; print n + 0 }' "$1"; }
+eq "the plugin's Deploy also starts when a drain ends, and its steps all have names" "1 0" "$(grep -c 'workflows: \["Queue drain"\]' "$root/templates/.github/workflows/deploy.yml") $(unnamed_steps "$root/templates/.github/workflows/deploy.yml")"
+eq "a deploy started by a finished drain is not held back by interval 0" "1" "$(grep -c 'GITHUB_EVENT_NAME" = schedule' "$root/templates/.github/workflows/deploy.yml")"
 eq "a scheduled deploy with interval 0 does nothing" "1" "$(grep -c 'intervalMinutes is 0' "$root/templates/.github/workflows/deploy.yml")"
 # --- The sync judges a file by its content against every released version.
 eq "unfill puts a project's runner back to its placeholder" "    runs-on: RUNS_ON
@@ -6072,6 +6080,11 @@ eq "an answered issue's mark-waiting line is dropped, the others stay" "mark-wai
 eq "a unit's issues are listed one a line" "1 2 3" "$(unit_issues "$gs_units" | tr '\n' ' ' | sed 's/ $//')"
 eq "a unit's issue gets no mark-waiting" "" "$(drop_waiting_goals "$(printf 'mark-waiting 2\tTwo (a question to the owner is open)\n')" "$(unit_issues "$gs_units")" | sed '/^$/d')"
 eq "a held pull request whose question was answered is said, and the drive leaves the hold" "held: #80 is held for the builder, and the question on #7 has been answered. An answer that lets it land lifts the hold by itself; this one did not, so it stays held until the builder lets it land. The drive does not change the hold." "$(held_answered_say 80 7)"
+eq "a Left: note that asks nothing is a closing note" "yes" "$(closing_note "$(printf 'Pull request #5 builds the tip.\n\nLeft: the planter sizes. Not changed, because it alters the garden layout.')")"
+eq "a note that also asks a question is a question" "no" "$(closing_note "$(printf 'Left: the planter sizes.\n\nShould the sizes follow the bed?')")"
+eq "a Left: note followed by numbered choices is an ask" "no" "$(closing_note "$(printf 'Left: one thing.\n1. Yes. Recommended.\n2. No.')")"
+eq "a comment with no Left: line is no closing note" "no" "$(closing_note 'Pull request #5 landed.')"
+eq "plan.sh reads closing notes before the ask gate" "1" "$(grep -c 'closing_notes_for "\$extra"' "$root/scripts/drive/plan.sh")"
 eq "plan.sh drops answered and unit-owned questions before the ask gate" "1 1 1" "$(grep -c 'answered_for "\$extra"' "$root/scripts/drive/plan.sh") $(grep -c 'unit_issues "\$(started_units' "$root/scripts/drive/plan.sh") $(grep -c 'held_answered_lines "\$pull_links"' "$root/scripts/drive/plan.sh")"
 eq "the skill says an answer's hold is the service's and a held line stays the builder's" "1" "$(grep -c 'you never do' "$root/skills/project-drive/SKILL.md")"
 

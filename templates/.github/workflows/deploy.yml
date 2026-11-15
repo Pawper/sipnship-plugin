@@ -52,6 +52,15 @@ name: Deploy
 on:
   schedule:
     - cron: "17 * * * *"
+  # A landing starts a deploy, whichever way it was made: the queue starts it
+  # itself, and when a drain ends, this run is the backstop for a landing the
+  # queue's own start missed (a Land now made while another drain ran). It
+  # costs seconds when main is already live, and the concurrency group below
+  # keeps one running and one waiting, so landings close together make one
+  # deploy.
+  workflow_run:
+    workflows: ["Queue drain"]
+    types: [completed]
   workflow_dispatch:
 
 permissions:
@@ -69,13 +78,15 @@ jobs:
       path: ${{ steps.plan.outputs.path }}
       sha: ${{ steps.plan.outputs.sha }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out main
+        uses: actions/checkout@v4
         with:
           ref: main
           fetch-depth: 0
       # The queue's own App (npx sipnship queue-identity) lets the plan see
       # the runners; without it the plan uses ADMIN_TOKEN, as before.
-      - id: app
+      - name: Sign in as the queue App
+        id: app
         shell: RUN_SHELL
         env:
           QUEUE_APP_ID: ${{ secrets.QUEUE_APP_ID }}
@@ -86,7 +97,8 @@ jobs:
             t=$(sh scripts/ci/queue-app-token.sh) || t=""
             if [ -n "$t" ]; then echo "::add-mask::$t"; echo "token=$t" >> "$GITHUB_OUTPUT"; fi
           fi
-      - id: plan
+      - name: Plan the deploy
+        id: plan
         shell: RUN_SHELL
         env:
           GH_TOKEN: ${{ github.token }}
@@ -164,7 +176,8 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out the commit to deploy
+        uses: actions/checkout@v4
         with:
           ref: ${{ needs.plan.outputs.sha }}
       - name: Install once
@@ -213,7 +226,8 @@ jobs:
       VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out the commit to deploy
+        uses: actions/checkout@v4
         with:
           ref: ${{ needs.plan.outputs.sha }}
       - name: Build here and deploy the output; Vercel builds nothing
@@ -244,7 +258,8 @@ jobs:
       VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out the commit to deploy
+        uses: actions/checkout@v4
         with:
           ref: ${{ needs.plan.outputs.sha }}
       - name: Say so when this is a fallback
