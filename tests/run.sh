@@ -26,6 +26,8 @@ part=
 touching=
 touched=
 suite_start=$(date +%s)
+# The drive's worktree check writes a probe folder; the suite never does beside the checkout.
+export WORKTREE_ACCESS_CHECK=off
 while [ $# -gt 0 ]; do
   case "$1" in
     --fail-fast) fail_fast=yes ;;
@@ -4474,6 +4476,7 @@ eq "add-runner adds the exclusions and never removes one" "2 0" "$(grep -c 'Add-
 eq "add-runner -Count takes one to twenty and not with -Name" "1 1 1" "$(grep -c '\[ValidateRange(0, 20)\]\[int\]\$Count = 0' "$root/templates/scripts/ci/add-runner.ps1") $(grep -c 'Give -Name for one runner or -Count for several, not both' "$root/templates/scripts/ci/add-runner.ps1") $(grep -c 'Give -Name NAME for one runner or -Count N for several' "$root/templates/scripts/ci/add-runner.ps1")"
 eq "-Count names runners by the next free names, counting GitHub's list and the folders under the root" "1 1 1" "$(grep -c 'function Get-FreeRunnerNames' "$root/templates/scripts/ci/add-runner.ps1") $(grep -c 'actions/runners" --paginate' "$root/templates/scripts/ci/add-runner.ps1") $(grep -c 'Get-ChildItem -Path \$Root -Directory' "$root/templates/scripts/ci/add-runner.ps1")"
 eq "all the runners share one elevated run and one exclusion, set after the last is installed" "1 1" "$(grep -c '^foreach (\$runnerName in \$names)' "$root/templates/scripts/ci/add-runner.ps1") $(grep -c '^if (\$installed.Count -gt 0) {' "$root/templates/scripts/ci/add-runner.ps1")"
+eq "the worktrees grant happens once, inside that same elevated run" "1 1" "$(grep -c 'Grant-WorktreesAccess (Get-WorktreesDir' "$root/templates/scripts/ci/add-runner.ps1") $(awk '/^if \(\$installed.Count -gt 0\) \{/{b=1} b&&/Grant-WorktreesAccess \(Get-WorktreesDir/{n++} /^}/{b=0} END{print n+0}' "$root/templates/scripts/ci/add-runner.ps1")"
 eq "a runner that failed is named after the others keep their exclusion" "1" "$(grep -c 'Runner \$runnerName was not added' "$root/templates/scripts/ci/add-runner.ps1")"
 eq "the brief names an old runners key once" "1|" "$(brief_runner_key_line '{ "runners": 3 }' | grep -c 'no longer read')|$(brief_runner_key_line '{}')"
 eq "the brief reads no count from the file" "0" "$(cat "$root"/hooks/scripts/session-brief*.sh | grep -c 'runner_count')"
@@ -6115,6 +6118,57 @@ eq "the skill gives the drive its own action for an ask-fix nobody can reach" "1
 eq "the plan prints a progress line on stderr, never on stdout" "plan: reading pull request 5" "$(plan_say 'reading pull request 5' 2>&1 >/dev/null)"
 eq "plan.sh says what it has read" "1 1" "$(grep -c 'plan_say "read the board' "$root/scripts/drive/plan.sh") $(grep -c 'plan_say "reading pull request' "$root/scripts/drive/pr-read-lib.sh")"
 eq "the answers reader is bounded and says why" "1" "$(grep -c 'timeout 90' "$root/scripts/drive/answers.sh")"
+
+section 'the drive checks it can make a worktree before it starts an agent (drive)'
+. "$root/scripts/drive/worktree-access-lib.sh"
+wa_dir=$(mktemp -d)
+wa_porc="worktree C:/Maya/garden
+HEAD aaa
+branch refs/heads/main
+
+worktree C:/Maya/trees/garden/issue-4-beds
+HEAD bbb
+branch refs/heads/issue-4-beds
+
+worktree C:/Maya/trees/garden/issue-5-water
+HEAD ccc
+branch refs/heads/issue-5-water
+
+worktree C:/Maya/garden/.claude/worktrees/agent-1
+HEAD ddd
+branch refs/heads/agent-1
+"
+# Writable: a folder the run can write in.
+eq "a writable folder is ok" "ok" "$(worktree_probe "$wa_dir")"
+eq "a second look finds the same probe and adds nothing" "2" "$(worktree_probe "$wa_dir" >/dev/null; find "$wa_dir" -mindepth 1 | wc -l | tr -d ' ')"
+# Folder missing: made when its parent allows it, denied when nothing can be made there.
+eq "a missing folder under a writable one is ok" "ok" "$(worktree_probe "$wa_dir/not-yet/garden")"
+: > "$wa_dir/a-file"
+eq "a path that runs through a file is denied" "denied" "$(worktree_probe "$wa_dir/a-file/garden")"
+# Not writable, by what the report says.
+wa_denied=$(worktree_access_report denied "C:/Maya/trees/garden" "the scheduled account")
+eq "a writable folder reports ok" "ok" "$(worktree_access_report ok "C:/Maya/trees/garden" x)"
+eq "a denied folder holds, waits and details" "held waits detail" "$(printf '%s\n' "$wa_denied" | sed 's/:.*//' | tr '\n' ' ' | sed 's/ $//; s/^held:/held/')"
+eq "the plain lines name no path and no account" "0" "$(printf '%s\n' "$wa_denied" | grep -E '^(held|waits):' | grep -ciE 'C:/|account name|scheduled account|NETWORK')"
+eq "the detail line names the folder and the account" "1" "$(printf '%s\n' "$wa_denied" | grep -c '^detail: .*C:/Maya/trees/garden as the scheduled account')"
+# Goals: dispatch-like goals wait, the rest goes ahead.
+wa_goals=$(printf 'dispatch 4\tBeds\nmerge 41\nmerge-main 42\tTitle\ndrain\n')
+eq "access fine, every goal stays" "$wa_goals" "$(hold_no_worktree "$wa_goals" ok)"
+eq "no access, goals that need a worktree become one held line" "merge 41
+drain
+held: 2 goal(s) not started, no agent can be started from here yet, because this machine's scheduled run is not allowed to make working folders" "$(hold_no_worktree "$wa_goals" "$wa_denied")"
+eq "no access and only landing goals changes nothing" "merge 41" "$(hold_no_worktree "merge 41" "$wa_denied")"
+# Where the folder is read from.
+eq "the existing worktrees' shared parent is the folder" "C:/Maya/trees/garden" "$(worktrees_dir_from "$wa_porc")"
+eq "the config's folder wins" "D:/trees" "$(worktrees_dir_pick "D:/trees" "$wa_porc" "C:/Maya/garden")"
+eq "with no config the shared parent is used" "C:/Maya/trees/garden" "$(worktrees_dir_pick "" "$wa_porc" "C:/Maya/garden")"
+eq "with neither, a worktrees folder beside the project" "C:/Maya/worktrees/garden" "$(worktrees_dir_pick "" "worktree C:/Maya/garden" "C:/Maya/garden")"
+eq "worktrees in two folders name none" "" "$(worktrees_dir_from "worktree C:/a
+worktree C:/b/x
+worktree C:/c/y")"
+eq "the script says ok when the check is off" "ok" "$(WORKTREE_ACCESS_CHECK=off sh "$root/scripts/drive/worktree-access.sh")"
+eq "approval.sh holds the dispatches through the check" "1" "$(grep -c 'hold_no_worktree "$approved"' "$root/scripts/drive/approval.sh")"
+eq "the skill tells the drive to check first" "1" "$(grep -c 'Check the worktrees folder before any agent starts' "$root/skills/project-drive/SKILL.md")"
 
 # --- end of blocks: the summary, kept in every part.
 eq "no test wrote into the checkout's own queue state" "$queue_picture_before" "$([ "$queue_picture_before" = skipped ] && echo skipped || queue_picture)"

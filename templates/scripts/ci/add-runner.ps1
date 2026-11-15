@@ -25,6 +25,19 @@
 # service. It changes nothing else on the machine. Afterwards, run
 # scripts/ci/runner-doctor.sh and the Runner check workflow.
 #
+# Worktrees folder: the runner service runs as NT AUTHORITY\NETWORK SERVICE, which
+# cannot reach a folder under a person's own user folder, so a drive tick woken on
+# a runner could not make a worktree for its agents. The install therefore
+# grants that account modify access to the project's worktrees folder, and to
+# nothing else, creating the folder when it is missing. The folder is read
+# from the project: "worktreesDir" in .claude/project-drive.json, else the folder
+# its existing worktrees share, else a "worktrees" folder beside the project.
+# For a machine whose runners are already installed, run only the grant (it
+# needs the elevated shell too; no -Name or -Count):
+#   powershell -ExecutionPolicy Bypass -File scripts\ci\add-runner.ps1 -GrantWorktreesOnly
+# -DryRun says what would be granted and changes nothing, elevated or not;
+# -WorktreesDir names the folder when the project does not record it.
+#
 # The "pr" label lets the runner take pull requests' jobs from its first
 # one. Where ci.yml keeps one runner for the batch and main, the merge
 # queue takes "pr" off exactly one online runner and keeps the rest
@@ -33,10 +46,70 @@ param(
   [string]$Name = "",
   [ValidateRange(0, 20)][int]$Count = 0,
   [string]$Labels = "self-hosted,windows,x64,pr",
-  [string]$Root = ""
+  [string]$Root = "",
+  [switch]$GrantWorktreesOnly,
+  [string]$WorktreesDir = "",
+  [switch]$DryRun
 )
 $ErrorActionPreference = "Stop"
 
+# The account every runner service runs as (--runasservice below), by its
+# well-known SID so a translated Windows names it right: Network Service.
+$ServiceSid = "*S-1-5-20"
+
+# The project's worktrees folder, read from where the project records it:
+# worktreesDir in .claude/project-drive.json, else the parent its existing
+# linked worktrees share (Claude Code's own .claude/worktrees left out), else
+# a "worktrees" folder named like the project beside the project's own.
+function Get-WorktreesDir([string]$Given) {
+  if ($Given) { return [IO.Path]::GetFullPath($Given) }
+  $top = (git rev-parse --show-toplevel).Trim()
+  $common = (git rev-parse --path-format=absolute --git-common-dir).Trim()
+  $main = [IO.Path]::GetFullPath((Split-Path -Parent $common))
+  $conf = Join-Path $top ".claude\project-drive.json"
+  if (Test-Path $conf) {
+    $cfg = Get-Content -Raw $conf | ConvertFrom-Json
+    if ($cfg.PSObject.Properties.Name -contains "worktreesDir" -and $cfg.worktreesDir) {
+      $dir = [string]$cfg.worktreesDir
+      if (-not [IO.Path]::IsPathRooted($dir)) { $dir = Join-Path $main $dir }
+      return [IO.Path]::GetFullPath($dir)
+    }
+  }
+  $linked = @(git worktree list --porcelain | Where-Object { $_ -like "worktree *" } | Select-Object -Skip 1 |
+    ForEach-Object { ($_ -replace "^worktree ", "") -replace "\\", "/" } |
+    Where-Object { $_ -notlike "*/.claude/worktrees/*" } |
+    ForEach-Object { Split-Path -Parent $_ } | Select-Object -Unique)
+  if ($linked.Count -eq 1) { return [IO.Path]::GetFullPath($linked[0]) }
+  return [IO.Path]::GetFullPath((Join-Path (Join-Path (Split-Path -Parent $main) "worktrees") (Split-Path -Leaf $main)))
+}
+
+# Modify access for the service account to the worktrees folder alone, made
+# if missing; inherited by what is made inside. Nothing else changes.
+function Grant-WorktreesAccess([string]$Dir, [bool]$Dry) {
+  if ($Dry) {
+    Write-Output "Dry run: would create '$Dir' if missing and grant Network Service modify access to it, and to nothing else."
+    return
+  }
+  New-Item -ItemType Directory -Force -Path $Dir | Out-Null
+  & icacls $Dir /grant "${ServiceSid}:(OI)(CI)M" | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw "icacls could not grant access to $Dir (exit code $LASTEXITCODE)" }
+  Write-Output "Network Service can now make worktrees in $Dir (modify access, this folder only)."
+}
+
+if ($GrantWorktreesOnly) {
+  if ($Name -or $Count -gt 0) { throw "-GrantWorktreesOnly installs no runner: leave -Name and -Count out." }
+  $dir = Get-WorktreesDir $WorktreesDir
+  if (-not $DryRun) {
+    $p = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+    if (-not $p.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+      throw "Run this from an elevated PowerShell; changing a folder's access needs it. From any shell: Start-Process powershell -Verb RunAs -Wait -ArgumentList '-ExecutionPolicy Bypass -File scripts\ci\add-runner.ps1 -GrantWorktreesOnly'"
+    }
+  }
+  Grant-WorktreesAccess $dir $DryRun.IsPresent
+  return
+}
+
+if ($DryRun) { throw "-DryRun goes with -GrantWorktreesOnly; installing a runner has no dry run." }
 if ($Name -and $Count -gt 0) { throw "Give -Name for one runner or -Count for several, not both." }
 if (-not $Name -and $Count -lt 1) { throw "Give -Name NAME for one runner or -Count N for several." }
 
@@ -132,6 +205,16 @@ if ($installed.Count -gt 0) {
   } catch {
     Write-Output "Could not add Defender exclusions ($($_.Exception.Message)). Run this by hand as administrator:"
     Write-Output "Add-MpPreference -ExclusionPath $paths"
+  }
+
+  # The service account must be able to make worktrees in the project's
+  # worktrees folder, or a drive tick woken on a runner starts agents that fail
+  # at their first step. Only that folder is granted, in this same elevated run.
+  # When it cannot be done from here, say what to run by hand and go on.
+  try {
+    Grant-WorktreesAccess (Get-WorktreesDir $WorktreesDir) $false
+  } catch {
+    Write-Output "Could not give the runners access to the worktrees folder ($($_.Exception.Message)). Run this by hand as administrator: powershell -ExecutionPolicy Bypass -File scripts\ci\add-runner.ps1 -GrantWorktreesOnly"
   }
 }
 

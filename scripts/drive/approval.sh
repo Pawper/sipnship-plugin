@@ -32,6 +32,7 @@ here=$(dirname "$0")
 . "$here/round-lib.sh"
 . "$here/comment-lib.sh"
 . "$here/round-state-lib.sh"
+. "$here/worktree-access-lib.sh"
 
 if ! command -v gh >/dev/null 2>&1 || ! gh auth status >/dev/null 2>&1; then
   echo "nothing: gh is not available or not signed in"
@@ -175,6 +176,11 @@ if [ -z "$started_by" ] && printf '%s\n' "$approved" | grep -q '^dispatch '; the
   # A change held for the owner's read holds no runner and no other unit (only its areas stay taken, areas-lib.sh), so it never keeps the round "running".
   open_prs=$(gh api "repos/{owner}/{repo}/pulls?state=open&per_page=100" --jq '.[] | select(([.labels[].name | ascii_downcase] | index("queue:hold") // index("hold")) == null) | .number' 2>/dev/null | tr -d '\r')
   approved=$(hold_dispatch "$approved" "$(running_round "$comments" "$inprog" "$open_prs")")
+fi
+# An agent needs a worktree: when this run cannot make one (a scheduled run
+# under an account with no access to the worktrees folder), start none.
+if printf '%s\n' "$approved" | grep -qE '^(dispatch|merge-main|fix|start-next|start-now) '; then
+  approved=$(hold_no_worktree "$approved" "$(sh "$here/worktree-access.sh")")
 fi
 if [ -z "$(printf '%s\n' "$approved" | grep -v '^held: ')" ]; then
   printf '%s\n' "$approved" | sed 's/^held: /nothing: /'

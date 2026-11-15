@@ -180,7 +180,9 @@ scripts/ci/add-runner.ps1 06ca6c99639b12e03efa3a17540400881d827dc7
 scripts/ci/add-runner.ps1 4888e2e3acdc0ad3e0373b8a87f7119b0d5d4df1
 scripts/ci/add-runner.ps1 594a0847ecd0f902ebfa77eb13e84e44dcb0a0d3
 scripts/ci/add-runner.ps1 721f00bcf6ab79a6d8a9aaa2ca14317722b42265
+scripts/ci/add-runner.ps1 a6a94bc7e67002f4d79f6229b4c5b503b9414444
 scripts/ci/add-runner.ps1 acee7e1e56ef8f4878d04f01c96d52683e8ed62d
+scripts/ci/add-runner.ps1 f8abcc98063f7ae333c8d4062e029b2c8a591e03
 scripts/ci/ask-audit.sh a46f87ac2f28db195d54cd64dea6b0b626de7a55
 scripts/ci/ask-audit.sh f33329b0f6995496914745b67295e7216a04800a
 scripts/ci/ask-lib.sh 0b29b024b3e69559150f82f5791c2c6e834292da

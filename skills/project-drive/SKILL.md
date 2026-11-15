@@ -196,6 +196,15 @@ The goal lines and what each means:
 - **`busy N TITLE` and `hold N TITLE` for the rest.** Every open pull request gets one line: one whose checks are
   still running or whose merge state is not known yet is `busy`, one held for the builder's read is `hold`.
   Nothing is sent to either.
+- **Check the worktrees folder before any agent starts.** A tick woken on a self-hosted runner runs as the runner's
+  service account, which may not reach the folder worktrees live in, and every agent it started would fail at its
+  first step. `approval.sh` runs `sh "$CLAUDE_PLUGIN_ROOT/scripts/drive/worktree-access.sh"` and drops `dispatch`,
+  `merge-main`, `fix`, `start-next` and `start-now` goals with one `held:` line when it prints `held:`, `waits:` and
+  `detail:` lines instead of `ok`; run it yourself before starting an agent by any other road. On a `held:`, start no
+  agent, set no issue In progress, and put the `waits:` line in the published round (the Work tab shows it, in plain
+  words) and the `detail:` line in a secondary line of the proposal comment; landing, proposing and tidying go on.
+  The folder is `worktreesDir` in the config when set, else where the project's worktrees already live. Never
+  work around it by making a worktree somewhere else.
 - **`dispatch N`.** (A `First: why` field on the line says the project's priorities put it first; keep it in
   the posted proposal: "First: it unblocks your reviews".) Start an agent for the issue with isolation (a worktree), the model `dispatchModel`
   names (or, when it is empty, the model the plugin's agent-model hook allows for its tier), and a brief that
@@ -494,6 +503,7 @@ first round finds the reply and pursues it.
 - `runners`: an optional cap on how many agents work at once; with no key the plan reads the runners GitHub lists, online and not busy, less one kept for the queue, and names that number on its heading line
 - `maxAgents`: the most one round dispatches (default 4)
 - `maxMinutes`: the most one round runs (default 90)
+- `worktreesDir`: the folder the project keeps its agents' worktrees in; with no key it is the folder the existing worktrees share, else a `worktrees` folder beside the project. The drive checks it can write there before it starts an agent, and the runner install grants the runner's account access to it
 - `queueLogGlob`: where the merge queue writes its logs
 - `ownerDecisions`: short phrases naming what is always the owner's, for example `["prices", "policy",
   "holders to ask"]`; a ready issue whose title or body contains one is asked about, never dispatched
