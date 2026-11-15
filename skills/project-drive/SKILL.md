@@ -359,6 +359,14 @@ tab says it waits and on what instead of saying it starts on its own; `status: p
   the plugin suite (`sh tests/run.sh` from `plugin/`), commit, open the pull request with `Closes #N` for that
   release issue, and queue it. Publishing the split to the public repository happens by the release procedure
   after the merge (the publish workflow, once the publish token exists).
+- **`deploy (N landed changes are not live yet, the oldest for M minutes)`.** Changes that ship landed on the
+  remote's main at least ten minutes ago, none is deploying, and production still holds an older commit. A landing
+  starts its own deploy (the queue, and the Deploy workflow when a drain finishes), so this is the net under both:
+  start the Deploy workflow once with `gh api -X POST repos/{owner}/{repo}/actions/workflows/deploy.yml/dispatches -f ref=main`
+  (REST, so it spends no GraphQL points), then say in the report on the drive issue that it was started and
+  at what time. Never start a second while one is running (the plan prints nothing then). When the agent is not
+  allowed to start it, say so and give the owner that one command instead of retrying. Do not wait for it to
+  finish; the next tick's plan shows whether production caught up.
 - **`restart-queue`.** Stop the queue process if one is still running, look in the main checkout for a stray
   modified tracked file and move it aside, then run the queue again.
 

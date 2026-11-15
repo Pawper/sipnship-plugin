@@ -97,3 +97,31 @@ mergeable_local_branches() {
     { b = $0; gsub(/^[ \t*+]+|[ \t]+$/, "", b) }
     b != "" && b != def && (b in ok) && !(b in held) { print b }'
 }
+
+# locked_worktrees PORCELAIN
+# Print the paths of worktrees git shows as locked, one per line. A running
+# agent's worktree is locked for as long as it works there, so it is never
+# one to clear, whatever its branch looks like.
+locked_worktrees() {
+  printf '%s\n' "$1" | tr -d '\r' | awk '
+    /^worktree / { path = substr($0, 10) }
+    /^locked/ { if (path != "") print path }'
+}
+
+# without_paths PATH_BRANCH PATHS
+# PATH_BRANCH as worktree_branches prints it, with the lines whose path is in
+# PATHS (one per line) left out. Slashes are compared as forward slashes.
+without_paths() {
+  printf '%s\n' "$1" | awk -F'\t' -v skip="$(printf '%s\n' "$2" | tr '\\' '/')" '
+    BEGIN { n = split(skip, s, "\n"); for (i = 1; i <= n; i++) { p = s[i]; gsub(/\r/, "", p); if (p != "") out[p] = 1 } }
+    { p = $1; gsub(/\\/, "/", p); if (!(p in out)) print }' | sed '/^$/d'
+}
+
+# has_own_commit REFLOG_SUBJECTS
+# REFLOG_SUBJECTS is a branch's reflog, one subject per line (git reflog show
+# --format=%gs). True when the branch had a commit made on it. A branch only
+# created, renamed or brought up to date has none, and git still calls it
+# merged, so it must never count as finished work.
+has_own_commit() {
+  printf '%s\n' "$1" | tr -d '\r' | grep -q '^commit'
+}

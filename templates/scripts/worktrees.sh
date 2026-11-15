@@ -48,8 +48,13 @@ done
 default=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || echo main)
 default_local=${default#origin/}
 step="listing worktrees"
-pairs=$(worktree_branches "$(git worktree list --porcelain)")
+porcelain=$(git worktree list --porcelain)
+pairs=$(worktree_branches "$porcelain")
 count=$(printf '%s\n' "$pairs" | sed '/^$/d' | wc -l | tr -d ' ')
+# A locked worktree (a running agent's) and the one this script runs in are never cleared or named.
+own=$(git rev-parse --show-toplevel 2>/dev/null || true)
+pairs=$(without_paths "$pairs" "$(locked_worktrees "$porcelain")
+$own")
 
 # One call for every ended pull request: merged or closed, with its branch.
 ends=""
@@ -92,8 +97,7 @@ $gh_merged
 " in *"
 $b
 "*) continue ;; esac
-  moves=$(git reflog show --format=%h "refs/heads/$b" 2>/dev/null | wc -l | tr -d ' ')
-  if [ "${moves:-0}" -gt 1 ]; then printf '%s\n' "$b"; fi
+  if has_own_commit "$(git reflog show --format=%gs "refs/heads/$b" 2>/dev/null)"; then printf '%s\n' "$b"; fi
 done)
 merged="$gh_merged
 $git_merged"
@@ -106,8 +110,13 @@ remove_one() {
   if [ -L "$1/node_modules" ]; then
     if [ -n "$WINDIR" ]; then cmd //c rmdir "$(cd "$1" && pwd -W 2>/dev/null | tr '/' '\\')\\node_modules" >/dev/null 2>&1 || true
     else unlink "$1/node_modules" 2>/dev/null || true; fi
+  elif [ -d "$1/node_modules" ] && [ -n "$WINDIR" ]; then
+    # An installed node_modules (pnpm's junctions and deep paths) is what made git stop with "Directory not empty",
+    # leaving the folder behind with its worktree already gone from the list: cmd's rmdir clears it, never following a junction.
+    cmd //c rmdir /s /q "$(cd "$1" && pwd -W 2>/dev/null | tr '/' '\\')\\node_modules" >/dev/null 2>&1 || true
   fi
-  git worktree remove "$1" >/dev/null 2>&1
+  # git's own reason is kept for the message: "would not remove it" alone left a backlog unexplained.
+  remove_why=$(git worktree remove "$1" 2>&1) || return 1
 }
 
 # is_clean PATH: nothing uncommitted outside the scratch folder.
@@ -124,8 +133,9 @@ drop_branch() {
     if git branch -D "$1" >/dev/null 2>&1; then echo "removed local branch $1"
     else echo "could not remove local branch $1 (a worktree may still hold it); run prune later"; fi
   else
-    git branch -d "$1" >/dev/null 2>&1 || git branch -D "$1" >/dev/null 2>&1
-    echo "removed local branch $1 (merged)"
+    # A branch git will not delete (a lock, a worktree still holding it) is said and the run goes on: under set -e a failed delete ended the whole prune, leaving the rest of the list untouched.
+    if git branch -d "$1" >/dev/null 2>&1 || git branch -D "$1" >/dev/null 2>&1; then echo "removed local branch $1 (merged)"
+    else echo "could not remove local branch $1; run prune later"; fi
   fi
 }
 
@@ -137,7 +147,7 @@ prune_set() { # KIND(merged|closed) HEADS
     if ! is_clean "$path"; then echo "skipped $path: it has uncommitted files outside .scratch/"; continue; fi
     if [ "$apply" = yes ]; then
       if remove_one "$path"; then echo "removed $path"; drop_branch "$branch" "$1"
-      else echo "skipped $path: git would not remove it"; fi
+      else echo "skipped $path: git would not remove it ($(printf '%s' "$remove_why" | tr '\n' ' ' | cut -c1-160))"; fi
     else
       echo "would remove $path and its local branch $branch ($1)"
     fi

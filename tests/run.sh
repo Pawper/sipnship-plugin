@@ -1269,6 +1269,18 @@ loose')"
 eq "one branch only" "C:/Users/me/Documents/GitHub/app/.claude/worktrees/rename" "$(prunable_worktrees "$pairs" 'retries
 rename' rename)"
 eq "an unmerged branch is not prunable" "" "$(prunable_worktrees "$pairs" 'other')"
+lk_porcelain=$(printf 'worktree /repo\nHEAD aaa\nbranch refs/heads/main\n\nworktree /w/beds\nHEAD bbb\nbranch refs/heads/beds\nlocked claude agent agent-1 (pid 7)\n\nworktree /w/shed\nHEAD ccc\nbranch refs/heads/shed\n\nworktree /w/mine\nHEAD ddd\nbranch refs/heads/mine\n')
+eq "a locked worktree is named" "/w/beds" "$(locked_worktrees "$lk_porcelain")"
+lk_pairs=$(worktree_branches "$lk_porcelain")
+eq "locked and own worktrees leave the list; slashes compare alike" "/w/shed	shed" "$(without_paths "$lk_pairs" "$(printf '/w/beds\n\\w\\mine\n')")"
+eq "nothing to leave out keeps every line" "3" "$(without_paths "$lk_pairs" '' | wc -l | tr -d ' ')"
+if has_own_commit "$(printf 'merge origin/main: Fast-forward\nBranch: renamed refs/heads/a to refs/heads/b\nbranch: Created from HEAD')"; then r=yes; else r=no; fi
+eq "a branch only created, renamed and brought up to date has no work of its own" "no" "$r"
+if has_own_commit "$(printf 'commit: Water the beds\nbranch: Created from HEAD')"; then r=yes; else r=no; fi
+eq "a branch with a commit made on it has" "yes" "$r"
+eq "worktrees.sh leaves locked and own worktrees out and reads a branch's own commits" "1 1 1" "$(grep -c 'locked_worktrees "\$porcelain"' "$root/templates/scripts/worktrees.sh") $(grep -c 'has_own_commit' "$root/templates/scripts/worktrees.sh") $(grep -c 'show-toplevel' "$root/templates/scripts/worktrees.sh")"
+eq "a branch git will not delete is said, not a stop for the whole prune; git's reason is kept" "1 1" "$(grep -c 'could not remove local branch \$1; run prune later' "$root/templates/scripts/worktrees.sh") $(grep -c 'remove_why=' "$root/templates/scripts/worktrees.sh")"
+eq "an installed node_modules is cleared by cmd before git removes the worktree, since git stopped on it" "1" "$(grep -c 'rmdir /s /q' "$root/templates/scripts/worktrees.sh")"
 eq "places counted" "2 2" "$(worktree_places "$pairs" | cut -f1 | tr '\n' ' ' | sed 's/ $//')"
 
 section 'project drive'
@@ -3932,6 +3944,20 @@ eq "a version bump resets the count" "0" "$(cat "$rel_dir/c3")"
 eq "no plugin version file prints nothing" "" "$(cat "$rel_dir/cn")"
 eq "session brief names the unreleased count" "1" "$(grep -q 'unreleased commit' "$root/hooks/scripts/session-brief-local.sh" && echo 1 || echo 0)"
 eq "drive skill names the release goal" "1" "$(grep -q 'release X.Y.Z' "$root/skills/project-drive/SKILL.md" && echo 1 || echo 0)"
+. "$root/scripts/drive/release-lib.sh"
+. "$root/scripts/drive/deploy-goal-lib.sh"
+dg_now=1000000
+eq "deploy goal: three landed changes, the oldest 42 minutes ago, nothing deploying" "deploy (3 landed changes are not live yet, the oldest for 42 minutes)" "$(deploy_goal 3 $((dg_now - 2520)) $dg_now no)"
+eq "deploy goal says change for one" "deploy (1 landed change is not live yet, the oldest for 10 minutes)" "$(deploy_goal 1 $((dg_now - 600)) $dg_now no)"
+eq "deploy goal: given its few minutes first" "" "$(deploy_goal 2 $((dg_now - 540)) $dg_now no)"
+eq "deploy goal: none while a deploy runs" "" "$(deploy_goal 2 $((dg_now - 3600)) $dg_now yes)"
+eq "deploy goal: nothing behind, nothing proposed" "" "$(deploy_goal 0 $((dg_now - 3600)) $dg_now no)"
+eq "deploy goal: no landing time, nothing proposed" "" "$(deploy_goal 2 '' $dg_now no)"
+eq "a deploy goal is a goal: the proposal is ready for approval" "deploy (1 landed change is not live yet, the oldest for 12 minutes)
+stop: proposal ready for approval" "$(add_deploy 'stop: nothing to propose' 'deploy (1 landed change is not live yet, the oldest for 12 minutes)')"
+eq "no deploy line leaves the round as it was" "stop: nothing to propose" "$(add_deploy 'stop: nothing to propose' '')"
+eq "a project with no deploy settings proposes nothing" "" "$(cd "$(mktemp -d)" && deploy_proposal)"
+eq "plan.sh adds the deploy goal and the skill names it" "1 1" "$(grep -c 'add_deploy "\$round" "\$(deploy_proposal)"' "$root/scripts/drive/plan.sh") $(grep -c 'landed changes are not live yet' "$root/skills/project-drive/SKILL.md")"
 eq "plan script adds the release goal, read in release-lib" "1" "$(grep -q release_goal "$root/scripts/drive/release-lib.sh" && grep -q release_proposal "$root/scripts/drive/plan.sh" && echo 1 || echo 0)"
 
 section 'hook counterparts'

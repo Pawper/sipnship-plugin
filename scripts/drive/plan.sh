@@ -41,6 +41,7 @@ here=$(dirname "$0")
 . "$here/ask-gate-lib.sh"
 . "$here/stale-lib.sh"
 . "$here/release-lib.sh"
+. "$here/deploy-goal-lib.sh"
 . "$here/rank-lib.sh"
 . "$here/pr-read-lib.sh"
 . "$here/owner-lib.sh"
@@ -252,6 +253,8 @@ fi
 round=$(held_green_line "$round" "$snapshot")  # green pull requests held for the builder's read: one line of their own, never landing and never toward a drain
 # Unreleased plugin work, read from the remote's main (release-lib.sh): one release goal, or a hold naming the pull request or issue already making it.
 round=$(add_release "$round" "$(release_proposal "$facts" "$pull_links")")
+# Landed changes that are not live (deploy-goal-lib.sh): one deploy goal when production is behind main for ten minutes and none is running.
+round=$(add_deploy "$round" "$(deploy_proposal)")
 [ -z "$extra" ] || round=$(add_owner_goals "$round" "$extra" "$facts" .scratch/drive/ask-fix.txt)  # an ask-fix the drive already tried stays a hold (ask-fix-seen.sh)
 round=$(say_every_pr "$round" "$snapshot")  # every open pull request has a line, whatever its checks say
 number_proposal "$round"
