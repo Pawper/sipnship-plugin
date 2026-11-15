@@ -271,7 +271,7 @@ if [ "$mode" = drain ]; then
       elif [ "$bstate" = passed ] && bsha=$(gh_write api -X PUT "repos/{owner}/{repo}/pulls/$bp/merge" -f merge_method=merge --jq .sha 2>/dev/null); then
         say "round $round: merged batch #$bp, left green by an earlier run (members:$(printf ' #%s' $bm))."; ci_dispatch "$base"
         settled="$settled $bp $bm"
-        for m in $bm; do gh_write api -X POST "repos/{owner}/{repo}/issues/$m/comments" -f body="Merged into $base in batch #$bp (commit $bsha), with its history kept. GitHub may show this pull request as closed rather than merged; its changes are on $base." >/dev/null 2>&1 || true; done
+        for m in $bm; do gh_write api -X POST "repos/{owner}/{repo}/issues/$m/comments" -f body="Merged into $base in batch #$bp (commit $bsha), with its history kept. GitHub may show this pull request as closed rather than merged; its changes are on $base." >/dev/null 2>&1 || true; tidy_worktree "$(gh api "repos/{owner}/{repo}/pulls/$m" --jq .head.ref 2>/dev/null | tr -d '\r')"; done
       elif [ "$bstate" = failed ]; then
         gh_write api -X POST "repos/{owner}/{repo}/issues/$bp/comments" -f body="Closed by the queue: left open by an earlier run with its required check failed. Its members are queued again on their own." >/dev/null 2>&1 || true
         gh_write api -X PATCH "repos/{owner}/{repo}/pulls/$bp" -f state=closed >/dev/null 2>&1 && say "round $round: closed batch #$bp, whose required check failed; its members are queued again."
