@@ -566,8 +566,8 @@ budget_read() {
   br_file="$1/.scratch/gh-budget.txt"; br_now=$(date +%s)
   br_rec=$(budget_cached "$(head -n 1 "$br_file" 2>/dev/null)" "$br_now")
   [ -n "$br_rec" ] && { printf '%s\n' "$br_rec"; return 0; }
-  command -v gh >/dev/null 2>&1 || return 0
-  br_rec=$(gh api rate_limit --jq "$BUDGET_JQ" 2>/dev/null | tr -d '\r') || br_rec=""
+  command -v gh >/dev/null 2>&1 || return 0; type hook_bounded >/dev/null 2>&1 || hook_bounded() { shift; "$@"; }  # a bound when bounded-lib.sh is loaded
+  br_rec=$(hook_bounded "${HOOK_NET_SECONDS:-4}" gh api rate_limit --jq "$BUDGET_JQ" 2>/dev/null | tr -d '\r') || br_rec=""
   [ -n "$br_rec" ] || return 0
   mkdir -p "$1/.scratch" 2>/dev/null && printf '%s\t%s\n' "$br_now" "$br_rec" > "$br_file" 2>/dev/null
   printf '%s\n' "$br_rec"

@@ -97,6 +97,7 @@ add() { printf '%s\n' "$1"; }
 
 . "$here/session-brief-network.sh"
 . "$here/session-brief-local.sh"
+. "$here/session-brief-hooks.sh"
 
 # Every slot starts now; the board and the network reads first.
 slot s04 s_board
@@ -115,6 +116,7 @@ slot s16 s_screens
 slot s17 s_handoff
 slot s18 s_plan
 slot s19 s_unreleased
+slot s20 s_hooks
 
 # The lines every brief starts with, while the slots run.
 head_text="Session brief. Reply from this first. For where each issue and pull request really stands, from bodies and comments, run /project-status: readers summarize only what changed and you keep one line per item. Never run one network call per branch, worktree or issue yourself.

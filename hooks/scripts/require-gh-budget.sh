@@ -8,6 +8,7 @@
 # cached for a minute in .scratch/gh-budget.txt.
 here=$(dirname "$0")
 . "$here/lib.sh"
+. "$here/bounded-lib.sh"
 . "$here/refusal-log.sh"
 . "$here/rule-switch.sh"
 

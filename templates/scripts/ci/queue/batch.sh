@@ -386,10 +386,10 @@ package.json"*|*"/package.json"*) ensure_modules ;; esac
 done
 : > "$flaky_dir/now" 2>/dev/null || true
 
-# One member is not a batch: GitHub refused a one-member batch pull request
-# because its required check had not run yet, and the member's own green
-# run already proves it. Merge it serially instead.
-if [ -n "$carried" ] && [ "$(printf '%s\n' "$carried" | grep -c .)" -eq 1 ]; then
+# One member is not a batch: GitHub refused a one-member batch pull request because its required check had not run yet,
+# and the member's own green run already proves it. Merge it serially instead, but not inside a red batch's halving: there
+# a half that is one change gets its own full run, since its pull request checks do not run the tests.
+if [ -n "$carried" ] && [ -z "${QUEUE_HALVING:-}" ] && [ "$(printf '%s\n' "$carried" | grep -c .)" -eq 1 ]; then
   only=$(printf '%s' "$carried" | cut -f1)
   echo "Only #$only survived the batch; merging it serially instead of opening a batch of one."
   because="batch of one"

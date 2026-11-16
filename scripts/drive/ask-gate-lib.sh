@@ -26,13 +26,15 @@ mark_waiting_goals() {
   done
 }
 
-# ask_answered KINDS: "yes" when the builder's newest answer comes after the
-# newest ask. KINDS is one letter a comment, oldest first, separated by
-# spaces: q (an ask: it has a "Recommended." choice), a (a "Builder answer:"
-# line, the fixed form answers.sh reads), - (anything else). An ask that
-# follows an answer is a new question, so it is open again.
+# ask_answered KINDS: "yes" when the question is no longer open: the
+# builder's newest answer, or a note that the issue went back to Ready, comes
+# after the newest ask. KINDS is one letter a comment, oldest first, separated
+# by spaces: q (an ask: it has a "Recommended." choice), a (a "Builder answer:"
+# line, the fixed form answers.sh reads), r (a "back to Ready" note: the
+# issue was set right with no question on it), - (anything else). An ask that
+# follows either is a new question, so it is open again.
 ask_answered() {
-  printf '%s\n' "$1" | awk '{ for (i = 1; i <= NF; i++) { if ($i == "q") q = i; if ($i == "a") a = i } } END { print (a > q) ? "yes" : "no" }'
+  printf '%s\n' "$1" | awk '{ for (i = 1; i <= NF; i++) { if ($i == "q") q = i; if ($i == "a" || $i == "r") a = i } } END { print (a > q) ? "yes" : "no" }'
 }
 
 # answered_for EXTRA: the numbers (one a line) of the mark-waiting issues in
@@ -41,7 +43,7 @@ ask_answered() {
 # a summary of its comments says.
 answered_for() {
   for an_n in $(printf '%s\n' "$1" | sed -n 's/^mark-waiting \([0-9]*\).*/\1/p'); do
-    an_k=$(gh api "repos/{owner}/{repo}/issues/$an_n/comments?per_page=100" --jq '[.[] | .body | gsub("\r"; "") | if test("(^|\n)[ \t]*Builder answer: #[0-9]+ choice [0-9]") then "a" elif test("Recommended\\.") then "q" else "-" end] | join(" ")' 2>/dev/null | tr -d '\r')
+    an_k=$(gh api "repos/{owner}/{repo}/issues/$an_n/comments?per_page=100" --jq '[.[] | .body | gsub("\r"; "") | if test("(^|\n)[ \t]*Builder answer: #[0-9]+ choice [0-9]") then "a" elif test("Recommended\\.") then "q" elif test("(^|\n)[^\n]*[Bb]ack to Ready") then "r" else "-" end] | join(" ")' 2>/dev/null | tr -d '\r')
     if [ "$(ask_answered "$an_k")" = yes ]; then printf '%s\n' "$an_n"; fi
   done
   return 0

@@ -249,6 +249,26 @@ ci_dispatch() {
   fi
 }
 
+# A change that lands one at a time lands on its pull request checks, which do
+# not run the tests; the batch's one full run is the tests' gate and a serial
+# landing has none. Main's own full run is the net: started at once after the
+# last serial landing (not waiting for the hourly gate and its quiet time), so
+# a red main opens the red-main issue within one run instead of an hour and a
+# half later. serial_landed_note marks a landing; main_gate_now starts the run
+# once, and only when a landing was marked. With the workflow's own token
+# ci_dispatch already started one for each landing, so nothing more is started.
+serial_landed_note() { : > "$flaky_dir/serial-landed" 2>/dev/null || true; }
+main_gate_now() {
+  [ -f "$flaky_dir/serial-landed" ] || return 0
+  rm -f "$flaky_dir/serial-landed" 2>/dev/null || true
+  [ "${QUEUE_OWN_TOKEN:-}" = yes ] && [ -z "${QUEUE_MERGE_TOKEN:-}" ] && return 0
+  if gh_write api -X POST "repos/{owner}/{repo}/actions/workflows/ci.yml/dispatches" -f ref="$base" >/dev/null 2>&1; then
+    say "Started main's full run now: a change landed on its pull request checks alone, and a red main should be seen within one run."
+  else
+    say "Could not start main's full run after a change landed on its checks alone; the hourly gate will run it."
+  fi
+}
+
 # The workflow's own token may not change workflow files. Said plainly when a
 # refused merge names them: that change waits for a drain run on a machine.
 workflow_wait_note() {

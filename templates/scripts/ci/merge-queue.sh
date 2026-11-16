@@ -362,7 +362,7 @@ if [ "$mode" = drain ]; then
     say "$stop_line"
     printf '%s\n' "$stop_line" > "$flaky_dir/stopped" 2>/dev/null || true
   fi
-  say "drain rounds done"
+  say "drain rounds done"; main_gate_now
   deploy_if_due "$d_begin"
   # One stuck pull request a drain's end, never two: merge main into one
   # that fell behind or clashes but merges cleanly, ask a real clash's

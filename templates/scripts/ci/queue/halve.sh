@@ -35,14 +35,29 @@ batch_half_run() {
   QUEUE_IN_DRAIN=1 QUEUE_HALVING=yes sh "$0" --batch --base "$base" $1
 }
 
+# main_red_issue: the number of the open issue labeled ci-red, or nothing. A
+# batch that goes red while main is already red is red for main's reasons: no
+# member is blamed and none is landed on its pull request checks, which do not
+# run the tests.
+main_red_issue() {
+  gh api "repos/{owner}/{repo}/issues?labels=ci-red&state=open&per_page=1" --jq '.[0].number // ""' 2>/dev/null | tr -d '\r'
+}
+
 # batch_red BRANCH CARRIED DROPPED: the batch's run is not green. With two or
 # more members, halve; with one, say so. Always ends the queue run (exit).
+# A member the failure points at is never landed here: it waits for a new
+# push, and a half that is one pull request gets its own full run (batch.sh).
 batch_red() {
   br_dropped=$3
   br_members=$(printf '%s' "$2" | cut -f1 | sed '/^$/d' | tr '\n' ' ')
   br_n=$(printf '%s\n' $br_members | grep -c .)
   br_test=$(batch_failed_test "$1")
   [ -z "$br_test" ] || echo "The batch's full run failed at: $br_test"
+  br_main=$(main_red_issue)
+  if [ -n "$br_main" ]; then
+    echo "Main is already red (issue #$br_main), so this batch is red for main's reasons and no member is blamed. Nothing merged; repair main first, and the members are tried again after."
+    exit 1
+  fi
   if [ "$br_n" -lt 2 ] || [ -n "${QUEUE_NO_HALVING:-}" ]; then
     echo "The batch run is not green; nothing merged. Fix it on $1 or drop a PR and run again."
     [ "$br_n" -ne 1 ] || batch_suspect "$br_members"
@@ -59,7 +74,7 @@ batch_red() {
     gh_write api -X POST "repos/{owner}/{repo}/issues/$br_b/comments" -f body="$(halving_say "$br_b" "$br_test")" >/dev/null 2>&1 || true
     batch_suspect "$br_b"
     batch_line "$br_b" "dropped" "the batch went red with it and green without it${br_test:+ ($br_test)}"
-    serial_one "$br_b" || true
+    batch_line "$br_b" "waits for a new push" "it is not landed on its pull request checks alone; they do not run the tests"
   else
     batch_half_run "$br_b" || br_rc=$?
   fi

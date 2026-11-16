@@ -12,6 +12,7 @@
 # "Instructions:" is steps, not a decision, and passes without choices.
 here=$(dirname "$0")
 . "$here/lib.sh"
+. "$here/bounded-lib.sh"
 . "$here/refusal-log.sh"
 . "$here/rule-switch.sh"
 asks=no

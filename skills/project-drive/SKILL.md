@@ -157,7 +157,10 @@ The plan's closing lines also say the round's settings (`rounds:`, with the unit
 model and the red limit), `summary: due` when the daily summary should be written (below), and `health:`
 when a health note is set (below). A `plugin:` line says the copy running the drive is older than the latest
 release; carry it into the report on the drive issue, since faults already fixed come back in the plan until
-the installed copy is updated.
+the installed copy is updated. The builder said a scheduled drive may update the installed copy itself, so a
+scheduled tick (not a person's session) runs `sh <plugin path>/scripts/release/update-installed.sh` first thing
+when it sees that line, and the report says which release the copy moved to, or that the update could not run
+and why. The new scripts apply from the next start; this tick finishes on the ones it began with.
 
 ## b. Propose, or pursue
 

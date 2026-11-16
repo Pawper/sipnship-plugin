@@ -60,7 +60,7 @@ waiting_on_owner_issue() {
 ask_of_issue() {
   # Comments touched in the last ten minutes, so a long issue's newest are read in one page.
   ao_since=$(date -u -d '10 minutes ago' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -v-10M +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || true)
-  ao_out=$(gh api "repos/{owner}/{repo}/issues/$1/comments?per_page=100${ao_since:+&since=$ao_since}" \
+  ao_out=$(hook_bounded "${HOOK_NET_SECONDS:-5}" gh api "repos/{owner}/{repo}/issues/$1/comments?per_page=100${ao_since:+&since=$ao_since}" \
     --jq "[.[] | select((.created_at | fromdateiso8601) >= (now - 600))] | reverse | .[] | .body, \"$ASK_NEXT\"" 2>/dev/null) || return 0
   printf '%s\n' "$ao_out" | ask_check
 }

@@ -4713,10 +4713,11 @@ hv_log=$(
   batch_line() { echo "line $1 $2"; }
   serial_one() { echo "serial $1"; }
   deploy_if_due() { echo deploy; }
+  main_red_issue() { echo; }
   base=main; b_begin=x; QUEUE_IN_DRAIN=1
   ( batch_red batch-test "$(printf '41\ta\n42\tb\n43\tc\n')" "50" ) 2>&1 | tr '\n' '|'
 )
-eq "a red batch of three runs the larger half first, names the lone rest as the culprit and sends it and the dropped to the serial queue" "yes" "$(printf '%s' "$hv_log" | grep -q 'ran: 41 42|' && ! printf '%s' "$hv_log" | grep -q 'ran: 43' && printf '%s' "$hv_log" | grep -q 'serial 43|' && printf '%s' "$hv_log" | grep -q 'serial 50' && echo yes)"
+eq "a red batch of three runs the larger half first, names the lone rest as the culprit, leaves it for a new push, and sends only the dropped to the serial queue" "yes" "$(printf '%s' "$hv_log" | grep -q 'ran: 41 42|' && ! printf '%s' "$hv_log" | grep -q 'ran: 43' && ! printf '%s' "$hv_log" | grep -q 'serial 43' && printf '%s' "$hv_log" | grep -q 'line 43 waits for a new push' && printf '%s' "$hv_log" | grep -q 'serial 50' && echo yes)"
 hv_two=$(
   batch_failed_test() { echo "watering.test.ts > waters the beds"; }
   batch_half_run() { echo "ran: $1"; return 0; }
@@ -4725,21 +4726,87 @@ hv_two=$(
   batch_line() { echo "line $1 $2"; }
   serial_one() { echo "serial $1"; }
   deploy_if_due() { echo deploy; }
+  main_red_issue() { echo; }
   base=main; b_begin=x; QUEUE_IN_DRAIN=1
   ( batch_red batch-test "$(printf '41\ta\n42\tb\n')" "" ) 2>&1 | tr '\n' '|'
 )
-eq "a green first half beside a lone second member names it, runs it no more, and sends it to the serial queue" "yes" "$(printf '%s' "$hv_two" | grep -q 'ran: 41|' && ! printf '%s' "$hv_two" | grep -q 'ran: 42' && printf '%s' "$hv_two" | grep -q 'serial 42' && echo yes)"
+eq "a green first half beside a lone second member names it, runs it no more, and does not land it on its pull request checks" "yes" "$(printf '%s' "$hv_two" | grep -q 'ran: 41|' && ! printf '%s' "$hv_two" | grep -q 'ran: 42' && ! printf '%s' "$hv_two" | grep -q 'serial 42' && printf '%s' "$hv_two" | grep -q 'line 42 waits for a new push' && echo yes)"
+hv_neither=$(
+  batch_failed_test() { echo "watering.test.ts > waters the beds"; }
+  batch_half_run() { echo "ran: $1"; return 1; }
+  gh_write() { :; }
+  halving_say() { :; }
+  batch_line() { echo "line $1 $2"; }
+  serial_one() { echo "serial $1"; }
+  deploy_if_due() { echo deploy; }
+  main_red_issue() { echo; }
+  base=main; b_begin=x; QUEUE_IN_DRAIN=1
+  ( batch_red batch-test "$(printf '41\ta\n42\tb\n')" "" ) 2>&1 | tr '\n' '|'
+)
+eq "a red batch of two where neither half goes green lands neither" "yes" "$(! printf '%s' "$hv_neither" | grep -q 'serial 4' && echo yes)"
+hv_main=$(
+  batch_failed_test() { echo "watering.test.ts > waters the beds"; }
+  batch_half_run() { echo "ran: $1"; return 0; }
+  gh_write() { :; }
+  batch_line() { echo "line $1 $2"; }
+  serial_one() { echo "serial $1"; }
+  main_red_issue() { echo 77; }
+  base=main; b_begin=x
+  ( batch_red batch-test "$(printf '41\ta\n42\tb\n')" "" ) 2>&1 | tr '\n' '|'
+)
+eq "a batch that is red while main is already red blames no member, halves nothing and lands nothing" "yes" "$(printf '%s' "$hv_main" | grep -q 'Main is already red (issue #77)' && ! printf '%s' "$hv_main" | grep -q 'ran:\|serial\|line' && echo yes)"
+mg_dir=$(mktemp -d)
+mg_run() { ( . "$root/templates/scripts/ci/queue/state.sh"; flaky_dir=$mg_dir; base=main; say() { echo "said: $*"; }; gh_write() { echo "$*" >> "$mg_dir/calls"; }; "$@" ) 2>&1 | tr '\n' '|'; }
+eq "a landing with nothing marked starts no run of main" "" "$(mg_run main_gate_now)"
+mg_run serial_landed_note > /dev/null
+eq "a change that landed on its checks alone starts main's full run at once, and says why" "yes" "$(mg_run main_gate_now | grep -q "Started main's full run now" && grep -q 'workflows/ci.yml/dispatches -f ref=main' "$mg_dir/calls" && echo yes)"
+eq "the mark is spent once the run is started" "no" "$([ -f "$mg_dir/serial-landed" ] && echo yes || echo no)"
+mg_run serial_landed_note > /dev/null
+eq "with the workflow's own token each landing already started one, so no second run" "" "$(QUEUE_OWN_TOKEN=yes mg_run main_gate_now)"
+eq "the serial path marks its landing, and both the serial run and the drain's end start main's run" "1 1 1" "$(grep -c 'serial_landed_note' "$root/templates/scripts/ci/queue/serial.sh") $(grep -c 'main_gate_now' "$root/templates/scripts/ci/queue/serial.sh") $(grep -c 'main_gate_now' "$root/templates/scripts/ci/merge-queue.sh")"
+eq "a half that is one change in a red batch gets its own full run, not the batch-of-one serial merge" "yes" "$(grep -q 'QUEUE_HALVING:-' "$root/templates/scripts/ci/queue/batch.sh" && echo yes)"
 eq "the failing test is named in the queue's words" "yes" "$(printf '%s' "$hv_two" | grep -q 'failed at: watering.test.ts > waters the beds' && echo yes)"
 hv_one=$(
   batch_failed_test() { echo; }
   batch_half_run() { echo "ran: $1"; return 0; }
   batch_line() { :; }
+  main_red_issue() { echo; }
   base=main; b_begin=x
   ( batch_red batch-test "$(printf '41\ta\n')" "" ) 2>&1 | tr '\n' '|'
 )
 eq "a red batch of one is not halved" "yes" "$(printf '%s' "$hv_one" | grep -q 'not green; nothing merged' && ! printf '%s' "$hv_one" | grep -q 'ran:' && echo yes)"
 eq "the queue loads the halving module and the batch's red path calls it" "1 1" "$(grep -c 'queue/halve.sh' "$root/templates/scripts/ci/merge-queue.sh") $(grep -c 'batch_red "\$branch" "\$carried" "\$dropped"' "$root/templates/scripts/ci/queue/batch.sh")"
 eq "the plugin's template copies of the gate match the project's" "same same" "$(cmp -s "$root/templates/scripts/ci/gate-lib.sh" "$root/../scripts/ci/gate-lib.sh" && echo same || echo differ) $(cmp -s "$root/templates/scripts/ci/gate.sh" "$root/../scripts/ci/gate.sh" && echo same || echo differ)"
+
+section 'a hook that runs out of time is named, bounded and logged'
+. "$root/hooks/scripts/session-brief-hooks.sh"
+ht_now=$(date +%s)
+ht_at() { date -u -d "@$(( ht_now - $1 ))" +%Y-%m-%dT%H:%M:%SZ; }
+ht_log=$(printf 'start\t%s\tblock-delete\t10\t11\nend\t%s\tblock-delete\t10\t120\t11\nstart\t%s\trequire-gh-budget\t10\t12\nend\t%s\trequire-gh-budget\t10\t6200\t12\nstart\t%s\trequire-state-label\t10\t13\n' "$(ht_at 3000)" "$(ht_at 3000)" "$(ht_at 2000)" "$(ht_at 2000)" "$(ht_at 1000)")
+ht_say=$(slow_hooks_line "$ht_log" "$ht_now")
+eq "a hook past half its limit is named with its slowest time and its limit" "yes" "$(printf '%s' "$ht_say" | grep -q 'require-gh-budget (6.2 s of 10)' && echo yes)"
+eq "a hook that started and never ended is named as timed out" "yes" "$(printf '%s' "$ht_say" | grep -q 'require-state-label (timed out)' && echo yes)"
+eq "a quick hook is not named" "no" "$(printf '%s' "$ht_say" | grep -q 'block-delete' && echo yes || echo no)"
+eq "a day with only quick hooks says nothing" "" "$(slow_hooks_line "$(printf 'start\t%s\tblock-delete\t10\t11\nend\t%s\tblock-delete\t10\t90\t11\n' "$(ht_at 60)" "$(ht_at 60)")" "$ht_now")"
+eq "a slow hook from two days ago says nothing" "" "$(slow_hooks_line "$(printf 'start\t%s\tblock-delete\t10\t11\nend\t%s\tblock-delete\t10\t9000\t11\n' "$(ht_at 172800)" "$(ht_at 172800)")" "$ht_now")"
+eq "an empty log says nothing" "" "$(slow_hooks_line '' "$ht_now")"
+# The wrapper passes stdin and the exit status through, and logs a start and an end line.
+ht_dir=$(mktemp -d)
+mkdir -p "$ht_dir/hooks" "$ht_dir/proj/.git"
+cp "$root/hooks/scripts/hook-timed.sh" "$ht_dir/hooks/hook-timed.sh"
+printf '#!/bin/sh\ncat\nexit 2\n' > "$ht_dir/hooks/fake.sh"
+ht_out=$(printf 'garden' | CLAUDE_PROJECT_DIR="$ht_dir/proj" sh "$ht_dir/hooks/hook-timed.sh" 10 fake.sh); ht_rc=$?
+eq "the wrapper hands its input to the hook and returns the hook's exit status" "garden 2" "$ht_out $ht_rc"
+eq "the wrapper writes one start line and one end line with the milliseconds" "start end 1" "$(cut -f1 "$ht_dir/proj/.scratch/hooks/timing.log" | tr '\n' ' ' | sed 's/ $//') $(awk -F'\t' '$1 == "end" && $5 ~ /^[0-9]+$/' "$ht_dir/proj/.scratch/hooks/timing.log" | wc -l | tr -d ' ')"
+HOOK_LOG=0 CLAUDE_PROJECT_DIR="$ht_dir/proj" sh "$ht_dir/hooks/hook-timed.sh" 10 fake.sh < /dev/null > /dev/null
+eq "with the log turned off nothing more is written" "2" "$(wc -l < "$ht_dir/proj/.scratch/hooks/timing.log" | tr -d ' ')"
+eq "every registered hook runs through the wrapper, with its limit" "0" "$(grep '"command": ' "$root/hooks/hooks.json" | grep -vc 'hook-timed.sh[^ ]* [0-9]')"
+if command -v timeout >/dev/null 2>&1; then
+  ht_b=$(CLAUDE_PROJECT_DIR="$ht_dir/proj" sh -c '. "$1/hooks/scripts/lib.sh"; . "$1/hooks/scripts/bounded-lib.sh"; hook_bounded 1 sleep 5; echo $?' sh "$root" 2>/dev/null)
+  eq "a network read past its own bound is stopped and says so in the log" "124 yes" "$ht_b $(grep -q '^bound' "$ht_dir/proj/.scratch/hooks/timing.log" && echo yes)"
+fi
+eq "the two hooks that read the network bound their reads and load the bound" "1 1 1 1" "$(grep -c 'hook_bounded' "$root/hooks/scripts/ask-hook-lib.sh") $(grep -c 'hook_bounded "' "$root/hooks/scripts/lib.sh") $(grep -c 'bounded-lib.sh' "$root/hooks/scripts/require-gh-budget.sh") $(grep -c 'bounded-lib.sh' "$root/hooks/scripts/require-state-label.sh")"
+eq "the brief reads the slow hooks' slot" "1" "$(grep -c 'slot s20 s_hooks' "$root/hooks/scripts/session-brief.sh")"
 
 section 'the brief says when the installed plugin lags'
 . "$root/hooks/scripts/session-brief-versions.sh"
@@ -5291,9 +5358,10 @@ issue	9	Ready thing	state:ready	t	x" "$(bc_gh; pr_rollups "$(printf 'pr\t7\tBeds
 eq "the plan names the refusal and the board falls back without failing" "2" "$(grep -c "can't read check results" "$root/hooks/scripts/board-now.sh" "$root/scripts/drive/plan.sh" | awk -F: '$2 > 0' | wc -l | tr -d ' ')"
 # The installed plugin behind the latest release (#1626).
 . "$root/hooks/scripts/session-brief-versions.sh"
-eq "a copy twelve releases behind says so, with both versions and how to update" "plugin: this drive runs 0.43.5, and 0.43.17 is released (12 releases behind). Faults fixed in a release come back in the plan until the installed copy is updated (sh plugin/scripts/release/update-installed.sh); say so in the report on the drive issue." "$(plugin_behind_note 0.43.5 0.43.17)"
+eq "a copy twelve releases behind says so, with both versions and how to update" "plugin: this drive runs 0.43.5, and 0.43.17 is released (12 releases behind). Faults fixed in a release come back in the plan until the installed copy is updated. A scheduled drive updates it itself, first thing (sh plugin/scripts/release/update-installed.sh), and says in its report on the drive issue which release it moved to; the new scripts apply from its next start." "$(plugin_behind_note 0.43.5 0.43.17)"
 eq "a current copy says nothing" "" "$(plugin_behind_note 0.43.17 0.43.17)$(plugin_behind_note 0.43.17 '')"
-eq "a copy a minor behind names no count" "plugin: this drive runs 0.42.9, and 0.43.1 is released. Faults fixed in a release come back in the plan until the installed copy is updated (sh plugin/scripts/release/update-installed.sh); say so in the report on the drive issue." "$(plugin_behind_note 0.42.9 0.43.1)"
+eq "a copy a minor behind names no count" "plugin: this drive runs 0.42.9, and 0.43.1 is released. Faults fixed in a release come back in the plan until the installed copy is updated. A scheduled drive updates it itself, first thing (sh plugin/scripts/release/update-installed.sh), and says in its report on the drive issue which release it moved to; the new scripts apply from its next start." "$(plugin_behind_note 0.42.9 0.43.1)"
+eq "the drive skill has a scheduled tick update the installed copy itself and report the release" "1" "$(grep -c "scheduled tick (not a person.s session) runs" "$root/skills/project-drive/SKILL.md")"
 eq "plan.sh prints the behind line from one release read" "1" "$(grep -c '^\[ "\$fast" = yes \] || plugin_note' "$root/scripts/drive/plan.sh")"
 eq "a pending head commit is read from its check runs: any not completed" "yes no" "$(checks_pending "$(printf 'completed\tfailure\nqueued\t\n')") $(checks_pending "$(printf 'completed\tfailure\ncompleted\tsuccess\n')")"
 eq "plan.sh reads the head commit's check runs before it proposes set-aside" "1" "$(grep -c 'head_checks_pending "\$p_sha"' "$root/scripts/drive/pr-read-lib.sh")"
@@ -6214,6 +6282,17 @@ eq "an answer after the ask means it is answered" "yes" "$(ask_answered '- q - a
 eq "a new ask after the answer is open again" "no" "$(ask_answered 'q a q')"
 eq "an ask with no answer is open" "no" "$(ask_answered '- q -')"
 eq "no ask and no answer is not answered" "no" "$(ask_answered '- -')"
+. "$root/scripts/drive/comment-lib.sh"
+eq "a setup step asking for a Checks permission is named, since a fine-grained token has none" "Checks" "$(unoffered_permission "$(printf 'Instructions: Give the drive its token.\n1. Open the token.\n2. Add Checks: Read.\n3. Save.')")"
+eq "a step naming the Checks permission in words is named too" "Checks" "$(unoffered_permission "$(printf 'Instructions:\n1. Add the "Checks" permission with read access.')")"
+eq "a step naming only permissions GitHub offers passes" "" "$(unoffered_permission "$(printf 'Instructions:\n1. Add Actions: Read.\n2. Add Administration: Read.')")"
+eq "a comment that is not a setup step is left alone, whatever it says" "" "$(unoffered_permission "$(printf 'The drive reads check runs. Checks: Read is not needed.')")"
+cm_ck=$(mktemp)
+printf 'Instructions: Update the token.\n1. Add Checks: Read.\n' > "$cm_ck"
+eq "the drive's comment script refuses to post such a step, in the builder's words" "yes" "$(comment_refusal "$cm_ck" | grep -q 'does not offer on a fine-grained token' && echo yes)"
+eq "a back-to-Ready note after the ask means no question is open" "yes" "$(ask_answered '- q r')"
+eq "an ask after a back-to-Ready note is open again" "no" "$(ask_answered 'q r q')"
+eq "plan reads the back-to-Ready note in the answered reading" "1" "$(grep -c 'Bb\]ack to Ready' "$root/scripts/drive/ask-gate-lib.sh")"
 eq "an answered issue's mark-waiting line is dropped, the others stay" "mark-waiting 8	Pick the planter" "$(drop_waiting_goals "$(printf 'mark-waiting 7\tWatering plan (a question to the owner is open)\nmark-waiting 8\tPick the planter\n')" "7" | sed 's/ (a question.*//')"
 eq "a unit's issues are listed one a line" "1 2 3" "$(unit_issues "$gs_units" | tr '\n' ' ' | sed 's/ $//')"
 eq "a unit's issue gets no mark-waiting" "" "$(drop_waiting_goals "$(printf 'mark-waiting 2\tTwo (a question to the owner is open)\n')" "$(unit_issues "$gs_units")" | sed '/^$/d')"
