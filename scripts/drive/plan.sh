@@ -41,6 +41,7 @@ here=$(dirname "$0")
 . "$here/held-round-lib.sh"
 . "$here/ask-gate-lib.sh"
 . "$here/../../templates/scripts/ci/ask-lib.sh"  # held_ask for the stale issues' asks, from the plugin's own copy
+. "$here/plan-holds-lib.sh"
 . "$here/stale-lib.sh"
 . "$here/release-lib.sh"
 . "$here/deploy-goal-lib.sh"
@@ -112,33 +113,8 @@ rules=""
 tab=$(printf '\t'); us=$(printf '\037')
 tmp=$(mktemp)
 
-# Turn the facts into a snapshot, with no further network calls.
-printf '%s\n' "$facts" | tr '\t' '\037' | while IFS="$us" read -r kind num title a b c d e; do
-  case "$kind" in
-    pr)
-      case "$a" in SUCCESS) ci=green ;; FAILURE|ERROR) ci=red ;; *) ci=pending ;; esac
-      merge=$(printf '%s' "$b" | tr 'A-Z' 'a-z')
-      class=app
-      if [ -n "$rules" ]; then
-        cls=$(sh -c '. scripts/ci/lib.sh; classify_paths "$1" "$2"' sh "$(printf '%s' "$d" | tr ',' '\n')" "$rules")
-        case " $cls " in *" app "*|*" other "*|*" tests "*|*" data "*) class=app ;; *) class=other ;; esac
-      fi
-      printf 'pr\t%s\t%s\t%s\t%s\t%s\n' "$num" "$title" "$ci" "$merge" "$class"
-      ;;
-    issue)
-      state=$(state_of_labels "$a")
-      case ",$a," in *",ci-red,"*) printf 'red\t%s\n' "$num" ;; esac
-      [ "$(standing_issue "$a")" = yes ] && [ "$state" = ready ] && continue  # the drive and audit issues are never dispatched
-      case "$state" in
-        ready)
-          # Title and the start of the body, both from the one call; an owner-decision match is a candidate with its sentence.
-          printf 'issue\t%s\t%s\tready\t%s\n' "$num" "$title" "$(owner_issue_fields "$num" "$title" "$c" "$owner_phrases")" ;;
-        in-progress|waiting-on-owner|blocked)
-          printf 'issue\t%s\t%s\t%s\tno\n' "$num" "$title" "$state" ;;
-      esac
-      ;;
-  esac
-done >> "$tmp"
+# Turn the facts into a snapshot (plan-read-lib.sh).
+snapshot_rows "$facts" "$rules" "$owner_phrases" >> "$tmp"
 
 # The audit issue's latest comment: one extra call, skipped with --fast.
 if [ "$fast" = no ]; then audit_last_line "$facts" >> "$tmp"; fi
@@ -264,6 +240,7 @@ if [ -n "$guesses" ] || [ -n "$reasons" ]; then
   round=$(defer_note "$round" "$published_count")  # a small round says which holds kept their issues out of it
   round=$(lead_main_fixes "$round")  # the fix for a failure on main opens the proposal and the approval never holds it behind the round it blocks (rank-lib.sh)
 fi
+round=$(drop_asks_for_after_holds "$round")  # an issue that names what it follows is a hold, never also an ask (#1875)
 # A project whose queue lands green work by itself: rely on it; propose one drain only when green work has sat 15 minutes.
 plan_stage "ready issues placed"
 green_prs=$(printf '%s\n' "$snapshot" | awk -F'\t' '$1 == "pr" && $4 == "green" && $5 == "mergeable" && $8 != "yes" { print $2 }')

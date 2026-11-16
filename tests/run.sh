@@ -1379,7 +1379,7 @@ printf '1522\tonly the verb\n1600\n' > "$od_note"
 eq "an issue the drive judged needs no ask is declined, one never judged is not" "yes no" "$(owner_decision_declined 1522 "$od_note") $(owner_decision_declined 1523 "$od_note")"
 eq "a missing note declines nothing" "no" "$(owner_decision_declined 7 "$od_note.none")"
 eq "the ask-owner line carries what matched" "ask-owner 13	Set the price of the plan	matched \"prices\" in: Set the prices" "$(propose_round "$(printf 'issue\t13\tSet the price of the plan\tready\tyes\tmatched \"prices\" in: Set the prices\n')" 2 4 2 | grep '^ask-owner')"
-eq "the owner-decision line reads the declined note and says what matched" "1 1" "$(grep -c 'owner_decision_declined "\$1" .scratch/drive/no-ask.txt' "$root/scripts/drive/owner-lib.sh") $(grep -c 'owner_issue_fields' "$root/scripts/drive/plan.sh")"
+eq "the owner-decision line reads the declined note and says what matched" "1 1" "$(grep -c 'owner_decision_declined "\$1" .scratch/drive/no-ask.txt' "$root/scripts/drive/owner-lib.sh") $(grep -c 'owner_issue_fields' "$root/scripts/drive/plan-read-lib.sh")"
 od_t1="Spec the cost page"; od_b1="Page B prices it as a hosted agent. Nothing else is open."
 eq "a phrase in passing asks nobody" "" "$(owner_decision_open "$od_t1" "$od_b1" prices)"
 eq "the phrase as a whole word in the title is a decision" "prices" "$(owner_decision_open "Set the prices for the plan" "Nothing." prices)"
@@ -6328,7 +6328,7 @@ eq "no drive issue reads as none" "none" "$(auto_drive_state '')"
 eq "the drive issue is a standing issue, whatever its State" "yes yes" "$(standing_issue 'drive,state:ready,drive:auto') $(standing_issue 'State: Ready,Drive')"
 eq "the audit issue is a standing issue" "yes" "$(standing_issue 'audit,state:ready')"
 eq "a label that only starts the same is not one, and plain work is not" "no no" "$(standing_issue 'driven,state:ready') $(standing_issue 'state:ready,area:plugin')"
-eq "plan.sh leaves the drive and audit issues out of its snapshot and its dispatch guesses" "2" "$(grep -c 'standing_issue "\$a"' "$root/scripts/drive/plan.sh")"
+eq "plan.sh leaves the drive and audit issues out of its snapshot and its dispatch guesses" "2" "$(cat "$root/scripts/drive/plan.sh" "$root/scripts/drive/plan-read-lib.sh" | grep -c 'standing_issue "\$a"')"
 eq "a failed lookup reads as failed, never as none" "failed" "$(auto_drive_state 'lookup-failed')"
 eq "and the plan says the lookup failed, not that Auto Drive is off" "auto drive: not known; the lookup of the drive issue failed (it may still exist), so try the round again or ask in the session" "$(auto_line failed)"
 eq "the one reader of the drive issue is used by every script" "4" "$(grep -l 'drive_line=$(drive_issue_line)' "$root"/scripts/drive/approval.sh "$root"/scripts/drive/plan.sh "$root"/scripts/drive/work-requests.sh "$root"/scripts/drive/handoff.sh | wc -l | tr -d ' ')"
@@ -6373,6 +6373,52 @@ scripts/ci/hotspots.txt" "$(changed_paths "$(printf 'plugin/scripts/drive/plan.s
 eq "so a screen issue is not bundled with the drive scripts" "2" "$(plan_units "$(printf '1\tScreen\t%s\n2\tDrive fix\tplugin/scripts/drive/plan.sh\n' "$(guess_files 'Rows: packages/web/src/work-rows.ts, limits in scripts/ci/hotspots.txt' '' '')")" '' | grep -c '^unit')"
 eq "plan.sh places an issue by its title and the start of its body" "1" "$(grep -c 'title_area_files "$title $c"' "$root/scripts/drive/left-lib.sh")"
 
+section 'the plan names a release already underway and asks nothing the issue itself settles (drive)'
+. "$root/scripts/drive/drive-lib.sh"
+. "$root/scripts/drive/round-lib.sh"
+. "$root/scripts/drive/round-notes-lib.sh"
+. "$root/scripts/drive/release-lib.sh"
+. "$root/scripts/drive/plan-holds-lib.sh"
+. "$root/scripts/drive/ask-gate-lib.sh"
+nb_t=$(printf '\t')
+# The release is read from a repository one plugin change past its release.
+rn_g="$SUITE_TMP_ROOT/release-note-git"; mkdir -p "$rn_g/origin" "$rn_g/clone"
+git -C "$rn_g/origin" init -q -b main && git -C "$rn_g/origin" config user.email t@t && git -C "$rn_g/origin" config user.name t
+mkdir -p "$rn_g/origin/plugin/.claude-plugin"
+printf '{"version": "0.1.0"}\n' > "$rn_g/origin/plugin/.claude-plugin/plugin.json"
+git -C "$rn_g/origin" add -A && git -C "$rn_g/origin" commit -q -m release
+printf 'x\n' > "$rn_g/origin/plugin/a.txt"; git -C "$rn_g/origin" add -A && git -C "$rn_g/origin" commit -q -m "plugin change"
+git clone -q "$rn_g/origin" "$rn_g/clone" 2>/dev/null
+# An open release pull request for that version: one unnumbered line naming it, never a numbered release goal (#1873).
+rn_prfacts=$(printf 'pr\t410\tRelease the plugin as 0.1.1\tSUCCESS\tMERGEABLE\trelease-0-1-1\tplugin/.claude-plugin/plugin.json\n')
+rn_note="note: the release of 0.1.1 is already in pull request 410; no second release is proposed"
+eq "an open release pull request for the next version is named on a note, not proposed again" "$rn_note" "$(cd "$rn_g/clone" && release_proposal "$rn_prfacts" "$(printf '410\tno\t\n')")"
+eq "the note goes in before the stop line and is no goal" "$rn_note
+stop: nothing to propose" "$(add_release "stop: nothing to propose" "$rn_note")"
+eq "an unrelated open pull request leaves the release proposed" "release 0.1.1 (1 plugin commit unreleased)" "$(cd "$rn_g/clone" && release_proposal "$(printf 'pr\t411\tTidy the bed map\tPENDING\tMERGEABLE\ttidy\tsrc/beds/map.ts\n')" "$(printf '411\tno\t\n')")"
+eq "no pull request at all leaves the release proposed" "release 0.1.1 (1 plugin commit unreleased)" "$(cd "$rn_g/clone" && release_proposal '' '')"
+# An issue that names what it comes after is a hold, never also an ask to the owner; other asks stay (#1875).
+rn_round=$(printf 'ask-owner 6\tShow the planter price\tmatched "prices" in: Decision\nask-owner 9\tPick the pot colours\tmatched "policy" in: Decision\nhold 6\tShow the planter price\tWaits on your answer on “Choose the planter price” (after: 5)\nstop: proposal ready for approval\n')
+eq "the ask for an issue held with after: goes; another issue's ask and the hold stay" "ask-owner 9${nb_t}Pick the pot colours${nb_t}matched \"policy\" in: Decision
+hold 6${nb_t}Show the planter price${nb_t}Waits on your answer on “Choose the planter price” (after: 5)
+stop: proposal ready for approval" "$(drop_asks_for_after_holds "$rn_round")"
+eq "a hold with no after: leaves its ask alone" "ask-owner 6${nb_t}T${nb_t}x
+hold 6${nb_t}T${nb_t}No free runner" "$(drop_asks_for_after_holds "$(printf 'ask-owner 6\tT\tx\nhold 6\tT\tNo free runner\n')")"
+eq "plan.sh drops the asks a hold with after: covers" "1" "$(grep -c '^round=$(drop_asks_for_after_holds "$round")' "$root/scripts/drive/plan.sh")"
+# A question a later comment withdrew ("nothing was being asked here") ends it, as an answer does (#1875).
+eq "a withdrawn question is read as ended, in the past tense as well as the present" "1" "$(grep -c 'nothing (is|was) (being )?asked' "$root/scripts/drive/ask-gate-lib.sh")"
+eq "a question, then its withdrawal, is answered; a question alone is open" "yes no" "$(ask_answered 'q r') $(ask_answered 'q -')"
+eq "a question, its answer and the drive's reading of it are answered" "yes" "$(ask_answered 'q a r')"
+# A summary under a heading mark is still today's summary (#1869).
+rn_today=$(date +%Y-%m-%d)
+rn_run() ( settings=$(drive_settings '{"summaryAt":"00:00"}'); auto="on 77"; summary_note )
+gh() { printf '## Summary for %s\nWatering done.\n' "$rn_today"; }
+eq "a summary written under a heading mark is found, so none is due" "" "$(rn_run)"
+gh() { printf 'Watering note\n'; }
+eq "no summary in the day still says it is due" "1" "$(rn_run | grep -c '^summary: due; post today')"
+gh() { printf 'Summary for 2000-01-01\n'; }
+eq "another day's summary does not count for today" "1" "$(rn_run | grep -c '^summary: due; post today')"
+unset -f gh
 section 'the drive reads every open pull request from its own facts (drive)'
 . "$root/scripts/drive/plan-green-lib.sh"
 . "$root/scripts/drive/stale-lib.sh"

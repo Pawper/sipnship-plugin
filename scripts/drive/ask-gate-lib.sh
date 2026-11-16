@@ -44,7 +44,7 @@ ask_answered() {
 answered_for() {
   for an_n in $(printf '%s\n' "$1" | sed -n 's/^mark-waiting \([0-9]*\).*/\1/p'); do
     # Every page, so an ask and its answer on a long thread are both seen; a note that returns the issue to Ready, or says the drive read the answer, ends the ask too (#1798).
-    an_k=$(gh api --paginate "repos/{owner}/{repo}/issues/$an_n/comments?per_page=100" --jq '.[] | .body | gsub("\r"; "") | if test("(^|\n)[ \t>*_]*Builder answer:[ *_]* #[0-9]+ choice [0-9]") then "a" elif test("Recommended\\.") then "q" elif test("(^|\n)[^\n]*(nothing is (being )?asked|[Ww]ithdr[ae]w|[Bb]ack to Ready|[Rr]eturned to Ready|left by mistake|(do|does|did) not stand)") then "r" elif test("(^|\n)[ \t]*(Read your answer|I read your answer|Read the answer)") then "r" else "-" end' 2>/dev/null | tr -d '\r' | tr '\n' ' ')
+    an_k=$(gh api --paginate "repos/{owner}/{repo}/issues/$an_n/comments?per_page=100" --jq '.[] | .body | gsub("\r"; "") | if test("(^|\n)[ \t>*_]*Builder answer:[ *_]* #[0-9]+ choice [0-9]") then "a" elif test("Recommended\\.") then "q" elif test("(^|\n)[^\n]*(nothing (is|was) (being )?asked|[Ww]ithdr[ae]w|[Bb]ack to Ready|[Rr]eturned to Ready|left by mistake|(do|does|did) not stand)") then "r" elif test("(^|\n)[ \t]*(Read your answer|I read your answer|Read the answer)") then "r" else "-" end' 2>/dev/null | tr -d '\r' | tr '\n' ' ')
     if [ "$(ask_answered "$an_k")" = yes ]; then printf '%s\n' "$an_n"; fi
   done
   return 0

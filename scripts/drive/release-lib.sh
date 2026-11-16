@@ -50,7 +50,12 @@ release_proposal() {
   rp_line=$(release_goal "$rp_ver" "$(plugin_unreleased_count "$rp_ref")")
   [ -n "$rp_line" ] || return 0
   rp_next=$(next_patch "$rp_ver")
-  [ -z "$(open_release_pr "$1" "$2" "$rp_next")" ] || return 0
+  rp_pr=$(open_release_pr "$1" "$2" "$rp_next")
+  if [ -n "$rp_pr" ]; then
+    # An unnumbered line naming the pull request, so a reader sees why no release is proposed (#1873).
+    printf 'note: the release of %s is already in pull request %s; no second release is proposed\n' "$rp_next" "$rp_pr"
+    return 0
+  fi
   rp_issue=$(open_release_issue "$1" "$rp_next")
   if [ -n "$rp_issue" ]; then
     printf 'hold\t%s\t%s\tthe release of %s is already underway\n' "${rp_issue%%	*}" "${rp_issue#*	}" "$rp_next"
@@ -65,7 +70,7 @@ release_proposal() {
 add_release() {
   case "$2" in
     '') printf '%s\n' "$1" ;;
-    hold*) printf '%s\n' "$1" | awk -v line="$2" '!done && /^(defer|stop:)/ { print line; done = 1 } { print } END { if (!done) print line }' ;;
+    hold*|note:*) printf '%s\n' "$1" | awk -v line="$2" '!done && /^(defer|stop:)/ { print line; done = 1 } { print } END { if (!done) print line }' ;;
     *) add_goal "$1" "$2" ;;
   esac
 }

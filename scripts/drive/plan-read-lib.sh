@@ -155,3 +155,35 @@ queue_state_of() {
   fi
   printf '%s\n' "$qs_state"
 }
+
+# snapshot_rows FACTS RULES OWNER_PHRASES
+# Turn the board facts into the snapshot's rows (pr, red and issue lines), with no further network calls.
+snapshot_rows() {
+  sr_rules=$2; sr_owner=$3; sr_us=$(printf '\037')
+  printf '%s\n' "$1" | tr '\t' '\037' | while IFS="$sr_us" read -r kind num title a b c d e; do
+    case "$kind" in
+      pr)
+        case "$a" in SUCCESS) ci=green ;; FAILURE|ERROR) ci=red ;; *) ci=pending ;; esac
+        merge=$(printf '%s' "$b" | tr 'A-Z' 'a-z')
+        class=app
+        if [ -n "$sr_rules" ]; then
+          cls=$(sh -c '. scripts/ci/lib.sh; classify_paths "$1" "$2"' sh "$(printf '%s' "$d" | tr ',' '\n')" "$sr_rules")
+          case " $cls " in *" app "*|*" other "*|*" tests "*|*" data "*) class=app ;; *) class=other ;; esac
+        fi
+        printf 'pr\t%s\t%s\t%s\t%s\t%s\n' "$num" "$title" "$ci" "$merge" "$class"
+        ;;
+      issue)
+        state=$(state_of_labels "$a")
+        case ",$a," in *",ci-red,"*) printf 'red\t%s\n' "$num" ;; esac
+        [ "$(standing_issue "$a")" = yes ] && [ "$state" = ready ] && continue  # the drive and audit issues are never dispatched
+        case "$state" in
+          ready)
+            # Title and the start of the body, both from the one call; an owner-decision match is a candidate with its sentence.
+            printf 'issue\t%s\t%s\tready\t%s\n' "$num" "$title" "$(owner_issue_fields "$num" "$title" "$c" "$sr_owner")" ;;
+          in-progress|waiting-on-owner|blocked)
+            printf 'issue\t%s\t%s\t%s\tno\n' "$num" "$title" "$state" ;;
+        esac
+        ;;
+    esac
+  done
+}
