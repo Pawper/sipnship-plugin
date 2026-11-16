@@ -118,12 +118,12 @@ case "$mode" in
     pu=$(pause_until "$(date +%s)" "$pause_for")
     [ -n "$pu" ] || { echo "Usage: sh scripts/ci/merge-queue.sh --pause 2h (or 45m, or minutes)"; exit 2; }
     if set_repo_var QUEUE_PAUSED_UNTIL "$(iso_utc "$pu")"; then
-      echo "The scheduled drain is paused until $(date -d "@$pu" '+%H:%M' 2>/dev/null || iso_utc "$pu") (QUEUE_PAUSED_UNTIL). A drain you run yourself still runs. --resume ends the pause."
+      echo "The scheduled drain is paused until $(date -d "@$pu" '+%H:%M' 2>/dev/null || iso_utc "$pu") (QUEUE_PAUSED_UNTIL). This stops only the two-hourly scheduled drain. A drain you run yourself still runs, and so does a drain started by a finished CI run, so a pause does not stop a chain of drains; a land-next request for the fix, or holds on the members, does. --resume ends the pause."
       exit 0
     fi
     echo "Could not set the repository variable QUEUE_PAUSED_UNTIL; pausing needs a token that can administer the repository."; exit 1 ;;
   resume)
-    set_repo_var QUEUE_PAUSED_UNTIL "" && { echo "The scheduled drain runs again from its next tick."; exit 0; }
+    set_repo_var QUEUE_PAUSED_UNTIL "$(resume_value)" && { echo "The scheduled drain runs again from its next tick."; exit 0; }
     echo "Could not clear QUEUE_PAUSED_UNTIL."; exit 1 ;;
 esac
 
@@ -308,7 +308,7 @@ if [ "$mode" = drain ]; then
     queue_step="drain round $round: choosing what to merge"; round_read "$open"
     pick=$(drain_candidates "$round_pool_list" "$base" "$tried")
     if [ -n "$(printf '%s' "$rush_now" | tr -d ' ')" ]; then pick=$(rush_pick "$pick" "$(printf '%s' "$rush_now" | awk '{print $1}')"); fi
-    waiting=$(( $(drain_waiting "$round_pool_list" "$base" "$retried") + round_out ))
+    redmain_round; waiting=$(( $(drain_waiting "$round_pool_list" "$base" "$retried") + round_out ))
     n=$(printf '%s\n' "$pick" | sed '/^$/d' | wc -l | tr -d ' ')
     elapsed=$(( $(date +%s) - d_start ))
     # Wait here, or end and free the runner (queue/wait.sh)? On a runner a

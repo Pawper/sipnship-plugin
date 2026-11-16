@@ -7,6 +7,8 @@
 #                 failing lines (a pull request's run; main runs everything)
 #   --touching FILE...   run only the parts with a block that names any of the
 #                 files (paths as git prints them); says which, and the total
+#   --block NAME  run only the one block called NAME (the name its section line
+#                 gives): the way on when a whole part is not yours to run
 #   --part NAME   run only one part: one of the names in tests/parts.txt (CI runs the
 #                 three side by side); the prelude and summary run in each
 
@@ -16,6 +18,7 @@ root=${RUN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}
 . "$root/templates/status/lib.sh"
 . "$root/templates/scripts/ci/lib.sh"
 . "$root/tests/parts-lib.sh"
+. "$root/tests/turn-lib.sh"
 # Sourced again by their blocks; here too, so each part has them.
 . "$root/templates/scripts/ci/batch-lib.sh"
 . "$root/templates/scripts/ci/run-lib.sh"
@@ -24,6 +27,7 @@ root=${RUN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}
 
 fail_fast=no
 part=
+block_only=
 touching=
 touched=
 suite_start=$(date +%s)
@@ -34,6 +38,8 @@ while [ $# -gt 0 ]; do
     --fail-fast) fail_fast=yes ;;
     --part) part=$2; shift ;;
     --part=*) part=${1#--part=} ;;
+    --block) block_only=$2; shift ;;
+    --block=*) block_only=${1#--block=} ;;
     --touching)
       touching=yes; shift
       while [ $# -gt 0 ]; do
@@ -145,11 +151,28 @@ if [ -n "$touching" ] && [ -z "$RUN_PART" ]; then
   printf '\ntotal  %ss for the parts above\n' "$(( $(date +%s) - suite_start ))"
   exit $tt_rc
 fi
+if [ -n "$block_only" ] && [ -z "$RUN_PART" ]; then
+  if ! suite_blocks < "$root/tests/run.sh" | grep -qxF -- "$block_only"; then
+    printf 'unknown block: %s (the name its section line gives)\n' "$block_only"
+    exit 2
+  fi
+  block_file=$(mktemp)
+  block_script "$block_only" < "$root/tests/run.sh" > "$block_file"
+  ff=; [ "$fail_fast" = yes ] && ff=--fail-fast
+  RUN_ROOT=$root RUN_PART="block:$block_only" sh "$block_file" $ff
+  block_rc=$?
+  mv "$block_file" "$block_file.done" 2>/dev/null || true
+  exit $block_rc
+fi
 if [ -n "$part" ] && [ -z "$RUN_PART" ]; then
   if ! part_names | grep -qxF -- "$part"; then
     printf 'unknown part: %s (one of: %s)\n' "$part" "$(part_names | tr '\n' ' ' | sed 's/ $//')"
     exit 2
   fi
+  # A whole part takes the machine's turn (tests/turn-lib.sh), and ends with the reason when it cannot.
+  turn_take || exit 3
+  trap 'turn_give; suite_tmp_clean' EXIT
+  trap 'exit 130' INT TERM HUP
   part_file=$(mktemp)
   part_script "$part" < "$root/tests/run.sh" > "$part_file"
   ff=; [ "$fail_fast" = yes ] && ff=--fail-fast
@@ -2110,6 +2133,43 @@ eq "pause for two hours" "7200" "$(( $(pause_until 0 2h) ))"
 eq "pause for 45 minutes" "2700" "$(pause_until 0 45m)"
 eq "bare minutes" "5400" "$(pause_until 0 90)"
 eq "a length it cannot read pauses nothing" "" "$(pause_until 0 soon)"
+# Resume ends a pause: GitHub refuses an empty variable value, so it writes a time long past, which the skip step reads as not paused.
+eq "resume writes a value, never an empty one" "yes" "$([ -n "$(resume_value)" ] && echo yes || echo no)"
+eq "resume's time has passed, so the skip step reads not paused" "yes" "$([ "$(date -u -d "$(resume_value)" +%s 2>/dev/null || echo 9999999999)" -le "$(date +%s)" ] && echo yes || echo no)"
+eq "--resume writes that value and not an empty string" "0" "$(grep -c 'set_repo_var QUEUE_PAUSED_UNTIL ""' "$mq_all")"
+# Main red (the night of a red main with its fix green): the fix lands first and alone, and no batch is built before it.
+rm_prs=$(printf '1808\tFixes the card.\n1809\tCloses #1700\n1816\tCloses #1815\\nThe stale web tests.\n1817\tcloses #18150 is another issue\n')
+rm_open=$(printf '1808\tfalse\tMERGEABLE\tgreen\tmain\n1809\tfalse\tMERGEABLE\tgreen\tmain\n1816\tfalse\tMERGEABLE\tgreen\tmain\n')
+. "$root/templates/scripts/ci/queue/halve.sh"
+eq "the pull request that closes the red-main issue is found by its body" "1816" "$(printf '%s\n' "$rm_prs" | redmain_fixes 1815 | tr '\n' ' ' | sed 's/ $//')"
+eq "with the fix green, it is the one pick, ahead of the other green ones" "1816" "$(redmain_pick "$(drain_candidates "$rm_open" main)" 1816)"
+eq "the round that names other changes leaves the fix out, and the log names it" "1816" "$(round_leftout "$rm_open" "$(printf '1808\tfalse\tMERGEABLE\tgreen\tmain\n1809\tfalse\tMERGEABLE\tgreen\tmain\n')" main "")"
+eq "main red and the fix not green: no pick, so no batch is built" "" "$(redmain_pick "$(printf '1808\n1809\n')" 1816)"
+eq "main red and the fix still running: the line says what it waits on" "Main is red (issue #1815); no batch is built. Waiting for #1816, the pull request that closes it, to turn green." "$(redmain_say 1815 "" 1816)"
+eq "main red and no fix open: the line says no run is spent" "1" "$(redmain_say 1815 "" "" | grep -c 'no run is spent')"
+eq "the drain reads the red-main issue before it picks" "1" "$(grep -c 'redmain_round; waiting=' "$mq_all")"
+# A whole part runs one at a time on a machine, and never beside a runner's job (tests/turn-lib.sh).
+tn_dir=$(mktemp -d)/turn
+eq "the first whole run takes the turn; the second, started beside it, ends with the reason" "0 1 yes" "$(
+  (GITHUB_ACTIONS= SUITE_RUNNER_BUSY=no SUITE_TURN_DIR=$tn_dir; export SUITE_TURN_DIR GITHUB_ACTIONS SUITE_RUNNER_BUSY
+   turn_take >/dev/null; a=$?
+   turn_take > "$tn_dir.say"; b=$?
+   grep -q 'Another whole part of the suite is running' "$tn_dir.say" && s=yes || s=no
+   turn_give; echo "$a $b $s"))"
+eq "the turn is free again once the first run gives it back" "yes" "$([ ! -d "$tn_dir" ] && echo yes || echo no)"
+eq "a whole run does not start while a runner job works, and names the block and the push" "1 yes yes" "$(
+  (GITHUB_ACTIONS= SUITE_RUNNER_BUSY=yes SUITE_TURN_DIR=$tn_dir; export SUITE_TURN_DIR GITHUB_ACTIONS SUITE_RUNNER_BUSY
+   turn_take > "$tn_dir.say"; a=$?
+   grep -q 'run the one block' "$tn_dir.say" && b=yes || b=no
+   grep -q 'Push and read the checks' "$tn_dir.say" && c=yes || c=no
+   echo "$a $b $c"))"
+eq "a turn left by a run that died is taken over after the part's bound" "yes no" "$(turn_stale 1000 3000 1200) $(turn_stale 1000 1500 1200)"
+eq "CI's own run never takes a turn" "0" "$(GITHUB_ACTIONS=true SUITE_RUNNER_BUSY=yes turn_take >/dev/null; echo $?)"
+eq "a whole part takes the turn before it runs" "1" "$(grep -c "^  turn_take || exit 3" "$root/tests/run.sh")"
+eq "a block's starts are the difference of two readings, less the reading" "6 " "$(block_starts 100 107) $(block_starts 107 100)"
+eq "every block says how many processes it started" "1" "$(grep -c "starts  %s: %s processes" "$root/tests/parts-lib.sh")"
+eq "one block can be run by name" "1" "$(printf "x=1\nsection 'a'\nA=1\nsection 'b'\nB=1\n# --- end of blocks\nE=1\n" | block_script b | grep -c '^B=1')"
+eq "the pause line says it stops only the scheduled drain" "1" "$(grep -c 'stops only the two-hourly scheduled drain' "$mq_all")"
 eq "the drain, a batch and --serial all honour a hold" "3" "$(grep -c 'held_reason\|pr_held "\$pr"' "$mq_all" | awk '{print ($1 >= 3) ? 3 : $1}')"
 eq "the scheduled drain skips while paused or a session drains" "2" "$(grep -c 'p="\${{ vars.QUEUE_PAUSED_UNTIL }}"\|l="\${{ vars.QUEUE_LOCAL_DRAIN_UNTIL }}"' "$root/templates/.github/workflows/queue-drain.yml")"
 # A session's drain window is short, renewed and cleared (fixtures/queue-stop).
@@ -6430,6 +6490,17 @@ printf '31\t2026-11-13T20:00:00Z\n32\t2026-11-13T18:00:00Z\n' > "$pz_note"
 eq "an ask-fix tried and unchanged becomes a hold, a changed issue is proposed again" "hold 31${pz_t}Measure the soil probe${pz_t}Its open question is not in the ask shape, and the drive could not put it there; it waits for your answer or for the issue to change
 ask-fix 32${pz_t}Pick the label colour (not marked waiting: no ask in the shape)" "$(quiet_ask_fixes "$pz_extra" "$pz_ff" "$pz_note")"
 eq "with no note every ask-fix is a goal" "$pz_extra" "$(quiet_ask_fixes "$pz_extra" "$pz_ff" "$pz_note.none")"
+# A declined goal is remembered with the issue's updated time (goal-seen.sh): quiet while it is unchanged, proposed again after it changes.
+pz_dn=$(mktemp)
+printf 'ask-owner\t31\t2026-11-13T20:00:00Z\nmark-waiting\t32\t2026-11-13T18:00:00Z\n' > "$pz_dn"
+pz_goals=$(printf 'ask-owner 31\tMeasure the soil probe (decides pricing)\nmark-waiting 32\tPick the label colour (a question to the owner is open)\ndispatch 33\tWater the beds\n')
+eq "a declined goal on an unchanged issue is not printed again, a changed issue's is" "hold 31${pz_t}Measure the soil probe (decides pricing)${pz_t}The drive read this issue and declined ask-owner for it; it is proposed again when the issue changes
+mark-waiting 32${pz_t}Pick the label colour (a question to the owner is open)
+dispatch 33${pz_t}Water the beds" "$(quiet_declined_goals "$pz_goals" "$pz_ff" "$pz_dn")"
+eq "with nothing declined every goal is printed" "$pz_goals" "$(quiet_declined_goals "$pz_goals" "$pz_ff" "$pz_dn.none")"
+eq "plan.sh reads the declined note, and goal-seen.sh writes it" "1 1" "$(grep -c 'quiet_declined_goals "$round" "$facts" .scratch/drive/declined.tsv' "$root/scripts/drive/plan.sh") $(grep -c 'declined.tsv' "$root/scripts/drive/goal-seen.sh" | awk '$1 > 0 { print 1 }')"
+eq "a withdrawn ask ends the question, as an answer does" "yes" "$(ask_answered '- q r')"
+eq "the answer line is found with markdown around it" "1" "$(grep -c 'Builder answer:\[ \*_\]\*' "$root/scripts/drive/ask-gate-lib.sh")"
 pz_round2=$(printf 'dispatch 31\tMeasure the soil probe\nstop: proposal ready for approval\n')
 eq "a quiet ask-fix alone leaves nothing to approve, and still keeps the issue out of dispatch" "hold 31${pz_t}Measure the soil probe${pz_t}Its open question is not in the ask shape, and the drive could not put it there; it waits for your answer or for the issue to change
 stop: proposal ready for approval" "$(add_owner_goals "$pz_round2" "$(printf 'ask-fix 31\tMeasure the soil probe (not marked waiting: x)\n')" "$pz_ff" "$pz_note")"

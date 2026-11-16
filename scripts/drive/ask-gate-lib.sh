@@ -44,7 +44,7 @@ ask_answered() {
 answered_for() {
   for an_n in $(printf '%s\n' "$1" | sed -n 's/^mark-waiting \([0-9]*\).*/\1/p'); do
     # Every page, so an ask and its answer on a long thread are both seen; a note that returns the issue to Ready, or says the drive read the answer, ends the ask too (#1798).
-    an_k=$(gh api --paginate "repos/{owner}/{repo}/issues/$an_n/comments?per_page=100" --jq '.[] | .body | gsub("\r"; "") | if test("(^|\n)[ \t]*Builder answer: #[0-9]+ choice [0-9]") then "a" elif test("Recommended\\.") then "q" elif test("(^|\n)[^\n]*([Bb]ack to Ready|[Rr]eturned to Ready|left by mistake|(do|does|did) not stand)") then "r" elif test("(^|\n)[ \t]*(Read your answer|I read your answer|Read the answer)") then "r" else "-" end' 2>/dev/null | tr -d '\r' | tr '\n' ' ')
+    an_k=$(gh api --paginate "repos/{owner}/{repo}/issues/$an_n/comments?per_page=100" --jq '.[] | .body | gsub("\r"; "") | if test("(^|\n)[ \t>*_]*Builder answer:[ *_]* #[0-9]+ choice [0-9]") then "a" elif test("Recommended\\.") then "q" elif test("(^|\n)[^\n]*(nothing is (being )?asked|[Ww]ithdr[ae]w|[Bb]ack to Ready|[Rr]eturned to Ready|left by mistake|(do|does|did) not stand)") then "r" elif test("(^|\n)[ \t]*(Read your answer|I read your answer|Read the answer)") then "r" else "-" end' 2>/dev/null | tr -d '\r' | tr '\n' ' ')
     if [ "$(ask_answered "$an_k")" = yes ]; then printf '%s\n' "$an_n"; fi
   done
   return 0
@@ -160,6 +160,25 @@ quiet_ask_fixes() {
       t = $3; sub(/ \(not marked waiting:.*$/, "", t)
       printf "hold %s\t%s\tIts open question is not in the ask shape, and the drive could not put it there; it waits for your answer or for the issue to change\n", substr($2, 9), t; next }
     $1 == "E" && $2 != "" { print substr($0, 3) }'
+}
+
+# quiet_declined_goals GOALS FACTS FILE
+# A goal the drive declined after a reader looked at the issue (FILE, one
+# "KIND<TAB>N<TAB>UPDATED_AT" per line, written by goal-seen.sh) is not printed again
+# while the issue is as it was then: its line (KIND is mark-waiting, ask-fix or ask-owner)
+# becomes a hold saying so. Another change to the issue, which moves its updated time,
+# proposes it again.
+quiet_declined_goals() {
+  { [ ! -f "$3" ] || tr -d '\r' < "$3" | sed 's/^/S\t/'; printf '%s\n' "$2" | tr -d '\r' | sed 's/^/F\t/'; printf '%s\n' "$1" | sed 's/^/E\t/'; } | awk -F'\t' '
+    $1 == "S" { seen[$2 " " $3] = $4 }
+    $1 == "F" && $2 == "issue" { upd[$3] = $6 }
+    $1 == "E" && $2 ~ /^(mark-waiting|ask-fix|ask-owner) [0-9]+$/ {
+      split($2, g, " ")
+      if ((g[1] " " g[2]) in seen && seen[g[1] " " g[2]] == upd[g[2]]) {
+        t = $3; sub(/ \(not marked waiting:.*$/, "", t)
+        printf "hold %s\t%s\tThe drive read this issue and declined %s for it; it is proposed again when the issue changes\n", g[2], t, g[1]; next }
+    }
+    $1 == "E" { print substr($0, 3) }'
 }
 
 # add_owner_goals ROUND EXTRA FACTS FILE

@@ -82,3 +82,57 @@ batch_red() {
   if [ -z "$QUEUE_IN_DRAIN" ]; then deploy_if_due "$b_begin"; fi
   exit 0
 }
+
+# redmain_fixes ISSUE < pull requests as "NUMBER<TAB>BODY-ON-ONE-LINE": the
+# open pull requests whose body closes the red-main issue ISSUE ("Closes #N",
+# "Fixes #N" or "Resolves #N"), one number per line.
+redmain_fixes() {
+  tr -d '\r' | awk -F'\t' -v n="$1" '
+    { b = tolower($0); sub(/^[^\t]*\t/, "", b)
+      if (match(b, "(close[sd]?|fix(e[sd])?|resolve[sd]?)[: ]+#" n "([^0-9]|$)")) print $1 }'
+}
+
+# redmain_pick CANDIDATES FIXES: while main is red, the one pull request the
+# drain lands, first and alone: the first of CANDIDATES (the green ones, one
+# a line) that is also in FIXES. Nothing when none of them is green.
+redmain_pick() {
+  printf '%s\n' "$1" | awk -v f=" $(printf '%s' "$2" | tr '\n' ' ') " 'index(f, " " $1 " ") > 0 { print $1; exit }'
+}
+
+# redmain_say ISSUE PICK FIXES: the line a round says while main is red:
+# which pull request lands first, or that no batch is built and what the
+# round waits on.
+redmain_say() {
+  if [ -n "$2" ]; then
+    echo "Main is red (issue #$1); landing #$2, which closes it, first and alone. No batch is built before it."
+  elif [ -n "$(printf '%s' "$3" | tr -d ' \n')" ]; then
+    echo "Main is red (issue #$1); no batch is built. Waiting for #$(printf '%s' "$3" | tr '\n' ' ' | sed 's/ *$//; s/ / #/g'), the pull request that closes it, to turn green."
+  else
+    echo "Main is red (issue #$1) and no open pull request closes it; no batch is built, so no run is spent. A pull request that fixes main, with Closes #$1 in its body, lands first."
+  fi
+}
+
+# round_leftout OPEN POOL BASE TRIED: the green, mergeable pull requests aimed
+# at BASE that are in OPEN but not in POOL (the round the drive named left
+# them out), one a line, so the log can name each with its reason.
+round_leftout() {
+  drain_candidates "$1" "$3" "$4" | awk -v p="$(printf '%s\n' "$2" | cut -f1 | tr '\n' ' ')" 'index(" " p, " " $1 " ") == 0'
+}
+
+# redmain_round: the drain's look at a red main, once a round, with this round's
+# OPEN, BASE, TRIED and RUSH_NOW set. A green pull request the round left out is
+# named with its reason. While a red-main issue is open the pull request that closes
+# it is picked first and alone, whatever the round named, and no batch is built until
+# it has landed (redmain_landed); one look a round, on the REST budget.
+redmain_round() {
+  for lo in $(round_leftout "$open" "$round_pool_list" "$base" "$tried"); do
+    say "round $round: #$lo is green but not in the round the drive named, so it waits for the next round."
+  done
+  [ -z "${redmain_landed:-}" ] && [ -z "$(printf '%s' "$rush_now" | tr -d ' ')" ] || return 0
+  rm_issue=$(main_red_issue); [ -n "$rm_issue" ] || return 0
+  rm_fixes=$(gh api "repos/{owner}/{repo}/pulls?state=open&per_page=100" --jq '.[] | "\(.number)\t\((.body // "") | gsub("[\r\n]+"; " "))"' 2>/dev/null | redmain_fixes "$rm_issue")
+  pick=$(redmain_pick "$(drain_candidates "$open" "$base" "$tried")" "$rm_fixes")
+  say "round $round: $(redmain_say "$rm_issue" "$pick" "$rm_fixes")"
+  if [ -n "$pick" ]; then redmain_landed=$pick; round_pool_list=$open; fi
+  return 0
+}

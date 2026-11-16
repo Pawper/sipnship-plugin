@@ -15,6 +15,11 @@ pause_until() {
   echo $(( $1 + pu_n * pu_m * 60 ))
 }
 
+# resume_value: what --resume writes to end a pause. GitHub refuses an empty
+# variable value (HTTP 422), so the pause ends by holding a time long past;
+# the scheduled drain's skip step reads any time not after now as "not paused".
+resume_value() { echo "1970-01-01T00:00:00Z"; }
+
 # release_workflows DEPLOY_JSON: the release workflows listed under
 # "releases" in .claude/deploy.json, one a line (also in sync-lib.sh).
 release_workflows() {

@@ -65,5 +65,5 @@ if [ "$known" = yes ]; then
 fi
 
 echo "Version is $version. Two commands are left:"
-echo "  1. the suite:   (cd plugin && sh tests/run.sh)"
+echo "  1. the suite:   the release pull request runs it whole in CI, so do not run it whole here (two runs side by side slow both); run the block near the files you changed with (cd plugin && sh tests/run.sh --block NAME), then read the checks"
 echo "  2. the release: open the pull request; when the queue lands it, it tags plugin-v$version and the release workflow publishes"

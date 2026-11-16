@@ -51,6 +51,21 @@ part_script() {
     keep'
 }
 
+# block_script NAME < run.sh: the script with only the one block called NAME
+# (the prelude and the summary stay). A block that leans on a function an
+# earlier block defined is run by its part instead.
+block_script() {
+  awk -v want="$1" '
+    BEGIN { keep = 1 }
+    /^# --- end of blocks/ { keep = 1 }
+    /^section '\''/ {
+      name = $0; sub(/^section '\''/, "", name); sub(/'\''$/, "", name)
+      gsub(/'\''"'\''"'\''/, "'\''", name)
+      keep = (name == want)
+    }
+    keep'
+}
+
 # parts_touching FILE... < run.sh: the parts with a block that names any of
 # the files (a path under plugin/ is looked for without that prefix, as
 # the suite writes it), one per line, in the parts file's order.
@@ -93,6 +108,22 @@ block_limit() {
     END { if (!found) print 60 }'
 }
 
+# block_pid: the process number a fresh subshell gets, read by a builtin from
+# the shell's own record, so the call is one fork and no exec. Processes are
+# numbered one after another, so the difference between two readings is how many
+# the block started (a shell start is a fork and an exec: what the machine
+# can start in a second bounds the suite, not its processors). Nothing when the
+# record cannot be read.
+block_pid() { ( read -r bp_x _ < /proc/self/stat 2>/dev/null && printf '%s\n' "$bp_x" ); }
+
+# block_starts BEFORE AFTER: how many processes started between two readings
+# (not counting the reading itself); nothing for readings that do not fit.
+block_starts() {
+  case "$1$2" in ''|*[!0-9]*) return 0 ;; esac
+  [ "$2" -gt "$1" ] || return 0
+  printf '%s\n' $(( $2 - $1 - 1 ))
+}
+
 # block_end: print the block that just ended and its seconds, and warn
 # when it took longer than its limit. It never fails the run: a check
 # passes or fails on whether the work is right, and time is a metric.
@@ -101,6 +132,8 @@ block_end() {
   be_s=$(( $(date +%s) - block_start ))
   be_l=$(block_limit "$block" "$(cat "$root/tests/block-limits.txt" 2>/dev/null)")
   printf 'time  %s: %ss (limit %ss)\n' "$block" "$be_s" "$be_l"
+  be_p=$(block_starts "${block_pid0:-}" "$(block_pid)")
+  [ -z "$be_p" ] || printf 'starts  %s: %s processes\n' "$block" "$be_p"
   if [ "$be_s" -gt "$be_l" ]; then
     printf 'WARN  the block "%s" took %ss, over its limit of %ss (it passes; time is watched on Cost, never gated)\n' "$block" "$be_s" "$be_l"
     [ -n "$GITHUB_ACTIONS" ] && printf '::warning title=A slow test block::"%s" took %ss, over its limit of %ss\n' "$block" "$be_s" "$be_l"
@@ -120,5 +153,6 @@ section() {
   block=$1
   block_fails=
   block_start=$(date +%s)
+  block_pid0=$(block_pid)
   printf '\n# %s\n' "$1"
 }

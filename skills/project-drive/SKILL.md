@@ -234,7 +234,7 @@ The goal lines and what each means:
   the posted proposal: "First: it unblocks your reviews".) Start an agent for the issue with isolation (a worktree), the model `dispatchModel`
   names (or, when it is empty, the model the plugin's agent-model hook allows for its tier), and a brief that
   names the issue, the files it may touch, the rules in CLAUDE.md or AGENTS.md (install right after the
-  worktree is made, run every touched test per file, keep test files inside `.scratch/`, merge origin/main
+  worktree is made, run every touched test per file (for the plugin, the blocks near what you touched, `sh tests/run.sh --block NAME`; a whole part is CI's, never run beside it), keep test files inside `.scratch/`, merge origin/main
   before pushing, never run the queue or re-run CI), the pull request it must open with `Closes #N`, and, when
   it must ask the owner, to write the ask for a builder who is not technical as "How to write an ask" below
   says (what happened, the question about their project, short-named choices, the reason as their benefit).
@@ -375,7 +375,7 @@ tab says it waits and on what instead of saying it starts on its own; `status: p
   set it back to Ready with `scripts/state.sh`, with a one-line comment saying nothing waits on the builder.
 - **`release X.Y.Z`.** Merged plugin changes sit unshipped on the remote's main (the plan fetches it, so a stale checkout proposes the same release). When an open issue already names that release the plan prints an unnumbered `hold` naming it instead: never file a second release issue or open a second bump. File a release issue first
   (`sh scripts/issue-open.sh`, State ready). In a worktree run `sh plugin/scripts/release/bump.sh X.Y.Z`, run
-  the plugin suite (`sh tests/run.sh` from `plugin/`), commit, open the pull request with `Closes #N` for that
+  the blocks near the change (`sh tests/run.sh --block NAME` from `plugin/`; the release pull request runs the whole suite in CI, and a whole part run here beside it slows both), commit, open the pull request with `Closes #N` for that
   release issue, and queue it. Publishing the split to the public repository happens by the release procedure
   after the merge (the publish workflow, once the publish token exists).
 - **`deploy (N landed changes are not live yet, the oldest for M minutes)`.** Changes that ship landed on the

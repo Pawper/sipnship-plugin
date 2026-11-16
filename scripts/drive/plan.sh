@@ -280,6 +280,8 @@ round=$(held_green_line "$round" "$snapshot")  # green pull requests held for th
 round=$(add_release "$round" "$(release_proposal "$facts" "$pull_links")")
 # Landed changes that are not live (deploy-goal-lib.sh): one deploy goal when production is behind main for ten minutes and none is running.
 round=$(add_deploy "$round" "$(deploy_proposal)")
+# A goal declined after a reader looked at the issue is not proposed again until the issue changes (goal-seen.sh).
+round=$(quiet_declined_goals "$round" "$facts" .scratch/drive/declined.tsv); extra=$(quiet_declined_goals "$extra" "$facts" .scratch/drive/declined.tsv)
 [ -z "$extra" ] || round=$(add_owner_goals "$round" "$extra" "$facts" .scratch/drive/ask-fix.txt)  # an ask-fix the drive already tried stays a hold (ask-fix-seen.sh)
 round=$(say_every_pr "$round" "$snapshot")  # every open pull request has a line, whatever its checks say
 number_proposal "$round"
