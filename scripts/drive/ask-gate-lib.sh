@@ -147,6 +147,16 @@ unasked_goals() {
   return 0
 }
 
+# drop_standing_goals EXTRA FACTS: EXTRA without any goal line (ask-owner, mark-waiting, ask-fix,
+# unasked, dispatch) naming the drive or audit issue. Those two issues are the drive's own place to
+# talk, never work, so no line proposes them, whatever State an answer left on them (#1845).
+drop_standing_goals() {
+  ds_nums=$(printf '%s\n' "$2" | tr -d '\r' | awk -F'\t' '$1 == "issue" { n = split($4, a, ","); for (i = 1; i <= n; i++) { l = tolower(a[i]); gsub(/^[ \t]+|[ \t]+$/, "", l); if (l == "drive" || l == "audit") print $2 } }' | tr '\n' ' ')
+  printf '%s\n' "$1" | awk -v drop=" $ds_nums " '
+    /^(ask-owner|mark-waiting|ask-fix|unasked|dispatch) [0-9]+/ { n = $2; sub(/\t.*/, "", n); if (index(drop, " " n " ")) next }
+    { print }'
+}
+
 # quiet_ask_fixes EXTRA FACTS FILE
 # An `ask-fix N` the drive already looked at and could do nothing about (FILE, one
 # "N<TAB>UPDATED_AT" per line, written by ask-fix-seen.sh) is not a numbered goal on every

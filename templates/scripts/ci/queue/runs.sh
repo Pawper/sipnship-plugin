@@ -243,7 +243,7 @@ wait_for_run() {
     case "$run" in
       *"	queued	"*|*"	queued")
         if [ $(( $(date +%s) - w_start )) -gt 300 ] && [ "$(online_runners)" = 0 ]; then
-          echo "Run $run_id has been queued for five minutes and no self-hosted runner is online. Start a runner (scripts/ci/RUNNERS.md), then run the queue again."
+          echo "Run $run_id has been queued for five minutes and no self-hosted runner is online. Your agent adds a runner, or you can ask for one from the dashboard; then run the queue again."
           wait_seen_end
           return 3
         fi ;;

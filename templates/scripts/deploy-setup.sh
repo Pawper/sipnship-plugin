@@ -116,10 +116,10 @@ setvar DEPLOY_PATH "$path"
 [ "$path" = runner ] && setvar DEPLOY_RUNNER "$pick"
 [ -f .github/workflows/deploy.yml ] || echo "Add .github/workflows/deploy.yml: the sync does it with --only deploy."
 cat <<EOF
-Before the first scheduled run, set three repository secrets (Settings, Secrets and variables, Actions):
+Before the first scheduled run, give the deploy its key: the dashboard Setup row "Deploys have their key" is where it goes. Your agent stores these three as repository secrets:
   VERCEL_TOKEN       a token from vercel.com/account/tokens
   VERCEL_ORG_ID      and VERCEL_PROJECT_ID, from .vercel/project.json after "npx vercel link"
 Optional: ADMIN_TOKEN, so the plan can see whether a runner is online.
-Then run the Deploy workflow once from the Actions tab; it records the deployed commit.
+Then your agent runs the Deploy workflow once; it records the deployed commit.
 Vercel's Git deploys are off from the moment vercel.json reaches main; until the Deploy workflow runs, main is not deployed.
 EOF

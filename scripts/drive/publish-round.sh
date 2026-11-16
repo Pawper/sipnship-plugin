@@ -224,6 +224,22 @@ if [ -z "$issue" ]; then
   exit 1
 fi
 
+# Another session may have started this unit already (#1844): a started round whose every open issue is
+# In progress, and that this publish did not set, is the other session's. Nothing is published over it.
+if [ "$status" = started ] && [ "$labels" = yes ] && [ -n "$open" ]; then
+  already=0; total=0
+  for n in $(printf '%s' "$open" | tr ',' ' '); do
+    total=$((total + 1))
+    have=$(gh api "repos/{owner}/{repo}/issues/$n/labels" --jq '.[].name' 2>/dev/null)
+    printf '%s\n' "$have" | grep -qxE 'state: ?in-progress' && already=$((already + 1))
+  done
+  if [ "$total" -gt 0 ] && [ "$already" -eq "$total" ]; then
+    rm -f "$body_file"
+    echo "Another session may have started this round: every issue in it is already In progress, and this run did not set them. Nothing was published and no agent should be started; leave the round to the session already on it and say so in your report." >&2
+    exit 3
+  fi
+fi
+
 # The same proposed round as the latest on the drive issue but for when the drive looked: that comment is
 # updated in place, so the tab keeps when the round last changed and shows when the drive last looked.
 same=""

@@ -18,7 +18,7 @@ Every value comes from the environment. List the name, what it is for, and where
 |---|---|---|
 | `DATABASE_URL` | The main database | The team password manager, entry PROJECT_NAME |
 | `SERVICE_API_KEY` | Access to SERVICE | The team password manager, entry PROJECT_NAME |
-| `QUEUE_APP_ID` and `QUEUE_APP_KEY` | The queue's own GitHub App: the drain, the audit and Deploy mint a short token from it at each run, so no one's personal token merges. Run `npx sipnship queue-identity` once (two clicks); it sets both secrets and opens the install page, and the key is kept nowhere else. Until then the queue uses `QUEUE_TOKEN`, and with neither the workflow's own token, starting CI itself. After it, `QUEUE_TOKEN`, `RUNNER_WATCH_TOKEN` and `ADMIN_TOKEN` can go. The drain sends to SipNShip with the run's own identity token; no token is pasted | Two repository secrets |
+| `QUEUE_APP_ID` and `QUEUE_APP_KEY` | The queue's own GitHub App: the drain, the audit and Deploy mint a short token from it at each run, so no one's personal token merges. The dashboard's handle does this first; without it, run `npx sipnship queue-identity` once (two clicks); it sets both secrets and opens the install page, and the key is kept nowhere else. Until then the queue uses `QUEUE_TOKEN`, and with neither the workflow's own token, starting CI itself. After it, `QUEUE_TOKEN`, `RUNNER_WATCH_TOKEN` and `ADMIN_TOKEN` can go. The drain sends to SipNShip with the run's own identity token; no token is pasted | Two repository secrets |
 
 ## First run
 
@@ -26,7 +26,7 @@ Every value comes from the environment. List the name, what it is for, and where
 2. Copy `.env.example` to `.env` and fill in the names above.
 3. Run the migrations with `MIGRATE_COMMAND`.
 4. Start the app with `START_COMMAND`.
-5. Add the agent's permissions yourself: run `node console/cli.js permissions` from the plugin in a terminal (the agent is not allowed to grant itself permissions). It writes `.claude/settings.json`, opens the pull request, and asks you to restart the session.
+5. Add the agent's permissions yourself: use the dashboard's Choose handle when the project is connected; without the service, run `node console/cli.js permissions` from the plugin in a terminal (the agent is not allowed to grant itself permissions). It writes `.claude/settings.json`, opens the pull request, and asks you to restart the session.
 
 ## Migrations run
 
@@ -55,4 +55,4 @@ How main reaches production, written by `sh scripts/deploy-setup.sh` into `.clau
 | Build machine | Standard, in the Vercel project's settings |
 | Spend cap | Set in the Vercel team's billing |
 
-To deploy now: run the Deploy workflow from the Actions tab (`runner`, `vercel`), or push to main (`guard`).
+To deploy now: use the dashboard's handle for it, or run the Deploy workflow from the Actions tab (`runner`, `vercel`), or push to main (`guard`).

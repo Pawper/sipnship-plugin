@@ -11,7 +11,7 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 
 const COMMAND = 'node console/cli.js permissions';
-const WHY = `The agent is not allowed to grant itself permissions, so this is the one setup step that is yours. Run it yourself in a terminal: ${COMMAND}`;
+const WHY = `The agent is not allowed to grant itself permissions, so this is the one setup step that is yours. When this project is connected to SipNShip, use the dashboard's Choose handle; without the service, run it yourself in a terminal: ${COMMAND}`;
 
 // Each rule as a sentence, the commands it allows, and its default answer:
 // deploy asks, the rest default to yes.

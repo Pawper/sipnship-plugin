@@ -187,6 +187,7 @@ else
 fi
 # An issue waiting on the builder with no question on it is the drive's to set right, never the builder's (ask-gate-lib.sh).
 extra=$(printf '%s\n%s\n' "$extra" "$(unasked_goals "$facts" "$here/../../templates/scripts/ci/ask-audit.sh")" | sed '/^$/d')
+extra=$(drop_standing_goals "$extra" "$facts")  # the drive and audit issues are never proposed as work or as a question (#1845)
 
 # How many agents may work at once is what GitHub's registered runners say: online and not busy, less one kept for the queue.
 listing=$(gh api 'repos/{owner}/{repo}/actions/runners?per_page=100' --jq '.runners[] | [.status, (.busy | tostring)] | @tsv' 2>/dev/null | tr -d '\r')
@@ -194,6 +195,7 @@ runners_line=$(agent_runners "$listing" "$runners_cap")
 machines=no
 if [ -n "$runners_line" ]; then machines=yes; runners=${runners_line%%	*}; runners_say=$(agent_runners_say "$runners_line" "$runners_cap")
 else [ "$runners_cap" -gt 0 ] && runners=$runners_cap; runners_say="runners not readable from GitHub, so $runners"; fi
+[ "$fast" = yes ] || plugin_note  # first line of the output: a proposal made by an old plan is read as such (#1846)
 echo "proposal for $(date '+%A %Y-%m-%d'), the owner's local day (${runners_say}, at most $max_agents agents, at most $max_minutes minutes; $note):"
 # The round file's own line for it (publish-round.sh's "sized:"), so the Work band says how many agents and why.
 echo "sized: ${runners_say}"
@@ -296,4 +298,3 @@ held_wait_note "${held_since:-}" "$(date +%s)"
 summary_note
 health_note
 wake_note
-[ "$fast" = yes ] || plugin_note

@@ -101,7 +101,7 @@ drain_stall() {
   ds_stall=$(runner_stall "$queued_only" "$(online_runners)")
   printf 'round %s of %s; %s pull request(s) waiting%s\n' "$round" "$rounds" "$waiting" "$( [ "$queued_only" = yes ] && echo ' on queued checks, which no runner has taken')" > "$flaky_dir/drain.state"
   if [ "$ds_stall" = stop ]; then
-    say "round $round: $waiting pull request(s) wait on checks that are all queued, and no self-hosted runner is online. Start a runner (scripts/ci/RUNNERS.md), then run --drain again; waiting would change nothing."
+    say "round $round: $waiting pull request(s) wait on checks that are all queued, and no self-hosted runner is online. Your agent adds a runner, or you can ask for one from the dashboard; then run --drain again; waiting would change nothing."
     return 1
   elif [ "$ds_stall" = unknown ] && [ -z "${said_unknown:-}" ]; then
     say "round $round: the checks are all queued, and the runners could not be read (set ADMIN_TOKEN to let the queue see them); if none is online, start one."

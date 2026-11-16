@@ -263,6 +263,9 @@ tab says it waits and on what instead of saying it starts on its own; `status: p
   it also sets each unit's issues to In progress, so dispatching a unit is what moves its issues; publish
   again with `pr:` filled in when an agent opens its pull request. Name the issues in the agent's brief
   or its branch (`issue-538`) so the machine's session report finds the unit.
+  If the script says "Another session may have started this round" (every issue of the unit is already
+  In progress and this run did not set it), another tick is at work on it: start no agent, publish nothing
+  as started, and report it in one line. Two agents never work one unit.
   The next round is always on the Work tab: while a round runs, publish the proposed next round (`status:
   proposed`) beside the started one. The service keeps the started round and the proposed one apart, so
   both show.

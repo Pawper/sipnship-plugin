@@ -133,7 +133,7 @@ jobs:
               no 1
             fi
             if [ "$HAS_CF_TOKEN" != true ]; then
-              echo "CLOUDFLARE_API_TOKEN is not set; nothing can deploy. Set CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID as repository secrets."
+              echo "CLOUDFLARE_API_TOKEN is not set; nothing can deploy. The Setup row "Deploys have their key" is where the key goes (CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID)."
               no 1
             fi
           elif [ "$path" = guard ]; then
@@ -141,7 +141,7 @@ jobs:
             no
           fi
           if [ "$path" != cloudflare ] && [ "$HAS_TOKEN" != true ]; then
-            echo "VERCEL_TOKEN is not set; nothing can deploy. Set VERCEL_TOKEN, VERCEL_ORG_ID and VERCEL_PROJECT_ID as repository secrets."
+            echo "VERCEL_TOKEN is not set; nothing can deploy. The Setup row "Deploys have their key" is where the key goes (VERCEL_TOKEN, VERCEL_ORG_ID and VERCEL_PROJECT_ID)."
             no 1
           fi
           deployed=$(git ls-remote origin refs/deploy/production | cut -f1)

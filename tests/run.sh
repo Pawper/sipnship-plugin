@@ -5066,6 +5066,12 @@ api -X DELETE repos/{owner}/{repo}/issues/226/labels/state%3Aready
 api -X POST repos/{owner}/{repo}/issues/226/labels -f labels[]=state:in-progress" "$(grep -E 'DELETE|labels -f' "$pr_dir/log")"
 eq "an issue whose unit has a pull request is left alone" "0" "$(grep -c 'issues/223/' "$pr_dir/log")"
 eq "the report names the round" "Published the round on #99: 2 agents, started." "$(printf '%s\n' "$pr_out" | sed -n 1p)"
+# Two ticks reading one approval: the second finds every issue of the unit already In progress and starts nothing (#1844).
+sed 's/state:ready/state:in-progress/' "$pr_dir/bin/gh" > "$pr_dir/bin/gh2"; chmod +x "$pr_dir/bin/gh2"; mv "$pr_dir/bin/gh" "$pr_dir/bin/gh.ready"; mv "$pr_dir/bin/gh2" "$pr_dir/bin/gh"
+: > "$pr_dir/log"
+pr_twice=$(pr_run "$pr_started"; echo "rc=$?")
+eq "a second tick finding the unit's issues already In progress posts nothing and says another session may have it" "0 1" "$(grep -c 'POST repos/{owner}/{repo}/issues/99/comments' "$pr_dir/log" | tr '\n' ' ')$(printf '%s\n' "$pr_twice" | grep -c 'Another session may have started this round')"
+mv "$pr_dir/bin/gh" "$pr_dir/bin/gh.inprog"; mv "$pr_dir/bin/gh.ready" "$pr_dir/bin/gh"
 : > "$pr_dir/log"
 printf 'status: proposed\nunit: 214 226 | why: both change the watering schedule | areas: watering\n' > "$pr_dir/proposed.txt"
 pr_run --issue 12 "$pr_dir/proposed.txt" > /dev/null
@@ -5430,7 +5436,9 @@ eq "a copy twelve releases behind says so, with both versions and how to update"
 eq "a current copy says nothing" "" "$(plugin_behind_note 0.43.17 0.43.17)$(plugin_behind_note 0.43.17 '')"
 eq "a copy a minor behind names no count" "plugin: this drive runs 0.42.9, and 0.43.1 is released. Faults fixed in a release come back in the plan until the installed copy is updated. A scheduled drive updates it itself, first thing (sh plugin/scripts/release/update-installed.sh), and says in its report on the drive issue which release it moved to; the new scripts apply from its next start." "$(plugin_behind_note 0.42.9 0.43.1)"
 eq "the drive skill has a scheduled tick update the installed copy itself and report the release" "1" "$(grep -c "scheduled tick (not a person.s session) runs" "$root/skills/project-drive/SKILL.md")"
-eq "plan.sh prints the behind line from one release read" "1" "$(grep -c '^\[ "\$fast" = yes \] || plugin_note' "$root/scripts/drive/plan.sh")"
+eq "plan.sh prints the behind line from one release read, before the proposal's own line" "1 1" "$(grep -c '^\[ "\$fast" = yes \] || plugin_note' "$root/scripts/drive/plan.sh") $(awk '/plugin_note  #/ { a = NR } /^echo "proposal for/ { b = NR } END { print (a && b && a < b) ? 1 : 0 }' "$root/scripts/drive/plan.sh")"
+eq "a goal naming the drive or audit issue is dropped, whatever it asks" "ask-owner 9	Water schedule row" "$(drop_standing_goals "$(printf 'ask-owner 5\tDrive\nmark-waiting 6\tAudit\nunasked 5\tDrive\nask-fix 5\tDrive\nask-owner 9\tWater schedule row')" "$(printf 'issue\t5\tDrive\tdrive,state:ready\nissue\t6\tAudit\taudit,state:ready\nissue\t9\tWater schedule row\tstate:ready\n')")"
+eq "plan.sh drops goals for the standing issues before it proposes" "1" "$(grep -c 'extra=$(drop_standing_goals' "$root/scripts/drive/plan.sh")"
 eq "a pending head commit is read from its check runs: any not completed" "yes no" "$(checks_pending "$(printf 'completed\tfailure\nqueued\t\n')") $(checks_pending "$(printf 'completed\tfailure\ncompleted\tsuccess\n')")"
 eq "plan.sh reads the head commit's check runs before it proposes set-aside" "1" "$(grep -c 'head_checks_pending "\$p_sha"' "$root/scripts/drive/pr-read-lib.sh")"
 rd_held_green=$(printf 'pr\t61\tSeed list\tgreen\tmergeable\tapp\t0\tyes\tno\tno\npr\t62\tBed map\tgreen\tmergeable\tapp\t0\tyes\tno\tno\npr\t63\tFrost alert\tgreen\tmergeable\tapp\t0\tyes\tno\tno\nqueue\tnone\n')
