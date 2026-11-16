@@ -43,7 +43,8 @@ ask_answered() {
 # a summary of its comments says.
 answered_for() {
   for an_n in $(printf '%s\n' "$1" | sed -n 's/^mark-waiting \([0-9]*\).*/\1/p'); do
-    an_k=$(gh api "repos/{owner}/{repo}/issues/$an_n/comments?per_page=100" --jq '[.[] | .body | gsub("\r"; "") | if test("(^|\n)[ \t]*Builder answer: #[0-9]+ choice [0-9]") then "a" elif test("Recommended\\.") then "q" elif test("(^|\n)[^\n]*[Bb]ack to Ready") then "r" else "-" end] | join(" ")' 2>/dev/null | tr -d '\r')
+    # Every page, so an ask and its answer on a long thread are both seen; a note that returns the issue to Ready, or says the drive read the answer, ends the ask too (#1798).
+    an_k=$(gh api --paginate "repos/{owner}/{repo}/issues/$an_n/comments?per_page=100" --jq '.[] | .body | gsub("\r"; "") | if test("(^|\n)[ \t]*Builder answer: #[0-9]+ choice [0-9]") then "a" elif test("Recommended\\.") then "q" elif test("(^|\n)[^\n]*([Bb]ack to Ready|[Rr]eturned to Ready|left by mistake|(do|does|did) not stand)") then "r" elif test("(^|\n)[ \t]*(Read your answer|I read your answer|Read the answer)") then "r" else "-" end' 2>/dev/null | tr -d '\r' | tr '\n' ' ')
     if [ "$(ask_answered "$an_k")" = yes ]; then printf '%s\n' "$an_n"; fi
   done
   return 0
@@ -88,7 +89,7 @@ held_answered_lines() {
   printf '%s\n' "$1" | tr -d '\r' | while IFS="$(printf '\t')" read -r ha_pr ha_held ha_closes ha_rest; do
     [ "$ha_held" = yes ] || continue
     for ha_n in $(printf '%s' "$ha_closes" | tr ',' ' '); do
-      ha_k=$(gh api "repos/{owner}/{repo}/issues/$ha_n/comments?per_page=100" --jq '[.[] | .body | gsub("\r"; "") | if test("(^|\n)[ \t]*Builder answer: #[0-9]+ choice [0-9]") then "a" elif test("Recommended\\.") then "q" else "-" end] | join(" ")' 2>/dev/null | tr -d '\r')
+      ha_k=$(gh api --paginate "repos/{owner}/{repo}/issues/$ha_n/comments?per_page=100" --jq '.[] | .body | gsub("\r"; "") | if test("(^|\n)[ \t]*Builder answer: #[0-9]+ choice [0-9]") then "a" elif test("Recommended\\.") then "q" else "-" end' 2>/dev/null | tr -d '\r' | tr '\n' ' ')
       if [ "$(ask_answered "$ha_k")" = yes ]; then held_answered_say "$ha_pr" "$ha_n"; break; fi
     done
   done
@@ -101,6 +102,14 @@ drop_waiting_goals() {
   printf '%s\n' "$1" | awk -v drop=" $(printf '%s' "$2" | tr '\n' ' ') " '
     /^mark-waiting [0-9]+/ { n = $2; sub(/\t.*/, "", n); if (index(drop, " " n " ")) next }
     { print }'
+}
+
+# held_closing_issues PULLS: the issue numbers (one a line) that a pull request held for the
+# builder's read closes (PULLS are NUMBER<TAB>HELD<TAB>CLOSES, as stale_lines reads them). What
+# waits on such an issue is the builder's read of that pull request, which the plan says on a
+# hold line, so the issue carries no open question: no mark-waiting, no ask-fix (#1798).
+held_closing_issues() {
+  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' '$2 == "yes" { n = split($3, a, ","); for (i = 1; i <= n; i++) if (a[i] != "") print a[i] }'
 }
 
 # unit_issues UNITS: the issue numbers of the started round's units (as

@@ -76,6 +76,17 @@ stale_lines() {
     if [ "$sl_inunit" = yes ] && [ "$sl_has" = no ] && [ -n "$sl_unitpr" ]; then
       printf 'stale\t%s\tready\t\t%s\tlanded\n' "$sl_num" "$sl_title"; continue
     fi
+    # A unit with no pull request open for any of its issues, some of which have already left In progress (the queue put them back, or they closed), is a unit whose change merged and left this one out: nobody is on it, whatever touched it last. The round's own publish and a closing note are not someone at work, so the wait is only the minutes a start takes.
+    if [ "$sl_inunit" = yes ] && [ "$sl_has" = no ] && [ -n "${7:-}" ] && [ $(( $4 - $7 )) -ge "${STALE_START_GRACE:-900}" ]; then
+      sl_gone=no
+      for sl_m in $sl_members; do
+        sl_ms=$(printf '%s
+' "$1" | tr -d '\r' | awk -F'	' -v n="$sl_m" '$1 == "issue" && $2 == n { print $4; exit }')
+        if [ -z "$sl_ms" ] || [ "$(state_of_labels "$sl_ms")" != in-progress ]; then sl_gone=yes; fi
+      done
+      if [ "$sl_gone" = yes ]; then printf 'stale	%s	ready		%s	landed
+' "$sl_num" "$sl_title"; continue; fi
+    fi
     case "$(stale_judge "$sl_has" "$sl_held" "$sl_touch" "$4" "${5:-2}")" in
       ready) printf 'stale\t%s\tready\t\t%s\n' "$sl_num" "$sl_title" ;;
       waiting)

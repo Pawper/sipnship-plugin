@@ -22,7 +22,10 @@ settle_issues() {
   printf '%s\n' "$si_body" | { grep -oiE '(closes|fixes|resolves|part of|refs?) #[0-9]+' | grep -oE '[0-9]+'; printf '%s\n' "$si_body" | head -n 1 | grep -oE '^issue-[0-9]+' | grep -oE '[0-9]+'; } | sort -un
 }
 
-# settle_unit_issues PR: the other issues of the unit whose pull request this is,
+# A unit whose "pr" was never recorded is found by the issues the pull request names
+# (NAMED, an optional second argument), so an issue its change left out is not left
+# In progress behind it (#1789).
+# settle_unit_issues PR [NAMED]: the other issues of the unit whose pull request this is,
 # one number a line, read from the latest started round on the drive issue (the
 # open issue labeled drive; its marker lists each unit's issues and its "pr").
 # A unit carries several issues in one pull request that names only some of them;
@@ -35,11 +38,13 @@ settle_unit_issues() {
   case "$su_c" in ''|*[!0-9]*) su_c=1 ;; esac
   gh api "repos/{owner}/{repo}/issues/$su_n/comments?per_page=100&page=$(( (su_c + 99) / 100 ))" --jq '.[].body' 2>/dev/null | tr -d '\r' \
     | grep -F 'sipnship-proposal {"status":"started"' | tail -n 1 | sed 's/.*sipnship-proposal {"status":"started",//; s/"held":.*//' \
-    | awk -v pr="$1" '{
+    | awk -v pr="$1" -v named=" $(printf '%s' "${2:-}" | tr '\n' ' ') " '{
         n = split($0, parts, /\{"issues":/)
         for (i = 2; i <= n; i++) {
           p = parts[i]; iss = p; sub(/\].*/, "", iss); sub(/^\[/, "", iss); gsub(/ /, "", iss)
-          if (match(p, /"pr":[0-9]+/) && substr(p, RSTART + 5, RLENGTH - 5) == pr) { m = split(iss, a, ","); for (j = 1; j <= m; j++) if (a[j] != "") print a[j] }
+          mine = (match(p, /"pr":[0-9]+/) && substr(p, RSTART + 5, RLENGTH - 5) == pr)
+          m = split(iss, a, ","); if (!mine) for (j = 1; j <= m; j++) if (a[j] != "" && index(named, " " a[j] " ")) mine = 1
+          if (mine) for (j = 1; j <= m; j++) if (a[j] != "") print a[j]
         }
       }'
 }
@@ -86,7 +91,8 @@ settle_asked() {
 
 # settle_merged PR: put back any issue the merge left In progress.
 settle_merged() {
-  for sm_n in $( { settle_issues "$1"; settle_unit_issues "$1"; } | sort -un); do
+  sm_named=$(settle_issues "$1")
+  for sm_n in $( { printf '%s\n' "$sm_named"; settle_unit_issues "$1" "$sm_named"; } | sed '/^$/d' | sort -un); do
     [ "$(settle_in_progress "$sm_n")" = yes ] || continue
     # GitHub closes a named issue a moment after the merge; look once more before putting it back.
     sleep "${SETTLE_WAIT:-3}" 2>/dev/null || true

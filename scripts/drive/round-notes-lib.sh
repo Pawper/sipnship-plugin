@@ -56,8 +56,13 @@ summary_note() {
     since=$(date -u -d "@$since_e" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$since_e" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null)
     written=no
     # REST lists oldest first and a busy day holds over a hundred comments: every page is read, never only the first.
-    gh api --paginate "repos/{owner}/{repo}/issues/$drive_issue/comments?since=$since&per_page=100" --jq '.[].body' 2>/dev/null | grep -q "^Summary for $today" && written=yes
-    [ "$(summary_due "$(date +%H:%M)" "$summary_at" "$written")" = yes ] && echo "summary: due; post today's summary on issue $drive_issue, starting \"Summary for $today\""
+    # A read that failed is "not read", never "not written": a drive that believed "due" would post the summary again (#1788).
+    if sn_body=$(gh api --paginate "repos/{owner}/{repo}/issues/$drive_issue/comments?since=$since&per_page=100" --jq '.[].body' 2>/dev/null); then
+      printf '%s\n' "$sn_body" | grep -q "^Summary for $today" && written=yes
+      [ "$(summary_due "$(date +%H:%M)" "$summary_at" "$written")" = yes ] && echo "summary: due; post today's summary on issue $drive_issue, starting \"Summary for $today\""
+    else
+      echo "summary: not read; GitHub could not be reached, so whether today's summary is posted is not known"
+    fi
   fi
 }
 

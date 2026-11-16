@@ -1706,6 +1706,11 @@ printf 'open\tstate:in-progress\n' > "$st/issue-240"; printf 'open\tstate:in-pro
 st_run settle_merged 503
 eq "an issue of the merged unit that its pull request did not name goes back to Ready too, and another unit's stays" ". 3" "$(st_in_progress 240 241 242) $(grep -c '^PUT 24[012] {"labels":\["state:ready"\]}' "$st/log")"
 eq "the other unit's issue is not touched" "250 ." "$(st_in_progress 250)"
+# A unit whose pull request was never recorded is found by the issues the merged pull request names (#1789).
+printf 'Round started.\n<!-- sipnship-proposal {"status":"started","units":[{"issues":[240,241,242],"areas":[]},{"issues":[250],"areas":[]}],"held":[]} -->\n' > "$st/drive-comments"
+printf 'open\tstate:in-progress\n' > "$st/issue-240"; printf 'open\tstate:in-progress\n' > "$st/issue-241"; printf 'open\tstate:in-progress\n' > "$st/issue-242"; printf 'open\tstate:in-progress\n' > "$st/issue-250"; : > "$st/log"
+st_run settle_merged 503
+eq "with no pull request recorded, the unit of the issues the change names still all goes back to Ready, and another unit stays" ". 3 250 ." "$(st_in_progress 240 241 242) $(grep -c '^PUT 24[012] {"labels":\["state:ready"\]}' "$st/log") $(st_in_progress 250)"
 rm -f "$st/drive-comments"
 printf 'open\tstate:in-progress\n' > "$st/issue-230"; : > "$st/log"; rm -f "$st/q/settled-held"
 st_run settle_held 501
@@ -6085,6 +6090,7 @@ eq "the held green pull request has a line of its own" "held 42: green, waiting 
 hl_only=$(propose_round "$(printf 'pr\t42\tTint the beds\tgreen\tmergeable\tapp\t0\tyes\tno\tno\tnone\n')" 2 4 2)
 hl_only=$(landing_goals "$hl_only" "$(printf '42\t40\n')" 15 '' '' 42)
 eq "only held ones: no drain is proposed however long they sit" "0" "$(held_green_line "$hl_only" "$(printf 'pr\t42\tTint the beds\tgreen\tmergeable\tapp\t0\tyes\tno\tno\tnone\n')" | grep -c '^drain')"
+eq "one held and one free green pull request, both past 15 minutes: the drain names the free one alone" "drain 41${da_t}(green for 30 minutes; one drain lands them)" "$(landing_goals "$hl_round" "$(printf '41\t30\n42\t30\n')" 15 '' '' 42 | grep '^drain')"
 eq "a held pull request is named once, as held, never as busy or hold" "1 0" "$(say_every_pr "$hl_all" "$hl_snap" | grep -c '^held') $(say_every_pr "$hl_all" "$hl_snap" | grep -c '^hold 42')"
 eq "the held line is information, not a numbered goal" "held 42: green, waiting for the builder's read" "$(number_proposal "$hl_all" | grep '^held')"
 # A deferred issue in a running unit's area waits on that unit.
@@ -6123,7 +6129,10 @@ sm_run() ( settings=$(drive_settings '{"summaryAt":"00:00"}'); auto="on 77"; sum
 eq "a summary on the second page of 150 comments is seen, so none is due" "" "$(sm_run)"
 gh() { seq 1 150 | sed 's/^/Watering note /'; }
 eq "no summary in the day still says it is due" "1" "$(sm_run | grep -c '^summary: due; post today')"
+gh() { return 1; }
+eq "a failed read of the drive issue's comments says the summary is not read, never that it is due" "summary: not read; GitHub could not be reached, so whether today's summary is posted is not known" "$(sm_run)"
 unset -f gh
+eq "the plan bounds every GitHub call it makes, and names one it stopped" "1 1" "$(grep -c 'timeout "${PLAN_GH_SECONDS:-120}" "$plan_gh_bin"' "$root/scripts/drive/plan.sh") $(grep -c 'did not answer in' "$root/scripts/drive/plan.sh")"
 eq "the summary check reads every page" "1" "$(grep -c 'gh api --paginate .*issues/$drive_issue/comments' "$root/scripts/drive/round-notes-lib.sh")"
 
 section 'the drive reads a red pull request nobody works, a stale main, and a release already underway (drive)'
@@ -6279,6 +6288,13 @@ eq "a held pull request that closes two issues asks once, on the first" "1" "$(s
 eq "a unit started ten minutes ago is running, however old its issues' last touch" "0" "$(stale_lines "$gs_facts" '' '' "$gs_now" 2 "$gs_units" "$(( gs_now - 600 ))" | grep -c '^stale')"
 eq "the same unit started three hours ago, nothing touched, goes back to Ready" "3" "$(stale_lines "$gs_facts" '' '' "$gs_now" 2 "$gs_units" "$(( gs_now - 10800 ))" | grep -c '^stale')"
 eq "a held pull request that closes an issue of a unit started ten minutes ago asks nothing" "0" "$(stale_lines "$gs_facts" "$(printf '81\tyes\t1\n')" '' "$gs_now" 2 "$gs_units" "$(( gs_now - 600 ))" | grep -c 'waiting')"
+# An issue a unit's merged change left out (#1789): the unit's other issues are back in Ready, no pull request is open, so nobody is on it, whatever touched it last.
+gs_fresh=$(date -u -d "@$(( gs_now - 60 ))" +%Y-%m-%dT%H:%M:%SZ)
+gs_left=$(printf 'issue\t1\tOne\tstate:ready\t%s\tb\nissue\t2\tTwo\tstate:ready\t%s\tb\nissue\t3\tThree\tstate:in-progress\t%s\tb\n' "$gs_fresh" "$gs_fresh" "$gs_fresh")
+eq "the issue a unit's merged change left out is stale at once, though touched a minute ago" "stale: #3 \"Three\" was In progress, but its unit's pull request has merged or closed and did not name it, so nobody is on it; it is back to Ready." "$(stale_say "$(stale_lines "$gs_left" '' '' "$gs_now" 2 "$gs_units" "$(( gs_now - 1500 ))")" 2)"
+eq "the same unit with no pull request recorded and no sibling gone is still running" "0" "$(stale_lines "$gs_facts" '' '' "$gs_now" 2 "$gs_units" "$(( gs_now - 1500 ))" | grep -c '^stale')"
+eq "a unit started five minutes ago with siblings still Ready is not stale: the start may not have finished" "0" "$(stale_lines "$gs_left" '' '' "$gs_now" 2 "$gs_units" "$(( gs_now - 300 ))" | grep -c '^stale')"
+eq "an open pull request naming it keeps it, whatever its siblings did" "0" "$(stale_lines "$gs_left" "$(printf '90\tno\t1,2\t3\n')" '' "$gs_now" 2 "$gs_units" "$(( gs_now - 1500 ))" | grep -c '^stale')"
 eq "the started round's time is read from its comment" "1793751000" "$(started_at "$(printf '2026-11-04T00:10:00Z\tbot\tsipnship-proposal {"status":"started","units":[]}\n')")"
 eq "no started round has no time" "" "$(started_at "$(printf '2026-11-04T00:10:00Z\tbot\tProposal\n')")"
 # An ask already answered is not an open question.
@@ -6307,6 +6323,16 @@ eq "a Left: note followed by numbered choices is an ask" "no" "$(closing_note "$
 eq "a comment with no Left: line is no closing note" "no" "$(closing_note 'Pull request #5 landed.')"
 eq "plan.sh reads closing notes before the ask gate" "1" "$(grep -c 'closing_notes_for "\$extra"' "$root/scripts/drive/plan.sh")"
 eq "plan.sh drops answered and unit-owned questions before the ask gate" "1 1 1" "$(grep -c 'answered_for "\$extra"' "$root/scripts/drive/plan.sh") $(grep -c 'unit_issues "\$(started_units' "$root/scripts/drive/plan.sh") $(grep -c 'held_answered_lines "\$pull_links"' "$root/scripts/drive/plan.sh")"
+# What the drive reads of a thread, one letter a comment on as many lines as there are comments (#1798).
+eq "an issue whose ask has an answer after it, read a letter a line, is answered" "7" "$(gh() { printf -- '-\nq\na\n-\n'; }; answered_for "$(printf 'mark-waiting 7\tWatering plan (a question to the owner is open)\n')")"
+eq "an issue whose ask has a note returning it to Ready after it is answered" "7" "$(gh() { printf 'q\nr\n'; }; answered_for "$(printf 'mark-waiting 7\tWatering plan (a question to the owner is open)\n')")"
+eq "an ask with nothing after it is not answered" "" "$(gh() { printf -- '-\nq\n-\n'; }; answered_for "$(printf 'mark-waiting 7\tWatering plan (a question to the owner is open)\n')")"
+eq "a new ask after the answer is open again" "" "$(gh() { printf 'q\na\nq\n'; }; answered_for "$(printf 'mark-waiting 7\tWatering plan (a question to the owner is open)\n')")"
+eq "the answered reading takes every page of a long thread" "1" "$(grep -c 'gh api --paginate .*issues/\$an_n/comments' "$root/scripts/drive/ask-gate-lib.sh")"
+eq "a note that says the earlier asks were left by mistake, or returns the issue to Ready, ends them" "yes" "$(grep -q 'Rr]eturned to Ready|left by mistake' "$root/scripts/drive/ask-gate-lib.sh" && echo yes)"
+eq "a pull request held for the builder's read closes issues that carry no open question" "12
+14" "$(held_closing_issues "$(printf '80\tyes\t12,14\n81\tno\t15\n82\tyes\t\n')")"
+eq "plan.sh drops what a held pull request closes before the ask gate" "1" "$(grep -c 'held_closing_issues "\$pull_links"' "$root/scripts/drive/plan.sh")"
 eq "the skill says an answer's hold is the service's and a held line stays the builder's" "1" "$(grep -c 'you never do' "$root/skills/project-drive/SKILL.md")"
 
 section 'the drive posts a file by its contents and ignores a bare file name (drive)'

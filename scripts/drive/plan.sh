@@ -48,6 +48,17 @@ here=$(dirname "$0")
 . "$here/pr-read-lib.sh"
 . "$here/owner-lib.sh"
 
+# No GitHub call waits for ever (#1794): a call that has not answered in PLAN_GH_SECONDS (120) is stopped, the plan
+# names it on its error stream, and reads what that call would have told as not known, as for any failed call.
+plan_gh_bin=$(command -v gh 2>/dev/null)
+if [ -n "$plan_gh_bin" ] && command -v timeout >/dev/null 2>&1; then
+  gh() {
+    timeout "${PLAN_GH_SECONDS:-120}" "$plan_gh_bin" "$@"; gh_rc=$?
+    [ "$gh_rc" -ne 124 ] || echo "plan: a GitHub call (gh $(printf '%s' "$*" | cut -c1-80)) did not answer in ${PLAN_GH_SECONDS:-120} seconds and was stopped" >&2
+    return "$gh_rc"
+  }
+fi
+
 show_snapshot=no; fast=no; facts_file=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -165,6 +176,8 @@ if [ -f .scratch/board/digest.tsv ] && [ -f "$here/../board/board-lib.sh" ]; the
   # A closing note of what an agent left is not a question to the owner, so it is neither marked waiting nor sent back to be reshaped (#1712).
   extra=$(drop_waiting_goals "$extra" "$(closing_notes_for "$extra")")
   extra=$(drop_waiting_goals "$extra" "$(unit_issues "$(started_units "$drive_comments")")")
+  # What waits on an issue a held pull request closes is the builder's read of that pull request, which has its own hold line; no question is open on the issue (#1798).
+  extra=$(drop_waiting_goals "$extra" "$(held_closing_issues "$pull_links")")
   # An open question is proposed as mark-waiting only when its ask is in the shape (scripts/ci/ask-lib.sh); otherwise as ask-fix.
   if [ -f scripts/ci/ask-lib.sh ]; then . scripts/ci/ask-lib.sh; . "$here/ask-gate-lib.sh"; extra=$(mark_waiting_goals "$extra" "$(ask_verdicts_for "$extra")"); fi
   fresh=$(digest_freshness "$facts" "$saved")
