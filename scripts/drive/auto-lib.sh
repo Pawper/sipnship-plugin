@@ -47,3 +47,12 @@ auto_line() {
 # (the count, a third field, tells approval.sh which pages are newest).
 AUTO_DRIVE_QUERY='repos/{owner}/{repo}/issues?labels=drive&state=open&per_page=1'
 AUTO_DRIVE_JQ='.[0] // empty | [(.number | tostring), ([.labels[].name] | join(",")), (.comments | tostring)] | @tsv'
+
+# standing_issue LABELS
+# "yes" when the labels (comma separated) are the drive issue's or the audit issue's:
+# the two standing issues are the drive's own place to talk, never work. The plan
+# never proposes a dispatch for either, whatever its State (an answer on the drive
+# issue can move it to Ready), and neither takes one of the round's slots.
+standing_issue() {
+  printf '%s\n' "$1" | tr ',' '\n' | awk '{ l = tolower($0); gsub(/^[ \t]+|[ \t]+$/, "", l); if (l == "drive" || l == "audit") f = 1 } END { print f ? "yes" : "no" }'
+}

@@ -115,6 +115,7 @@ printf '%s\n' "$facts" | tr '\t' '\037' | while IFS="$us" read -r kind num title
     issue)
       state=$(state_of_labels "$a")
       case ",$a," in *",ci-red,"*) printf 'red\t%s\n' "$num" ;; esac
+      [ "$(standing_issue "$a")" = yes ] && [ "$state" = ready ] && continue  # the drive and audit issues are never dispatched
       case "$state" in
         ready)
           # Title and the start of the body, both from the one call; an owner-decision match is a candidate with its sentence.
@@ -217,6 +218,7 @@ reasons=$(printf '%s\n%s\n' "$reasons" "$published" | sed '/^$/d')
 published_count=$(printf '%s\n' "$published" | sed '/^$/d' | cut -f2 | sort -u | wc -l | tr -d ' ')
 while IFS="$us" read -r kind num title a b c d e; do
   [ "$kind" = issue ] || continue
+  [ "$(standing_issue "$a")" = yes ] && continue  # the drive and audit issues take no dispatch and no slot
   case "$(state_of_labels "$a")" in
     ready)
       case "$(printf '%s\n' "$snapshot" | awk -F'\t' -v n="$num" '$1 == "issue" && $2 == n { print $5 }')" in yes) continue ;; esac
