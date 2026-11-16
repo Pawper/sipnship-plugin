@@ -338,6 +338,14 @@ tab says it waits and on what instead of saying it starts on its own; `status: p
   can also label it `ci-red`. Its goal also opens the proposal and carries `First: A fix for a failure on main`, so
   `approval.sh` never holds it behind the running round (the round it blocks could not land without it), and
   the plan proposes no `drain` while one is ready: it prints a `landing` line saying the round waits on the fix.
+  A fix you start for a red main while a round runs goes into the published round in the same step, as a
+  unit of that round (with its `pr:` once the pull request is open; `publish-round.sh`, `status: started`), so
+  the Work tab shows it and the queue knows it. The queue lands a pull request that closes the red-main issue
+  first and alone, whether or not the round names it, and never says it waits for the next round.
+  A `fix-main batch` line (no number) or a `fix-pr N` line naming a failing test comes from a batch that went
+  red on the same commits and the same main: the plan proposes no `drain` for those pull requests until one is
+  pushed again or main moves. When two went red alone on the same test, the queue has opened the red-main
+  issue; treat that test as main's.
   When the plan's last line says `auto drive: not known`, the lookup of the drive issue failed; it does not mean
   there is no drive issue or that Auto Drive is off, so run the plan again.
 - **`note: N branch(es) are still on the remote ...`** (unnumbered, never a goal). Branches left on the remote after their pull request ended are the nightly audit's to report; nothing the drive may do ends one, so the plan shows the count as a note and proposes no action for it.

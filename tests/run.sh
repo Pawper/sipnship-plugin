@@ -2148,6 +2148,23 @@ eq "main red and the fix not green: no pick, so no batch is built" "" "$(redmain
 eq "main red and the fix still running: the line says what it waits on" "Main is red (issue #1815); no batch is built. Waiting for #1816, the pull request that closes it, to turn green." "$(redmain_say 1815 "" 1816)"
 eq "main red and no fix open: the line says no run is spent" "1" "$(redmain_say 1815 "" "" | grep -c 'no run is spent')"
 eq "the drain reads the red-main issue before it picks" "1" "$(grep -c 'redmain_round; waiting=' "$mq_all")"
+# The whole round: main red, a green fix that is not in the named round, and green round members. The fix lands first,
+# alone, and no line says it waits for the next round; with main green, a green change left out still does.
+rm_round() (
+  say() { printf '%s\n' "$*"; }
+  gh() { printf '%s\n' "$rm_prs"; }
+  main_red_issue() { printf '%s' "$rm_red"; }
+  open=$rm_open; round_pool_list=$(printf '1808\tfalse\tMERGEABLE\tgreen\tmain\n1809\tfalse\tMERGEABLE\tgreen\tmain\n')
+  base=main; tried=""; rush_now=""; round=1; redmain_landed=""
+  redmain_round
+  printf 'pick=%s landed=%s\n' "$pick" "$redmain_landed"
+)
+rm_red=1815 rm_out=$(rm_round)
+eq "main red, the fix green and outside the round: it is picked first and alone" "pick=1816 landed=1816" "$(printf '%s\n' "$rm_out" | tail -n 1)"
+eq "main red: the fix's line never says it waits for the next round" "0" "$(printf '%s\n' "$rm_out" | grep -c 'next round')"
+eq "main red: the line says the fix lands first, alone" "1" "$(printf '%s\n' "$rm_out" | grep -c 'landing #1816, which closes it, first and alone')"
+rm_red= rm_out=$(rm_round)
+eq "main green: a green change outside the round still waits for the next round, and is said" "1" "$(printf '%s\n' "$rm_out" | grep -c '#1816 is green but not in the round the drive named, so it waits for the next round')"
 # A whole part runs one at a time on a machine, and never beside a runner's job (tests/turn-lib.sh).
 tn_dir=$(mktemp -d)/turn
 eq "the first whole run takes the turn; the second, started beside it, ends with the reason" "0 1 yes" "$(
@@ -6205,6 +6222,50 @@ eq "a failed read of the drive issue's comments says the summary is not read, ne
 unset -f gh
 eq "the plan bounds every GitHub call it makes, and names one it stopped" "1 1" "$(grep -c 'timeout "${PLAN_GH_SECONDS:-120}" "$plan_gh_bin"' "$root/scripts/drive/plan.sh") $(grep -c 'did not answer in' "$root/scripts/drive/plan.sh")"
 eq "the summary check reads every page" "1" "$(grep -c 'gh api --paginate .*issues/$drive_issue/comments' "$root/scripts/drive/round-notes-lib.sh")"
+
+section 'a drain is not proposed again after its batches went red on the same commits (drive)'
+. "$root/scripts/drive/red-batch-lib.sh"
+rb_t=$(printf '\t')
+rb_round=$(printf 'drain 71 72\t(green for 40 minutes; one drain lands them)\nstop: proposal ready for approval\n')
+rb_shas=$(printf '71\taaa\n72\tbbb\n73\tccc\n')
+rb_rows=$(printf '71\taaa\tmain1\ttest/palette.test.ts > keeps the rooftop bed colours\n72\tbbb\tmain1\ttest/palette.test.ts > keeps the rooftop bed colours\n')
+rb_out=$(red_batch_goals "$rb_round" "$rb_rows" "$rb_shas" main1)
+eq "two changes red alone on the same test and main: no drain" "0" "$(printf '%s\n' "$rb_out" | grep -c '^drain ')"
+eq "the cause is named as a fix for main, with the test" "1" "$(printf '%s\n' "$rb_out" | grep -c '^fix-main batch.*test/palette.test.ts > keeps the rooftop bed colours')"
+eq "the stop line stays last" "stop: proposal ready for approval" "$(printf '%s\n' "$rb_out" | tail -n 1)"
+eq "main moved: the drain is proposed again" "drain 71 72" "$(red_batch_goals "$rb_round" "$rb_rows" "$rb_shas" main2 | sed -n 1p | cut -f1)"
+eq "a new push takes that change back into the drain; the other still waits, named as a fix for its pull request" "drain 72 / 1" "$(red_batch_goals "$rb_round" "$rb_rows" "$(printf '71\taaa\n72\tzzz\n')" main1 | awk -F'\t' '/^drain /{ d = $1 } /^fix-pr /{ n++ } END { print d " / " n }')"
+eq "a lone red change is named as a fix for its pull request" "1" "$(red_batch_goals "$rb_round" "$(printf '72\tbbb\tmain1\tjob tests (shell-1)\n')" "$rb_shas" main1 | grep -c '^fix-pr 72	.*job tests (shell-1)')"
+eq "the others in the drain stay in it" "drain 71" "$(red_batch_goals "$rb_round" "$(printf '72\tbbb\tmain1\tjob tests (shell-1)\n')" "$rb_shas" main1 | sed -n 1p | cut -f1)"
+eq "no red batch recorded: the round passes unchanged" "$rb_round" "$(red_batch_goals "$rb_round" "" "$rb_shas" main1)"
+eq "the landing line for a blocked change loses it too" "0" "$(red_batch_goals "$(printf 'landing 71: green; the queue lands them, and a drain is proposed if they sit 15 minutes\nstop: x\n')" "$rb_rows" "$rb_shas" main1 | grep -c '^landing ')"
+eq "the plan reads the queue's record and the approval reads the plan" "1" "$(grep -c 'red_batch_goals "$round" "$(cat .scratch/queue/red-batches.tsv' "$root/scripts/drive/plan.sh")"
+# The queue's side: the same cause on two changes on one main is main's.
+. "$root/templates/scripts/ci/queue/halve.sh"
+eq "two pull requests red on one test on one main: that test is the cause" "test/palette.test.ts > keeps the rooftop bed colours${rb_t}71 72" "$(red_batch_common "$rb_rows")"
+eq "different tests: no common cause" "" "$(red_batch_common "$(printf '71\taaa\tmain1\ttest A\n72\tbbb\tmain1\ttest B\n')")"
+eq "the same test on different mains: no common cause" "" "$(red_batch_common "$(printf '71\taaa\tmain1\ttest A\n72\tbbb\tmain2\ttest A\n')")"
+eq "a lone red change is not main's" "" "$(red_batch_common "$(printf '71\taaa\tmain1\ttest A\n')")"
+rb_dir=$(mktemp -d)
+rb_main_cause() (
+  flaky_dir=$rb_dir; main_red_issue() { printf '%s' "$rb_open"; }
+  gh_write() { echo "FILED $*" | cut -c1-120 >> "$rb_dir/filed"; echo 4321; }
+  state_label() { echo state:ready; }; project_label_form() { echo x; }
+  red_batch_main_cause
+)
+printf '%s\n' "$rb_rows" > "$rb_dir/red-batches.tsv"
+rb_open= rb_said=$(rb_main_cause)
+eq "the queue says main is the likely cause and opens the red-main issue" "1 1" "$(printf '%s\n' "$rb_said" | grep -c 'main is the likely cause; opened the red-main issue #4321') $(grep -c FILED "$rb_dir/filed")"
+rb_open=1815 rb_said=$(rb_main_cause)
+eq "with the red-main issue already open it only says so" "1 1" "$(printf '%s\n' "$rb_said" | grep -c 'already open') $(grep -c FILED "$rb_dir/filed")"
+# A red job's one line names the failing test, even when the last lines are something else.
+. "$root/templates/scripts/ci/failure-lib.sh"
+rb_log=$(printf 'RUN  v2\n FAIL  test/palette.test.ts > keeps the rooftop bed colours\nAssertionError: expected red\n'; i=0; while [ "$i" -lt 40 ]; do printf '.bed-%s { color: #3a7d44; }\n' "$i"; i=$((i + 1)); done)
+rb_ann=$(failure_annotation tests 'Run the shell-1 part' "$(failure_lines "$rb_log" "$(printf '%s\n' "$rb_log" | tail -n 30)")")
+eq "a failing test the last lines do not show leads the annotation" "1" "$(printf '%s\n' "$rb_ann" | grep -c 'FAIL  test/palette.test.ts > keeps the rooftop bed colours%0A')"
+eq "a failing test the last lines show is not said twice" "1" "$(failure_lines "$rb_log" "$(printf '%s\n' "$rb_log" | head -n 5)" | grep -c 'test/palette.test.ts')"
+eq "no failing test named: the last lines pass through" "x" "$(failure_lines "all fine" x)"
+eq "the report reads the whole log for the failing tests" "1" "$(grep -c 'failure_lines "$(cat "$2")"' "$root/templates/scripts/ci/failure-report.sh")"
 
 section 'the drive reads a red pull request nobody works, a stale main, and a release already underway (drive)'
 . "$root/scripts/drive/release-lib.sh"

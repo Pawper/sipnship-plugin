@@ -17,6 +17,22 @@ failure_summary() {
   if [ -n "$4" ]; then printf '\nAlso slow, and not the cause:\n\n%s\n' "$4"; fi
 }
 
+# failure_lines LOG TAIL
+# The lines a failing job writes about itself: TAIL (its log's last lines),
+# led by the failing tests named anywhere in LOG that TAIL does not show, one
+# "FAIL  file > test" line each (at most five). A test that printed a lot
+# after it failed (a stylesheet, a stack) once left only that output in the
+# last lines, so the cause had to be dug out of the job's log by hand; the
+# failing test now comes first, in the form the dashboard and the queue read.
+# Needs failed_tests_from_log (run-lib.sh).
+failure_lines() {
+  fl_lead=$(failed_tests_from_log "$1" | head -n 5 | while IFS= read -r fl_t; do
+    [ -n "$fl_t" ] || continue
+    printf '%s\n' "$2" | grep -qF -e "$fl_t" || printf 'FAIL  %s\n' "$fl_t"
+  done)
+  if [ -n "$fl_lead" ]; then printf '%s\n%s\n' "$fl_lead" "$2"; else printf '%s\n' "$2"; fi
+}
+
 # The annotation a failing job writes, as a workflow command: the title
 # names the job and the step, the message holds the lines.
 failure_annotation() {
