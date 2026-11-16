@@ -19,6 +19,9 @@ const ONLINE_WAIT_MS = 5 * 60000;
 const RUN_WAIT_MS = 30 * 60000;
 const POLL_MS = 15000;
 const PLUGIN_SCRIPT = path.join(__dirname, '..', 'scripts', 'machine', 'antivirus-exclusions.ps1');
+const RECORD_SCRIPT = path.join(__dirname, '..', 'scripts', 'machine', 'record-antivirus.ps1');
+// How long the recording runs, while the builder starts a few programs; the dashboard's words say the same number.
+const RECORD_SECONDS = 60;
 const RESTART_SCRIPT = path.join(__dirname, '..', 'scripts', 'machine', 'restart-runners.ps1');
 const PR_TITLE = "Allow the agent the project's own commands";
 const PLACES_VARIABLE = 'SIPNSHIP_PLACES';
@@ -77,6 +80,12 @@ async function scan(ctx, action) {
   const root = `C:\\actions-runner-${ctx.fullName.split('/')[1]}`;
   const r = await elevatedRun(ctx, PLUGIN_SCRIPT, ['-Action', action, '-Root', root], PROMPT_WAIT_MS);
   return r.ok ? { outcome: 'done', facts: { folders: SCAN_FOLDERS.join(',') } } : r;
+}
+
+// One elevated recording of the antivirus, a fixed length; Windows asks once. The builder starts programs while it runs.
+async function recordAntivirus(ctx) {
+  const r = await elevatedRun(ctx, RECORD_SCRIPT, ['-Seconds', String(RECORD_SECONDS)], PROMPT_WAIT_MS + RECORD_SECONDS * 1000);
+  return r.ok ? { outcome: 'done', facts: { seconds: String(RECORD_SECONDS) } } : r;
 }
 
 // A workflow dispatched with the person's own gh sign-in; done only when its run ends.
@@ -188,6 +197,7 @@ const KIND_RUNNERS = {
   deploy: (c) => dispatch(c, 'deploy.yml', 'main'),
   'scan-skip': (c) => scan(c, 'Add'),
   'scan-again': (c) => scan(c, 'Remove'),
+  'record-antivirus': (c) => recordAntivirus(c),
 };
 
 // perform(kind, param, ctx): the kind's fixed script, or a refusal when the kind is not on the list.
@@ -201,4 +211,4 @@ async function perform(kind, param, ctx) {
   }
 }
 
-module.exports = { perform, PLUGIN_SCRIPT, RESTART_SCRIPT, PR_TITLE, KIND_RUNNERS };
+module.exports = { perform, PLUGIN_SCRIPT, RECORD_SCRIPT, RECORD_SECONDS, RESTART_SCRIPT, PR_TITLE, KIND_RUNNERS };

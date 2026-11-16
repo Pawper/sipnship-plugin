@@ -8,11 +8,11 @@
 
 const { RULES } = require('./permissions');
 
-const KINDS = ['add-runner', 'remove-runner', 'grant-permissions', 'run-migration', 'deploy', 'scan-skip', 'scan-again', 'set-places', 'land-here', 'deploy-here', 'restart-runners'];
+const KINDS = ['add-runner', 'remove-runner', 'grant-permissions', 'run-migration', 'deploy', 'scan-skip', 'scan-again', 'set-places', 'land-here', 'deploy-here', 'restart-runners', 'record-antivirus'];
 // The kinds that go around GitHub's runs (spec 012, "When GitHub is not starting runs"): offered only by a listener that carries them out.
 const AROUND_KINDS = ['land-here', 'deploy-here', 'restart-runners'];
 // Kinds that end in Windows' own administrator prompt, and the kinds that only change a Windows machine.
-const ELEVATED = ['add-runner', 'remove-runner', 'scan-skip', 'scan-again'];
+const ELEVATED = ['add-runner', 'remove-runner', 'scan-skip', 'scan-again', 'record-antivirus'];
 const WINDOWS_ONLY = ELEVATED;
 const PERMISSION_IDS = RULES.map((r) => r.id);
 const SCAN_FOLDERS = ['runners', 'git', 'node', 'packages'];
@@ -82,7 +82,7 @@ function canKinds(f) {
   return KINDS.filter((k) => {
     if (WINDOWS_ONLY.includes(k) && !f.windows) return false;
     if ((k === 'add-runner' || k === 'remove-runner') && !f.admin) return false;
-    if ((k === 'scan-skip' || k === 'scan-again') && !f.antivirus) return false;
+    if ((k === 'scan-skip' || k === 'scan-again' || k === 'record-antivirus') && !f.antivirus) return false;
     if (AROUND_KINDS.includes(k) && !f.around) return false;
     return true;
   });
@@ -100,6 +100,7 @@ function stepFacts(kind, f) {
     const ids = t('folders').split(',').filter((i) => SCAN_FOLDERS.includes(i));
     if (ids.length) out.folders = ids.join(',');
   }
+  if (kind === 'record-antivirus' && /^[1-9]\d{0,2}$/.test(t('seconds'))) out.seconds = t('seconds');
   return out;
 }
 

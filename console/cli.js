@@ -30,7 +30,7 @@ function usage() {
   sipnship queue-identity [--repo OWNER/NAME] [--org ORG]   give the merge queue its own GitHub App (two clicks)
   sipnship deploy-key [--repo OWNER/NAME] [--host cloudflare|vercel]   take the hosting key once and set the deploy secrets
   sipnship listen [on|off|status]  carry out what you approve on the dashboard (off until turned on here)
-  sipnship ask add-runner [NAME | --count N] | remove-runner NAME | migrate [PR] | deploy | scan-skip | scan-again
+  sipnship ask add-runner [NAME | --count N] | remove-runner NAME | migrate [PR] | deploy | scan-skip | scan-again | record-antivirus
   sipnship land-next N ["reason"]   land this green pull request next, pausing nothing
   sipnship land-now N ["reason"]    land this pull request now, before anything else
   sipnship hold N ["reason"]        hold it out of the merge queue

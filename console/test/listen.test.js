@@ -8,7 +8,7 @@ const tokens = require('../tokens');
 const rules = require('../request-rules');
 const requestLog = require('../request-log');
 const listen = require('../listen');
-const { perform, PLUGIN_SCRIPT, RESTART_SCRIPT } = require('../listen-kinds');
+const { perform, PLUGIN_SCRIPT, RESTART_SCRIPT, RECORD_SCRIPT } = require('../listen-kinds');
 const { ask } = require('../ask');
 const { briefBody } = require('../brief-send');
 
@@ -175,6 +175,22 @@ test('the antivirus kinds run the plugin\'s one script with the fixed folders, a
   await perform('scan-again', '', again.ctx);
   assert.deepStrictEqual(again.calls[0].slice(2, 4), ['-Action', 'Remove']);
   assert.ok(fs.readFileSync(PLUGIN_SCRIPT, 'utf8').includes('Add-MpPreference'));
+});
+
+test('recording the antivirus runs the plugin\'s one script for a fixed time, once, and says how long', async () => {
+  const rec = recorder();
+  assert.deepStrictEqual(await perform('record-antivirus', '', rec.ctx), { outcome: 'done', facts: { seconds: '60' } });
+  assert.deepStrictEqual(rec.calls[0].slice(0, 4), ['elevated', RECORD_SCRIPT, '-Seconds', '60']);
+  assert.strictEqual(rec.calls.length, 1);
+  assert.deepStrictEqual(rec.steps, ['asking', 'running']);
+  const no = recorder({ code: 87 });
+  assert.strictEqual((await perform('record-antivirus', '', no.ctx)).outcome, 'declined-windows');
+  const script = fs.readFileSync(RECORD_SCRIPT, 'utf8');
+  assert.ok(script.includes('New-MpPerformanceRecording'));
+  assert.ok(!script.includes('Add-MpPreference'));
+  assert.deepStrictEqual(rules.stepFacts('record-antivirus', { seconds: 60, extra: 'x' }), { seconds: '60' });
+  assert.strictEqual(rules.paramRule('record-antivirus', ''), '');
+  assert.strictEqual(rules.paramRule('record-antivirus', 'C:\\x'), undefined);
 });
 
 test('deploy and migration only dispatch their own workflow and finish when its run ends', async () => {

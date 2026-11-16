@@ -5,6 +5,7 @@
 // sipnship ask deploy
 // sipnship ask scan-skip          let the runners skip the antivirus scan
 // sipnship ask scan-again         scan the runners again
+// sipnship ask record-antivirus   record how much the antivirus costs while programs start
 //
 // A proposal for this machine, made in the name of the person signed in to
 // gh. From a terminal it is always a proposal: it runs only after the
@@ -17,13 +18,13 @@ const { remoteRepo } = require('./connect');
 const tokens = require('./tokens');
 const { paramRule } = require('./request-rules');
 
-const ASKS = { 'add-runner': 'add-runner', 'remove-runner': 'remove-runner', migrate: 'run-migration', deploy: 'deploy', 'scan-skip': 'scan-skip', 'scan-again': 'scan-again' };
+const ASKS = { 'add-runner': 'add-runner', 'remove-runner': 'remove-runner', migrate: 'run-migration', deploy: 'deploy', 'scan-skip': 'scan-skip', 'scan-again': 'scan-again', 'record-antivirus': 'record-antivirus' };
 
 const defaultRun = (cmd, args) => execFileSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
 
 async function ask({ what, param, reason = '', repo, env = process.env, out = process.stdout, cwd = process.cwd(), run = defaultRun }) {
   const kind = ASKS[what];
-  if (!kind) { out.write('Ask for one of: add-runner, remove-runner, migrate, deploy, scan-skip, scan-again. Granting permissions is yours alone: node console/cli.js permissions.\n'); return 2; }
+  if (!kind) { out.write('Ask for one of: add-runner, remove-runner, migrate, deploy, scan-skip, scan-again, record-antivirus. Granting permissions is yours alone: node console/cli.js permissions.\n'); return 2; }
   const given = kind === 'run-migration' ? (param || 'main') : (param || '');
   const p = kind === 'add-runner' && !given ? '' : paramRule(kind, given);
   if (p === undefined) { out.write(`That is not a valid ${kind === 'run-migration' ? 'branch (main, or a pull request number)' : kind.endsWith('runner') ? 'runner name (lowercase letters, numbers and dashes, like garden-4)' : 'value for this request'}.\n`); return 2; }
