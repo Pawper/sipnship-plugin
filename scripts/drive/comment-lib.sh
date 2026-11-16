@@ -26,6 +26,11 @@ comment_refusal() {
   [ -n "$(printf '%s' "$cr_body" | tr -d ' \t\n')" ] || { echo "The file $1 is empty; nothing is posted."; return 0; }
   cr_perm=$(unoffered_permission "$cr_body")
   [ -z "$cr_perm" ] || { echo "The step asks for a \"$cr_perm\" permission, which GitHub does not offer on a fine-grained token, so the builder could not do it. Name only permissions that exist there (Actions, Administration, Commit statuses, Contents, Issues, Pull requests, Workflows); the drive reads checks from the Actions runs and commit statuses and needs no Checks permission."; return 0; }
+  # Instructions open with why, and a command always has words of its own (ask_check, scripts/ci/ask-lib.sh).
+  if [ -f scripts/ci/ask-lib.sh ] && printf '%s\n' "$cr_body" | head -n 1 | grep -qiE '^[ 	*_]*Instructions:'; then
+    cr_word=$( . scripts/ci/ask-lib.sh; printf '%s\n' "$cr_body" | ask_check )
+    case "$cr_word" in noreason|barecommand) cr_say=$( . scripts/ci/ask-lib.sh; ask_fix "$cr_word" ); echo "The Instructions would stop a builder who is not technical: $cr_say."; return 0 ;; esac
+  fi
   case "$cr_body" in
     @*) case "$cr_body" in *[[:space:]]*) ;; *) echo "The text of $1 is only a file name ($cr_body); it would post the name, not the file. Write the words into the file."; return 0 ;; esac ;;
   esac

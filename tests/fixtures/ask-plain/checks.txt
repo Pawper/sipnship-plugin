@@ -9,3 +9,5 @@ reason-points-at-file pointer
 script-in-question jargon
 label-in-choice jargon
 plain-term one
+instructions-no-reason noreason
+instructions-bare-command barecommand

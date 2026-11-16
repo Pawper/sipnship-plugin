@@ -150,7 +150,33 @@ ask_read() {
       }
       return rec
     }
-    function verdict(text,   raw, n, k, m, L, at, before, items, recs, num, q, c1, c2, w) {
+    # Inline code and fenced code out of a step, to count only its own words.
+    function sans_code(s) { s = cut(s, "```", "```"); return cut(s, "`", "`") }
+    function wordcount(s,   t) { t = trim(s); gsub(/[^A-Za-z0-9 \t]+/, " ", t); t = trim(t); return t == "" ? 0 : split(t, W, /[ \t]+/) }
+    # What an Instructions comment lacks for a builder who is not technical:
+    # "noreason" when no plain sentence or two says what it turns on and why
+    # (between its first line and its first step), "barecommand" when a step
+    # holds a command with no words of its own. Works on the raw text, since
+    # the shape reader above drops code.
+    function instr_check(raw,   n, k, first, open, step, stext, bare, S) {
+      n = split(raw, S, "\n"); first = 0; open = 0; step = 0; stext = ""; bare = 0
+      for (k = 1; k <= n; k++) {
+        S[k] = trim(S[k]); sub(/\r$/, "", S[k])
+        if (S[k] == "") continue
+        if (!first) { first = k; continue }
+        if (is_choice(S[k])) {
+          if (step && stext ~ /`/ && wordcount(sans_code(stext)) < 4) bare = 1
+          step = 1; stext = S[k]; continue
+        }
+        if (!step) { if (substr(S[k], 1, 3) != "```" && substr(S[k], 1, 1) != ">" && wordcount(S[k]) >= 5) open = 1; continue }
+        stext = stext "\n" S[k]
+      }
+      if (step && stext ~ /`/ && wordcount(sans_code(stext)) < 4) bare = 1
+      if (!open) return "noreason"
+      return bare ? "barecommand" : "instructions"
+    }
+    function verdict(text,   raw, n, k, m, L, at, before, items, recs, num, q, c1, c2, w, orig) {
+      orig = text
       text = cut(text, "<!--", "-->")
       text = cut(text, "```", "```")
       raw = split(text, R, "\n"); n = 0
@@ -160,7 +186,7 @@ ask_read() {
         L[++n] = R[k]
       }
       for (k = 1; k <= n; k++) if (L[k] != "") break
-      if (k <= n && tolower(L[k]) ~ /^(\*\*)?[ \t]*instructions[ \t]*(\*\*)?[ \t]*:/) return "instructions"
+      if (k <= n && tolower(L[k]) ~ /^(\*\*)?[ \t]*instructions[ \t]*(\*\*)?[ \t]*:/) return check == 1 ? instr_check(orig) : "instructions"
       for (at = 1; at <= n; at++) {
         if (!is_choice(L[at])) continue
         num = L[at]; sub(/[.)].*/, "", num)
@@ -217,6 +243,8 @@ ask_fix() {
   case "$1" in
     none) printf '%s\n' 'no ask or Instructions comment was left on it in the last ten minutes, so the builder would find nothing to answer. First leave one comment: what happened, in a plain sentence or two; the question, as a decision about their project; two to four choices, each a short name, a colon and what it means for them, one ending "Recommended." with how it helps them. For a step only they can do, start the comment with "Instructions:" and number the steps. An ask left earlier is not read as the reason for this wait, so post it again' ;;
     longname) printf '%s\n' 'a choice has no short name, so the card cuts it off mid-sentence. Start every choice with a name of a few words (80 characters at most), then a colon, then what it means for them, such as "2. Ask for changes: say what to change, and your agent makes it before anything lands."' ;;
+    noreason) printf '%s\n' 'its Instructions open with no plain sentence saying what this turns on for the builder and why the app cannot do it for them. After the first line, add one or two sentences such as "This lets the frost alert reach your phone. Only you can do it, because the key belongs to your account.", then the numbered steps; the last step says how to tell it worked' ;;
+    barecommand) printf '%s\n' 'a step of its Instructions holds a command with no words of its own. Say in plain words what the command does before it, such as "2. Start the sensor hub on your rooftop network (this connects the soil sensors): " and then the command, shown whole; never ask a person to make a secret by a command' ;;
     pointer) printf '%s\n' 'the reason after "Recommended" points at where something is written (a section of an issue, a file, a number) instead of saying what the builder gets. Give it as their benefit, such as "Recommended, so the frost alert reaches your phone before tonight."' ;;
     jargon) printf '%s\n' 'its question or the name of a choice carries one of our working words: a script or file name, a label name or a path. Say it as a decision about their project, such as "Should the watering reminders wait for your read?", and keep the working words out of it (a term such as pull request is fine, said plainly)' ;;
     question) printf '%s\n' 'its ask is a question with no choices. Turn it into choices: keep the question on its own line, then a numbered list of two to four, your best guess first, ending "Recommended." and a short reason why; for an open question, give a draft to say yes to and a last choice such as "I will write my own on the issue."' ;;

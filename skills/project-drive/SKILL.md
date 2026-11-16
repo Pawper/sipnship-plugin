@@ -490,15 +490,25 @@ Both are fixtures of the check (the plugin's `tests/fixtures/ask-plain/`). The s
   reason, and a later ask on the issue replaces an earlier one. To put an issue in front of the builder for an
   ask left earlier, post it again (rewritten in this shape when it is not), then set the State.
 - A step the owner does outside the app (add a secret, bring a runner online, run a command) is Instructions,
-  never a decision. Start the comment's first line with the word `Instructions:` and a short title, then the
-  steps as a numbered list (what to do, where, any value or command in code), with no choices and no
-  "Recommended.". The card shows the steps with Done, and the hook accepts it as an ask without a
-  recommendation:
+  never a decision, and the last resort: before writing one, say on the issue why the app, the service or a
+  runner cannot do it; a step the app could do with a button becomes an issue for that button instead. Start
+  the comment's first line with the word `Instructions:` and a short title. Then one or two plain sentences:
+  what this turns on for the builder and why it cannot be done for them. Then the steps as a numbered list,
+  each one action; a step with a command says in plain words what the command does before the command, and
+  the command is shown whole. Never ask a person to make a secret by a command: the app or the tool makes
+  it, or one button does. The last step says how to tell it worked. No choices and no "Recommended.". The
+  card shows the steps with Done, and the hook refuses Instructions with no opening sentence or with a
+  command that has no words of its own:
 
   ```
   Instructions: Set up the sensor hub for the herb beds
-  1. Add a repository secret named `FROST_SENDER_KEY` in the repository's settings, under Secrets.
-  2. Install the hub on the rooftop network by running `npx sensor-hub install --bed herbs` in a terminal.
+
+  This lets the frost alert reach your phone before a cold night. Only you can do it, because the secret
+  belongs to your repository and the hub runs on your rooftop network.
+
+  1. Add a repository secret named `FROST_SENDER_KEY` in the repository's settings, under Secrets, so the alert may send messages for you.
+  2. Install the hub on the rooftop network by running this in a terminal in your project folder, which connects the soil sensors to the alert: `npx sensor-hub install --bed herbs`
+  3. To tell it worked, open the herb bed page: the hub shows as connected within a minute.
   ```
 
   Use choices only for a real decision. Two choices that are "do the step" and "set it aside" are an owner

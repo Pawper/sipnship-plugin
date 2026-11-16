@@ -12,6 +12,15 @@
 here=$(dirname "$0")
 . "$here/lib.sh"
 rules=$(cat "$here/classes.txt")
+# machine_probe: how long 40 starts of sh and 40 starts of git take, in milliseconds each; "unknown" when it cannot be timed.
+machine_probe() {
+  mp_t0=$(date +%s%N 2>/dev/null); case "$mp_t0" in ''|*[!0-9]*) echo unknown; return 0 ;; esac
+  mp_i=0; while [ "$mp_i" -lt 40 ]; do sh -c ':'; mp_i=$((mp_i + 1)); done
+  mp_t1=$(date +%s%N); mp_i=0
+  while [ "$mp_i" -lt 40 ]; do git --version >/dev/null 2>&1; mp_i=$((mp_i + 1)); done
+  mp_t2=$(date +%s%N)
+  echo "a start of sh takes $(( (mp_t1 - mp_t0) / 40000000 )) ms and a start of git $(( (mp_t2 - mp_t1) / 40000000 )) ms"
+}
 case "$1" in
   matrix) parts_matrix "$(class_parts "$2" "$rules")" ;;
   skipped)
@@ -30,6 +39,8 @@ case "$1" in
     cmd=$(class_parts all "$rules" | awk -F '\t' -v n="$2" '$1 == n { print $2; exit }')
     [ -n "$cmd" ] || { echo "no test part named $2 in scripts/ci/classes.txt" >&2; exit 2; }
     echo "Part $2: $cmd"
+    # A fixed small probe, so a slow machine is told from a slow test (time is never gated): 40 starts of sh and of git.
+    echo "Machine probe: $(machine_probe)"
     sh -c "$cmd" ;;
   all)
     export CI_FULL_RUN=yes

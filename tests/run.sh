@@ -4846,6 +4846,9 @@ eq "main's full run takes every part, with its command" "4 sh scripts/ci/line-en
 eq "a project with no parts lines builds no matrix" '[]' "$(parts_matrix "$(class_parts 'app ci other' "$(grep -v '^!parts' "$pj_fx/classes.txt")")")"
 eq "a name given twice runs once" '["a"]' "$(parts_matrix "$(class_parts 'x y' "$(printf '!parts x a=one\n!parts y a=two')")")"
 eq "the template's classes.txt has no parts, so a new project runs as before" '[]' "$(parts_matrix "$(class_parts other "$(cat "$root/templates/scripts/ci/classes.txt")")")"
+mp_f=$(mktemp); sed -n '/^machine_probe()/,/^}/p' "$root/templates/scripts/ci/test-parts.sh" > "$mp_f"
+eq "the probe says what a start of sh and of git cost, in milliseconds" "yes" "$(sh -c '. "$1"; machine_probe' sh "$mp_f" | grep -Eq '^a start of sh takes [0-9]+ ms and a start of git [0-9]+ ms$' && echo yes)"
+eq "a part prints the probe before its tests, so a slow machine is told from a slow test" "1" "$(grep -c 'echo "Machine probe: ' "$root/templates/scripts/ci/test-parts.sh")"
 eq "test-parts.sh, the classify step and the tests job are in the template" "2 1 1" "$(grep -c 'test-parts.sh matrix' "$root/templates/.github/workflows/ci.yml") $(grep -c "fromJSON(needs.classify.outputs.parts || needs.gate.outputs.parts || '\[\]')" "$root/templates/.github/workflows/ci.yml") $(grep -cx 'scripts/ci/test-parts.sh' "$root/templates/OWNED.txt")"
 pj_ci="$root/templates/.github/workflows/ci.yml"
 pj_tests=$(awk '$0 == "  tests:" {f=1; next} /^  [a-z-]*:$/ {f=0} f' "$pj_ci")
@@ -5864,7 +5867,7 @@ eq "a choice that starts with another word is not reading" "one" "$(printf 'Shou
 # The words of an ask in the shape, held to what a builder who is not technical can answer (Maya's rooftop-garden app).
 ap_fx="$fx/ask-plain"
 ap_cases=$(grep -v '^#' "$ap_fx/checks.txt" | tr -d '\r')
-eq "the plain-words list has its cases" "8" "$(printf '%s\n' "$ap_cases" | grep -c .)"
+eq "the plain-words list has its cases" "10" "$(printf '%s\n' "$ap_cases" | grep -c .)"
 printf '%s\n' "$ap_cases" | while read -r ap_name ap_want; do
   [ -n "$ap_name" ] || continue
   eq "the plain-words case $ap_name reads $ap_want" "$ap_want" "$(ask_check < "$ap_fx/$ap_name.md")"
@@ -6310,6 +6313,12 @@ eq "a comment that is not a setup step is left alone, whatever it says" "" "$(un
 cm_ck=$(mktemp)
 printf 'Instructions: Update the token.\n1. Add Checks: Read.\n' > "$cm_ck"
 eq "the drive's comment script refuses to post such a step, in the builder's words" "yes" "$(comment_refusal "$cm_ck" | grep -q 'does not offer on a fine-grained token' && echo yes)"
+# Instructions say why first and never leave a command without words (Maya's rooftop-garden app).
+cm_ip=$(mktemp -d); mkdir -p "$cm_ip/scripts/ci"; cp "$root/templates/scripts/ci/ask-lib.sh" "$cm_ip/scripts/ci/"
+eq "Instructions with no opening sentence are refused, with the reason in plain words" "yes" "$(cd "$cm_ip" && comment_refusal "$fx/ask-plain/instructions-no-reason.md" | grep -q 'no plain sentence saying what this turns on' && echo yes)"
+eq "Instructions with a command that has no words of its own are refused" "yes" "$(cd "$cm_ip" && comment_refusal "$fx/ask-plain/instructions-bare-command.md" | grep -q 'command with no words of its own' && echo yes)"
+eq "Instructions with an opening sentence and a worded command are posted" "" "$(cd "$cm_ip" && comment_refusal "$fx/ask/instructions.md")"
+eq "a long command in its own block is not a bare command" "instructions" "$(printf 'Instructions: Start the hub\n\nThis starts the soil sensors so the frost alert can warn you tonight.\n\n1. Run this in a terminal in your project folder, which connects every bed to the hub:\n\n```\nnpx sensor-hub install --bed herbs --network rooftop --alert frost --notify phone --retries 5 --quiet\n```\n\n2. To tell it worked, open the herb bed page and look for Connected.\n' | ask_check)"
 eq "a back-to-Ready note after the ask means no question is open" "yes" "$(ask_answered '- q r')"
 eq "an ask after a back-to-Ready note is open again" "no" "$(ask_answered 'q r q')"
 eq "plan reads the back-to-Ready note in the answered reading" "1" "$(grep -c 'Bb\]ack to Ready' "$root/scripts/drive/ask-gate-lib.sh")"
