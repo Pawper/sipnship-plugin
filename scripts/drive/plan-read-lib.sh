@@ -136,3 +136,22 @@ audit_last_line() {
 # One progress line on stderr as the plan reads, so a tick that watches the clock can tell a
 # slow plan from a hung one: the proposal itself is printed only at the end, on stdout.
 plan_say() { printf 'plan: %s\n' "$1" >&2; }
+# plan_stage NAME: where the plan is, with the seconds it has run, on its error stream, so a run that stops answering shows the stage it stopped in (#1794).
+plan_stage() { printf 'plan: stage %s, %ss in\n' "$1" "${SECONDS:-0}" >&2; }
+
+# queue_state_of GLOB: none without a queue log, else stale or recent by the newest log's age and last line.
+queue_state_of() {
+  qs_state=none
+  if [ -n "$1" ]; then
+    qs_newest=""; qs_m=0
+    for qs_f in $1; do
+      [ -f "$qs_f" ] || continue
+      qs_t=$(stat -c %Y "$qs_f" 2>/dev/null || stat -f %m "$qs_f" 2>/dev/null || echo 0)
+      if [ "$qs_t" -gt "$qs_m" ]; then qs_m=$qs_t; qs_newest=$qs_f; fi
+    done
+    if [ -n "$qs_newest" ]; then
+      if [ "$(queue_is_stale "$qs_m" "$(date +%s)" "$(tail -n 1 "$qs_newest")")" = yes ]; then qs_state=stale; else qs_state=recent; fi
+    fi
+  fi
+  printf '%s\n' "$qs_state"
+}

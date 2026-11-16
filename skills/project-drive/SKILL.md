@@ -242,6 +242,11 @@ The goal lines and what each means:
   Keep the brief in a file and the prompt short: name the issue, the worktree and the pull request to open, and
   point at the brief file ("read your brief first and follow it"). The agent-model hook reads such a prompt as a
   unit of work, never a lookup, so `dispatchModel` is allowed for it whatever its length.
+  The brief also says: an agent that builds only part of an issue, or finds its part already landed or in another
+  area, leaves one comment on the issue with a line of its own, `Left: <what is still to build> | areas: <area names>`;
+  the plan plans the issue from that line (the areas file names the areas) instead of from its whole body, and an
+  issue a merged pull request worked on with no such line is marked "partly landed" on its proposal line, so a
+  reader confirms what is left before a runner is taken.
   The plan groups ready issues by the files they are guessed to touch (the paths and specs the body names,
   the project's mocks map, and the files past work on the same spec changed). `dispatch 12 14` with a
   third column "Why together: both change ..." is a bundle: one agent, one worktree, one pull request that

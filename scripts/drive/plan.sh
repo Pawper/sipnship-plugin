@@ -47,6 +47,7 @@ here=$(dirname "$0")
 . "$here/rank-lib.sh"
 . "$here/pr-read-lib.sh"
 . "$here/owner-lib.sh"
+. "$here/left-lib.sh"
 
 # No GitHub call waits for ever (#1794): a call that has not answered in PLAN_GH_SECONDS (120) is stopped, the plan
 # names it on its error stream, and reads what that call would have told as not known, as for any failed call.
@@ -141,21 +142,11 @@ done >> "$tmp"
 # The audit issue's latest comment: one extra call, skipped with --fast.
 if [ "$fast" = no ]; then audit_last_line "$facts" >> "$tmp"; fi
 
-queue_state=none
-if [ -n "$queue_glob" ]; then
-  newest=""; newest_m=0
-  for f in $queue_glob; do
-    [ -f "$f" ] || continue
-    m=$(stat -c %Y "$f" 2>/dev/null || stat -f %m "$f" 2>/dev/null || echo 0)
-    if [ "$m" -gt "$newest_m" ]; then newest_m=$m; newest=$f; fi
-  done
-  if [ -n "$newest" ]; then
-    if [ "$(queue_is_stale "$newest_m" "$(date +%s)" "$(tail -n 1 "$newest")")" = yes ]; then queue_state=stale; else queue_state=recent; fi
-  fi
-fi
+queue_state=$(queue_state_of "$queue_glob")
 batch_pr=$(open_batch_pr); [ -n "$batch_pr" ] && queue_state="batch $batch_pr"
 printf 'queue\t%s\n' "$queue_state" >> "$tmp"
 
+plan_stage "board read"
 snapshot=$(cat "$tmp")
 # Every open pull request keeps moving (pr-read-lib.sh): its state, red count and busy flag are overlaid on the snapshot.
 read_open_pull_requests
@@ -165,6 +156,7 @@ read_open_pull_requests
 # summaries that are current count.
 extra=""
 # The drive issue's comments, read once: the started round's units and the time it started.
+plan_stage "pull requests read"
 drive_line=$(drive_issue_line)
 drive_comments=$(read_drive_comments "$drive_line")
 if [ -f .scratch/board/digest.tsv ] && [ -f "$here/../board/board-lib.sh" ]; then
@@ -190,6 +182,7 @@ extra=$(printf '%s\n%s\n' "$extra" "$(unasked_goals "$facts" "$here/../../templa
 extra=$(drop_standing_goals "$extra" "$facts")  # the drive and audit issues are never proposed as work or as a question (#1845)
 
 # How many agents may work at once is what GitHub's registered runners say: online and not busy, less one kept for the queue.
+plan_stage "answers and asks read"
 listing=$(gh api 'repos/{owner}/{repo}/actions/runners?per_page=100' --jq '.runners[] | [.status, (.busy | tostring)] | @tsv' 2>/dev/null | tr -d '\r')
 runners_line=$(agent_runners "$listing" "$runners_cap")
 machines=no
@@ -209,6 +202,7 @@ fi
 # A held pull request whose question has been answered is said, so nobody reads the answer as the hold's release.
 held_answered=$(held_answered_lines "$pull_links")
 [ -z "$held_answered" ] || printf '%s\n' "$held_answered"
+plan_stage "stale issues checked"
 units_per_round=$(setting "$settings" unitsPerRound)
 aside_after=$(setting "$settings" setAsideAfterReds)
 MAINFIX_ISSUES=$(mainfix_numbers "$facts"); export MAINFIX_ISSUES  # ready fixes for a failure on main lead (rank-lib.sh)
@@ -216,10 +210,11 @@ round=$(propose_round "$snapshot" "$runners" "$max_agents" "$aside_after")
 # Plan the ready issues by the files they touch: overlapping guesses become
 # one bundle (one agent, one pull request), disjoint ones stay apart, and an
 # issue touching files a running issue touches is held, naming it.
+plan_stage "round proposed"
 mocks_text=""; [ -f scripts/ci/mocks.txt ] && mocks_text=$(cat scripts/ci/mocks.txt)
 areas_text=""; [ -f .claude/areas.txt ] && areas_text=$(cat .claude/areas.txt)
 past=$(past_spec_files "$(git log -n 300 --name-only --format='@@ %s' main 2>/dev/null || git log -n 300 --name-only --format='@@ %s' 2>/dev/null)")
-guesses=""; running=""
+guesses=""; running=""; left_reads=0
 # A ready issue that says it comes after another open one is held, naming what it waits on, read afresh each run.
 reasons=$(hold_reasons "$facts")
 # An open pull request that already closes a Ready issue means no agent is started on it again, held or batched (stale-lib.sh).
@@ -238,7 +233,7 @@ while IFS="$us" read -r kind num title a b c d e; do
     ready)
       case "$(printf '%s\n' "$snapshot" | awk -F'\t' -v n="$num" '$1 == "issue" && $2 == n { print $5 }')" in yes) continue ;; esac
       printf '%s\n' "$reasons" | grep -q "^hold	$num	" && continue
-      g=$(guess_files "$title $c" "$mocks_text" "$past"); [ -n "$g" ] || g=$(title_area_files "$title $c" "$areas_text")
+      plan_ready_guess  # sets g and title; an issue a merged pull request worked on is planned from what is left (left-lib.sh)
       guesses="${guesses}${num}${tab}${title}${tab}${g}
 " ;;
     in-progress)
@@ -269,6 +264,7 @@ if [ -n "$guesses" ] || [ -n "$reasons" ]; then
   round=$(lead_main_fixes "$round")  # the fix for a failure on main opens the proposal and the approval never holds it behind the round it blocks (rank-lib.sh)
 fi
 # A project whose queue lands green work by itself: rely on it; propose one drain only when green work has sat 15 minutes.
+plan_stage "ready issues placed"
 green_prs=$(printf '%s\n' "$snapshot" | awk -F'\t' '$1 == "pr" && $4 == "green" && $5 == "mergeable" && $8 != "yes" { print $2 }')
 runs=""
 if [ -f scripts/ci/merge-queue.sh ] && [ -n "$green_prs" ]; then
@@ -286,6 +282,7 @@ round=$(add_deploy "$round" "$(deploy_proposal)")
 round=$(quiet_declined_goals "$round" "$facts" .scratch/drive/declined.tsv); extra=$(quiet_declined_goals "$extra" "$facts" .scratch/drive/declined.tsv)
 [ -z "$extra" ] || round=$(add_owner_goals "$round" "$extra" "$facts" .scratch/drive/ask-fix.txt)  # an ask-fix the drive already tried stays a hold (ask-fix-seen.sh)
 round=$(say_every_pr "$round" "$snapshot")  # every open pull request has a line, whatever its checks say
+plan_stage "landing, release and deploy read"
 number_proposal "$round"
 # Auto Drive, from the drive issue's label drive:auto: one REST call. On is a
 # standing approval; off, the proposal is posted and waits for a reply.

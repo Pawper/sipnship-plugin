@@ -6186,7 +6186,7 @@ eq "with a unit running, an issue whose area is unknown is a hold that says so, 
 eq "with nothing running it passes as it came" "$da_unit" "$(unplaced_holds "$da_unit" "$da_nopath" '' "$da_titles")"
 da_mixed=$(printf '501\tTidy up the readme\t\n402\tWater the beds on a timer\tsrc/water/timer.ts\n')
 eq "an issue with files is left alone beside it" "unit${da_t}402" "$(unplaced_holds "$(plan_units "$da_mixed" '')" "$da_mixed" "$(printf '301\twatering\n')" "$da_titles" | grep '^unit' | cut -f1,2)"
-eq "plan.sh places by title and holds the unplaced" "1 1" "$(grep -c 'title_area_files "$title $c"' "$root/scripts/drive/plan.sh") $(grep -c 'unplaced_holds "$units"' "$root/scripts/drive/plan.sh")"
+eq "plan.sh places by title and holds the unplaced" "1 1" "$(grep -c 'title_area_files "$title $c"' "$root/scripts/drive/left-lib.sh") $(grep -c 'unplaced_holds "$units"' "$root/scripts/drive/plan.sh")"
 # Plugin and CI work is one unit, however each issue names its files or speaks of them.
 pb_guesses=$(printf '1437\tFix the plan\t%s\n1431\tFix the round\t%s\n1440\tFix the summary\t%s\n' "$(guess_files 'Where: plugin/scripts/drive/plan.sh' '' '')" "$(guess_files 'Where: plugin/tests/run.sh and plugin/scripts/drive/round-lib.sh' '' '')" "$(guess_files 'The drive'"'"'s plan says a summary is due' '' '')")
 eq "two plugin issues naming different plugin files, and one that only speaks of the drive's plan, are one unit" "unit${da_t}1437 1431 1440${da_t}Fix the plan | Fix the round | Fix the summary${da_t}all 3 are plugin or CI work, which shares one test suite" "$(plan_units "$pb_guesses" '' | cut -f1-4)"
@@ -6310,7 +6310,7 @@ specs/010-work/" "$(changed_paths "$nb_p")"
 eq "a plugin issue keeps its plugin and CI paths" "plugin/scripts/drive/plan.sh
 scripts/ci/hotspots.txt" "$(changed_paths "$(printf 'plugin/scripts/drive/plan.sh\nscripts/ci/hotspots.txt')")"
 eq "so a screen issue is not bundled with the drive scripts" "2" "$(plan_units "$(printf '1\tScreen\t%s\n2\tDrive fix\tplugin/scripts/drive/plan.sh\n' "$(guess_files 'Rows: packages/web/src/work-rows.ts, limits in scripts/ci/hotspots.txt' '' '')")" '' | grep -c '^unit')"
-eq "plan.sh places an issue by its title and the start of its body" "1" "$(grep -c 'title_area_files "$title $c"' "$root/scripts/drive/plan.sh")"
+eq "plan.sh places an issue by its title and the start of its body" "1" "$(grep -c 'title_area_files "$title $c"' "$root/scripts/drive/left-lib.sh")"
 
 section 'the drive reads every open pull request from its own facts (drive)'
 . "$root/scripts/drive/plan-green-lib.sh"
@@ -6571,6 +6571,29 @@ eq "the script says ok when the check is off" "ok" "$(WORKTREE_ACCESS_CHECK=off 
 eq "approval.sh holds the dispatches through the check" "1" "$(grep -c 'hold_no_worktree "$approved"' "$root/scripts/drive/approval.sh")"
 eq "the skill tells the drive to check first" "1" "$(grep -c 'Check the worktrees folder before any agent starts' "$root/skills/project-drive/SKILL.md")"
 eq "the skill names the held line and the tidy of ended worktrees" "1 1" "$(grep -c "held N N: green, waiting for the builder's read" "$root/skills/project-drive/SKILL.md") $(grep -c 'Tidy ended worktrees without being asked' "$root/skills/project-drive/SKILL.md")"
+
+section 'the plan reads what is left of a partly landed issue (drive)'
+. "$root/scripts/drive/left-lib.sh"
+lf_settle='Pull request #12 merged without closing this issue, so it is back to Ready; nobody is on it now.'
+lf_tab=$(printf '\t')
+eq "an issue no merged pull request worked on says nothing" "" "$(left_comments_say 'Watering schedule shows the wrong day')"
+eq "a merged pull request with no note says partly landed" "partly" "$(left_comments_say "Started on the rooftop sensors\\n$lf_settle")"
+eq "a note in the fixed form says what is left and where" "left${lf_tab}the soil probe page${lf_tab}plugin, ci" "$(left_comments_say "$lf_settle
+Done the sensors.\\nLeft: the soil probe page | areas: plugin, ci")"
+eq "a note with no areas still says what is left" "left${lf_tab}the soil probe page${lf_tab}" "$(left_comments_say "$lf_settle
+Left: the soil probe page")"
+eq "the newest note wins" "left${lf_tab}the planter map${lf_tab}plugin" "$(left_comments_say "Left: the soil probe page | areas: ci
+Left: the planter map | areas: plugin")"
+eq "a pull request merged after the note makes it partly landed again" "partly" "$(left_comments_say "Left: the soil probe page | areas: ci
+$lf_settle")"
+eq "a title says what is left, or that part landed, or nothing" "Water the beds (left: the soil probe page)|Water the beds (partly landed; a reader confirms what is left)|Water the beds" "$(left_title 'Water the beds' "left${lf_tab}the soil probe page${lf_tab}plugin")|$(left_title 'Water the beds' partly)|$(left_title 'Water the beds' '')"
+lf_areas='# areas
+plugin          plugin/
+ci              scripts/ .github/
+design-system   design/tokens.json'
+eq "a note's areas become the first path of each area" "plugin/,scripts/" "$(left_areas_files "left${lf_tab}x${lf_tab}Plugin, CI" "$lf_areas")"
+eq "a note with no areas, or a partly landed issue, places nothing" "" "$(left_areas_files "left${lf_tab}x${lf_tab}" "$lf_areas")$(left_areas_files partly "$lf_areas")"
+eq "the plan reads the note once per ready issue, and the skill tells agents to leave it" "1 1 1" "$(grep -c 'left_say=$(left_comments_say' "$root/scripts/drive/left-lib.sh") $(grep -c 'Left: <what is still to build> | areas: <area names>' "$root/skills/project-drive/SKILL.md") $(grep -c 'plan_stage "board read"' "$root/scripts/drive/plan.sh")"
 
 # --- end of blocks: the summary, kept in every part.
 eq "no test wrote into the checkout's own queue state" "$queue_picture_before" "$([ "$queue_picture_before" = skipped ] && echo skipped || queue_picture)"
