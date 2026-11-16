@@ -19,6 +19,7 @@
 # Needs GH_TOKEN and actions: read (checks: read for "run", actions: write
 # for "cancel").
 here=$(dirname "$0")
+. "$here/run-lib.sh"
 . "$here/failure-lib.sh"
 api="repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/${GITHUB_RUN_ATTEMPT:-1}/jobs"
 jobs=$(gh api "$api" --paginate --jq '.jobs[] | [.id, .name, .status, (.conclusion // ""), (.runner_name // ""), ([.steps[]? | select(.conclusion == "failure") | .name][0] // "")] | @tsv') || jobs=
@@ -30,7 +31,8 @@ case "$1" in
     step=$(printf '%s' "$me" | cut -f6)
     lines=
     slow=
-    [ -z "$2" ] || [ ! -f "$2" ] || { lines=$(tail -n 30 "$2"); slow=$(slow_say "$(cat "$2")"); }
+    # The failing tests named anywhere in the log lead the last lines (failure_lines), so a test that printed a lot after it failed is still named.
+    [ -z "$2" ] || [ ! -f "$2" ] || { lines=$(failure_lines "$(cat "$2")" "$(tail -n 30 "$2")"); slow=$(slow_say "$(cat "$2")"); }
     failure_summary "${name:-${GITHUB_JOB:-this job}}" "$step" "$lines" "$slow" >> "$summary"
     failure_annotation "${name:-${GITHUB_JOB:-this job}}" "$step" "$lines" "$slow" ;;
   cancel)

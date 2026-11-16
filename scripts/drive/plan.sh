@@ -45,6 +45,7 @@ here=$(dirname "$0")
 . "$here/release-lib.sh"
 . "$here/deploy-goal-lib.sh"
 . "$here/rank-lib.sh"
+. "$here/red-batch-lib.sh"
 . "$here/pr-read-lib.sh"
 . "$here/owner-lib.sh"
 . "$here/left-lib.sh"
@@ -271,6 +272,7 @@ if [ -f scripts/ci/merge-queue.sh ] && [ -n "$green_prs" ]; then
   runs=$(gh api "repos/{owner}/{repo}/actions/workflows/queue-drain.yml/runs?per_page=20" --jq '.workflow_runs[] | [.status, (.run_started_at // .created_at | fromdateiso8601), (.updated_at | fromdateiso8601), .path, .event, .head_branch] | @tsv' 2>/dev/null | tr -d '\r')
   ages=$(green_ages "$(printf '%s' "$green_prs" | tr '\n' ' ')" "$pr_shas" "$(date +%s)")  # each head commit's own check runs (plan-green-lib.sh), never a window of recent runs
   round=$(plan_landing "$round" "$ages" "$batch_pr" "$snapshot" "$runs")  # batch members and held pull requests never count toward a drain
+  round=$(red_batch_goals "$round" "$(cat .scratch/queue/red-batches.tsv 2>/dev/null)" "$pr_shas" "$(git rev-parse -q --verify origin/main 2>/dev/null)")  # no drain for pull requests whose last batch went red on the same commits and the same main; the failing test is named (red-batch-lib.sh)
   round=$(hold_drain_for_main "$round" "$MAINFIX_ISSUES")  # no drain while main fails the test a batch would fail on (rank-lib.sh)
 fi
 round=$(held_green_line "$round" "$snapshot")  # green pull requests held for the builder's read: one line of their own, never landing and never toward a drain
