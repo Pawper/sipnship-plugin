@@ -10,7 +10,8 @@
 #       how many worktrees, in which folders, how many have ended
 #   sh scripts/worktrees.sh audit [--days 3]
 #       name the worktrees that are detached, whose pull request merged or
-#       closed, or that have no open pull request and no commit in N days
+#       closed, or that have no open pull request and no commit in N days,
+#       and the leftover folders no worktree owns (move those aside, never delete)
 #   sh scripts/worktrees.sh prune [--apply] [--closed] [--branches] [--branch NAME]
 #       remove the clean worktrees of merged branches and their local
 #       branches; with --closed also those of closed pull requests, after
@@ -50,6 +51,7 @@ default_local=${default#origin/}
 step="listing worktrees"
 porcelain=$(git worktree list --porcelain)
 pairs=$(worktree_branches "$porcelain")
+all_pairs=$pairs
 count=$(printf '%s\n' "$pairs" | sed '/^$/d' | wc -l | tr -d ' ')
 # A locked worktree (a running agent's) and the one this script runs in are never cleared or named.
 own=$(git rev-parse --show-toplevel 2>/dev/null || true)
@@ -162,6 +164,8 @@ case "$cmd" in
     echo "$count worktrees besides the main checkout: $m of merged branches, $c of closed pull requests, $d detached."
     worktree_places "$pairs" | awk -F'\t' '{ printf "  %s in %s\n", $1, $2 }'
     [ $((m + c + d)) -eq 0 ] || echo "Run: sh scripts/worktrees.sh audit   to name them, then prune."
+    lo=$(leftover_folders "$all_pairs" | sed '/^$/d' | wc -l | tr -d ' ')
+    [ "$lo" -eq 0 ] || echo "$lo leftover folders are no worktree any more (git does not list them); sh scripts/worktrees.sh audit names them, and they are moved aside, never deleted."
     exit 0
     ;;
   audit)
@@ -171,6 +175,7 @@ case "$cmd" in
     dates=$(git for-each-ref --format='%(refname:short)%09%(committerdate:unix)' refs/heads 2>/dev/null)
     found=0
     for p in $(detached_worktrees "$pairs"); do echo "detached: $p (commits here are on no branch; make one with git -C PATH switch -c NAME)"; found=1; done
+    leftover_folders "$all_pairs" | sed '/^$/d' | sed 's/^/leftover: /'
     prunable_worktrees "$pairs" "$merged" | sed '/^$/d' | sed 's/^/merged: /'
     prunable_worktrees "$pairs" "$closed_heads" | sed '/^$/d' | sed 's/^/closed: /'
     printf '%s\n' "$pairs" | awk -F'\t' -v heads="$open_heads" -v dates="$dates" -v now="$now" -v days="$days" -v ended="$merged

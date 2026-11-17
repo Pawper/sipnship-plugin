@@ -1249,6 +1249,11 @@ eq "a worktree older than the newest ended pull requests is looked up by its bra
 eq "no ended pull requests read at all: every branch but the default is looked up, once" "beds
 old-watering
 shed" "$(unmatched_branches "$um_pairs" '' '' main)"
+lf_dir=$(mktemp -d)
+mkdir -p "$lf_dir/beds" "$lf_dir/old-bed" "$lf_dir/linked"
+: > "$lf_dir/linked/.git"
+eq "a folder beside the worktrees that no worktree owns is a leftover; a registered one and one with a link are not" "$lf_dir/old-bed" "$(leftover_folders "$(printf '%s/beds\tbeds\n' "$lf_dir")")"
+eq "worktrees.sh names leftover folders on list and audit" "2" "$(grep -c 'leftover_folders "\$all_pairs"' "$root/templates/scripts/worktrees.sh")"
 eq "worktrees.sh looks the unmatched ones up on audit and prune, over REST" "1 0" "$(grep -c 'unmatched_branches "\$pairs"' "$root/templates/scripts/worktrees.sh") $(grep -c '^ *[a-z_]*=\$(gh pr \|  gh pr ' "$root/templates/scripts/worktrees.sh")"
 eq "merged local branches with no worktree" "old-fix" "$(mergeable_local_branches 'main
 retries

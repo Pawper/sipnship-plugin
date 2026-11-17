@@ -46,6 +46,22 @@ worktree_places() {
     END { for (p in c) printf "%d\t%s\n", c[p], p }' | sort -rn
 }
 
+# leftover_folders PATH_BRANCH
+# Folders beside the registered worktrees that no worktree owns: no .git
+# inside, and not in the list. They are what a removal that stopped on an
+# installed node_modules leaves behind; git no longer lists them.
+leftover_folders() {
+  printf '%s\n' "$1" | tr '\\' '/' | awk -F'\t' 'NF >= 1 && $1 != "" { p = $1; sub(/\/[^\/]*$/, "", p); print p }' | sort -u | while IFS= read -r dir; do
+    [ -d "$dir" ] || continue
+    for f in "$dir"/*/; do
+      f=${f%/}
+      [ -d "$f" ] || continue
+      [ ! -e "$f/.git" ] || continue
+      printf '%s\n' "$1" | tr '\\' '/' | awk -F'\t' -v f="$f" '$1 == f { found = 1 } END { exit !found }' || printf '%s\n' "$f"
+    done
+  done
+}
+
 # dirty_non_scratch PORCELAIN [SCRATCH]
 # The same test the plugin'\''s stop hook uses: paths from git status
 # --porcelain that are modified or untracked and not inside the scratch
