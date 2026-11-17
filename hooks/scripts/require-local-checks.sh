@@ -51,8 +51,18 @@ top=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
 branch=$(git symbolic-ref -q --short HEAD 2>/dev/null)
 case "$branch" in ''|main|master) exit 0 ;; esac
 
-out=$(cd "$top" && sh scripts/ci/checks-local.sh 2>&1) && exit 0
+out=$(cd "$top" && sh scripts/ci/checks-local.sh 2>&1)
+rc=$?
+[ "$rc" -eq 0 ] && exit 0
 rule_gate quick-checks
+
+# Exit 3: none failed, but the run ran out of time. A push is never let
+# through unchecked, so it is refused in words that say it was not checked.
+if [ "$rc" -eq 3 ]; then
+  printf '%s\n' "Blocked the push because its quick checks could not finish in time, so this change was not checked (nothing failed). Push again when the machine is quieter, or set CHECKS_LOCAL_SECONDS higher (sh scripts/ci/checks-local.sh runs them by hand):" >&2
+  printf '%s\n' "$out" >&2
+  exit 2
+fi
 
 printf '%s\n' "Blocked the push because the quick checks CI runs on a pull request fail here, and would fail there too. Fix what they say, commit, and push again (sh scripts/ci/checks-local.sh runs them by hand):" >&2
 printf '%s\n' "$out" >&2

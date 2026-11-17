@@ -5915,7 +5915,10 @@ eq "the hook is registered in hooks.json" "1" "$(grep -c 'require-local-checks.s
 # A check that runs out of time is not a failure: named apart, and the push goes on.
 qc_slow=$(cd "$qc" && git checkout -q fine && CHECKS_LOCAL_SECONDS=0 CHECKS_LOCAL_OFFLINE=1 sh scripts/ci/checks-local.sh 2>&1; echo "rc=$?")
 eq "steps that ran out of time are named as not a failure, in their own lines" "yes" "$(printf '%s\n' "$qc_slow" | grep -q '^Did not finish in 0 s (not a failure): ' && echo yes)"
-eq "and are never listed as failed, and never held back" "0 rc=0" "$(printf '%s\n' "$qc_slow" | grep -c '^Failed: ') $(printf '%s\n' "$qc_slow" | tail -n 1)"
+eq "and are never listed as failed, but say the change was not checked (exit 3)" "0 1" "$(printf '%s\n' "$qc_slow" | grep -c '^Failed: ') $(printf '%s\n' "$qc_slow" | grep -c '^Not checked: ')"
+eq "the run exits 3 for a timeout" "3" "$(cd "$qc" && CHECKS_LOCAL_SECONDS=0 CHECKS_LOCAL_OFFLINE=1 sh scripts/ci/checks-local.sh >/dev/null 2>&1; echo $?)"
+qc_hold=$(CHECKS_LOCAL_SECONDS=0 qc_push fine)
+eq "the hook refuses a push whose checks ran out of time, saying it was not checked" "rc=2 1" "$(printf '%s\n' "$qc_hold" | head -n 1) $(printf '%s\n' "$qc_hold" | grep -c 'so this change was not checked')"
 eq "the old wording for a timeout is gone" "0" "$(printf '%s\n' "$qc_slow" | grep -c 'still running after')"
 
 section 'the suite runs the parts a change touches, and says where it is'

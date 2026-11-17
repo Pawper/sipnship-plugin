@@ -21,10 +21,12 @@
 # budget, and its failure ends the run; the other steps run side by side
 # and the whole run gives up after CHECKS_LOCAL_SECONDS (default 60). A step
 # that ran out of time is named apart from the failures, as "did not finish
-# in 60 s (not a failure)": a slow machine is not a broken change, and the
-# push goes ahead on timeouts alone.
-# Exit: 0 when every step that ran passed or only ran out of time, 1 when one
-# failed.
+# in 60 s (not a failure)": a slow machine is not a broken change. But a
+# push is never let through unchecked: when a step did not finish and none
+# failed, the run says the change was not checked and exits 3, and the hook
+# refuses the push in those words.
+# Exit: 0 when every step passed, 1 when one failed, 3 when none failed but
+# a step did not finish (not checked).
 top=$(git rev-parse --show-toplevel 2>/dev/null) || { echo "checks-local: not inside a git repository." >&2; exit 1; }
 cd "$top" || exit 1
 wf=.github/workflows/ci.yml
@@ -244,7 +246,8 @@ if [ "$failed" -gt 0 ]; then
   exit 1
 fi
 if [ "$timed_out" -gt 0 ]; then
-  printf 'Quick checks: %s of %s steps did not finish in %s s (not a failure), none failed (%ss).\n' "$timed_out" "$n" "$budget" "$took"
+  printf 'Not checked: %s of %s quick checks did not finish in %s s. None failed, but a push is not let through unchecked (%ss).\n' "$timed_out" "$n" "$budget" "$took"
+  exit 3
 else
   printf 'Quick checks passed: %s steps in %ss.\n' "$n" "$took"
 fi
