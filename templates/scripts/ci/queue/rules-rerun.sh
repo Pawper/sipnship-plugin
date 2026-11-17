@@ -57,6 +57,25 @@ run_unfinished() {
     END { print (u && !bad) ? "yes" : "no" }'
 }
 
+# runner_went_away JOBS [SUMMARY]: "yes" when every job that did not pass
+# was ended from outside: it failed with no step of its own marked failed (a
+# machine restart or a lost runner leaves the job "failure" with the running
+# step never finished) or was cancelled, and at least one was of the first
+# kind. A failed test names its step, so it is never this. The summary job
+# is not read.
+runner_went_away() {
+  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v sum="${2:-CI passed}" '
+    NF == 0 || $1 == sum { next }
+    {
+      c = tolower($2)
+      if (c == "" || c == "success" || c == "skipped" || c == "neutral") next
+      if ($3 != "") { bad = 1; next }
+      if (c == "failure" || c == "timed_out") gone = 1
+      else if (c != "cancelled" && c != "canceled") bad = 1
+    }
+    END { print (gone && !bad) ? "yes" : "no" }'
+}
+
 # rerun_seen RECORDS HEAD [MARK]
 # RECORDS is the drain's own record of past re-runs, "head<TAB>mark" per
 # line. Print "same" when HEAD was re-run or looked at with this MARK,
@@ -88,6 +107,14 @@ red_rerun() {
     case $(rerun_seen "$2" "$3" "$4") in
       new) echo "rerun the run did not finish, so it is run once more" ;;
       *) echo "skip the run did not finish and was run once more already" ;;
+    esac
+    return
+  fi
+  # A job whose runner went away mid-step is not a failed test: run once more, like a cancelled one.
+  if [ "$rr_rule" = no ] && [ "$(runner_went_away "$1" "${QUEUE_SUMMARY_CHECK:-CI passed}")" = yes ]; then
+    case $(rerun_seen "$2" "$3" "$4") in
+      new) echo "rerun a runner went away mid-step, so the job is run once more" ;;
+      *) echo "skip a runner went away mid-step and the job was run once more already" ;;
     esac
     return
   fi

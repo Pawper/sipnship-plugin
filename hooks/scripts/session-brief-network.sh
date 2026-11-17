@@ -27,8 +27,8 @@ s_board() {
     if [ -n "$facts" ]; then
       lines=$(pr_brief_lines "$facts" 10)
       if [ -n "$lines" ]; then add "Open pull requests:"; add "$lines"; fi
-      # A red change nobody has touched for 30 minutes has no agent on it.
-      reds=$(unattended_red_lines "$facts" "$(date +%s)" 30)
+      # A red change nobody has touched for ten minutes has no agent on it, and is named as a stall.
+      reds=$(unattended_red_lines "$facts" "$(date +%s)" 10)
       [ -z "$reds" ] || add "$reds"
     else
       add "Open pull requests: (unavailable)"

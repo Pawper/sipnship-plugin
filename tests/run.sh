@@ -541,6 +541,9 @@ eq "a UTC stamp becomes epoch seconds" "1793836800" "$(iso_epoch 2026-11-05T00:0
 eq "not a stamp, nothing" "" "$(iso_epoch yesterday)"
 eq "a red change untouched for 30 minutes has nobody on it; a recent or green one does not" "Red with nobody on it: #43 Seed catalog import (red, untouched 50 min); #44 Bed layout (red, untouched 120 min). The agent that built it has finished, and the queue does not re-run a failure from the change itself. Send an agent to fix it, or say it is set aside." "$(unattended_red_lines "$(cat "$fx/red-unattended-facts.tsv")" 1793836800 30)"
 eq "no red change, no line" "" "$(unattended_red_lines "$(cat "$fx/board-facts-dated.tsv")" 1793836800 30)"
+eq "the brief names a red change as a stall at ten minutes" "Red with nobody on it: #42 Watering schedule screen (red, untouched 20 min); #43 Seed catalog import (red, untouched 65 min); #44 Bed layout (red, untouched 135 min). The agent that built it has finished, and the queue does not re-run a failure from the change itself. Send an agent to fix it, or say it is set aside." "$(unattended_red_lines "$(cat "$fx/red-unattended-facts.tsv")" 1793837700 10)"
+eq "five minutes is not yet a stall" "Red with nobody on it: #43 Seed catalog import (red, untouched 50 min); #44 Bed layout (red, untouched 120 min). The agent that built it has finished, and the queue does not re-run a failure from the change itself. Send an agent to fix it, or say it is set aside." "$(unattended_red_lines "$(cat "$fx/red-unattended-facts.tsv")" 1793836800 10)"
+eq "the brief reads it at ten minutes" "1" "$(grep -c 'unattended_red_lines "\$facts" "\$(date +%s)" 10)' "$root/hooks/scripts/session-brief-network.sh")"
 eq "the handoff comment line says when, how long ago and where" "Last handoff, on the drive issue: written Thursday 4:00 PM (2 h ago). Read it first: https://github.com/maya/rooftop/issues/3#issuecomment-1" "$(handoff_comment_line "$(cat "$fx/handoff-comment-row.tsv")" 1793926800 'Thursday 4:00 PM')"
 eq "no handoff comment, no line" "" "$(handoff_comment_line '' 1793926800 'x')"
 eq "handoff head skips front matter" "The batch queue PR is open and waiting on one full run.
@@ -1983,6 +1986,34 @@ eq "the deploy line never says a number of drains it did not count" "0" "$(grep 
 eq "merging main in reuses GitHub's update-branch" "1" "$(sed -n '/^unstick_one()/,/^}/p' "$mq_all" | grep -c 'pulls/\$us_pr/update-branch')"
 eq "a clash with main is marked in its comment" "1" "$(sed -n '/^notify_conflict()/,/^}/p' "$mq_all" | grep -c 'unstick_mark clash')"
 
+section 'a stalled queue finds its own way back'
+# A drain that died, a hold that ran out and a job whose runner went away each left a green or red change waiting with nothing running (a restart on Tuesday left both).
+. "$root/templates/scripts/ci/batch-lib.sh"
+sl_fx="$root/tests/fixtures/queue-stall"
+eq "a drain that ended without finishing and left the lock is followed by another" "a drain ended without finishing and left the queue locked" "$(drain_due_reason "$(cat "$sl_fx/due-lock-left.tsv")")"
+eq "a last drain that was cancelled is followed by another" "the last drain was stopped before it finished" "$(drain_due_reason "$(cat "$sl_fx/due-last-cancelled.tsv")")"
+eq "a hold that ran out starts a drain" "a hold ran out and nothing started the drain that lands the change" "$(drain_due_reason "$(cat "$sl_fx/due-hold-ran-out.tsv")")"
+eq "a hold still running starts none" "" "$(drain_due_reason "$(cat "$sl_fx/due-hold-still-on.tsv")")"
+eq "a green change waiting twenty minutes with nothing running starts one" "1 change(s) have been green for 25 minutes with nothing running" "$(drain_due_reason "$(cat "$sl_fx/due-green-waiting.tsv")")"
+eq "a drain already running or queued means none is owed" "" "$(drain_due_reason "$(cat "$sl_fx/due-drain-running.tsv")")"
+eq "a drain that failed only to name what needs attention is not started again" "" "$(drain_due_reason "$(cat "$sl_fx/due-failed-needs-attention.tsv")")"
+eq "no facts, no drain" "" "$(drain_due_reason "")"
+eq "the hold's end is read from the published state" "1793984400" "$(drain_due_hold '{"holds":[{"number":188,"endsAt":"2026-11-06T17:00:00Z"}]}')"
+eq "no hold in the state reads 0" "0" "$(drain_due_hold '{"holds":[]}')"
+eq "only the open list counts green, never main" "1" "$(drain_due_green '{"main":{"state":"green"},"open":[{"number":4,"state":"green"},{"number":5,"state":"red"}],"checking":[]}')"
+# A job whose runner went away mid-step is told apart from a failed test and re-run once.
+tr_none=""
+tr_seen=$(printf 'aaa111\t100')
+eq "jobs killed by a restart are a runner that went away" "yes" "$(runner_went_away "$(cat "$sl_fx/jobs-restart-killed.tsv")")"
+eq "a failed test names its step and is not that" "no" "$(runner_went_away "$(cat "$sl_fx/jobs-test-failed.tsv")")"
+eq "a failed test beside a killed job is the code's" "no" "$(runner_went_away "$(cat "$sl_fx/jobs-restart-and-test.tsv")")"
+eq "the killed jobs are re-run once, on a head never looked at" "rerun a runner went away mid-step, so the job is run once more" "$(red_rerun "$(cat "$sl_fx/jobs-restart-killed.tsv")" "$tr_none" aaa111 100 no)"
+eq "and not again on the same head" "skip a runner went away mid-step and the job was run once more already" "$(red_rerun "$(cat "$sl_fx/jobs-restart-killed.tsv")" "$tr_seen" aaa111 100 no)"
+eq "a failed test is not re-run for it" "rerun one retry of a failure on a new commit" "$(red_rerun "$(cat "$sl_fx/jobs-test-failed.tsv")" "$tr_none" aaa111 100 no)"
+qd_live=$(grep -v '^ *#' "$root/templates/.github/workflows/queue-drain.yml")
+eq "a round-mate going red starts a drain, so the green ones are released at once" "2" "$(printf '%s\n' "$qd_live" | grep -c "github.event.workflow_run.conclusion == 'failure' || (startsWith")"
+eq "the frequent schedule asks whether a drain is owed, and the steps after it follow the answer" "1 1 4" "$(printf '%s\n' "$qd_live" | grep -c 'cron: "3,13,23,33,43,53 \* \* \* \*"') $(printf '%s\n' "$qd_live" | grep -c 'run: sh scripts/ci/queue/due.sh') $(printf '%s\n' "$qd_live" | grep -c "steps.due.outputs.skip != 'yes'")"
+
 section 'held steps, recorded on the pull request'
 . "$root/templates/scripts/ci/batch-lib.sh"
 hs_fx="$root/tests/fixtures/queue-held-steps"
@@ -2470,10 +2501,10 @@ qd_live=$(grep -v '^ *#' "$qd_wf")
 eq "the drain also starts when the CI workflow completes" "1 1" "$(printf '%s\n' "$qd_live" | grep -c '^  workflow_run:') $(printf '%s\n' "$qd_live" | grep -c '^    workflows: \[CI\]$')"
 eq "on completed only" "1" "$(printf '%s\n' "$qd_live" | grep -c '^    types: \[completed\]$')"
 eq "both jobs run for it only when a pull request's run finished" "2 2" "$(printf '%s\n' "$qd_live" | grep -c "github.event.workflow_run.event == 'pull_request'") $(printf '%s\n' "$qd_live" | grep -c "contains(fromJSON('\[\"failure\", \"cancelled\", \"timed_out\"\]'), github.event.workflow_run.conclusion)")"
-# A red or cancelled pull request run starts no drain (each took a runner to
+# A cancelled pull request run starts no drain (each took a runner to
 # be cancelled by the group); a green one does, and so does a batch's run
 # whatever it ended as, since only the drain finishes a batch. Never a skipped one.
-eq "a green run, or a batch's run ending, starts a drain; red, cancelled and skipped start none" "2 2 0" "$(printf '%s\n' "$qd_live" | grep -c "github.event.workflow_run.conclusion == 'success'") $(printf '%s\n' "$qd_live" | grep -c "startsWith(github.event.workflow_run.head_branch, 'batch-')") $(printf '%s\n' "$qd_live" | grep -c "skipped")"
+eq "a green or red run, or a batch's run ending, starts a drain; cancelled and skipped start none" "2 2 0" "$(printf '%s\n' "$qd_live" | grep -c "github.event.workflow_run.conclusion == 'success'") $(printf '%s\n' "$qd_live" | grep -c "startsWith(github.event.workflow_run.head_branch, 'batch-')") $(printf '%s\n' "$qd_live" | grep -c "skipped")"
 eq "the schedule and the manual start stay" "1 1" "$(printf '%s\n' "$qd_live" | grep -c 'cron: "7 \*/2 \* \* \*"') $(printf '%s\n' "$qd_live" | grep -c '^  workflow_dispatch:')"
 eq "the recent-drain skip applies to the schedule only, so a green check is never skipped" "1 1" "$(printf '%s\n' "$qd_live" | grep -c 'if \[ -n "\$last" \] && \[ "\${{ github.event_name }}" = schedule \]') $(printf '%s\n' "$qd_live" | grep -c 'if \[ "\${{ github.event_name }}" = schedule \]; then')"
 eq "the one-drain group still never cancels" "1 1" "$(printf '%s\n' "$qd_live" | grep -c '^  group: queue-drain$') $(printf '%s\n' "$qd_live" | grep -c 'cancel-in-progress: false')"
@@ -2550,7 +2581,7 @@ mv "$ap_dir" "$ap_dir.done" 2>/dev/null || true
 section 'the drain reads with its own token and merges with the queue token'
 qt_mq="$mq_all"
 eq "the workflow may read checks and statuses" "1 1" "$(printf '%s\n' "$qd_live" | grep -c '^  checks: read$') $(printf '%s\n' "$qd_live" | grep -c '^  statuses: read$')"
-eq "the drain steps read with the workflow's token and pass the queue token apart" "2 1" "$(printf '%s\n' "$qd_live" | grep -c '^          GH_TOKEN: \${{ github.token }}$') $(printf '%s\n' "$qd_live" | grep -c '^          QUEUE_MERGE_TOKEN: \${{ steps.app.outputs.token }}$')"
+eq "the drain steps (and the ask whether one is owed) read with the workflow's token and pass the queue token apart" "3 1" "$(printf '%s\n' "$qd_live" | grep -c '^          GH_TOKEN: \${{ github.token }}$') $(printf '%s\n' "$qd_live" | grep -c '^          QUEUE_MERGE_TOKEN: \${{ steps.app.outputs.token }}$')"
 eq "with no queue token the drain no longer stops; it lands with its own token" "0 1" "$(printf '%s\n' "$qd_live" | grep -c 'if \[ -z "\$QUEUE_MERGE_TOKEN" \]') $(printf '%s\n' "$qd_live" | grep -c "QUEUE_OWN_TOKEN:")"
 eq "the drain signs in as the queue App, then QUEUE_TOKEN, and asks for an identity token" "1 1 1" "$(printf '%s\n' "$qd_live" | grep -c 'queue-app-token.sh') $(printf '%s\n' "$qd_live" | grep -c '\[ -n "\$t" \] || t=\$QUEUE_TOKEN') $(printf '%s\n' "$qd_live" | grep -c '^  id-token: write$')"
 qt_dir=".scratch/qt-stub.$$"

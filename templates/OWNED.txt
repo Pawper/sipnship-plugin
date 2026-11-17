@@ -85,6 +85,8 @@ scripts/ci/queue/rules-deploy.sh
 scripts/ci/queue/rules-checkout.sh
 scripts/ci/queue/rules-place.sh
 scripts/ci/queue/rules-rescue.sh
+scripts/ci/queue/rules-due.sh
+scripts/ci/queue/due.sh
 scripts/ci/queue/rescue.sh
 scripts/ci/queue/wait.sh
 scripts/ci/run-lib.sh

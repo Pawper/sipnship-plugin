@@ -46,6 +46,9 @@ name: Queue drain
 on:
   schedule:
     - cron: "7 */2 * * *"
+    # The way back after a drain stopped short (a restart, a hold that ran out): cheap, asks
+    # queue/due.sh whether a drain is owed and ends in seconds when none is.
+    - cron: "3,13,23,33,43,53 * * * *"
   workflow_dispatch:
   # A pull request's CI run that finishes starts a drain at once, instead
   # of waiting for the next two-hourly one: green only, so it lands. A red
@@ -72,7 +75,7 @@ concurrency:
 
 jobs:
   drain:
-    if: ${{ vars.QUEUE_RUNS_ON != '' && !contains(vars.QUEUE_RUNS_ON, 'windows') && (github.event_name != 'workflow_run' || (github.event.workflow_run.event == 'pull_request' && (github.event.workflow_run.conclusion == 'success' || (startsWith(github.event.workflow_run.head_branch, 'batch-') && contains(fromJSON('["failure", "cancelled", "timed_out"]'), github.event.workflow_run.conclusion))))) }}
+    if: ${{ vars.QUEUE_RUNS_ON != '' && !contains(vars.QUEUE_RUNS_ON, 'windows') && (github.event_name != 'workflow_run' || (github.event.workflow_run.event == 'pull_request' && (github.event.workflow_run.conclusion == 'success' || github.event.workflow_run.conclusion == 'failure' || (startsWith(github.event.workflow_run.head_branch, 'batch-') && contains(fromJSON('["failure", "cancelled", "timed_out"]'), github.event.workflow_run.conclusion))))) }}
     runs-on: ${{ vars.QUEUE_RUNS_ON || 'self-hosted' }}
     timeout-minutes: 60
     defaults:
@@ -129,13 +132,23 @@ jobs:
         if: steps.recent.outputs.skip != 'yes'
         with:
           fetch-depth: 0
+      # On the frequent schedule only: is a drain owed (queue/due.sh)? Every
+      # other kind of run goes on. The steps below read its skip output.
+      - name: Ask whether a drain is owed
+        id: due
+        if: steps.recent.outputs.skip != 'yes'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          DUE_FREQUENT: ${{ github.event_name == 'schedule' && github.event.schedule != '7 */2 * * *' && 'yes' || 'no' }}
+        run: sh scripts/ci/queue/due.sh
       # The queue's own App (npx sipnship queue-identity): its installation
       # token is minted here with openssl, so no outside action holds the key.
       # Without the App the job uses QUEUE_TOKEN, and without that, the
       # workflow's own token.
       - name: Sign in as the queue
         id: app
-        if: steps.recent.outputs.skip != 'yes'
+        if: steps.recent.outputs.skip != 'yes' && steps.due.outputs.skip != 'yes'
         env:
           QUEUE_APP_ID: ${{ secrets.QUEUE_APP_ID }}
           QUEUE_APP_KEY: ${{ secrets.QUEUE_APP_KEY }}
@@ -156,7 +169,7 @@ jobs:
       # and the switches file differ, one pull request lands them (it asks the
       # queue to land it first). It leaves the checkout as it found it.
       - name: Land any rule switch that is waiting
-        if: steps.recent.outputs.skip != 'yes'
+        if: steps.recent.outputs.skip != 'yes' && steps.due.outputs.skip != 'yes'
         continue-on-error: true
         env:
           GH_TOKEN: ${{ steps.app.outputs.token || github.token }}
@@ -167,13 +180,13 @@ jobs:
           git config user.email "merge-queue@users.noreply.github.com"
           if [ -f scripts/ci/rules-sync.sh ]; then sh scripts/ci/rules-sync.sh; fi
       - name: Say so when a rebuild may not run here
-        if: steps.recent.outputs.skip != 'yes' && runner.environment == 'github-hosted'
+        if: steps.recent.outputs.skip != 'yes' && steps.due.outputs.skip != 'yes' && runner.environment == 'github-hosted'
         run: |
           if grep -qs '^[[:space:]]*rebuild:' scripts/ci/generated-paths.txt; then
             echo "::warning title=The rebuild runs on a hosted runner::scripts/ci/generated-paths.txt names a rebuild, and this drain runs on a hosted $RUNNER_OS runner. If the rebuild needs your machine (a JDK, Windows), set the repository variable QUEUE_RUNS_ON to that runner's label."
           fi
       - name: Drain the queue
-        if: steps.recent.outputs.skip != 'yes'
+        if: steps.recent.outputs.skip != 'yes' && steps.due.outputs.skip != 'yes'
         env:
           GH_TOKEN: ${{ github.token }}
           QUEUE_MERGE_TOKEN: ${{ steps.app.outputs.token }}
@@ -189,7 +202,7 @@ jobs:
           sh scripts/ci/merge-queue.sh --drain
 
   drain-windows:
-    if: ${{ (vars.QUEUE_RUNS_ON == '' || contains(vars.QUEUE_RUNS_ON, 'windows')) && (github.event_name != 'workflow_run' || (github.event.workflow_run.event == 'pull_request' && (github.event.workflow_run.conclusion == 'success' || (startsWith(github.event.workflow_run.head_branch, 'batch-') && contains(fromJSON('["failure", "cancelled", "timed_out"]'), github.event.workflow_run.conclusion))))) }}
+    if: ${{ (vars.QUEUE_RUNS_ON == '' || contains(vars.QUEUE_RUNS_ON, 'windows')) && (github.event_name != 'workflow_run' || (github.event.workflow_run.event == 'pull_request' && (github.event.workflow_run.conclusion == 'success' || github.event.workflow_run.conclusion == 'failure' || (startsWith(github.event.workflow_run.head_branch, 'batch-') && contains(fromJSON('["failure", "cancelled", "timed_out"]'), github.event.workflow_run.conclusion))))) }}
     runs-on: [self-hosted, "${{ vars.QUEUE_RUNS_ON || 'windows' }}"]
     timeout-minutes: 60
     defaults:

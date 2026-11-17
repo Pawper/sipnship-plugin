@@ -22,3 +22,4 @@ if [ -z "$bl_dir" ]; then echo "batch-lib.sh: the queue/ folder beside it was no
 . "$bl_dir/queue/rules-checkout.sh"
 . "$bl_dir/queue/rules-place.sh"
 . "$bl_dir/queue/rules-rescue.sh"
+. "$bl_dir/queue/rules-due.sh"

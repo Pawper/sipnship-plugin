@@ -1,0 +1,4 @@
+checks	success		
+tests (console)	failure		
+tests (beds)	failure	Run the beds part	FAIL the bed map
+CI passed	failure	Report	
