@@ -547,6 +547,26 @@ seconds (your loop skill's self-paced wake, or your cron tool with `recurring: f
 fires, run a new round. On a scheduled session the next tick already covers it, so do nothing. In the desktop
 app its own pull request watch reports a red check; the wake is for the green case.
 
+### A woken tick stays until its agents are done
+
+A tick the project's own runner starts (headless: `GITHUB_ACTIONS` is set and the session is no timed run) is
+one session, and a headless session kills the background agents it started ten minutes after its own turn ends,
+before they can push anything. So in that tick, and only there:
+
+1. Do not end the turn while an agent you started is still working. Each agent's finish arrives as a notice;
+   wait for them (no poll, no sleep loop) until every one has finished or the minute budget ends. The wake's
+   job allows 100 minutes; `maxMinutes` stays the cap. A session that stays open (a person's, the desktop's
+   timed run) needs none of this.
+2. A unit counts as started only once its agent has made its branch. Until then its dot says "starting", not
+   "agent on it": report it as `starting`, never as being worked. Read each started unit with
+   `wake_units_read` (`scripts/drive/wake-lib.sh`: the unit's dispatch time, its branch, its pull request, its
+   commits, whether its agent runs).
+3. A unit `wake_units_read` calls `restart` (no branch, commit or pull request, past ten minutes, no agent
+   running) goes back to Ready at this tick, first in the round, with the one line `wake_restart_comment`
+   says, not after two hours; its dot is never blue meanwhile.
+4. The report's last line is `wake_agents_left COUNT`, how many agents the tick left running when it ended
+   (none, when it waited).
+
 ## f. Report
 
 After a pursuit, one short block as a comment on the drive issue and in the session, nothing else written

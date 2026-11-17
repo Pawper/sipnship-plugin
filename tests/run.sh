@@ -6246,6 +6246,15 @@ eq "a request the drive still owes starts a tick with nothing approved" "start${
 eq "approved goals still say goals when requests are owed too" "start${wk_tab}1 goal" "$(wake_decision 'dispatch 301' 'start-next 12 by maya')"
 eq "no request owed leaves the reading as it was" "nothing${wk_tab}no reply yet" "$(wake_decision 'nothing: no reply yet' '')"
 eq "any other comment does not" "no no" "$(wake_event_wanted issue_comment 'Looks good to me') $(wake_event_wanted issue_comment 'Queue request: land-now #12 by maya')"
+wk_units=$(cat "$fx/drive-wake-restart/units.tsv")
+eq "no branch, old and no agent running is restarted; young or a live agent is starting; a branch or pull request is working" "301${wk_tab}restart
+302${wk_tab}working
+303${wk_tab}starting
+304${wk_tab}starting
+305${wk_tab}working" "$(wake_units_read 2000 "$wk_units")"
+eq "a dot is blue only for a unit that made something" "working starting" "$(wake_unit_state 2000 1000 yes no no no) $(wake_unit_state 2000 1000 no no no yes)"
+eq "the restart is said in one line" "1" "$(wake_restart_comment | wc -l | tr -d ' ')"
+eq "the tick says how many agents it left running" "Left running when this tick ended: no agents.|Left running when this tick ended: 1 agent.|Left running when this tick ended: 3 agents." "$(wake_agents_left 0)|$(wake_agents_left 1)|$(wake_agents_left 3)"
 wk_yml="$root/../.github/workflows/drive-wake.yml"
 if [ -f "$wk_yml" ]; then
   eq "the wake runs on the drive's own runner, never a hosted one" "1 0" "$(grep -c 'runs-on: \[drive\]' "$wk_yml") $(grep -cE 'runs-on:.*(ubuntu|macos|windows-latest)' "$wk_yml")"

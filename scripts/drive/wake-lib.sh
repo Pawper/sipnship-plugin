@@ -39,3 +39,47 @@ wake_event_wanted() {
     *) echo no ;;
   esac
 }
+
+# wake_unit_state NOW DISPATCHED_EPOCH BRANCH PR COMMIT LIVE [GRACE_SECONDS]
+# What a started unit really is, so a dashboard dot is never blue for an agent
+# that made nothing (specs/025-drive-wake, "A woken tick's agents outlive it").
+# BRANCH, PR and COMMIT are "yes" or "no" (its branch exists, a pull request is
+# open or landed, a commit is on the branch); LIVE is "yes" while an agent
+# session for the unit is still running. Prints:
+#   working   a branch, commit or pull request exists: "agent on it" is true
+#   starting  nothing made yet, but it is young (GRACE_SECONDS, default 600)
+#             or its agent is still running; the dashboard says "starting"
+#   restart   nothing made, old, and no agent running: it died; the unit goes
+#             back to Ready, first in the round
+wake_unit_state() {
+  if [ "$3" = yes ] || [ "$4" = yes ] || [ "$5" = yes ]; then echo working; return 0; fi
+  case "$2" in ''|*[!0-9]*) echo starting; return 0 ;; esac
+  if [ $(( $1 - $2 )) -lt "${7:-600}" ] || [ "$6" = yes ]; then echo starting; else echo restart; fi
+}
+
+# wake_units_read NOW UNITS [GRACE_SECONDS]
+# UNITS: one started unit a line,
+# "NUMBER<TAB>DISPATCHED_EPOCH<TAB>BRANCH<TAB>PR<TAB>COMMIT<TAB>LIVE".
+# Prints "NUMBER<TAB>STATE" for each, STATE as wake_unit_state says.
+wake_units_read() {
+  printf '%s\n' "$2" | tr -d '\r' | while IFS='	' read -r wu_n wu_t wu_b wu_p wu_c wu_l; do
+    [ -n "$wu_n" ] || continue
+    printf '%s\t%s\n' "$wu_n" "$(wake_unit_state "$1" "$wu_t" "$wu_b" "$wu_p" "$wu_c" "$wu_l" "${3:-}")"
+  done
+}
+
+# wake_restart_comment
+# The one line left on an issue sent back to Ready because its agent died.
+wake_restart_comment() {
+  echo "Restarted: the agent for this stopped before it made a branch, so nothing was lost. It is back in Ready and starts first in the next round."
+}
+
+# wake_agents_left COUNT
+# The tick's closing line: how many agents it left running when it ended.
+wake_agents_left() {
+  case "$1" in
+    0|'') echo "Left running when this tick ended: no agents." ;;
+    1) echo "Left running when this tick ended: 1 agent." ;;
+    *) echo "Left running when this tick ended: $1 agents." ;;
+  esac
+}
