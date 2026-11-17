@@ -4247,7 +4247,7 @@ eq "the hook lets an ordinary command through" "0" "$(rs_exit block-rule-switch 
 eq "the hook lets an ordinary edit through" "0" "$(rs_exit block-rule-switch '{"file_path":"beds/README.md"}')"
 rs_set 'never-delete 2026-11-02'
 eq "the hook has no switch: it refuses with a rule off" "2" "$(rs_exit block-rule-switch '{"command":"gh variable set RULES_OFF --body x","description":"x"}')"
-eq "it is registered for Bash and for edits" "2" "$(grep -c 'block-rule-switch.sh' "$root/hooks/hooks.json")"
+eq "it is registered for edits, and for Bash through the Node program" "1 1" "$(grep -c 'block-rule-switch.sh' "$root/hooks/hooks.json") $(grep -c "'block-rule-switch'" "$root/hooks/node/checks.js")"
 
 section 'rule switches in the checks'
 rc_lib="$root/templates/scripts/ci/rules-lib.sh"
@@ -4926,7 +4926,22 @@ eq "the wrapper hands its input to the hook and returns the hook's exit status" 
 eq "the wrapper writes one start line and one end line with the milliseconds" "start end 1" "$(cut -f1 "$ht_dir/proj/.scratch/hooks/timing.log" | tr '\n' ' ' | sed 's/ $//') $(awk -F'\t' '$1 == "end" && $5 ~ /^[0-9]+$/' "$ht_dir/proj/.scratch/hooks/timing.log" | wc -l | tr -d ' ')"
 HOOK_LOG=0 CLAUDE_PROJECT_DIR="$ht_dir/proj" sh "$ht_dir/hooks/hook-timed.sh" 10 fake.sh < /dev/null > /dev/null
 eq "with the log turned off nothing more is written" "2" "$(wc -l < "$ht_dir/proj/.scratch/hooks/timing.log" | tr -d ' ')"
-eq "every registered hook runs through the wrapper, with its limit" "0" "$(grep '"command": ' "$root/hooks/hooks.json" | grep -vc 'hook-timed.sh[^ ]* [0-9]')"
+eq "every registered hook runs through the wrapper, with its limit" "0" "$(grep '"command": ' "$root/hooks/hooks.json" | grep -v 'hook-node.sh[^ ]* pre-bash' | grep -vc 'hook-timed.sh[^ ]* [0-9]')"
+# A check marked --refuse-late that cannot finish refuses the call, with words, instead of letting it by.
+if command -v timeout >/dev/null 2>&1; then
+  printf '#!/bin/sh\nsleep 6\nexit 0\n' > "$ht_dir/hooks/slow.sh"
+  ht_late=$(printf 'garden' | HOOK_LOG=0 CLAUDE_PROJECT_DIR="$ht_dir/proj" sh "$ht_dir/hooks/hook-timed.sh" 3 --refuse-late slow.sh 2>&1; echo "rc=$?")
+  eq "a model check that runs out of time refuses the dispatch and says why" "yes rc=2" "$(printf '%s' "$ht_late" | grep -q 'could not finish in time' && echo yes) $(printf '%s' "$ht_late" | tail -n 1)"
+  ht_fast=$(printf 'garden' | HOOK_LOG=0 CLAUDE_PROJECT_DIR="$ht_dir/proj" sh "$ht_dir/hooks/hook-timed.sh" 10 --refuse-late fake.sh 2>&1; echo "rc=$?")
+  eq "a check marked refuse-late that finishes keeps its own answer" "gardenrc=2" "$(printf '%s' "$ht_fast" | tr '\n' ' ' | sed 's/ $//')"
+fi
+eq "the model check is registered to refuse when it cannot finish" "1" "$(grep -c -e '--refuse-late require-agent-model.sh' "$root/hooks/hooks.json")"
+# Without Node the brief says once, in plain words, that the checks before a command are off.
+hn_shdir=$(dirname "$(command -v sh)")
+if ! PATH="$hn_shdir" command -v node >/dev/null 2>&1; then
+  eq "with no Node the brief says the checks are off and the pull request still holds the rules" "yes" "$(PATH="$hn_shdir" sh -c '. "$1/hooks/scripts/session-brief-hooks.sh"; node_off_line' sh "$root" 2>/dev/null | grep -q 'checks before each command are off.*still hold' && echo yes)"
+fi
+eq "with Node present the brief says nothing about it" "" "$(sh -c '. "$1/hooks/scripts/session-brief-hooks.sh"; node_off_line' sh "$root" 2>/dev/null)"
 if command -v timeout >/dev/null 2>&1; then
   ht_b=$(CLAUDE_PROJECT_DIR="$ht_dir/proj" sh -c '. "$1/hooks/scripts/lib.sh"; . "$1/hooks/scripts/bounded-lib.sh"; hook_bounded 1 sleep 5; echo $?' sh "$root" 2>/dev/null)
   eq "a network read past its own bound is stopped and says so in the log" "124 yes" "$ht_b $(grep -q '^bound' "$ht_dir/proj/.scratch/hooks/timing.log" && echo yes)"
@@ -5955,7 +5970,7 @@ eq "and says a body line might allow a check that reads it" "1" "$(printf '%s\n'
 # The steps come from ci.yml: a step taken out there is not run here.
 (cd "$qc" && grep -v 'hotspots-check.sh' .github/workflows/ci.yml > .scratch/ci.yml && cp .scratch/ci.yml .github/workflows/ci.yml)
 eq "a step taken out of ci.yml is not run" "0" "$(cd "$qc" && CHECKS_LOCAL_OFFLINE=1 sh scripts/ci/checks-local.sh 2>&1 | grep -c 'over the limit')"
-eq "the hook is registered in hooks.json" "1" "$(grep -c 'require-local-checks.sh' "$root/hooks/hooks.json")"
+eq "the push check is registered through the Node program" "1 1" "$(grep -c 'hook-node.sh.* pre-bash' "$root/hooks/hooks.json") $(grep -c "'require-local-checks'" "$root/hooks/node/checks.js")"
 # A check that runs out of time is not a failure: named apart, and the push goes on.
 qc_slow=$(cd "$qc" && git checkout -q fine && CHECKS_LOCAL_SECONDS=0 CHECKS_LOCAL_OFFLINE=1 sh scripts/ci/checks-local.sh 2>&1; echo "rc=$?")
 eq "steps that ran out of time are named as not a failure, in their own lines" "yes" "$(printf '%s\n' "$qc_slow" | grep -q '^Did not finish in 0 s (not a failure): ' && echo yes)"

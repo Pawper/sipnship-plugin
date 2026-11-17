@@ -80,57 +80,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/hook-timed.sh\" 10 block-rule-switch.sh",
-            "timeout": 10,
-            "statusMessage": "Checking the call leaves the rule switches alone"
-          },
-          {
-            "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/hook-timed.sh\" 10 block-loose-ends.sh",
-            "timeout": 10,
-            "statusMessage": "Checking for a loose end"
-          },
-          {
-            "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/hook-timed.sh\" 10 block-delete.sh",
-            "timeout": 10,
-            "statusMessage": "Checking for deletes"
-          },
-          {
-            "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/hook-timed.sh\" 10 block-force-push.sh",
-            "timeout": 10,
-            "statusMessage": "Checking for a forced push"
-          },
-          {
-            "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/hook-timed.sh\" 10 block-full-test-sweep.sh",
-            "timeout": 10,
-            "statusMessage": "Checking for a full test sweep"
-          },
-          {
-            "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/hook-timed.sh\" 10 require-state-label.sh",
-            "timeout": 10,
-            "statusMessage": "Checking the issue has a State label"
-          },
-          {
-            "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/hook-timed.sh\" 10 require-batch-merge.sh",
-            "timeout": 10,
-            "statusMessage": "Checking the merge names its mode"
-          },
-          {
-            "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/hook-timed.sh\" 10 require-gh-budget.sh",
-            "timeout": 10,
-            "statusMessage": "Checking the GitHub API budget"
-          },
-          {
-            "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/hook-timed.sh\" 90 require-local-checks.sh",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/hook-node.sh\" pre-bash",
             "timeout": 90,
-            "statusMessage": "Running the quick checks before the push"
+            "statusMessage": "Checking the command against the rules"
           }
         ]
       },
@@ -139,7 +91,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/hook-timed.sh\" 10 require-agent-model.sh",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/hook-timed.sh\" 10 --refuse-late require-agent-model.sh",
             "timeout": 10,
             "statusMessage": "Checking the agent's model fits its task"
           }

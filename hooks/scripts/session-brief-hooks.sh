@@ -30,8 +30,22 @@ slow_hooks_line() {
     }'
 }
 
+# node_off_line: one plain line when this machine has no Node, or one below the
+# floor in package.json, so the checks before a command are skipped
+# (specs/027-hooks-in-node); nothing when Node is there.
+node_off_line() {
+  command -v node >/dev/null 2>&1 && {
+    nf=$(sed -n 's/.*"node": *">=\{0,1\} *\([0-9]*\).*//p' "$(dirname "$0")/../../package.json" 2>/dev/null | head -n 1)
+    nv=$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null)
+    [ -n "$nv" ] && [ "$nv" -ge "${nf:-18}" ] 2>/dev/null && return 0
+  }
+  printf '%s
+' "Hooks: the checks before each command are off on this machine because Node ${nf:-18} or newer is not installed. Everything else works, and the pull request checks still hold every rule."
+}
+
 # Hooks that ran past half their time limit in the last day, only when there are some.
 s_hooks() {
+  node_off_line
   hl=${CLAUDE_PROJECT_DIR:-.}/.scratch/hooks/timing.log
   [ -f "$hl" ] || return 0
   slow_hooks_line "$(tail -n 2000 "$hl" 2>/dev/null)" "$(date +%s)"

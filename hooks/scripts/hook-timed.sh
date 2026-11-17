@@ -4,7 +4,12 @@
 # milliseconds it took. A hook that is killed for running out of time leaves
 # only its start line, so a slow or stuck one can be named afterwards.
 #
-#   sh hook-timed.sh LIMIT_SECONDS SCRIPT [ARGS...]
+#   sh hook-timed.sh LIMIT_SECONDS [--refuse-late] SCRIPT [ARGS...]
+#
+# --refuse-late is for a check whose silence would let a costly action through
+# (the model check before an agent dispatch): the script is stopped two seconds
+# before the limit, and the call is refused (exit 2) with words saying the
+# check could not finish, instead of running out of time and letting it by.
 #
 # Standard input goes to the script unchanged, and so do its output and its
 # exit status: this wrapper decides nothing. Lines, tab-separated:
@@ -15,6 +20,8 @@
 # it grows long.
 here=$(dirname "$0")
 limit=$1; script=$2; shift 2 2>/dev/null || exit 0
+late=""
+if [ "$script" = "--refuse-late" ]; then late=1; script=$1; shift 2>/dev/null || exit 0; fi
 [ -f "$here/$script" ] || exit 0
 
 # now_ms: milliseconds since the epoch where date can say, else whole seconds.
@@ -45,8 +52,17 @@ fi
 tmp_in=$(mktemp 2>/dev/null) || tmp_in=""
 if [ -n "$tmp_in" ]; then
   cat > "$tmp_in"
-  sh "$here/$script" "$@" < "$tmp_in"
-  rc=$?
+  if [ -n "$late" ] && command -v timeout >/dev/null 2>&1 && [ "$limit" -gt 2 ] 2>/dev/null; then
+    timeout "$((limit - 2))" sh "$here/$script" "$@" < "$tmp_in"
+    rc=$?
+    if [ "$rc" = 124 ]; then
+      printf '%s\n' "Blocked this call because its check could not finish in time, so it was not checked (nothing was found wrong). Try the same call again; a dispatch is rare and costly, so waiting is the right price." >&2
+      rc=2
+    fi
+  else
+    sh "$here/$script" "$@" < "$tmp_in"
+    rc=$?
+  fi
   rm -f "$tmp_in" 2>/dev/null || true
 else
   sh "$here/$script" "$@"
