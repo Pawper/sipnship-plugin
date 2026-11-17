@@ -224,9 +224,19 @@ if [ -z "$issue" ]; then
   exit 1
 fi
 
+# Publishing a started round again is told apart from starting it a second time (#1896): when the latest
+# started round on the drive issue holds the same units with the same issues, this publish is an update (a
+# pr: added, a hold's words changed). It goes through and touches no issue's State.
+update=no
+if [ "$status" = started ] && [ -n "$rows" ]; then
+  unitsof() { printf '%s' "$1" | sed 's/.*sipnship-proposal //; s/ -->.*//' | sed 's/.*"units":\[//; s/\],"held":.*//; s/\]}$//' | grep -o '"issues":\[[0-9,]*\]' | tr '\n' ' '; }
+  lastrun=$(printf '%s\n' "$rows" | grep -F 'sipnship-proposal {"status":"started"' | tail -n 1)
+  if [ -n "$lastrun" ] && [ "$(unitsof "$lastrun")" = "$(unitsof "<!-- sipnship-proposal $json -->")" ]; then update=yes; fi
+fi
+
 # Another session may have started this unit already (#1844): a started round whose every open issue is
 # In progress, and that this publish did not set, is the other session's. Nothing is published over it.
-if [ "$status" = started ] && [ "$labels" = yes ] && [ -n "$open" ]; then
+if [ "$status" = started ] && [ "$labels" = yes ] && [ -n "$open" ] && [ "$update" = no ]; then
   already=0; total=0
   for n in $(printf '%s' "$open" | tr ',' ' '); do
     total=$((total + 1))
@@ -235,7 +245,7 @@ if [ "$status" = started ] && [ "$labels" = yes ] && [ -n "$open" ]; then
   done
   if [ "$total" -gt 0 ] && [ "$already" -eq "$total" ]; then
     rm -f "$body_file"
-    echo "Another session may have started this round: every issue in it is already In progress, and this run did not set them. Nothing was published and no agent should be started; leave the round to the session already on it and say so in your report." >&2
+    echo "Another session may have started this round: every issue in it is already In progress, and this run did not set them, and it is not the round already published as started, so it is no update of that one. Nothing was published and no agent should be started; leave the round to the session already on it and say so in your report." >&2
     exit 3
   fi
 fi
@@ -269,7 +279,9 @@ rm -f "$body_file" "$body_file.err"
 echo "Published the round on #$issue: $agents, $status."
 
 # Dispatching is what sets In progress: the label, over REST, for each unit still without a pull request.
-if [ "$status" = started ] && [ "$labels" = yes ] && [ -n "$open" ]; then
+if [ "$update" = yes ]; then
+  echo "The same round as the one already started: updated, no issue's State touched."
+elif [ "$status" = started ] && [ "$labels" = yes ] && [ -n "$open" ]; then
   for n in $(printf '%s' "$open" | tr ',' ' '); do
     have=$(gh api "repos/{owner}/{repo}/issues/$n/labels" --jq '.[].name' 2>/dev/null)
     form="state:in-progress"

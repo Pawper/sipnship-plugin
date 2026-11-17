@@ -5147,6 +5147,18 @@ sed 's/state:ready/state:in-progress/' "$pr_dir/bin/gh" > "$pr_dir/bin/gh2"; chm
 : > "$pr_dir/log"
 pr_twice=$(pr_run "$pr_started"; echo "rc=$?")
 eq "a second tick finding the unit's issues already In progress posts nothing and says another session may have it" "0 1" "$(grep -c 'POST repos/{owner}/{repo}/issues/99/comments' "$pr_dir/log" | tr '\n' ' ')$(printf '%s\n' "$pr_twice" | grep -c 'Another session may have started this round')"
+# The next tick adds the pull request to a round an earlier session started: an update, not a second start (#1896).
+printf 'Round started\n<!-- sipnship-proposal {"status":"started","units":[{"issues":[214,226],"whyTogether":"both change the watering schedule","areas":["watering"]},{"issues":[223],"areas":["seeds"]}],"held":[]} -->\n' > "$pr_dir/comments"
+: > "$pr_dir/log"
+pr_upd=$(pr_run "$pr_started"; echo "rc=$?")
+eq "the same started round published again with a pr added is an update: posted, no state touched" "1 0 1" "$(grep -c 'POST repos/{owner}/{repo}/issues/99/comments' "$pr_dir/log" | tr '\n' ' ')$(grep -c 'labels -f' "$pr_dir/log" | tr '\n' ' ')$(printf '%s\n' "$pr_upd" | grep -c 'rc=0')"
+eq "the update's comment carries the pr" "1" "$(grep -c '"issues":\[223\],"areas":\["seeds"\],"pr":531' "$pr_dir/comment")"
+# A unit that is not in the round already published as started, with every issue In progress, is still refused.
+printf '<!-- sipnship-proposal {"status":"started","units":[{"issues":[300],"areas":["seeds"]}],"held":[]} -->\n' > "$pr_dir/comments"
+: > "$pr_dir/log"
+pr_other=$(pr_run "$pr_started"; echo "rc=$?")
+eq "a unit not in the published started round, all In progress, is refused saying it is no update" "0 1" "$(grep -c 'POST repos/{owner}/{repo}/issues/99/comments' "$pr_dir/log" | tr '\n' ' ')$(printf '%s\n' "$pr_other" | grep -c 'is no update of that one')"
+: > "$pr_dir/comments"
 mv "$pr_dir/bin/gh" "$pr_dir/bin/gh.inprog"; mv "$pr_dir/bin/gh.ready" "$pr_dir/bin/gh"
 : > "$pr_dir/log"
 printf 'status: proposed\nunit: 214 226 | why: both change the watering schedule | areas: watering\n' > "$pr_dir/proposed.txt"
