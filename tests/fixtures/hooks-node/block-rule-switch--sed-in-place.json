@@ -1,0 +1,1 @@
+{"session_id":"maya-session","cwd":"@PROJECT@","tool_name":"Bash","tool_input":{"command":"sed -i 's/a/b/' .claude/rules-off.txt"}}

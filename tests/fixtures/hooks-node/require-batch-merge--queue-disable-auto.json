@@ -1,0 +1,1 @@
+{"session_id":"maya-session","cwd":"@PROJECT@","tool_name":"Bash","tool_input":{"command":"gh pr merge 41 --disable-auto"}}

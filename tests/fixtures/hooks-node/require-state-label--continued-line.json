@@ -1,0 +1,1 @@
+{"session_id":"maya-session","cwd":"@PROJECT@","tool_name":"Bash","tool_input":{"command":"gh issue create \\\n  --title \"main is red\" \\\n  --label \"ci-red, state: ready\" \\\n  --body y"}}

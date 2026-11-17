@@ -1,0 +1,1 @@
+{"session_id":"maya-session","cwd":"@PROJECT@","tool_name":"Bash","tool_input":{"command":"gh variable set RULES_OFF --body \"never-delete 2026-11-17\""}}

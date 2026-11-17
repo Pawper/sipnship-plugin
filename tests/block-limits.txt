@@ -12,3 +12,4 @@
 # sync with fewer processes.
 150 template refresh
 150 template refresh, the sync in a throwaway project
+400 hooks in node: the same verdicts and words

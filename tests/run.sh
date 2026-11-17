@@ -6766,6 +6766,31 @@ eq "a note's areas become the first path of each area" "plugin/,scripts/" "$(lef
 eq "a note with no areas, or a partly landed issue, places nothing" "" "$(left_areas_files "left${lf_tab}x${lf_tab}" "$lf_areas")$(left_areas_files partly "$lf_areas")"
 eq "the plan reads the note once per ready issue, and the skill tells agents to leave it" "1 1 1" "$(grep -c 'left_say=$(left_comments_say' "$root/scripts/drive/left-lib.sh") $(grep -c 'Left: <what is still to build> | areas: <area names>' "$root/skills/project-drive/SKILL.md") $(grep -c 'plan_stage "board read"' "$root/scripts/drive/plan.sh")"
 
+section 'hooks in node: the same verdicts and words'
+# specs/027-hooks-in-node: every case is fed to the shell hook and to the Node program.
+. "$root/tests/hooks-node-lib.sh"
+eq "every fixture was fed to both versions, and both kinds of verdict are among them" "yes" "$([ "$hn_cases" -ge 200 ] && [ "$hn_refused" -ge 60 ] && [ "$hn_allowed" -ge 60 ] && echo yes || echo "cases $hn_cases, refused $hn_refused, allowed $hn_allowed")"
+printf 'info  %s cases fed to both versions: %s refused, %s let through\n' "$hn_cases" "$hn_refused" "$hn_allowed"
+# The same records: the refusal log, the pending list and the timing record, as the shell wrote them.
+hn_lg="$hn_base/logged"; mkdir -p "$hn_lg/.git"
+hn_rm='{"session_id":"maya-session","cwd":".","tool_input":{"command":"rm -rf beds","description":"Clear the beds"}}'
+printf '%s' "$hn_rm" | CLAUDE_PROJECT_DIR=$hn_lg node "$root/hooks/node/run.js" pre-bash >/dev/null 2>&1
+printf '%s' "$hn_rm" | CLAUDE_PROJECT_DIR=$hn_lg node "$root/hooks/node/run.js" pre-bash >/dev/null 2>&1
+eq "a refusal is noted with the hook's name and the session, and the second settles the first as retried" "block-delete maya-session 2 1" "$(awk -F'\t' '{print $2, $3}' "$hn_lg/.scratch/hooks.log" | sort -u | tr -d '\n') $(wc -l < "$hn_lg/.scratch/hooks.log" | tr -d ' ') $(awk -F'\t' '$5 == "retried"' "$hn_lg/.scratch/hooks-resolved.log" | wc -l | tr -d ' ')"
+eq "the pending list holds the one still open" "1" "$(wc -l < "$hn_lg/.scratch/hooks/pending" | tr -d ' ')"
+eq "each of the nine checks leaves a start and an end line, with the same fields as the shell wrapper" "36 18 18 6" "$(wc -l < "$hn_lg/.scratch/hooks/timing.log" | tr -d ' ') $(grep -c '^start	' "$hn_lg/.scratch/hooks/timing.log") $(grep -c '^end	' "$hn_lg/.scratch/hooks/timing.log" | tr -d ' ') $(grep '^end	' "$hn_lg/.scratch/hooks/timing.log" | head -n 1 | awk -F'\t' '{print NF}')"
+eq "HOOK_LOG=0 writes nothing" "" "$(hn_q="$hn_base/quiet"; mkdir -p "$hn_q/.git"; printf '%s' "$hn_rm" | HOOK_LOG=0 CLAUDE_PROJECT_DIR=$hn_q node "$root/hooks/node/run.js" pre-bash >/dev/null 2>&1; ls -A "$hn_q" | grep -v '^.git$')"
+# A rule switched off lets its call through and notes it, as in shell.
+printf 'never-delete 2026-11-17\n' > "$hn_lg/.claude-off"
+eq "a switched-off rule lets the call through and notes it" "0 1" "$(printf '%s' "$hn_rm" | RULES_OFF_FILE="$hn_lg/.claude-off" CLAUDE_PROJECT_DIR=$hn_lg node "$root/hooks/node/run.js" pre-bash >/dev/null 2>&1; printf '%s' "$?") $(grep -c 'never-delete' "$hn_lg/.scratch/hooks-off.log")"
+# No Node, or one below the floor: the checks are skipped, with no output and no error.
+hn_nonode="$hn_base/nonode"; mkdir -p "$hn_nonode"
+eq "with no Node on the path the wrapper says nothing and passes" "0|" "$(printf '%s' "$hn_rm" | PATH="$hn_nonode" /bin/sh "$root/hooks/scripts/hook-node.sh" pre-bash 2>&1; printf '%s|' "$?")"
+hn_floor="$hn_base/floor"; mkdir -p "$hn_floor/hooks"; cp -r "$root/hooks/node" "$hn_floor/hooks/node"; printf '{"engines":{"node":">=999"}}\n' > "$hn_floor/package.json"
+eq "a Node below the floor in package.json ends at once, quietly" "0|" "$(printf '%s' "$hn_rm" | HOOK_LOG=0 node "$hn_floor/hooks/node/run.js" pre-bash 2>&1; printf '%s|' "$?")"
+eq "the floor is the one in the plugin's package.json, 18 today" "18" "$(node -e 'console.log(parseInt(require(process.argv[1]).engines.node.replace(/[^0-9]/g, ""), 10))' "$root/package.json")"
+eq "the wrapper hands the program the event and its exit status" "2" "$(printf '%s' "$hn_rm" | HOOK_LOG=0 CLAUDE_PROJECT_DIR=$hn_lg sh "$root/hooks/scripts/hook-node.sh" pre-bash >/dev/null 2>&1; printf '%s' "$?")"
+
 # --- end of blocks: the summary, kept in every part.
 eq "no test wrote into the checkout's own queue state" "$queue_picture_before" "$([ "$queue_picture_before" = skipped ] && echo skipped || queue_picture)"
 eq "no process started by this suite is still running" "" "$(spawned_alive)"
