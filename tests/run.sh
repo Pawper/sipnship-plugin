@@ -6268,6 +6268,16 @@ eq "with nothing running it passes as it came" "$da_unit" "$(unplaced_holds "$da
 da_mixed=$(printf '501\tTidy up the readme\t\n402\tWater the beds on a timer\tsrc/water/timer.ts\n')
 eq "an issue with files is left alone beside it" "unit${da_t}402" "$(unplaced_holds "$(plan_units "$da_mixed" '')" "$da_mixed" "$(printf '301\twatering\n')" "$da_titles" | grep '^unit' | cut -f1,2)"
 eq "plan.sh places by title and holds the unplaced" "1 1" "$(grep -c 'title_area_files "$title $c"' "$root/scripts/drive/left-lib.sh") $(grep -c 'unplaced_holds "$units"' "$root/scripts/drive/plan.sh")"
+# A held issue in two areas, and a ready issue in the second: the plan holds the newcomer behind the held one, and the round built from the plan's own lines publishes (#1894).
+hh_c="2026-11-17T10:00:00Z${da_t}maya-drive${da_t}<!-- sipnship-proposal {\"status\":\"started\",\"units\":[{\"issues\":[301],\"areas\":[\"watering\"]}],\"held\":[{\"issues\":[410],\"waitsOn\":[301],\"areas\":[\"beds\",\"tooling\"],\"why\":\"Waits on the watering change\"}]} -->"
+hh_titles=$(printf '301\tWater the beds\n410\tTint the beds by sun\n411\tTune the build\n')
+hh_hold=$(published_holds "$hh_c" "$(printf 'issue\t301\tWater the beds\tstate:in-progress\tx\nissue\t410\tTint the beds by sun\tstate:ready\tx\nissue\t411\tTune the build\tstate:ready\tx\n')" '')
+eq "the held entry's issues, waits and areas are read from the last round" "410${da_t}301${da_t}beds,tooling" "$(published_held_areas "$hh_c")"
+hh_out=$(held_area_holds "$da_list" "$(printf 'unit\t411\tTune the build\t\tci/a.sh\n')" "$(published_held_areas "$hh_c")" "$hh_hold" "$hh_titles")
+eq "a ready issue in an area a held issue names is a hold behind the held issue, never a dispatch" "hold${da_t}411${da_t}Tune the build${da_t}After: Tint the beds by sun" "$hh_out"
+eq "the round built from those lines publishes without a refusal" "" "$(area_problem "$(round_areas "$da_list" "$(printf 'hold: 410 | after: 301 | areas: src/beds/tint.ts,ci/a.sh\nhold: 411 | after: 410 | areas: ci/a.sh\n')")" "$(printf '301\twatering\n')")"
+eq "a ready issue in another area still starts" "unit${da_t}412${da_t}Water${da_t}${da_t}src/water/t.ts" "$(held_area_holds "$da_list" "$(printf 'unit\t412\tWater\t\tsrc/water/t.ts\n')" "$(published_held_areas "$hh_c")" "$hh_hold" "$hh_titles")"
+eq "plan.sh reads the held round's areas" "1" "$(grep -c 'held_area_holds "$areas_text"' "$root/scripts/drive/plan.sh")"
 # Plugin and CI work is one unit, however each issue names its files or speaks of them.
 pb_guesses=$(printf '1437\tFix the plan\t%s\n1431\tFix the round\t%s\n1440\tFix the summary\t%s\n' "$(guess_files 'Where: plugin/scripts/drive/plan.sh' '' '')" "$(guess_files 'Where: plugin/tests/run.sh and plugin/scripts/drive/round-lib.sh' '' '')" "$(guess_files 'The drive'"'"'s plan says a summary is due' '' '')")
 eq "two plugin issues naming different plugin files, and one that only speaks of the drive's plan, are one unit" "unit${da_t}1437 1431 1440${da_t}Fix the plan | Fix the round | Fix the summary${da_t}all 3 are plugin or CI work, which shares one test suite" "$(plan_units "$pb_guesses" '' | cut -f1-4)"

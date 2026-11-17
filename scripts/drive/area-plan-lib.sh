@@ -107,6 +107,52 @@ area_units() {
     }'
 }
 
+# held_area_holds LIST UNITS HELD PUBLISHED TITLES
+# HELD are published_held_areas' lines ("ISSUES<TAB>WAITSON<TAB>AREAS"),
+# PUBLISHED published_holds' lines (the held issues still true). A unit in an
+# area a held issue of the last published round names, when that issue does not
+# wait on it, is refused by publish-round.sh; the issue follows the held one
+# instead: one "hold<TAB>NUMBER<TAB>TITLE<TAB>After: HELD TITLE" per issue, so
+# an issue the builder asked for by name keeps its place. Other lines pass.
+held_area_holds() {
+  if [ -z "$1" ] || [ -z "$3" ] || [ -z "$4" ]; then printf '%s\n' "$2"; return 0; fi
+  hh_us=$(printf '\037')
+  hh_lines=$(printf '%s\n' "$2" | tr '\t' '\037' | while IFS="$hh_us" read -r hh_k hh_n hh_t hh_w hh_f; do
+    [ -n "$hh_k" ] || continue
+    if [ "$hh_k" = unit ]; then printf 'unit\t%s\t%s\t%s\t%s\t%s\n' "$hh_n" "$hh_t" "$hh_w" "$hh_f" "$(unit_areas "$1" "$hh_f")"
+    else printf '%s\t%s\t%s\t%s\t\t\n' "$hh_k" "$hh_n" "$hh_t" "$hh_w"; fi
+  done)
+  { printf '%s\n' "$3" | sed 's/^/H\t/'; printf '%s\n' "$4" | cut -f2 | sed 's/^/P\t/'; printf '%s\n' "$5" | sed 's/^/T\t/'; printf '%s\n' "$hh_lines" | sed 's/^/U\t/'; } | tr -d '\r' | awk -F'\t' '
+    function has(list, nums,   x, y, i, j, nx, ny) {
+      gsub(/,/, " ", list); gsub(/,/, " ", nums)
+      nx = split(list, x, " "); ny = split(nums, y, " ")
+      for (i = 1; i <= nx; i++) for (j = 1; j <= ny; j++) if (x[i] != "" && x[i] == y[j]) return 1
+      return 0
+    }
+    function meet(a, b,   x, y, i, j, nx, ny) {
+      nx = split(a, x, ","); ny = split(b, y, ",")
+      for (i = 1; i <= nx; i++) for (j = 1; j <= ny; j++) if (x[i] != "" && x[i] == y[j]) return 1
+      return 0
+    }
+    $1 == "H" && $2 != "" { h++; hi[h] = $2; hw[h] = $3; ha[h] = $4 }
+    $1 == "P" && $2 != "" { pub[$2] = 1 }
+    $1 == "T" && $2 != "" { tt[$2] = $3 }
+    $1 == "U" && $2 != "" { u[++n] = $0 }
+    END {
+      for (i = 1; i <= n; i++) {
+        split(substr(u[i], 3), f, "\t"); nums = f[2]; by = ""
+        if (f[1] == "unit") for (k = 1; k <= h; k++) {
+          first = hi[k]; sub(/,.*/, "", first)
+          if (!(first in pub) || has(hw[k], nums) || !meet(f[6], ha[k])) continue
+          by = "After: " (first in tt && tt[first] != "" ? tt[first] : "#" first); break
+        }
+        if (by == "") { printf "%s\t%s\t%s\t%s", f[1], f[2], f[3], f[4]; if (f[1] == "unit") printf "\t%s", f[5]; printf "\n"; continue }
+        m = split(nums, ns, " "); q = split(f[3], ts, " \\| ")
+        for (k = 1; k <= m; k++) printf "hold\t%s\t%s\t%s\n", ns[k], (q == m ? ts[k] : f[3]), by
+      }
+    }'
+}
+
 # title_area_files TITLE AREAS
 # An issue whose body names no path is placed by its title: the first path of
 # every area whose name (a hyphen read as a space) the title says as a whole

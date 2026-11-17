@@ -46,6 +46,29 @@ published_holds() {
     }'
 }
 
+# published_held_areas COMMENTS
+# One "ISSUES<TAB>WAITSON<TAB>AREAS" line (each comma separated) for every held
+# entry of the latest published round that names an area: the areas
+# publish-round.sh checks a new unit against, since a held entry in the same
+# area as a unit it does not wait on is refused. Nothing when none names one.
+published_held_areas() {
+  printf '%s\n' "$1" | tr -d '\r' | grep -F 'sipnship-proposal {"status":' | tail -n 1 | awk '
+    {
+      s = $0; i = index(s, "\"held\":["); if (!i) exit
+      s = substr(s, i + 8)
+      if (j = index(s, "\"apart\":[")) s = substr(s, 1, j - 1)
+      if (j = index(s, "\"waits\":\"")) s = substr(s, 1, j - 1)
+      if (j = index(s, "\"sized\":\"")) s = substr(s, 1, j - 1)
+      n = split(s, parts, /\{"issues":\[/)
+      for (k = 2; k <= n; k++) {
+        p = parts[k]; iss = p; sub(/\].*/, "", iss); gsub(/ /, "", iss)
+        wait = ""; if (match(p, /"waitsOn":\[[0-9, ]*\]/)) { wait = substr(p, RSTART + 11, RLENGTH - 12); gsub(/ /, "", wait) }
+        ar = ""; if (match(p, /"areas":\[[^]]*\]/)) { ar = substr(p, RSTART + 9, RLENGTH - 10); gsub(/[" ]/, "", ar) }
+        if (ar != "") printf "%s\t%s\t%s\n", iss, wait, ar
+      }
+    }'
+}
+
 # defer_note ROUND COUNT
 # ROUND is the plan's lines, COUNT how many issues the last round held that
 # took no slot. The plan's "defer N unit(s): ... (#5 #6)" line says so, so a
