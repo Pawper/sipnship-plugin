@@ -15,14 +15,35 @@
 # a start the publisher then refuses.
 unit_areas() {
   [ -n "$1" ] && [ -n "$2" ] || return 0
-  ua_seen=","; ua_out=""
-  for ua_f in $(printf '%s' "$2" | tr ',' ' '); do
-    for ua_a in $(printf '%s\n' "$(round_areas "$1" "unit: 1 | areas: $ua_f")" | sed -n 's/^unit: 1 | areas: //p' | tr -d ' ' | tr ',' ' '); do
-      case "$ua_seen" in *",$ua_a,"*) continue ;; esac
-      ua_seen="$ua_seen$ua_a,"; ua_out="${ua_out}${ua_out:+,}$ua_a"
-    done
-  done
-  printf '%s\n' "$ua_out"
+  # One process for the whole unit, never one per file: a unit of many files cost hundreds of starts, which on Windows stalled the plan after "round proposed" (#1926).
+  printf '%s\n' "$2" | AREA_LIST=$1 awk -F, '
+    BEGIN {
+      n = split(ENVIRON["AREA_LIST"], ln, "\n")
+      for (l = 1; l <= n; l++) {
+        s = ln[l]; gsub(/\r/, "", s); gsub(/^[ \t]+|[ \t]+$/, "", s)
+        if (s == "" || s ~ /^#/) continue
+        k = split(s, w, /[ \t]+/); na++; name[na] = w[1]; np[na] = 0
+        for (i = 2; i <= k; i++) { sub(/^\.\//, "", w[i]); path[na, ++np[na]] = w[i] }
+      }
+    }
+    {
+      for (f = 1; f <= NF; f++) {
+        v = $f; gsub(/^[ \t]+|[ \t]+$/, "", v); sub(/^\.\//, "", v)
+        if (v == "") continue
+        for (i = 1; i <= na; i++) {
+          hit = (v == name[i])
+          for (j = 1; j <= np[i] && !hit; j++) { p = path[i, j]; if (index(v, p) == 1 || index(p, v) == 1) hit = 1 }
+          if (hit && !(name[i] in seen)) { seen[name[i]] = 1; out = out (out == "" ? "" : ",") name[i] }
+        }
+      }
+    }
+    END { print out }'
+}
+
+# broad_free_files FILES
+# The comma-separated FILES without a project's shared docs folder (docs/ and what is in it). Many unrelated issues name a file there (a mission, a plan, a decision), so such a file places an issue in an area for holds but never joins two issues into one unit (#1891). A spec folder is not broad.
+broad_free_files() {
+  printf '%s\n' "$1" | tr ',' '\n' | awk '$0 != "" && $0 !~ /^(\.\/)?docs(\/|$)/' | paste -sd, -
 }
 
 # areas_meet A B
@@ -49,7 +70,7 @@ area_units() {
   au_us=$(printf '\037')
   au_lines=$(printf '%s\n' "$2" | tr '\t' '\037' | while IFS="$au_us" read -r au_k au_n au_t au_w au_f; do
     [ -n "$au_k" ] || continue
-    if [ "$au_k" = unit ]; then printf 'unit\t%s\t%s\t%s\t%s\t%s\n' "$au_n" "$au_t" "$au_w" "$au_f" "$(unit_areas "$1" "$au_f")"
+    if [ "$au_k" = unit ]; then printf 'unit\t%s\t%s\t%s\t%s\t%s\t%s\n' "$au_n" "$au_t" "$au_w" "$au_f" "$(unit_areas "$1" "$au_f")" "$(unit_areas "$1" "$(broad_free_files "$au_f")")"
     else printf '%s\t%s\t%s\t%s\t\t\n' "$au_k" "$au_n" "$au_t" "$au_w"; fi
   done)
   { printf '%s\n' "$3" | sed 's/^/R\t/'; printf '%s\n' "$4" | sed 's/^/T\t/'; printf '%s\n' "$au_lines" | sed 's/^/U\t/'; } | tr -d '\r' | awk -F'\t' '
@@ -66,9 +87,10 @@ area_units() {
     }
     $1 == "R" && $2 != "" { r++; ri[r] = $2; ra[r] = $3 }
     $1 == "T" && $2 != "" { tt[$2] = $3 }
-    $1 == "U" && $2 == "unit" { n++; num[n] = $3; ttl[n] = $4; why[n] = $5; fl[n] = $6; ar[n] = $7; par[n] = n; line[++L] = "u" n }
+    $1 == "U" && $2 == "unit" { n++; num[n] = $3; ttl[n] = $4; why[n] = $5; fl[n] = $6; ar[n] = $7; mar[n] = $8; sz[n] = split($3, szt, " "); par[n] = n; line[++L] = "u" n }
     $1 == "U" && $2 != "unit" && $2 != "" { line[++L] = "o"; other[L] = $2 "\t" $3 "\t" $4 "\t" $5 }
     END {
+      cap = (ENVIRON["PLAN_BUNDLE_MAX"] + 0 > 0) ? ENVIRON["PLAN_BUNDLE_MAX"] + 0 : 4  # a bundle is a few issues; past it the rest stay loose units (#1891)
       for (i = 1; i <= n; i++) {
         held[i] = ""
         for (k = 1; k <= r; k++) if (!inrun(num[i], ri[k]) && meet(ar[i], ra[k]) != "") {
@@ -78,8 +100,8 @@ area_units() {
         }
       }
       for (i = 1; i <= n; i++) if (held[i] == "") for (j = i + 1; j <= n; j++) if (held[j] == "") {
-        s = meet(ar[i], ar[j])
-        if (s != "") { a = find(i); b = find(j); if (a != b) { par[b] = a; if (sh[a] == "") sh[a] = s } }
+        s = meet(mar[i], mar[j])
+        if (s != "") { a = find(i); b = find(j); if (a != b && sz[a] + sz[b] <= cap) { par[b] = a; sz[a] += sz[b]; if (sh[a] == "") sh[a] = s } }
       }
       for (i = 1; i <= n; i++) if (held[i] == "") {
         g = find(i)

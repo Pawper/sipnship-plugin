@@ -127,11 +127,12 @@ guess_files() {
 # overlaps a running unit is held, never started. Units never share a file.
 plan_units() {
   { printf '%s\n' "$1" | sed 's/^/G\t/'; printf '%s\n' "$2" | sed 's/^/R\t/'; } | tr -d '\r' | awk -F'\t' '
-    function ov(a, b,   na, nb, fa, fb, i, j, x, y) {
+    function ov(a, b, strict,   na, nb, fa, fb, i, j, x, y) {
       na = split(a, fa, ","); nb = split(b, fb, ",")
       for (i = 1; i <= na; i++) for (j = 1; j <= nb; j++) {
         x = fa[i]; y = fb[j]
         if (x == "" || y == "") continue
+        if (strict && (x ~ /^(\.\/)?docs(\/|$)/ || y ~ /^(\.\/)?docs(\/|$)/)) continue  # a shared docs folder joins no two issues (#1891)
         if (x == y) return x
         if (x ~ /\/$/ && index(y, x) == 1) return y
         if (y ~ /\/$/ && index(x, y) == 1) return x
@@ -142,19 +143,20 @@ plan_units() {
     # Plugin and CI work shares one test suite, so it always goes together:
     # any path under plugin/, scripts/ci/ or .github/ also carries "@tooling".
     function tooling(f) { return (("," f) ~ /,(plugin|scripts\/ci|\.github)\//) ? f ",@tooling" : f }
-    $1 == "G" && $2 != "" { n++; num[n] = $2; title[n] = $3; files[n] = tooling($4); par[n] = n }
+    $1 == "G" && $2 != "" { n++; num[n] = $2; title[n] = $3; files[n] = tooling($4); par[n] = n; sz[n] = 1 }
     $1 == "R" && $2 != "" { r++; rtitle[r] = $2; rfiles[r] = tooling($3) }
     END {
+      cap = (ENVIRON["PLAN_BUNDLE_MAX"] + 0 > 0) ? ENVIRON["PLAN_BUNDLE_MAX"] + 0 : 4  # a bundle is a few issues; the rest stay loose units (#1891)
       for (i = 1; i <= n; i++) {
         held[i] = ""
         for (k = 1; k <= r; k++) if (ov(files[i], rfiles[k]) != "") { held[i] = rtitle[k]; break }
       }
       for (i = 1; i <= n; i++) if (held[i] == "") for (j = i + 1; j <= n; j++) if (held[j] == "") {
-        s = ov(files[i], files[j])
+        s = ov(files[i], files[j], 1)
         if (s != "") {
           a = find(i); b = find(j)
-          if (a != b) par[b] = a
-          if (why[a] == "") why[a] = s
+          if (a != b && sz[a] + sz[b] <= cap) { par[b] = a; sz[a] += sz[b] } else s = ""
+          if (s != "" && why[a] == "") why[a] = s
         }
       }
       for (i = 1; i <= n; i++) if (held[i] == "") {

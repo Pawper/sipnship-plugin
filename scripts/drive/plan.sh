@@ -192,7 +192,7 @@ plan_stage "round proposed"
 mocks_text=""; [ -f scripts/ci/mocks.txt ] && mocks_text=$(cat scripts/ci/mocks.txt)
 areas_text=""; [ -f .claude/areas.txt ] && areas_text=$(cat .claude/areas.txt)
 past=$(past_spec_files "$(git log -n 300 --name-only --format='@@ %s' main 2>/dev/null || git log -n 300 --name-only --format='@@ %s' 2>/dev/null)")
-guesses=""; running=""; left_reads=0
+guesses=""; running=""; left_reads=0; plan_left_until=$((SECONDS + ${PLAN_LEFT_SECONDS:-90}))
 # A ready issue that says it comes after another open one is held, naming what it waits on, read afresh each run.
 reasons=$(hold_reasons "$facts")
 # An open pull request that already closes a Ready issue means no agent is started on it again, held or batched (stale-lib.sh).
@@ -216,6 +216,9 @@ while IFS="$us" read -r kind num title a b c d e; do
 $reasons" in *"
 hold	$num	"*) continue ;; esac
       plan_ready_guess  # sets g and title; an issue a merged pull request worked on is planned from what is left (left-lib.sh)
+      case "$left_say" in partly) reasons=$(printf '%s
+hold	%s	%s	Part of it landed; a reader confirms what is left before it takes an agent
+' "$reasons" "$num" "$title" | sed '/^$/d'); continue ;; esac  # a partly landed issue is a hold until that read has happened (#1891)
       guesses="${guesses}${num}${tab}${title}${tab}${g}
 " ;;
     in-progress)

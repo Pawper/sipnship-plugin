@@ -76,7 +76,8 @@ left_areas_files() {
 # its whole body. At most PLAN_LEFT_READS reads a plan (12), so the plan stays quick.
 plan_ready_guess() {
   left_say=""
-  if [ "$left_reads" -lt "${PLAN_LEFT_READS:-12}" ]; then
+  # The reads share one time budget (plan_left_until, a count of SECONDS set by plan.sh): a slow GitHub never holds the plan on the issues' comments, and an issue not read is planned from its whole body (#1926).
+  if [ "$left_reads" -lt "${PLAN_LEFT_READS:-12}" ] && [ "${SECONDS:-0}" -lt "${plan_left_until:-999999}" ]; then
     left_reads=$((left_reads + 1))
     left_say=$(left_comments_say "$(gh api "repos/{owner}/{repo}/issues/$num/comments?per_page=100" --jq '.[] | .body | gsub("\r"; "") | gsub("\n"; "\\n")' 2>/dev/null)")
   fi

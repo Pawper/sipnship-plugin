@@ -5648,8 +5648,8 @@ eq "an issue that speaks of the plugin's drive and names no path is guessed as p
 eq "so is one that names the project-drive skill or the workflow file" "plugin/ plugin/" "$(bd_guess 'The project-drive skill says one thing') $(bd_guess 'ci.yml skips the job')"
 eq "an issue about something else that names no path is still unguessed" "" "$(bd_guess 'The Work tab shows a card for the seed list')"
 bd_ready=$(printf '1388\tThe drive proposes a drain for held ones\t%s\n1374\tThe drive proposes set-aside for a waiting one\t%s\n1367\tThe drive proposes mark-waiting every tick\tplugin/scripts/board/digest.sh\n1370\tThe listener carries out land here\tplugin/console/\n1311\tA fix in the workflow\t.github/workflows/ci.yml\n' "$(bd_guess "the plugin's drive plan script")" "$(bd_guess 'in plugin/scripts/drive/plan.sh')")
-eq "every ready plugin and CI issue goes into one unit, with a reason" "1" "$(plan_units "$bd_ready" '' | grep -c '^unit')"
-eq "that unit carries all five" "1388 1374 1367 1370 1311" "$(plan_units "$bd_ready" '' | awk -F'\t' '$1 == "unit" { print $2 }')"
+eq "plugin and CI issues go into units of at most four, with a reason" "2" "$(plan_units "$bd_ready" '' | grep -c '^unit')"
+eq "the first unit carries four" "1388 1374 1367 1370" "$(plan_units "$bd_ready" '' | awk -F'\t' '$1 == "unit" { print $2 }' | head -n 1)"
 eq "a plugin issue that names no path waits on a running plugin unit" "hold	1388	The drive proposes a drain for held ones	After: Hook fix" "$(plan_units "$(printf '1388\tThe drive proposes a drain for held ones\t%s\n' "$(bd_guess "the plugin's drive plan script")")" "$(printf 'Hook fix\tplugin/hooks/a.sh\n')")"
 # A red main's issue is one goal, and checks work joins the plugin bundle (#1879).
 eq "an issue naming a workflow, the queue's drain or a check of the CI is guessed as plugin work" "plugin/ plugin/ plugin/ plugin/" "$(bd_guess 'The scheduled deploy run skips the build when nothing changed') $(bd_guess 'The queue drain waits on every pull request') $(bd_guess 'queue-drain.yml starts late') $(bd_guess 'The checks job reads each file twice')"
@@ -6706,6 +6706,24 @@ eq "the plan prints a progress line on stderr, never on stdout" "plan: reading p
 eq "plan.sh says what it has read" "1 1" "$(grep -c 'plan_say "read the board' "$root/scripts/drive/plan.sh") $(grep -c 'plan_say "reading pull request' "$root/scripts/drive/pr-read-lib.sh")"
 eq "the answers reader is bounded and says why" "1" "$(grep -c 'timeout 90' "$root/scripts/drive/answers.sh")"
 
+# A broad shared folder joins no issues, a bundle has a size limit, and a partly landed issue is a hold (#1891, #1926).
+bu_ready=""; bu_i=0
+for bu_f in docs/mission.md docs/plan.md docs/decisions/a.md docs/mission.md docs/plan.md docs/decisions/b.md docs/mission.md docs/plan.md docs/decisions/c.md docs/mission.md docs/plan.md docs/decisions/d.md; do
+  bu_i=$((bu_i + 1)); bu_ready="${bu_ready}$((500 + bu_i))${pz_t}Rooftop garden note $bu_i${pz_t}${bu_f}
+"
+done
+bu_areas='garden-docs docs/ specs/040-docs/
+beds specs/031-beds/ src/beds/'
+bu_units=$(plan_units "$bu_ready" '')
+eq "twelve issues naming the docs folder and nothing else in common are twelve units, never one" "12 0" "$(printf '%s\n' "$bu_units" | grep -c '^unit') $(printf '%s\n' "$bu_units" | awk -F'\t' '$1 == "unit" && split($2, q, " ") > 1' | wc -l | tr -d ' ')"
+bu_areaunits=$(area_units "$bu_areas" "$bu_units" '' '')
+eq "and the area that holds the docs folder does not join them either" "12" "$(printf '%s\n' "$bu_areaunits" | grep -c '^unit')"
+bu_seven=$(printf '1\tA\tsrc/beds/a.ts\n2\tB\tsrc/beds/a.ts\n3\tC\tsrc/beds/a.ts\n4\tD\tsrc/beds/a.ts\n5\tE\tsrc/beds/a.ts\n6\tF\tsrc/beds/a.ts\n7\tG\tsrc/beds/a.ts\n')
+eq "seven issues in one file are a bundle of four and the rest" "1 2 3 4|5 6 7" "$(plan_units "$bu_seven" '' | awk -F'\t' '$1 == "unit" { print $2 }' | paste -sd'|' -)"
+eq "past the limit an area bundle stops at four too" "4" "$(area_units "$bu_areas" "$(printf 'unit\t1\tA\t\tsrc/beds/a.ts\nunit\t2\tB\t\tsrc/beds/b.ts\nunit\t3\tC\t\tsrc/beds/c.ts\nunit\t4\tD\t\tsrc/beds/d.ts\nunit\t5\tE\t\tsrc/beds/e.ts\n')" '' '' | awk -F'\t' '$1 == "unit" { n = split($2, q, " "); if (n > m) m = n } END { print m }')"
+eq "a spec folder still joins issues" "1" "$(plan_units "$(printf '1\tA\tspecs/040-docs/,specs/040-docs/a.md\n2\tB\tspecs/040-docs/,specs/040-docs/b.md\n')" '' | grep -c '^unit')"
+eq "a unit's areas are read in one process, whatever its files" "beds,garden-docs" "$(unit_areas "$bu_areas" 'src/beds/a.ts,docs/x.md,notes/x.txt')"
+eq "plan.sh holds a partly landed issue and bounds the comment reads" "1 1" "$(grep -c 'partly) reasons=' "$root/scripts/drive/plan.sh") $(grep -c 'plan_left_until=' "$root/scripts/drive/plan.sh")"
 section 'the drive checks it can make a worktree before it starts an agent (drive)'
 . "$root/scripts/drive/worktree-access-lib.sh"
 wa_dir=$(mktemp -d)
