@@ -122,6 +122,14 @@ jobs:
           sha=$(git rev-parse HEAD)
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           no() { echo "deploy=no" >> "$GITHUB_OUTPUT"; exit "${1:-0}"; }
+          # A lack that a person must fix fails a run somebody asked for (by hand,
+          # or a landing's own start), where it must never be quiet. A scheduled
+          # run ends without failing: the Setup row says it once, and a failed
+          # run an hour would only email the owner.
+          lacking() {
+            if [ "$GITHUB_EVENT_NAME" = schedule ]; then echo "Deploys wait for their key; the Setup row \"Deploys have their key\" says where it goes."; no 0; fi
+            no 1
+          }
           if [ "$interval" = 0 ] && [ "$GITHUB_EVENT_NAME" = schedule ]; then
             echo "intervalMinutes is 0: the queue deploys after each landing, so the scheduled run has nothing to do."
             no
@@ -130,11 +138,11 @@ jobs:
             path=cloudflare
             if [ -z "$(json_words "$cfg" workers)" ]; then
               echo "The target is cloudflare but .claude/deploy.json lists no workers; list the Worker folders in deploy order under \"workers\"."
-              no 1
+              lacking
             fi
             if [ "$HAS_CF_TOKEN" != true ]; then
               echo "CLOUDFLARE_API_TOKEN is not set; nothing can deploy. The Setup row "Deploys have their key" is where the key goes (CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID)."
-              no 1
+              lacking
             fi
           elif [ "$path" = guard ]; then
             echo "This project deploys by the guard path (Git deploys from main, guarded in vercel.json); this workflow has nothing to do."
@@ -142,7 +150,7 @@ jobs:
           fi
           if [ "$path" != cloudflare ] && [ "$HAS_TOKEN" != true ]; then
             echo "VERCEL_TOKEN is not set; nothing can deploy. The Setup row "Deploys have their key" is where the key goes (VERCEL_TOKEN, VERCEL_ORG_ID and VERCEL_PROJECT_ID)."
-            no 1
+            lacking
           fi
           deployed=$(git ls-remote origin refs/deploy/production | cut -f1)
           if [ "$deployed" = "$sha" ]; then echo "main ($sha) is already in production."; no; fi

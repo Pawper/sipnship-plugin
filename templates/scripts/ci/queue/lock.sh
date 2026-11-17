@@ -61,6 +61,18 @@ remote_lock_read() {
   gh api "repos/{owner}/{repo}/git/commits/$rr_sha" --jq .message 2>/dev/null | tr -d '\r' | head -n 1
 }
 
+# queue_busy_exit: the ending when another live queue holds the lock. A drain a
+# person starts by hand needs to know theirs did not run, so it fails; a Queue
+# drain GitHub started because a CI run ended finds the queue that was waiting
+# for that very run, so it ends as passed (no failed run, no email).
+queue_busy_exit() {
+  if [ "${GITHUB_ACTIONS:-}" = true ] && [ "${GITHUB_EVENT_NAME:-}" = workflow_run ]; then
+    echo "Nothing to do here: the queue that is already at work will pick this up."
+    exit 0
+  fi
+  exit 1
+}
+
 # remote_lock_take: before building a batch or merging, the one lock every
 # queue sees. A queue that cannot reach GitHub goes on with the file lock alone
 # (a failed call never blocks), and says so. Refused with the holder named when
@@ -85,7 +97,7 @@ remote_lock_take() {
     if [ -n "$rt_why" ] || [ -z "$rt_cur" ] || [ "$rt_try" -ge 2 ]; then
       [ -n "$rt_why" ] || rt_why="a queue left its lock on GitHub just now"
       echo "Another queue is running: $rt_why. Wait for it to finish rather than starting a second one; a lock left by a crash ends on its own after $(( $(remote_lock_bound) / 60 )) minutes."
-      exit 1
+      queue_busy_exit
     fi
     # Its holder is gone or it is stale: take it over, once.
     say "Taking over a queue lock on GitHub whose holder is gone ($rt_cur)."

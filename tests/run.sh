@@ -2789,6 +2789,12 @@ eq "the lock is one ref, held by a commit that names the drain" "1 1" "$(ls "$rl
 rl_b=$(rl_take b)
 eq "a second drain in another checkout is refused, naming the first" "yes" "$(case "$rl_b" in "Another queue is running: a --drain started 0 minute(s) ago is still running (pid "*") on "*". Wait for it"*) echo yes ;; *) echo "no: $rl_b" ;; esac)"
 eq "and never takes the lock, nor its own file lock" "no" "$([ -f "$rl/b/q/lock" ] && echo yes || echo no)"
+# A drain GitHub starts because a CI run ended finds the queue that waited for that run: it ends as passed, with one plain line.
+
+rl_gh=$( cd "$rl/b"; PATH="$rl/bin:$PATH" RL_DIR="$rl" GITHUB_ACTIONS=true GITHUB_EVENT_NAME=workflow_run sh "$rl/take.sh" 2>&1; echo "exit $?" )
+eq "a drain GitHub started for a finished run ends passed, naming the queue at work" "yes" "$(case "$rl_gh" in *"Another queue is running: a --drain"*"Nothing to do here: the queue that is already at work"*"exit 0") echo yes ;; *) echo "no: $rl_gh" ;; esac)"
+rl_hand=$( cd "$rl/b"; PATH="$rl/bin:$PATH" RL_DIR="$rl" GITHUB_ACTIONS= sh "$rl/take.sh" 2>&1; echo "exit $?" )
+eq "the same refusal in a drain run by hand still ends with exit 1" "exit 1" "$(printf '%s' "$rl_hand" | tail -n 1)"
 # The same checkout's drain that died leaves a lock nobody holds: it is taken over.
 rl_a2=$(rl_take a)
 eq "a lock whose process is gone, in the checkout that wrote it, is taken over" "yes" "$(case "$rl_a2" in *"Taking over a queue lock on GitHub whose holder is gone"*"took the lock") echo yes ;; *) echo "no: $rl_a2" ;; esac)"
@@ -3032,7 +3038,9 @@ eq "state-label runs once per issue per burst" "1" "$(grep -c 'group: state-labe
 # A landing starts a deploy: the queue's own start has a backstop, a run when a drain ends, and every step is named so the Queue never shows a script.
 unnamed_steps() { awk '/^      - / { if (inst && !named) n++; inst = 1; named = 0 } /^      - name:/ { named = 1 } /^        name:/ { named = 1 } END { if (inst && !named) n++; print n + 0 }' "$1"; }
 eq "the plugin's Deploy also starts when a drain ends, and its steps all have names" "1 0" "$(grep -c 'workflows: \["Queue drain"\]' "$root/templates/.github/workflows/deploy.yml") $(unnamed_steps "$root/templates/.github/workflows/deploy.yml")"
-eq "a deploy started by a finished drain is not held back by interval 0" "1" "$(grep -c 'GITHUB_EVENT_NAME" = schedule' "$root/templates/.github/workflows/deploy.yml")"
+eq "a deploy started by a finished drain is not held back by interval 0" "1" "$(grep -c '"$interval" = 0 \] && \[ "$GITHUB_EVENT_NAME" = schedule' "$root/templates/.github/workflows/deploy.yml")"
+dp_yml="$root/templates/.github/workflows/deploy.yml"
+eq "a scheduled Deploy with no key ends quietly, and a run by hand or a landing's start still fails" "3 1" "$(grep -c '^ *lacking$' "$dp_yml") $(grep -c 'if \[ "$GITHUB_EVENT_NAME" = schedule \]; then echo "Deploys wait for their key' "$dp_yml")"
 eq "a scheduled deploy with interval 0 does nothing" "1" "$(grep -c 'intervalMinutes is 0' "$root/templates/.github/workflows/deploy.yml")"
 # --- The sync judges a file by its content against every released version.
 eq "unfill puts a project's runner back to its placeholder" "    runs-on: RUNS_ON
