@@ -137,7 +137,15 @@ audit_last_line() {
 # slow plan from a hung one: the proposal itself is printed only at the end, on stdout.
 plan_say() { printf 'plan: %s\n' "$1" >&2; }
 # plan_stage NAME: where the plan is, with the seconds it has run, on its error stream, so a run that stops answering shows the stage it stopped in (#1794).
-plan_stage() { printf 'plan: stage %s, %ss in\n' "$1" "${SECONDS:-0}" >&2; }
+plan_stage() {
+  printf 'plan: stage %s, %ss in\n' "$1" "${SECONDS:-0}" >&2
+  # A plan that has run past its bound ends itself, naming the stage, instead of being killed from outside: a plan stopped by hand left its shells running and still starting new ones (#1794).
+  if [ "${SECONDS:-0}" -gt "${PLAN_MAX_SECONDS:-900}" ] 2>/dev/null; then
+    printf 'plan: stopped after stage %s: %ss is past the %ss bound (PLAN_MAX_SECONDS)\n' "$1" "${SECONDS:-0}" "${PLAN_MAX_SECONDS:-900}" >&2
+    echo "stop: the plan ran past its time bound (${SECONDS}s, after the stage \"$1\"); nothing is proposed from a partial read"
+    exit 0
+  fi
+}
 
 # queue_state_of GLOB: none without a queue log, else stale or recent by the newest log's age and last line.
 queue_state_of() {
@@ -173,9 +181,12 @@ snapshot_rows() {
         printf 'pr\t%s\t%s\t%s\t%s\t%s\n' "$num" "$title" "$ci" "$merge" "$class"
         ;;
       issue)
-        state=$(state_of_labels "$a")
-        case ",$a," in *",ci-red,"*) printf 'red\t%s\n' "$num" ;; esac
-        [ "$(standing_issue "$a")" = yes ] && [ "$state" = ready ] && continue  # the drive and audit issues are never dispatched
+        if command -v labels_facts >/dev/null 2>&1; then labels_facts "$a"
+        else lf_standing=$(standing_issue "$a"); case ",$a," in *",ci-red,"*) lf_red=yes ;; *) lf_red=no ;; esac; lf_state=$(state_of_labels "$a"); fi
+        state=$lf_state
+        # A red main's issue is the fix-main goal alone: it is never also a ready issue to dispatch (#1879).
+        [ "$lf_red" = no ] || { printf 'red\t%s\n' "$num"; [ "$state" != ready ] || continue; }
+        [ "$lf_standing" = yes ] && [ "$state" = ready ] && continue  # the drive and audit issues are never dispatched
         case "$state" in
           ready)
             # Title and the start of the body, both from the one call; an owner-decision match is a candidate with its sentence.

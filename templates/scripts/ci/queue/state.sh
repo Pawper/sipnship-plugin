@@ -64,17 +64,19 @@ rate_ok() { rm -f "$flaky_dir/rate.hits" 2>/dev/null || true; }
 # a commit as one word, none, red, pending or green.
 pr_tsv() {
   pt_f="$flaky_dir/pr-$1.tsv"
-  pt_age=$(( $(date +%s) - $(stat -c %Y "$pt_f" 2>/dev/null || stat -f %m "$pt_f" 2>/dev/null || echo 0) ))
-  if [ ! -s "$pt_f" ] || [ "$pt_age" -gt 60 ]; then
+  # One find tells whether the cache is under a minute old; a date and
+  # two stats made three starts for every field of every pull request.
+  if [ ! -s "$pt_f" ] || [ -z "$(find "$pt_f" -mmin -1 2>/dev/null)" ]; then
     if gh api "repos/{owner}/{repo}/pulls/$1" --jq '[.head.ref, .head.sha, .title, (.draft | tostring), (.mergeable_state // ""), .base.ref, .state] | @tsv' > "$pt_f.tmp" 2>"$gh_err"; then
       mv "$pt_f.tmp" "$pt_f"
     else
       rm -f "$pt_f.tmp" 2>/dev/null; rate_stop
     fi
   fi
-  cat "$pt_f" 2>/dev/null || true
+  # read is a builtin; the file is one line.
+  { IFS= read -r pt_line < "$pt_f" 2>/dev/null || true; printf '%s\n' "$pt_line"; }
 }
-pr_field() { pr_tsv "$1" | cut -f"$2" | tr -d '\r'; }
+pr_field() { pr_tsv "$1" | awk -F'\t' -v n="$2" '{ sub(/\r$/, ""); print $n }'; }
 # job_real_outcome JOB_ID CONCLUSION: a cancelled job whose own step failed
 # is a failure (job_outcome); one REST call, only for a cancelled job.
 job_real_outcome() {

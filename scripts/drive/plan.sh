@@ -25,6 +25,7 @@ here=$(dirname "$0")
 . "$here/../../hooks/scripts/board-checks-lib.sh"
 . "$here/../../hooks/scripts/session-brief-versions.sh"
 . "$here/drive-lib.sh"
+. "$here/labels-lib.sh"
 . "$here/auto-lib.sh"
 . "$here/bundle-lib.sh"
 . "$here/round-lib.sh"
@@ -205,11 +206,15 @@ reasons=$(printf '%s\n%s\n' "$reasons" "$published" | sed '/^$/d')
 published_count=$(printf '%s\n' "$published" | sed '/^$/d' | cut -f2 | sort -u | wc -l | tr -d ' ')
 while IFS="$us" read -r kind num title a b c d e; do
   [ "$kind" = issue ] || continue
-  [ "$(standing_issue "$a")" = yes ] && continue  # the drive and audit issues take no dispatch and no slot
-  case "$(state_of_labels "$a")" in
+  labels_facts "$a"  # no process started per issue (labels-lib.sh, #1794)
+  [ "$lf_standing" = yes ] && continue  # the drive and audit issues take no dispatch and no slot
+  [ "$lf_red" = yes ] && continue  # a red main's issue is the fix-main goal alone, never a dispatch or a bundle member (#1879)
+  case "$lf_state" in
     ready)
       case "$(printf '%s\n' "$snapshot" | awk -F'\t' -v n="$num" '$1 == "issue" && $2 == n { print $5 }')" in yes) continue ;; esac
-      printf '%s\n' "$reasons" | grep -q "^hold	$num	" && continue
+      case "
+$reasons" in *"
+hold	$num	"*) continue ;; esac
       plan_ready_guess  # sets g and title; an issue a merged pull request worked on is planned from what is left (left-lib.sh)
       guesses="${guesses}${num}${tab}${title}${tab}${g}
 " ;;
@@ -262,6 +267,7 @@ round=$(quiet_declined_goals "$round" "$facts" .scratch/drive/declined.tsv); ext
 [ -z "$extra" ] || round=$(add_owner_goals "$round" "$extra" "$facts" .scratch/drive/ask-fix.txt)  # an ask-fix the drive already tried stays a hold (ask-fix-seen.sh)
 round=$(say_every_pr "$round" "$snapshot")  # every open pull request has a line, whatever its checks say
 plan_stage "landing, release and deploy read"
+round=$(lead_red_main "$round")  # a red main's goal is the first numbered line (rank-lib.sh)
 number_proposal "$round"
 # Auto Drive, from the drive issue's label drive:auto: one REST call. On is a
 # standing approval; off, the proposal is posted and waits for a reply.

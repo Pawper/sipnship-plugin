@@ -35,6 +35,17 @@ lead_main_fixes() {
     END { for (i = 1; i <= l; i++) print lead[i]; for (i = 1; i <= r; i++) print rest[i] }'
 }
 
+# lead_red_main ROUND
+# The goal for a red main (its ci-red issue, "fix-main NUMBER") is the first
+# numbered line, ahead of every other goal, since a red main comes before the
+# rest (#1879). Information lines keep their order; every other line too.
+lead_red_main() {
+  printf '%s\n' "$1" | awk '
+    /^fix-main [0-9]/ { lead[++l] = $0; next }
+    { rest[++r] = $0 }
+    END { for (i = 1; i <= l; i++) print lead[i]; for (i = 1; i <= r; i++) print rest[i] }'
+}
+
 # hold_drain_for_main ROUND MAINFIX
 # While a ready issue fixes a failure on main (MAINFIX, space separated), a
 # drain would batch pull requests against the same failure and close on it:

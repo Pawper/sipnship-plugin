@@ -2679,10 +2679,10 @@ eq "others ready and no reason is refused, naming them" "3 other green pull requ
 ro_out=$( ( base=main; tab=$(printf '	'); . "$root/templates/scripts/ci/queue/rules-serial.sh"; . "$root/templates/scripts/ci/queue/choose.sh"
   gh() { case "$*" in
     *"pulls?state=open"*) printf '82\tfalse\tsha82\tmain\n83\tfalse\tsha83\tmain\n' ;;
-    *"issues/82/labels"*) printf 'queue:hold\n' ;;
-    *"issues/83/labels"*) printf 'bug\n' ;;
+    *"pulls/82"*) printf 'queue:hold\036\n' ;;
+    *"pulls/83"*) printf 'bug\036\n' ;;
     *) return 0 ;; esac; }
-  pr_rollup() { echo green; }; pr_field() { echo MERGEABLE; }; mergeable_word() { echo "$1"; }
+  pr_rollup() { echo green; }; pr_field() { echo MERGEABLE; }; mergeable_word() { echo "$1"; }; settle_held() { :; }
   ready_others "81" ) 2>&1 )
 eq "serial counts only the green pull requests that are not held" "83" "$(printf '%s' "$ro_out" | tr -d ' ')"
 eq "the reason goes in the squash title" "Fix the chime (#79) [serial: migration]" "$(serial_title 'Fix the chime' 79 migration)"
@@ -5646,6 +5646,26 @@ bd_ready=$(printf '1388\tThe drive proposes a drain for held ones\t%s\n1374\tThe
 eq "every ready plugin and CI issue goes into one unit, with a reason" "1" "$(plan_units "$bd_ready" '' | grep -c '^unit')"
 eq "that unit carries all five" "1388 1374 1367 1370 1311" "$(plan_units "$bd_ready" '' | awk -F'\t' '$1 == "unit" { print $2 }')"
 eq "a plugin issue that names no path waits on a running plugin unit" "hold	1388	The drive proposes a drain for held ones	After: Hook fix" "$(plan_units "$(printf '1388\tThe drive proposes a drain for held ones\t%s\n' "$(bd_guess "the plugin's drive plan script")")" "$(printf 'Hook fix\tplugin/hooks/a.sh\n')")"
+# A red main's issue is one goal, and checks work joins the plugin bundle (#1879).
+eq "an issue naming a workflow, the queue's drain or a check of the CI is guessed as plugin work" "plugin/ plugin/ plugin/ plugin/" "$(bd_guess 'The scheduled deploy run skips the build when nothing changed') $(bd_guess 'The queue drain waits on every pull request') $(bd_guess 'queue-drain.yml starts late') $(bd_guess 'The checks job reads each file twice')"
+eq "an issue about a bed's watering workflow in the app is not" "" "$(bd_guess "Maya's watering reminders arrive late on the rooftop beds")"
+rm_t=$(printf '	')
+rm_facts=$(printf 'issue\t90\tMain is red: the bed map test fails\tci-red,state:ready\t2026-11-16T10:00:00Z\tThe bed map test fails on main.\nissue\t91\tShow the next watering\tstate:ready\t2026-11-16T10:00:00Z\tShows the next watering\n')
+rm_snap=$( . "$root/hooks/scripts/session-brief-lib.sh"; . "$root/scripts/drive/auto-lib.sh"; . "$root/scripts/drive/owner-lib.sh"; . "$root/scripts/drive/plan-read-lib.sh"; snapshot_rows "$rm_facts" '' '' )
+eq "a ready ci-red issue is a red line" "90" "$(printf '%s\n' "$rm_snap" | awk -F'\t' '$1 == "red" { print $2 }')"
+eq "and the only issue line left is the ordinary one" "91" "$(printf '%s\n' "$rm_snap" | awk -F'\t' '$1 == "issue" { print $2 }')"
+rm_snap2=$( . "$root/hooks/scripts/session-brief-lib.sh"; . "$root/scripts/drive/auto-lib.sh"; . "$root/scripts/drive/owner-lib.sh"; . "$root/scripts/drive/labels-lib.sh"; . "$root/scripts/drive/plan-read-lib.sh"; snapshot_rows "$rm_facts" '' '' )
+eq "the same snapshot comes from the label reader that starts no process" "$rm_snap" "$rm_snap2"
+eq "the label reader names the state, the standing issues and a red main, in any case and spacing" "ready no no|in-progress yes no|waiting-on-owner yes yes|none no no" "$( . "$root/scripts/drive/labels-lib.sh"; for rm_l in 'state:ready,bug' 'State: In Progress, drive' ' state: waiting on owner ,audit,ci-red' 'bug'; do labels_facts "$rm_l"; printf '%s %s %s|' "$lf_state" "$lf_standing" "$lf_red"; done | sed 's/|$//')"
+eq "the label reader starts no outside tool for a plain label list" "0" "$( . "$root/scripts/drive/labels-lib.sh"; rm_n=0; tr() { rm_n=$((rm_n + 1)); }; awk() { rm_n=$((rm_n + 1)); }; sed() { rm_n=$((rm_n + 1)); }; grep() { rm_n=$((rm_n + 1)); }; labels_facts 'state:ready,bug,drive'; echo "$rm_n")"
+eq "the plan's loop of ready issues passes over a ci-red one too" "1" "$(grep -c 'lf_red" = yes ] && continue' "$root/scripts/drive/plan.sh")"
+eq "the red main's goal leads every other, and the stop line stays last" "fix-main 90
+merge 41
+dispatch 91${rm_t}Show the next watering
+stop: proposal ready for approval" "$(. "$root/scripts/drive/rank-lib.sh"; lead_red_main "$(printf 'merge 41\ndispatch 91\tShow the next watering\nfix-main 90\nstop: proposal ready for approval')")"
+eq "a batch's own fix-main line keeps its place" "merge 41
+fix-main batch${rm_t}the last batch went red" "$(. "$root/scripts/drive/rank-lib.sh"; lead_red_main "$(printf 'merge 41\nfix-main batch\tthe last batch went red')")"
+eq "plan.sh puts the red main's goal first before it numbers" "1" "$(awk '/lead_red_main "\$round"/ { a = NR } /^number_proposal "\$round"/ { b = NR } END { print (a && b && a < b) ? 1 : 0 }' "$root/scripts/drive/plan.sh")"
 # "Part of" does not finish an issue.
 eq "only Closes, Fixes and Resolves finish an issue, in any case, with or without a colon" "4
 12
@@ -5782,7 +5802,48 @@ eq "the queue names the pull requests a picked one overlaps" "  #12 Overlaps #14
 eq "a picked pull request alone on its files says nothing" "" "$(queue_overlap_lines 99)"
 say() { printf '%s\n' "$1"; }
 eq "the drain's round line keeps its words and adds the overlaps" "round 3: 1 green pull request(s): 12
-  #12 Overlaps #14 and #15 in watering.ts" "$(say_round_pick 3 1 12)"
+  #12 Overlaps #14 and #15 in watering.ts" "$(say_round_pick 3 1 12 | grep -v 'reading the other open')"
+eq "the round line adds what reading the board cost, when the shell can count" "1" "$(say_round_pick 3 1 12 | grep -c '^  reading the other open pull requests took [0-9]* processes in [0-9]* seconds$')"
+# A drain's reading of the board stays cheap. On a machine where a process
+# start is slow every start is paid by every check beside it, so a fixture
+# board of ten open pull requests, read with every outside tool counted,
+# may start only so many for each pull request: a count, never a time.
+rb_dir=$SUITE_TMP_ROOT/reading-board; mkdir -p "$rb_dir/bin"
+for rb_t in awk tr cat find date sed grep cut head mktemp rm mv stat sort basename wc; do
+  rb_real=$(command -v "$rb_t") || continue
+  printf '#!/bin/sh\necho %s >> "%s/count"\nexec "%s" "$@"\n' "$rb_t" "$rb_dir" "$rb_real" > "$rb_dir/bin/$rb_t"; chmod +x "$rb_dir/bin/$rb_t"
+done
+rb_read() { # PASS: the outside starts and the gh calls of one reading of ten pull requests
+  ( flaky_dir=$rb_dir; gh_err=/dev/null; base=main; tab=$(printf '\t'); here="$root/templates/scripts/ci"
+    . "$root/templates/scripts/ci/queue/overlaps.sh"
+    gh() { echo x >> "$rb_dir/calls"
+      case "$2" in
+        *"pulls?state=open"*) rb_n=1; while [ "$rb_n" -le 10 ]; do printf '%s\tsha%s\n' "$rb_n" "$rb_n"; rb_n=$((rb_n + 1)); done ;;
+        *"/files"*) rb_n=${2#*pulls/}; rb_n=${rb_n%%/*}; printf '%s\tsha%s\tsrc/a%s.ts\n%s\tsha%s\tsrc/shared.ts\n' "$rb_n" "$rb_n" "$rb_n" "$rb_n" "$rb_n" ;;
+      esac; }
+    : > "$rb_dir/count"; : > "$rb_dir/calls"
+    PATH="$rb_dir/bin:$PATH"
+    rb_out=$(queue_overlap_lines "1 2 3 4 5 6 7 8 9 10")
+    printf '%s starts, %s calls, %s overlap lines\n' "$(wc -l < "$rb_dir/count" | tr -d ' ')" "$(wc -l < "$rb_dir/calls" | tr -d ' ')" "$(printf '%s\n' "$rb_out" | grep -c Overlaps)" )
+}
+rm -f "$rb_dir/pr-files.tsv"
+rb_cold=$(rb_read); rb_warm=$(rb_read)
+eq "a cold reading of ten pull requests asks once for the list and once for each one's files" "10 overlap lines, 11 calls" "$(printf '%s' "$rb_cold" | sed 's/.* \([0-9]*\) calls, \([0-9]*\) overlap lines/\2 overlap lines, \1 calls/')"
+eq "a second reading asks only for the list, since no head moved" "1" "$(printf '%s' "$rb_warm" | sed 's/.*starts, \([0-9]*\) calls.*/\1/')"
+eq "a cold reading starts at most four outside tools for each pull request" "yes" "$(printf '%s' "$rb_cold" | awk '{ print ($1 <= 40) ? "yes" : "no: " $1 }')"
+eq "a warm reading starts at most three outside tools for each pull request" "yes" "$(printf '%s' "$rb_warm" | awk '{ print ($1 <= 30) ? "yes" : "no: " $1 }')"
+rb_pr() { # the starts of a held check and of a field read on one cached pull request
+  ( flaky_dir=$rb_dir; gh_err=/dev/null; base=main; tab=$(printf '\t'); here="$root/templates/scripts/ci"
+    . "$root/templates/scripts/ci/queue/state.sh"; . "$root/templates/scripts/ci/queue/rules-serial.sh"; . "$root/templates/scripts/ci/queue/choose.sh"
+    settle_held() { :; }
+    gh() { echo x >> "$rb_dir/calls"; printf 'queue:hold\nstate:ready\036Closes #9\n'; }
+    printf 'garden\tsha9\tWatering\tfalse\tclean\tmain\topen\n' > "$rb_dir/pr-9.tsv"
+    : > "$rb_dir/count"; : > "$rb_dir/calls"
+    PATH="$rb_dir/bin:$PATH"
+    rb_why=$(pr_held 9); rb_sha=$(pr_field 9 2)
+    printf '%s|%s|%s starts|%s calls\n' "$rb_why" "$rb_sha" "$(wc -l < "$rb_dir/count" | tr -d ' ')" "$(wc -l < "$rb_dir/calls" | tr -d ' ')" )
+}
+eq "a held check is one call, reads the label, and a cached field costs a few starts" "held by its label|sha9|yes|1 calls" "$(rb_pr | awk -F'|' '{ n = $3 + 0; print $1 "|" $2 "|" ((n <= 10) ? "yes" : "no: " n) "|" $4 }')"
 eq "the CI template runs the check on pull requests" "1" "$(grep -c 'hotspots-check.sh' "$root/templates/.github/workflows/ci.yml")"
 eq "the plugin's default list ships and holds no shrink line" "0" "$(grep -c '^shrink ' "$root/templates/scripts/ci/hotspots.txt")"
 here=$here_before
@@ -6328,7 +6389,7 @@ eq "no drive issue reads as none" "none" "$(auto_drive_state '')"
 eq "the drive issue is a standing issue, whatever its State" "yes yes" "$(standing_issue 'drive,state:ready,drive:auto') $(standing_issue 'State: Ready,Drive')"
 eq "the audit issue is a standing issue" "yes" "$(standing_issue 'audit,state:ready')"
 eq "a label that only starts the same is not one, and plain work is not" "no no" "$(standing_issue 'driven,state:ready') $(standing_issue 'state:ready,area:plugin')"
-eq "plan.sh leaves the drive and audit issues out of its snapshot and its dispatch guesses" "2" "$(cat "$root/scripts/drive/plan.sh" "$root/scripts/drive/plan-read-lib.sh" | grep -c 'standing_issue "\$a"')"
+eq "plan.sh leaves the drive and audit issues out of its snapshot and its dispatch guesses" "2" "$(cat "$root/scripts/drive/plan.sh" "$root/scripts/drive/plan-read-lib.sh" | grep -c 'lf_standing" = yes')"
 eq "a failed lookup reads as failed, never as none" "failed" "$(auto_drive_state 'lookup-failed')"
 eq "and the plan says the lookup failed, not that Auto Drive is off" "auto drive: not known; the lookup of the drive issue failed (it may still exist), so try the round again or ask in the session" "$(auto_line failed)"
 eq "the one reader of the drive issue is used by every script" "4" "$(grep -l 'drive_line=$(drive_issue_line)' "$root"/scripts/drive/approval.sh "$root"/scripts/drive/plan.sh "$root"/scripts/drive/work-requests.sh "$root"/scripts/drive/handoff.sh | wc -l | tr -d ' ')"

@@ -85,7 +85,11 @@ migration_blocks() {
 # serial_one PR: today's behavior for one PR.
 # pr_held PR: why this pull request is held, or nothing.
 pr_held() {
-  ph_why=$(held_reason "$(gh api "repos/{owner}/{repo}/issues/$1/labels" --jq '.[].name' 2>/dev/null)" "$(gh api "repos/{owner}/{repo}/pulls/$1" --jq '.body // ""' 2>/dev/null)"); [ -z "$ph_why" ] || settle_held "$1"; printf '%s' "$ph_why"
+  # One call, not two: a pull request carries the labels of its issue. The
+  # labels come first, then a record separator, then the body.
+  ph_rs=$(printf '\036')
+  ph_raw=$(gh api "repos/{owner}/{repo}/pulls/$1" --jq '([.labels[].name] | join("\n")) + "\u001e" + (.body // "")' 2>/dev/null)
+  ph_why=$(held_reason "${ph_raw%%"$ph_rs"*}" "${ph_raw#*"$ph_rs"}"); [ -z "$ph_why" ] || settle_held "$1"; printf '%s' "$ph_why"
 }
 
 # why_red PR: the failing check runs on the pull request's head, by name,

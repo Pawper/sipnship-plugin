@@ -104,8 +104,8 @@ changed_paths() {
 guess_files() {
   gf_paths=$(changed_paths "$(body_paths "$1")")
   if [ -z "$gf_paths" ]; then
-    # No path named, but plugin or CI work still shares one test suite: an issue that speaks of the plugin, the drive skill or the workflow file is guessed as plugin/, so it goes into the one bundle.
-    if printf '%s\n' "$1" | grep -qiE '(^|[^a-z])(plugin|project-drive|ci\.yml|publish-round|plan\.sh|drive(.s)? (plan|round|script|skill)s?)([^a-z]|$)'; then printf 'plugin/\n'; fi
+    # No path named, but plugin or CI work still shares one test suite: an issue that speaks of the plugin, the drive skill, a workflow, the queue's drain or a check of the CI is guessed as plugin/, so it goes into the one bundle (#1879).
+    if printf '%s\n' "$1" | grep -qiE '(^|[^a-z])(plugin|project-drive|publish-round|plan\.sh|drive(.s)? (plan|round|script|skill)s?|[a-z0-9_-]+\.ya?ml|(github )?workflows?|github actions|queue[- ]drain|merge[- ]queue|scheduled (deploy|drain|queue)|deploy (run|job)s?|ci (jobs?|checks?|scripts?)|checks? (job|step)s?|[a-z-]+-check\.sh|scripts/ci|\.github)([^a-z]|$)'; then printf 'plugin/\n'; fi
     return 0
   fi
   {

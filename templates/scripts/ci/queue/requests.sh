@@ -127,7 +127,7 @@ requests_closed() {
   if [ -n "$2" ] && git merge-base --is-ancestor "$2" "origin/$base" 2>/dev/null; then echo landed; else echo not-open; fi
 }
 
-requests_classes() { classify_paths "$(gh api "repos/{owner}/{repo}/pulls/$1/files?per_page=100" --jq '.[].filename' 2>/dev/null)" "$rules"; }
+requests_classes() { classify_paths "$(pr_files_of "$1" "$(pr_field "$1" 2)")" "$rules"; }
 
 # rt_at STEP: the step the tick is at, kept in a file so a failure names it
 # even when it happens inside the loop's own shell.

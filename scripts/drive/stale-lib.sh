@@ -47,7 +47,8 @@ stale_lines() {
   sl_asked=""
   printf '%s\n' "$1" | tr -d '\r' | tr '\t' '\037' | while IFS="$sl_tab" read -r sl_kind sl_num sl_title sl_labels sl_updated sl_rest; do
     [ "$sl_kind" = issue ] || continue
-    [ "$(state_of_labels "$sl_labels")" = in-progress ] || continue
+    if command -v labels_facts >/dev/null 2>&1; then labels_facts "$sl_labels"; sl_st=$lf_state; else sl_st=$(state_of_labels "$sl_labels"); fi  # no process started for an issue that is not In progress (#1794)
+    [ "$sl_st" = in-progress ] || continue
     sl_members=$(printf '%s\n' "${6:-}" | awk -F'\t' -v n="$sl_num" '{ k = split($2, a, " "); for (i = 1; i <= k; i++) if (a[i] == n) { print $2; exit } }')
     sl_inunit=yes; [ -n "$sl_members" ] || { sl_members=$sl_num; sl_inunit=no; }
     sl_unitpr=$(printf '%s\n' "${6:-}" | awk -F'\t' -v n="$sl_num" '$1 != "" { k = split($2, a, " "); for (i = 1; i <= k; i++) if (a[i] == n) { print $1; exit } }')
