@@ -18,4 +18,8 @@ conf=""
 main=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null | sed 's#/\.git/*$##')
 [ -n "$main" ] || main=$(pwd)
 dir=$(worktrees_dir_pick "$conf" "$(git worktree list --porcelain 2>/dev/null)" "$main")
-worktree_access_report "$(worktree_probe "$dir")" "$dir" "$(whoami 2>/dev/null)"
+probe=$(worktree_probe "$dir")
+# On Windows the worktrees and batch folders go out of the search index here,
+# with no step for the builder (scripts/search-index/search-index.sh).
+[ "$probe" = ok ] && sh "$here/../search-index/search-index.sh" exclude >/dev/null 2>&1
+worktree_access_report "$probe" "$dir" "$(whoami 2>/dev/null)"

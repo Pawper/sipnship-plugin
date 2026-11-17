@@ -6753,6 +6753,22 @@ eq "approval.sh holds the dispatches through the check" "1" "$(grep -c 'hold_no_
 eq "the skill tells the drive to check first" "1" "$(grep -c 'Check the worktrees folder before any agent starts' "$root/skills/project-drive/SKILL.md")"
 eq "the skill names the held line and the tidy of ended worktrees" "1 1" "$(grep -c "held N N: green, waiting for the builder's read" "$root/skills/project-drive/SKILL.md") $(grep -c 'Tidy ended worktrees without being asked' "$root/skills/project-drive/SKILL.md")"
 
+section 'the worktrees and batch folders stay out of the Windows search index (drive)'
+. "$root/scripts/search-index/search-index-lib.sh"
+eq "a Git Bash shell is a Windows shell" "yes yes yes" "$(search_index_applies MINGW64_NT-10.0) $(search_index_applies MSYS_NT-10.0) $(search_index_applies CYGWIN_NT-10.0)"
+eq "Linux and macOS do nothing" "no no" "$(search_index_applies Linux) $(search_index_applies Darwin)"
+si_tab=$(printf '\t')
+eq "folders all out say nothing" "" "$(search_index_note "garden${si_tab}out
+garden-wt-batch${si_tab}out")"
+eq "an unknown state says nothing" "" "$(search_index_note "garden${si_tab}unknown")"
+eq "one folder still in is named in plain words" "Windows Search is still reading garden-wt-batch, where your agents work, which costs processor all day. Setup leaves it out of the index with no step from you." "$(search_index_note "garden${si_tab}out
+garden-wt-batch${si_tab}in")"
+eq "two folders still in are counted and named" "Windows Search is still reading 2 folders where your agents work (garden, garden-wt-batch), which costs processor all day. Setup leaves them out of the index with no step from you." "$(search_index_note "garden${si_tab}in
+garden-wt-batch${si_tab}in")"
+eq "the note names no issue number and no setting" "0" "$(search_index_note "garden${si_tab}in" | grep -cE '#[0-9]|registry|admin')"
+eq "the drive's worktree check leaves the folders out after it probes" "1" "$(grep -c 'search-index.sh" exclude' "$root/scripts/drive/worktree-access.sh")"
+eq "the brief reads the search index slot" "1" "$(grep -c 'slot s21 s_searchindex' "$root/hooks/scripts/session-brief.sh")"
+
 section 'the plan reads what is left of a partly landed issue (drive)'
 . "$root/scripts/drive/left-lib.sh"
 lf_settle='Pull request #12 merged without closing this issue, so it is back to Ready; nobody is on it now.'

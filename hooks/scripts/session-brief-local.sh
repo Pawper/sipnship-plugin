@@ -150,6 +150,17 @@ s_plan() {
   return 0
 }
 
+# On Windows, the worktrees or batch folder still in the search index, in plain
+# words. Reads only; the drive's check is what leaves them out.
+s_searchindex() {
+  has leftover && [ "$have_git" = yes ] && [ -f "$here/../../scripts/search-index/search-index.sh" ] || return 0
+  si_state=$(sh "$here/../../scripts/search-index/search-index.sh" check 2>/dev/null)
+  . "$here/../../scripts/search-index/search-index-lib.sh"
+  si_note=$(search_index_note "$si_state")
+  [ -n "$si_note" ] && add "$si_note"
+  return 0
+}
+
 # Unreleased plugin work, only when there is some.
 s_unreleased() {
   unrel=""; repo_ver=""
