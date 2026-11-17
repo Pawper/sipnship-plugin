@@ -28,7 +28,7 @@ function usage() {
   sipnship setup [--repo OWNER/NAME]   how setting up this project is going, and whose turn each item is
   sipnship setup [--repo OWNER/NAME]   how setting up this project is going, and whose turn each item is
   sipnship queue-identity [--repo OWNER/NAME] [--org ORG]   give the merge queue its own GitHub App (two clicks)
-  sipnship deploy-key [--repo OWNER/NAME] [--host cloudflare|vercel]   take the hosting key once and set the deploy secrets
+  sipnship deploy-key [--repo OWNER/NAME] [--host cloudflare|vercel] [--terminal]   open a page on this machine that takes the hosting key once and sets the deploy secrets (--terminal: a hidden prompt instead, for a machine with no screen)
   sipnship listen [on|off|status]  carry out what you approve on the dashboard (off until turned on here)
   sipnship ask add-runner [NAME | --count N] | remove-runner NAME | migrate [PR] | deploy | scan-skip | scan-again | record-antivirus
   sipnship land-next N ["reason"]   land this green pull request next, pausing nothing
@@ -142,9 +142,14 @@ async function main() {
   if (args.command === 'queue-identity' || args.command === 'deploy-key') {
     const rest = process.argv.slice(3);
     const value = (name) => { const i = rest.indexOf(name); return i >= 0 && rest[i + 1] && !rest[i + 1].startsWith('--') ? rest[i + 1] : undefined; };
-    process.exitCode = args.command === 'queue-identity'
-      ? await require('./queue-identity').queueIdentity({ repo: value('--repo'), org: value('--org') })
-      : await require('./deploy-key').deployKey({ repo: value('--repo'), host: value('--host') });
+    if (args.command === 'queue-identity') {
+      process.exitCode = await require('./queue-identity').queueIdentity({ repo: value('--repo'), org: value('--org') });
+    } else {
+      const dk = require('./deploy-key');
+      process.exitCode = rest.includes('--terminal')
+        ? await dk.deployKey({ repo: value('--repo'), host: value('--host') })
+        : await dk.deployKeyPage({ repo: value('--repo'), host: value('--host') });
+    }
     return;
   }
   if (['land-next', 'land-now', 'hold', 'drop', 'release', 'deploy-now'].includes(args.command)) {
