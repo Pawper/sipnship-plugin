@@ -53,6 +53,32 @@ function numbersBy(text, re) {
   return seen;
 }
 
+/** A sentence that tells the agent to keep away from a number: the numbers in it are not its work. */
+const LEAVE_ALONE = /\b(?:leave\b[^.\n]{0,40}\balone|do(?:es)?\s*n[o']?t\s+(?:touch|work|change|edit)|don'?t\s+(?:touch|work\s+on)|not\s+yours|hands\s+off|out\s+of\s+scope|only\s+so\s+you)/i;
+
+/** The text without the sentences and lines that name work to leave alone. */
+function withoutLeaveAlone(text) {
+  return String(text || '').split(/\r?\n/).flatMap((l) => l.split(/(?<=[.;!])\s+/)).filter((s) => !LEAVE_ALONE.test(s)).join('\n');
+}
+
+/**
+ * The branch an agent pushed and the folder it pushed it from, from its last "git push" command: the folder
+ * from "git -C PATH", when the command names one.
+ */
+function pushedIn(command) {
+  let out;
+  for (const part of String(command || '').split(/\n|&&|;/)) {
+    const m = part.match(/\bgit\s+(?:-C\s+("[^"]+"|'[^']+'|\S+)\s+)?push\b([^|]*)/);
+    if (!m) continue;
+    const args = m[2].trim().split(/\s+/).filter((a) => a && !a.startsWith('-'));
+    const ref = args.length > 1 ? args[args.length - 1] : '';
+    const branch = ref.includes(':') ? ref.split(':').pop() : ref;
+    if (!branch || branch === 'HEAD' || branch === 'main') continue;
+    out = { branch, tree: m[1] ? m[1].replace(/^["']|["']$/g, '') : undefined };
+  }
+  return out;
+}
+
 /**
  * The issues a first message gives its session. A task often names other
  * issues beside its own ("another pull request (#9) also touches it"), so the
@@ -60,7 +86,8 @@ function numbersBy(text, re) {
  * ones it calls its issue ("Task: issue #12", "Your issue: #12"), and only
  * when it says neither, every #N it names.
  */
-function issuesIn(text) {
+function issuesIn(rawText) {
+  const text = withoutLeaveAlone(rawText);
   const closes = numbersBy(text, /\b(?:closes|fixes|resolves|refs)\s+#(\d{1,6})\b/gi);
   if (closes.length) return closes;
   const own = numbersBy(text, /\bissue:?\s+#(\d{1,6})\b/gi);
@@ -100,6 +127,7 @@ function readSession(logText, name, { localModels = [] } = {}) {
   let started; let model; let effort; let branch; let cwd; let title; let last = ''; let issues = []; let given;
   let tokens = 0; let counted = false; let tIn = 0; let tCached = 0; let tOut = 0;
   const seen = touches.tally();
+  let pushed;
   for (const raw of String(logText).split('\n')) {
     if (!raw.trim()) continue;
     let e;
@@ -120,6 +148,7 @@ function readSession(logText, name, { localModels = [] } = {}) {
       issues = issuesIn(c);
     }
     if (e.type === 'assistant' && m) {
+      if (Array.isArray(m.content)) for (const p of m.content) if (p && p.type === 'tool_use' && p.input && typeof p.input.command === 'string') pushed = pushedIn(p.input.command) || pushed;
       if (m.model && m.model !== '<synthetic>') model = m.model;
       // The effort level the runtime ran this turn at, the latest one.
       const level = effortLevel(e.effort) || effortLevel(e.perTurnEffort);
@@ -150,6 +179,7 @@ function readSession(logText, name, { localModels = [] } = {}) {
   // Its last activity is its log's latest entry's own time, never the file's date.
   if (!Number.isNaN(seen.last)) s.lastActiveAt = new Date(seen.last).toISOString();
   // The numbers its entries touched and the ones it was given, for its spans; read by readSessions, never sent as they are.
+  if (pushed) Object.defineProperty(s, 'pushed', { value: pushed, enumerable: false });
   Object.defineProperty(s, 'touches', { value: seen.touches, enumerable: false });
   Object.defineProperty(s, 'given', { value: given && given.length ? given : named, enumerable: false });
   // A local model costs nothing: the figure is stated, not left out.
@@ -300,6 +330,11 @@ function readSessions({ root, logsDir, worktrees, localModels, now = Date.now(),
       const meta = agentMeta(log.meta);
       if (meta.branch) s.branch = meta.branch;
       if (meta.worktree) s.worktree = { name: path.basename(meta.worktree), path: meta.worktree };
+      // An agent the runtime gave no worktree is on the branch it pushed, from the folder it pushed it in; never its parent's.
+      if (log.parent && !meta.branch && s.pushed) {
+        s.branch = s.pushed.branch;
+        if (!meta.worktree && s.pushed.tree) s.worktree = { name: path.basename(s.pushed.tree), path: s.pushed.tree };
+      }
       if (meta.task && !s.title) s.title = meta.task.slice(0, 120);
       if (meta.effort && !s.effort) s.effort = meta.effort;
       if (log.parent) s.parent = log.parent;
@@ -320,4 +355,4 @@ function readSessions({ root, logsDir, worktrees, localModels, now = Date.now(),
   return out.sort((a, b) => b._at - a._at).slice(0, SESSIONS_MAX).map(({ _at, ...s }) => s);
 }
 
-module.exports = { lastLine, readSession, readSessions, issuesInBranch, issuesInBody, logFolder, logsIn, agentMeta, worktreesOf, endedAgents, modelId, isLocal, effortLevel, CATEGORIES, WORDS_MAX, SESSIONS_MAX, RECENT_MS, ENDED_SLACK_MS };
+module.exports = { issuesIn, pushedIn, lastLine, readSession, readSessions, issuesInBranch, issuesInBody, logFolder, logsIn, agentMeta, worktreesOf, endedAgents, modelId, isLocal, effortLevel, CATEGORIES, WORDS_MAX, SESSIONS_MAX, RECENT_MS, ENDED_SLACK_MS };
