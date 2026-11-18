@@ -1,0 +1,18 @@
+{
+ "processes": [
+  {
+   "pid": 30,
+   "ppid": 999,
+   "name": "bash.exe",
+   "cmd": "bash -c source /c/Users/maya/.claude/shell-snapshots/s.sh && work",
+   "startMs": 1799985600000,
+   "bytes": 107374182
+  }
+ ],
+ "end": [
+  30
+ ],
+ "why": "orphan",
+ "memory": null,
+ "now": 1800000000000
+}

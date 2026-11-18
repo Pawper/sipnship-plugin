@@ -61,14 +61,24 @@ function readText(file) {
   try { return fs.readFileSync(file, 'utf8'); } catch (e) { return ''; }
 }
 
+// What the watchdog said lately (what it ended in the last day, a memory warning in the last ten minutes), as sentences.
+function watchdogNotes(said, warn, nowSec) {
+  const rows = (text, maxAge) => String(text || '').split(/\r?\n/).map((l) => l.split('\t')).filter((f) => f.length >= 2 && nowSec - Number(f[0]) < maxAge).map((f) => f[1]);
+  return [...rows(said, 86400), ...rows(warn, 600)];
+}
+
 function readRunnersCard(root, home, nowSec) {
   const base = home ? path.join(home, '.sipnship') : (process.env.SIPNSHIP_HOME || path.join(os.homedir(), '.sipnship'));
   const dir = path.join(base, 'runner-watch');
-  return runnersCard(
+  const card = runnersCard(
     readText(path.join(root, '.scratch', 'queue', 'waits.tsv')),
     readText(path.join(dir, 'machine.tsv')),
     nowSec,
   );
+  const notes = watchdogNotes(readText(path.join(dir, 'watchdog-said.txt')), readText(path.join(dir, 'watchdog-warn.txt')), nowSec);
+  if (!notes.length) return card;
+  const merged = card || { id: 'runners', name: 'Runners', state: 'ready', vendor: '', does: 'No job waited for a runner this week.', note: '', parts: [], links: [] };
+  return { ...merged, note: [merged.note, ...notes].filter(Boolean).join(' ') };
 }
 
-module.exports = { waitsLine, machineFact, runnersCard, readRunnersCard };
+module.exports = { waitsLine, machineFact, runnersCard, watchdogNotes, readRunnersCard };

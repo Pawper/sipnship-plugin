@@ -58,6 +58,18 @@ s_waits() {
     ml=$(machine_brief_line "$(head -n 1 "$ml_file" 2>/dev/null)")
     [ -n "$ml" ] && add "Runner machine: $ml."
   fi
+  # The watchdog's words beside the machine line: what it ended in the last
+  # day (said once, when it happened), and a warning while memory is close to full.
+  wd_dir=$(dirname "$ml_file")
+  wd_now=$(date +%s)
+  if [ -f "$wd_dir/watchdog-said.txt" ]; then
+    wd=$(awk -F'\t' -v n="$wd_now" 'NF >= 2 && n - $1 < 86400 { print $2 }' "$wd_dir/watchdog-said.txt" 2>/dev/null)
+    [ -n "$wd" ] && printf '%s\n' "$wd" | while IFS= read -r wd_line; do add "Runner machine: $wd_line"; done
+  fi
+  if [ -f "$wd_dir/watchdog-warn.txt" ]; then
+    wd=$(awk -F'\t' -v n="$wd_now" 'NF >= 2 && n - $1 < 600 { print $2 }' "$wd_dir/watchdog-warn.txt" 2>/dev/null)
+    [ -n "$wd" ] && add "Runner machine: $wd"
+  fi
   return 0
 }
 

@@ -12,6 +12,19 @@ const render = require('../render');
 const now = 1800000000;
 const row = (ago, busy, total, mins) => `${now - ago}\t-\trun 1: test\t${busy}\t${total}\t${mins}`;
 
+test('the card carries what the watchdog ended in the last day and a memory warning from the last ten minutes', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wd-card-'));
+  const rw = path.join(dir, '.sipnship', 'runner-watch');
+  fs.mkdirSync(rw, { recursive: true });
+  fs.writeFileSync(path.join(rw, 'watchdog-said.txt'), `${now - 3600}\tThe watchdog ended a git process holding 107.5 GB.\n${now - 3 * 86400}\tToo old.\n`);
+  fs.writeFileSync(path.join(rw, 'watchdog-warn.txt'), `${now - 1200}\tMemory is 88% full (stale).\n`);
+  const card = runners.readRunnersCard(dir, dir, now);
+  assert.equal(card.name, 'Runners');
+  assert.match(card.note, /The watchdog ended a git process holding 107\.5 GB\./);
+  assert.doesNotMatch(card.note, /Too old|stale/);
+  assert.equal(runners.readRunnersCard(dir, path.join(dir, 'none'), now), null);
+});
+
 test('the waits line counts this week only, with the longest wait', () => {
   const text = [row(9 * 86400, 3, 3, 30), row(3600, 3, 3, 2), row(7200, 3, 3, 4), row(86400, 3, 3, 1)].join('\n');
   assert.equal(runners.waitsLine(text, now), 'Jobs waited for a runner 3 times this week, 4 minutes at most, when all 3 were busy.');
