@@ -17,6 +17,7 @@ root=${RUN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}
 . "$root/hooks/scripts/agent-model-lib.sh"
 . "$root/templates/status/lib.sh"
 . "$root/templates/scripts/ci/lib.sh"
+. "$root/templates/scripts/ci/git-bounded-lib.sh"
 . "$root/tests/parts-lib.sh"
 . "$root/tests/turn-lib.sh"
 # Sourced again by their blocks; here too, so each part has them.
@@ -6919,6 +6920,34 @@ eq "a Node below the floor in package.json ends at once, quietly" "0|" "$(printf
 eq "the floor is the one in the plugin's package.json, 18 today" "18" "$(node -e 'console.log(parseInt(require(process.argv[1]).engines.node.replace(/[^0-9]/g, ""), 10))' "$root/package.json")"
 eq "the wrapper hands the program the event and its exit status" "2" "$(printf '%s' "$hn_rm" | HOOK_LOG=0 CLAUDE_PROJECT_DIR=$hn_lg sh "$root/hooks/scripts/hook-node.sh" pre-bash >/dev/null 2>&1; printf '%s' "$?")"
 
+section 'every unattended git is bound in time and ends with its caller'
+gb_fx="$root/tests/fixtures/git-bounded/hang"
+gb_tmp=$(mktemp -d); gb_pid="$gb_tmp/pid"
+gb_lib="$root/templates/scripts/ci/git-bounded-lib.sh"
+# gb_dead PIDFILE SECONDS: yes once the process in the file is gone, within SECONDS.
+gb_dead() { gb_n=0; while kill -0 "$(cat "$1" 2>/dev/null)" 2>/dev/null; do gb_n=$((gb_n + 1)); [ "$gb_n" -le "$2" ] || { echo no; return; }; sleep 1; done; echo yes; }
+if command -v timeout >/dev/null 2>&1; then
+  # A git that never answers is ended at its bound, and says so as timeout does.
+  gb_start=$(date +%s)
+  gb_rc=$(PATH="$gb_fx:$PATH" GIT_HANG_PIDFILE="$gb_pid" sh -c '. "$1"; git_bounded 2 log -1; echo $?' sh "$gb_lib" 2>/dev/null)
+  eq "a git with no answer is ended at its bound, with status 124" "124" "$gb_rc"
+  eq "the ended git is gone, and it took about the bound" "yes yes" "$(gb_dead "$gb_pid" 3) $([ $(( $(date +%s) - gb_start )) -le 12 ] && echo yes)"
+  # The caller is killed outright while its git runs: the git still ends by itself.
+  rm -f "$gb_pid"
+  PATH="$gb_fx:$PATH" GIT_HANG_PIDFILE="$gb_pid" sh -c '. "$1"; git_bounded 3 log -1' sh "$gb_lib" >/dev/null 2>&1 &
+  gb_caller=$!
+  gb_n=0; while [ ! -s "$gb_pid" ] && [ "$gb_n" -lt 10 ]; do gb_n=$((gb_n + 1)); sleep 1; done
+  kill -9 "$gb_caller" 2>/dev/null
+  eq "a git whose caller was killed is not left running" "yes" "$(gb_dead "$gb_pid" 12)"
+  # The rebuild of the known list prints nothing when a git is ended before it answers.
+  rm -f "$gb_pid"
+  gb_kh=$(cd "$root/.." && PATH="$gb_fx:$PATH" GIT_HANG_PIDFILE="$gb_pid" KNOWN_HASHES_BOUND=2 sh plugin/scripts/sync/known-hashes.sh --all 2>/dev/null; echo "rc=$?")
+  eq "the known-list rebuild writes nothing and fails when a git is ended" "rc=1" "$gb_kh"
+fi
+eq "a git that answers is returned as it is" "$(git rev-parse --git-dir)" "$(sh -c '. "$1"; gitb rev-parse --git-dir' sh "$gb_lib")"
+# Every unattended script bounds its reads: no bare git of the kinds that can run long.
+gb_bare=$(cd "$root/.." && grep -nE '(^|[^a-z_])git +(-C +[^ ]+ +)?(fetch|ls-remote|merge-tree|rev-list|diff-tree|diff|show|log|merge-base|for-each-ref)( |$)' plugin/scripts/drive/*.sh plugin/scripts/sync/known-hashes.sh plugin/scripts/sync/sync-templates.sh plugin/templates/scripts/ci/merge-queue.sh plugin/templates/scripts/ci/queue/*.sh | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(#|say |printf |echo )|timeout .* git |gitb\(\)|git_bounded|^[^:]+:[0-9]+: +else ' | cut -c1-120)
+eq "no unattended script runs an unbound git of a kind that can run long" "" "$gb_bare"
 # --- end of blocks: the summary, kept in every part.
 eq "no test wrote into the checkout's own queue state" "$queue_picture_before" "$([ "$queue_picture_before" = skipped ] && echo skipped || queue_picture)"
 eq "no process started by this suite is still running" "" "$(spawned_alive)"

@@ -21,6 +21,12 @@ set -e
 here=$(dirname "$0")
 . "$here/sync-lib.sh"
 . "$here/known-lib.sh"
+[ -f "$here/../../templates/scripts/ci/git-bounded-lib.sh" ] && . "$here/../../templates/scripts/ci/git-bounded-lib.sh"
+type git_bounded >/dev/null 2>&1 || git_bounded() { gb_s=$1; shift; if command -v timeout >/dev/null 2>&1; then timeout -k 5 "$gb_s" git "$@"; else git "$@"; fi; }
+tmp=$(mktemp)
+# A git ended before it answered stops the rebuild with nothing printed: a list
+# made from part of the history would make the sync call a plugin file a project's own.
+fail() { echo "known-hashes: $1 did not finish in time; nothing was written." >&2; : > "$tmp.failed"; exit 1; }
 owned=$(cat plugin/templates/OWNED.txt)
 # Files the templates no longer carry, whose released versions the sync
 # must still know so it removes an unedited copy: the hosted Runner watch,
@@ -32,38 +38,43 @@ case "$1" in
     {
       for p in $(owned_paths "$owned") $retired; do
         for old in "templates/$p" "plugin/templates/$p"; do
-          for rev in $(git log --all --full-history --format=%H -- "$old"); do
-            t=$(git show "$rev:$old" 2>/dev/null) || continue
+          revs=$(git_bounded "${KNOWN_HASHES_BOUND:-300}" log --all --full-history --format=%H -- "$old") || fail "reading the history of $old"
+          for rev in $revs; do
+            t=$(git_bounded 30 show "$rev:$old" 2>/dev/null) || continue
             printf '%s %s\n' "$p" "$(norm_hash "$t")"
           done
         done
         if [ -f "plugin/templates/$p" ]; then printf '%s %s\n' "$p" "$(norm_hash "$(cat "plugin/templates/$p")")"; fi
       done
-    } | sort -u
+    } | sort -u > "$tmp"
     ;;
   *..*)
     paths=$(owned_paths "$owned"; for r in $retired; do echo "$r"; done)
     {
       tr -d '\r' < plugin/templates/KNOWN.txt 2>/dev/null || true
-      for rev in $(git rev-list --full-history "$1" -- plugin/templates/); do
-        for f in $(git diff-tree -m -r --root --no-commit-id --name-only "$rev" -- plugin/templates/ | sort -u); do
+      revs=$(git_bounded "${KNOWN_HASHES_BOUND:-120}" rev-list --full-history "$1" -- plugin/templates/) || fail "reading the range $1"
+      for rev in $revs; do
+        for f in $(git_bounded 30 diff-tree -m -r --root --no-commit-id --name-only "$rev" -- plugin/templates/ | sort -u); do
           p=${f#plugin/templates/}
           printf '%s\n' "$paths" | grep -qxF "$p" || continue
-          t=$(git show "$rev:$f" 2>/dev/null) || continue
+          t=$(git_bounded 30 show "$rev:$f" 2>/dev/null) || continue
           printf '%s %s\n' "$p" "$(norm_hash "$t")"
         done
       done
       # The working-tree version of each owned file the range or the
       # working tree changed; every other one is in the committed list.
-      for f in $( { git diff --name-only "${1%%..*}" -- plugin/templates/; git ls-files --others --exclude-standard -- plugin/templates/; } | sort -u); do
+      for f in $( { git_bounded 60 diff --name-only "${1%%..*}" -- plugin/templates/; git ls-files --others --exclude-standard -- plugin/templates/; } | sort -u); do
         p=${f#plugin/templates/}
         printf '%s\n' "$paths" | grep -qxF "$p" || continue
         if [ -f "$f" ]; then printf '%s %s\n' "$p" "$(norm_hash "$(cat "$f")")"; fi
       done
-    } | sort -u
+    } | sort -u > "$tmp"
     ;;
   *)
+    rm -f "$tmp"
     echo "usage: known-hashes.sh --all | FROM..HEAD" >&2
     exit 2
     ;;
 esac
+[ ! -e "$tmp.failed" ] || { rm -f "$tmp" "$tmp.failed"; exit 1; }
+cat "$tmp"; rm -f "$tmp"

@@ -154,13 +154,13 @@ waits_append() {
 known_refresh() {
   kr_dir=$1
   [ -f "$kr_dir/plugin/scripts/sync/known-hashes.sh" ] && [ -f "$kr_dir/plugin/templates/OWNED.txt" ] || return 0
-  kr_n=$(git -C "$kr_dir" diff --name-only "$2" HEAD -- plugin/templates/ 2>/dev/null | grep -vx 'plugin/templates/KNOWN.txt' | grep -c .) || true
+  kr_n=$(gitb -C "$kr_dir" diff --name-only "$2" HEAD -- plugin/templates/ 2>/dev/null | grep -vx 'plugin/templates/KNOWN.txt' | grep -c .) || true
   [ "${kr_n:-0}" -gt 0 ] || return 0
   # The script reads the committed list, so it writes outside the checkout first.
   kr_new=$(mktemp) || return 0
   (cd "$kr_dir" && sh plugin/scripts/sync/known-hashes.sh "$2..HEAD") > "$kr_new" 2>/dev/null || return 0
   mv "$kr_new" "$kr_dir/plugin/templates/KNOWN.txt" || return 0
-  git -C "$kr_dir" diff --quiet -- plugin/templates/KNOWN.txt && return 0
+  gitb -C "$kr_dir" diff --quiet -- plugin/templates/KNOWN.txt && return 0
   git -C "$kr_dir" add plugin/templates/KNOWN.txt >/dev/null 2>&1 || return 0
   git -C "$kr_dir" commit -q -m "Refresh the known template hashes" >/dev/null 2>&1 || return 0
   echo "refreshed the known template hashes ($kr_n template(s) changed in the merge)"

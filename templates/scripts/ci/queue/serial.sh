@@ -26,13 +26,13 @@ serial_one() {
   fi
   head=$(pr_field "$pr" 2)
   hb=$(pr_field "$pr" 1)
-  merge_base=$(git merge-base "origin/$base" "$head")
-  pr_classes=$(classify_paths "$(git diff --name-only "$merge_base" "$head")" "$rules")
-  main_classes=$(classify_paths "$(git diff --name-only "$merge_base" "origin/$base")" "$rules")
+  merge_base=$(gitb merge-base "origin/$base" "$head")
+  pr_classes=$(classify_paths "$(gitb diff --name-only "$merge_base" "$head")" "$rules")
+  main_classes=$(classify_paths "$(gitb diff --name-only "$merge_base" "origin/$base")" "$rules")
   # A conflict with main is said as one, with its files, instead of
   # "updated" round after round while nothing can merge.
-  if [ "$(mergeable_word "$(pr_field "$pr" 5)")" = CONFLICTING ] || ! git merge-tree --write-tree origin/"$base" "$head" >/dev/null 2>&1; then
-    files=$(git merge-tree --write-tree --name-only origin/"$base" "$head" 2>/dev/null | sed -n '2,$p' | sed '/^$/,$d')
+  if [ "$(mergeable_word "$(pr_field "$pr" 5)")" = CONFLICTING ] || ! gitb merge-tree --write-tree origin/"$base" "$head" >/dev/null 2>&1; then
+    files=$(gitb merge-tree --write-tree --name-only origin/"$base" "$head" 2>/dev/null | sed -n '2,$p' | sed '/^$/,$d')
     if [ "$(mergeable_word "$(pr_field "$pr" 5)")" = CONFLICTING ] || [ -n "$files" ]; then
       batch_line "$pr" "not merged" "$(conflict_line "$files")"
       notify_conflict "$pr" "$files" main
@@ -89,7 +89,7 @@ serial_one() {
     if ! gh_write api -X PUT "repos/{owner}/{repo}/pulls/$pr/update-branch" >/dev/null 2>"$gh_err"; then
       rate_stop
       case "$(cat "$gh_err" 2>/dev/null)" in
-        *onflict*) batch_line "$pr" "not merged" "$(conflict_line "$(git merge-tree --write-tree --name-only origin/"$base" "$head" 2>/dev/null | sed -n '2,$p' | sed '/^$/,$d')")" ;;
+        *onflict*) batch_line "$pr" "not merged" "$(conflict_line "$(gitb merge-tree --write-tree --name-only origin/"$base" "$head" 2>/dev/null | sed -n '2,$p' | sed '/^$/,$d')")" ;;
         *) batch_line "$pr" "not merged" "GitHub refused to update the branch: $(head -n 1 "$gh_err" 2>/dev/null)" ;;
       esac
       return 0
@@ -155,7 +155,7 @@ queue_serial() {
     if [ -n "$why" ]; then say "Refused --serial: $why"; exit 2; fi
   fi
   [ -n "$because" ] || { [ -n "$QUEUE_IN_DRAIN" ] && because=drain; }
-  s_begin=$(git ls-remote origin "refs/heads/$base" 2>/dev/null | cut -f1)
+  s_begin=$(gitb ls-remote origin "refs/heads/$base" 2>/dev/null | cut -f1)
   for pr in $prs; do serial_one "$pr"; done
   if [ -z "$QUEUE_IN_DRAIN" ]; then main_gate_now; deploy_if_due "$s_begin"; fi
   exit 0

@@ -111,7 +111,7 @@ unlock() { if [ "$have_lock" = yes ]; then rm -f "$lock_file" 2>/dev/null; remot
 fetch_base() {
   fb_try=1
   while :; do
-    if git fetch -q origin "$base" "$@" 2>"$flaky_dir/fetch.err"; then return 0; fi
+    if gitb fetch -q origin "$base" "$@" 2>"$flaky_dir/fetch.err"; then return 0; fi
     if [ "$fb_try" -ge 3 ]; then
       echo "Could not fetch $base: $(head -n 1 "$flaky_dir/fetch.err" 2>/dev/null | tr -d '\r')" >&2
       return 1

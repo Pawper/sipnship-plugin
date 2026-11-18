@@ -59,7 +59,7 @@ if [ -z "$QUEUE_FROM_COPY" ]; then
   QUEUE_FROM_COPY=1; export QUEUE_FROM_COPY
   exec sh "$qc/ci/merge-queue.sh" "$@"
 fi
-. "$here/lib.sh"
+. "$here/lib.sh"; . "$here/git-bounded-lib.sh"
 . "$here/batch-lib.sh"
 . "$here/numbering-lib.sh"
 # One library a step, in this order; each holds functions only. Read from the
@@ -210,7 +210,7 @@ if [ "$mode" = drain ]; then
   : > "$flaky_dir/stopped" 2>/dev/null || true; rm -f "$flaky_dir/requests.open" "$flaky_dir/requests.failed"; runner_labels_keep # one runner kept for the batch and main
   stop_why=""
   d_start=$(date +%s); round=0; tried=""; retried=""; attention=""; last_look=""; cancel_heads=""
-  d_begin=$(git ls-remote origin "refs/heads/$base" 2>/dev/null | cut -f1)
+  d_begin=$(gitb ls-remote origin "refs/heads/$base" 2>/dev/null | cut -f1)
   while [ "$round" -lt "$rounds" ]; do
     round=$((round + 1))
     renew_window

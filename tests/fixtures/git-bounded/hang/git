@@ -1,0 +1,4 @@
+#!/bin/sh
+# A git that never answers, for the tests of the bound: it notes its own process number, then sleeps.
+echo $$ > "${GIT_HANG_PIDFILE:?}"
+exec sleep 120

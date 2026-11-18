@@ -199,6 +199,8 @@ wake_after() {
     }'
 }
 
+type gitb >/dev/null 2>&1 || gitb() { if command -v timeout >/dev/null 2>&1; then timeout -k 5 "${GIT_BOUND_SECONDS:-120}" git "$@"; else git "$@"; fi; }
+
 # plugin_unreleased_count [REF]
 # How many commits touching plugin/ landed on REF (default main, else HEAD)
 # since the commit that last changed the version field of
@@ -211,9 +213,9 @@ plugin_unreleased_count() {
   [ -f "$pu_file" ] || return 0
   pu_ref=${1:-main}
   git rev-parse --verify -q "$pu_ref" >/dev/null 2>&1 || pu_ref=HEAD
-  pu_rel=$(git log -1 --format=%H -G'"version"' "$pu_ref" -- "$pu_file" 2>/dev/null)
+  pu_rel=$(gitb log -1 --format=%H -G'"version"' "$pu_ref" -- "$pu_file" 2>/dev/null)
   [ -n "$pu_rel" ] || return 0
-  git rev-list --count "$pu_rel..$pu_ref" -- plugin/ 2>/dev/null
+  gitb rev-list --count "$pu_rel..$pu_ref" -- plugin/ 2>/dev/null
 }
 
 # next_patch VERSION

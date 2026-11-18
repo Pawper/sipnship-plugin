@@ -59,7 +59,7 @@ rush_build_head() {
   rb_refs=""
   for rb_p in $2 $1; do
     rb_h=$(fetch_pr_head "$rb_p") || return 1
-    rb_out=$(git merge-tree --write-tree "$rb_c" "$rb_h" 2>/dev/null) || return 1
+    rb_out=$(gitb merge-tree --write-tree "$rb_c" "$rb_h" 2>/dev/null) || return 1
     rb_c=$(git commit-tree "$(printf '%s\n' "$rb_out" | head -n 1)" -p "$rb_c" -p "$rb_h" -m "Merge #$rb_p into the rush test head $3") || return 1
     rb_refs="$rb_refs$(carried_refs "$(gh api "repos/{owner}/{repo}/pulls/$rb_p" --jq '.body // ""' 2>/dev/null)" "$rb_p" | grep -v '^Closes ')
 "
@@ -110,7 +110,7 @@ rush_proof() {
   rf_sha=$(gh api "repos/{owner}/{repo}/pulls/$rf_l" --jq .head.sha 2>/dev/null | tr -d '\r')
   [ -n "$rf_sha" ] || return 0
   rf_same=""
-  if fetch_base "+refs/heads/$rf_name:refs/queue/$rf_name" && rf_t=$(git merge-tree --write-tree "origin/$base" "$2" 2>/dev/null); then
+  if fetch_base "+refs/heads/$rf_name:refs/queue/$rf_name" && rf_t=$(gitb merge-tree --write-tree "origin/$base" "$2" 2>/dev/null); then
     [ "$(printf '%s\n' "$rf_t" | head -n 1)" = "$(git rev-parse "$rf_sha^{tree}" 2>/dev/null)" ] && rf_same=yes
   fi
   printf '%s\t%s\n' "$(pr_rollup "$rf_sha")" "$rf_same"

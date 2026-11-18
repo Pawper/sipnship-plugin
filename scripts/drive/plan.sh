@@ -37,6 +37,7 @@ fi
 . "$here/../../hooks/scripts/session-brief-lib.sh"
 . "$here/../../hooks/scripts/board-checks-lib.sh"
 . "$here/../../hooks/scripts/session-brief-versions.sh"
+[ -f "$here/../../templates/scripts/ci/git-bounded-lib.sh" ] && . "$here/../../templates/scripts/ci/git-bounded-lib.sh"
 . "$here/drive-lib.sh"
 . "$here/labels-lib.sh"
 . "$here/auto-lib.sh"
@@ -184,7 +185,7 @@ echo "proposal for $(date '+%A %Y-%m-%d'), the owner's local day (${runners_say}
 # The round file's own line for it (publish-round.sh's "sized:"), so the Work band says how many agents and why.
 echo "sized: ${runners_say}"
 # In progress is not taken on faith: an issue nobody works, or whose pull request is held for the owner, is set right first (./stale-lib.sh).
-stale=$(stale_lines "$facts" "$pull_links" "$(git for-each-ref --format='%(committerdate:unix)%09%(refname:short)' refs/heads refs/remotes 2>/dev/null)" "$(date +%s)" 2 "$(started_units "$drive_comments")" "$(started_at "$drive_comments")")
+stale=$(stale_lines "$facts" "$pull_links" "$(gitb for-each-ref --format='%(committerdate:unix)%09%(refname:short)' refs/heads refs/remotes 2>/dev/null)" "$(date +%s)" 2 "$(started_units "$drive_comments")" "$(started_at "$drive_comments")")
 if [ -n "$stale" ]; then
   stale_say "$stale" 2
   stale_apply "$stale" "$facts"
@@ -204,7 +205,7 @@ round=$(propose_round "$snapshot" "$runners" "$max_agents" "$aside_after")
 plan_stage "round proposed"
 mocks_text=""; [ -f scripts/ci/mocks.txt ] && mocks_text=$(cat scripts/ci/mocks.txt)
 areas_text=""; [ -f .claude/areas.txt ] && areas_text=$(cat .claude/areas.txt)
-past=$(past_spec_files "$(git log -n 300 --name-only --format='@@ %s' main 2>/dev/null || git log -n 300 --name-only --format='@@ %s' 2>/dev/null)")
+past=$(past_spec_files "$(gitb log -n 300 --name-only --format='@@ %s' main 2>/dev/null || gitb log -n 300 --name-only --format='@@ %s' 2>/dev/null)")
 guesses=""; running=""; left_reads=0; plan_left_until=$((SECONDS + ${PLAN_LEFT_SECONDS:-90}))
 # A ready issue that says it comes after another open one is held, naming what it waits on, read afresh each run.
 reasons=$(hold_reasons "$facts")
