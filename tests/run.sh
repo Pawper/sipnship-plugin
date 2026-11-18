@@ -1397,6 +1397,10 @@ eq "a decision line holds the decision" "prices" "$(owner_decision_open "$od_t1"
 eq "an answer already on the issue ends the ask" "" "$(owner_decision_open "Set the prices for the plan" "Builder answer: ten dollars." prices)"
 eq "the snapshot says no for a passing mention" "no" "$(owner_issue_fields 1654 "$od_t1" "$od_b1" prices)"
 eq "the snapshot says yes for a titled decision" "yes" "$(owner_issue_fields 1655 "Set the prices for the plan" "Nothing." prices | cut -f1)"
+# An empty phrase never loops (#1937), and a plan that does not finish is stopped with one plain line.
+eq "an empty owner phrase is never found and never loops" "no" "$(timeout 20 sh -c '. "$0/scripts/drive/owner-lib.sh"; if owner_phrase_in_open "Pick the planter? Yes." "" body || owner_phrase_in_open "Pick the planter" "" title; then echo yes; else echo no; fi' "$root")"
+od_bound=$(mktemp -d); mkdir -p "$od_bound/bin"; printf '#!/bin/sh\nsleep 30\n' > "$od_bound/bin/gh"; chmod +x "$od_bound/bin/gh"
+eq "a plan that does not finish is stopped with one plain line" "stop: plan did not finish" "$(cd "$od_bound" && PATH="$od_bound/bin:$PATH" PLAN_SECONDS=2 timeout 60 sh "$root/scripts/drive/plan.sh" 2>/dev/null | grep '^stop:')"
 eq "report trimmed per section" "Merged:
 #1
 #2

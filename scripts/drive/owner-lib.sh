@@ -53,7 +53,8 @@ owner_phrase_in_open() {
   } END { exit found ? 0 : 1 }
   function word(x,   i, b, a, rest, off) {
     off = 0; rest = x
-    while ((i = index(rest, p)) > 0) {
+    if (length(p) == 0) return 0   # an empty phrase matches everywhere and never advances (#1937)
+    while (length(rest) > 0 && (i = index(rest, p)) > 0) {
       b = (off + i > 1) ? substr(x, off + i - 1, 1) : " "
       a = substr(x, off + i + length(p), 1); if (a == "") a = " "
       if (b !~ /[a-z0-9]/ && a !~ /[a-z0-9]/) return 1

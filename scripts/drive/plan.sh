@@ -20,6 +20,19 @@
 # overlay_rest), so one that conflicts with main is proposed as merge-main
 # and one red too often as set-aside.
 here=$(dirname "$0")
+
+# The whole run is bounded (#1937): one that has not finished in PLAN_SECONDS (600) is stopped and says so in one plain
+# line, so a tick is never lost to a loop. The run starts again once, under the bound, with the same words.
+if [ -z "${PLAN_BOUNDED:-}" ] && command -v timeout >/dev/null 2>&1; then
+  PLAN_BOUNDED=1 timeout "${PLAN_SECONDS:-600}" sh "$0" "$@"; plan_rc=$?
+  if [ "$plan_rc" -eq 124 ]; then
+    echo "plan did not finish in ${PLAN_SECONDS:-600} seconds and was stopped; the round has nothing to propose until it does."
+    echo "stop: plan did not finish"
+    exit 0
+  fi
+  exit "$plan_rc"
+fi
+
 . "$here/../../hooks/scripts/lib.sh"
 . "$here/../../hooks/scripts/session-brief-lib.sh"
 . "$here/../../hooks/scripts/board-checks-lib.sh"
