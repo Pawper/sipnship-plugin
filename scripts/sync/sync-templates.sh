@@ -48,7 +48,7 @@
 # commits them, so every change is a reviewable diff in a pull request and
 # the old versions stay in git. It does not push.
 here=$(dirname "$0")
-. "$here/sync-lib.sh"; . "$here/sync-deps.sh"; . "$here/known-lib.sh"; . "$here/../../templates/scripts/ci/git-bounded-lib.sh"
+. "$here/sync-lib.sh"; . "$here/sync-deps.sh"; . "$here/known-lib.sh"; [ -f "$here/../../templates/scripts/ci/git-bounded-lib.sh" ] && . "$here/../../templates/scripts/ci/git-bounded-lib.sh"; type git_bounded >/dev/null 2>&1 || git_bounded() { gb_s=$1; shift; if command -v timeout >/dev/null 2>&1; then timeout -k 5 "$gb_s" git "$@"; else git "$@"; fi; }
 plugin=$(cd "$here/../.." && pwd)
 tpl="$plugin/templates"
 apply=no; force=no; only=""; no_commit=no

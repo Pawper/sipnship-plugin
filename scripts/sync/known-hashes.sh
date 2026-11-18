@@ -21,7 +21,8 @@ set -e
 here=$(dirname "$0")
 . "$here/sync-lib.sh"
 . "$here/known-lib.sh"
-. "$here/../../templates/scripts/ci/git-bounded-lib.sh"
+[ -f "$here/../../templates/scripts/ci/git-bounded-lib.sh" ] && . "$here/../../templates/scripts/ci/git-bounded-lib.sh"
+type git_bounded >/dev/null 2>&1 || git_bounded() { gb_s=$1; shift; if command -v timeout >/dev/null 2>&1; then timeout -k 5 "$gb_s" git "$@"; else git "$@"; fi; }
 tmp=$(mktemp)
 # A git ended before it answered stops the rebuild with nothing printed: a list
 # made from part of the history would make the sync call a plugin file a project's own.

@@ -37,7 +37,7 @@ fi
 . "$here/../../hooks/scripts/session-brief-lib.sh"
 . "$here/../../hooks/scripts/board-checks-lib.sh"
 . "$here/../../hooks/scripts/session-brief-versions.sh"
-. "$here/../../templates/scripts/ci/git-bounded-lib.sh"
+[ -f "$here/../../templates/scripts/ci/git-bounded-lib.sh" ] && . "$here/../../templates/scripts/ci/git-bounded-lib.sh"
 . "$here/drive-lib.sh"
 . "$here/labels-lib.sh"
 . "$here/auto-lib.sh"

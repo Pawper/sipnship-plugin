@@ -17,6 +17,7 @@ root=${RUN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}
 . "$root/hooks/scripts/agent-model-lib.sh"
 . "$root/templates/status/lib.sh"
 . "$root/templates/scripts/ci/lib.sh"
+. "$root/templates/scripts/ci/git-bounded-lib.sh"
 . "$root/tests/parts-lib.sh"
 . "$root/tests/turn-lib.sh"
 # Sourced again by their blocks; here too, so each part has them.
