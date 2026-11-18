@@ -5007,7 +5007,7 @@ eq "the tests job has a plain name, the part in its step" "1 0 1" "$(printf '%s\
 pj_repo="$root/../scripts/ci/classes.txt"
 if [ -f "$pj_repo" ] && grep -q '^!parts plugin' "$pj_repo"; then
   pj_rc=$(cat "$pj_repo")
-  for pj_case in web-only:'[]' plugin:'["shell-1-2","shell-3-4","queue-console"]' ci:'["shell-1-2","shell-3-4","queue-console"]' unclassified:'["shell-1-2","shell-3-4","queue-console","service-types","service-tests","core-types","core-tests"]'; do
+  for pj_case in web-only:'[]' plugin:'["shell-1-2","shell-3-4","queue-console"]' ci:'["shell-1-2","shell-3-4","queue-console"]' unclassified:'["shell-1-2","shell-3-4","queue-console","web-types","web-tests","service-types","service-tests","core-types","core-tests"]'; do
     pj_name=${pj_case%%:*}
     eq "this repository's suite for a $pj_name change" "${pj_case#*:}" "$(parts_matrix "$(class_parts "$(classify_paths "$(cat "$pj_fx/paths-$pj_name.txt")" "$pj_rc")" "$pj_rc")")"
   done
@@ -5021,12 +5021,26 @@ if [ -f "$pj_repo" ] && grep -q '^!parts plugin' "$pj_repo"; then
   eq "a design-only change (a mock) runs no part at all" 'design []' "$(classify_paths "$(cat "$pj_fx/paths-design.txt")" "$pj_rc") $(pj_repo_matrix design)"
   eq "a plugin-only change runs neither the service's nor core's parts" "0" "$(pj_repo_matrix plugin | grep -c -e service -e core)"
   eq "an unclassified path runs the service and core parts with the rest" "4" "$(pj_repo_matrix unclassified | tr ',' '\n' | grep -c -e service -e core)"
-  eq "each service and core part installs the packages first, then runs its own check" "4 2 2" "$(class_parts all "$pj_rc" | grep -c 'install-packages.sh && ') $(class_parts all "$pj_rc" | grep -c 'tsc --noEmit -p packages/') $(class_parts all "$pj_rc" | grep -c 'vitest run packages/')"
+  eq "each service and core part installs the packages first, then runs its own check" "6 3 2" "$(class_parts all "$pj_rc" | grep -c 'install-packages.sh && ') $(class_parts all "$pj_rc" | grep -c 'tsc --noEmit -p packages/') $(class_parts all "$pj_rc" | grep -c 'vitest run packages/')"
+  # A web test once failed on main for two hours while main's own run
+  # skipped it (sipnship#1982): the web package's type-check and tests are
+  # "main-web" class parts, a class no path names, so they join main's full
+  # run (every part of every class) without ever joining a pull request's
+  # own matrix beside its "app" job.
+  eq "main's full run also carries the web package's own type-check and tests" '["shell-1-2","shell-3-4","queue-console","web-types","web-tests","service-types","service-tests","core-types","core-tests"]' "$(parts_matrix "$(class_parts all "$pj_rc")" "$pj_rc")"
+  eq "a web-only change never runs them on its own pull request; classify never names main-web" "0" "$(pj_repo_matrix web-only | grep -c 'web-')"
+  eq "the web package's type-check and tests each install the packages first" "2" "$(class_parts all "$pj_rc" | awk -F'\t' '$1 ~ /^web-/ && index($2, "install-packages.sh && ")' | grep -c .)"
   pj_ci_repo="$root/../.github/workflows/ci.yml"
   pj_pr_on=$(for pj_j in checks app tests screens ci-passed; do awk -v j="  $pj_j:" '$0 == j {f=1; next} /^  [a-z-]*:$/ {f=0} f && /^    runs-on:/' "$pj_ci_repo"; done)
   eq "every pull-request job asks for the kept-runner label by one expression, and batch, rush and main take any runner" "5 1 1" "$(printf '%s\n' "$pj_pr_on" | grep -c "vars.CI_KEEP_RUNNER == 'on' && '\[\"self-hosted\",\"windows\",\"pr\"\]' || '\[\"self-hosted\",\"windows\"\]'") $(printf '%s\n' "$pj_pr_on" | sort -u | grep -c .) $(printf '%s\n' "$pj_pr_on" | sort -u | grep -c "github.event_name == 'pull_request' && !startsWith(github.head_ref, 'batch-') && !startsWith(github.head_ref, 'rush-')")"
   eq "the gate, classify and main's jobs take any runner" "0" "$(for pj_j in gate classify full report-red report-green; do awk -v j="  $pj_j:" '$0 == j {f=1; next} /^  [a-z-]*:$/ {f=0} f && /^    runs-on:/' "$pj_ci_repo"; done | grep -c 'CI_KEEP_RUNNER')"
   eq "a core change also runs the web job, and the tests job carries the Mote's token" "1 1" "$(grep -c "^    if: github.event_name == 'pull_request' && needs.classify.outputs.full == 'yes' && (.*classes, 'core')" "$pj_ci_repo") $(awk '$0 == "  tests:" {f=1; next} /^  [a-z-]*:$/ {f=0} f' "$pj_ci_repo" | grep -c 'GH_PACKAGES_TOKEN')"
+  # A change under the web package always runs its own pull request's app
+  # job straight away, never deferred to the batch-first cheap gate
+  # (sipnship#1982's second case, PR #1983's styles-and-test change), unless
+  # the builder asked to hold it.
+  pj_classify_repo=$(awk '$0 == "  classify:" {f=1; next} /^  [a-z-]*:$/ {f=0} f' "$pj_ci_repo")
+  eq "a change under packages/web forces its own pull request's full run" "1 1" "$(printf '%s\n' "$pj_classify_repo" | grep -c "grep -q '\^packages/web/'") $(printf '%s\n' "$pj_classify_repo" | grep -c 'queue:hold')"
 fi
 eq "a web-only change is app and docs" "app docs" "$(classify_paths "$(cat "$pj_fx/paths-web-only.txt")" "$pj_classes" | tr ' ' '\n' | sort | tr '\n' ' ' | sed 's/ $//')"
 pj_blocks=$(suite_blocks < "$root/tests/run.sh")
