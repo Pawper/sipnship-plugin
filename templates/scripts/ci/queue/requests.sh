@@ -83,9 +83,9 @@ requests_deploy_now() {
     [ -z "$dn_out" ] || requests_answer "$1" deploy-now 0 "$dn_out"
     return 0
   fi
-  git fetch -q origin "$base" 2>/dev/null || true
-  dn_end=$(git ls-remote origin "refs/heads/$base" 2>/dev/null | cut -f1)
-  dn_from=$(git ls-remote origin refs/deploy/production 2>/dev/null | cut -f1)
+  gitb fetch -q origin "$base" 2>/dev/null || true
+  dn_end=$(gitb ls-remote origin "refs/heads/$base" 2>/dev/null | cut -f1)
+  dn_from=$(gitb ls-remote origin refs/deploy/production 2>/dev/null | cut -f1)
   if [ -n "$dn_from" ] && { [ "$dn_from" = "$dn_end" ] || [ "$(ships_since "$dn_from" "$dn_end")" = skip ]; }; then
     requests_answer "$1" deploy-now 0 nothing-to-deploy
     return 0
@@ -123,8 +123,8 @@ requests_waiting() {
 # batch's member shows closed, not merged, once it is on main: that landed.
 requests_closed() {
   case "$1" in land-next|land-now) ;; *) echo not-open; return 0 ;; esac
-  git fetch -q origin "$base" 2>/dev/null || true
-  if [ -n "$2" ] && git merge-base --is-ancestor "$2" "origin/$base" 2>/dev/null; then echo landed; else echo not-open; fi
+  gitb fetch -q origin "$base" 2>/dev/null || true
+  if [ -n "$2" ] && gitb merge-base --is-ancestor "$2" "origin/$base" 2>/dev/null; then echo landed; else echo not-open; fi
 }
 
 requests_classes() { classify_paths "$(pr_files_of "$1" "$(pr_field "$1" 2)")" "$rules"; }

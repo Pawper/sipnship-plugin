@@ -42,9 +42,9 @@ deploy_proposal() {
     else deployed=$(git ls-remote origin refs/deploy/production 2>/dev/null | cut -f1); fi
     [ -n "$deployed" ] && [ "$deployed" != "$main" ] && git cat-file -e "$deployed^{commit}" 2>/dev/null || exit 0
     behind=0; oldest=""
-    for c in $(git rev-list --reverse "$deployed..$main" 2>/dev/null); do
-      if [ "$(deploy_skip "$(git diff-tree --no-commit-id --name-only -r -m "$c" 2>/dev/null)" "$app" "$extra" "$also")" = build ]; then
-        behind=$((behind + 1)); [ -n "$oldest" ] || oldest=$(git log -1 --format=%ct "$c")
+    for c in $(gitb rev-list --max-count=500 --reverse "$deployed..$main" 2>/dev/null); do
+      if [ "$(deploy_skip "$(gitb diff-tree --no-commit-id --name-only -r -m "$c" 2>/dev/null)" "$app" "$extra" "$also")" = build ]; then
+        behind=$((behind + 1)); [ -n "$oldest" ] || oldest=$(gitb log -1 --format=%ct "$c")
       fi
     done
     running=$(gh api 'repos/{owner}/{repo}/actions/workflows/deploy.yml/runs?per_page=10' \

@@ -48,7 +48,7 @@
 # commits them, so every change is a reviewable diff in a pull request and
 # the old versions stay in git. It does not push.
 here=$(dirname "$0")
-. "$here/sync-lib.sh"; . "$here/sync-deps.sh"; . "$here/known-lib.sh"
+. "$here/sync-lib.sh"; . "$here/sync-deps.sh"; . "$here/known-lib.sh"; . "$here/../../templates/scripts/ci/git-bounded-lib.sh"
 plugin=$(cd "$here/../.." && pwd)
 tpl="$plugin/templates"
 apply=no; force=no; only=""; no_commit=no
@@ -90,8 +90,8 @@ features=$(owned_features "$owned")
 origin_of() {
   [ -n "$known" ] || { echo plugin; return; }
   [ "$(known_match "$known" "$1" "$(cat "$1")" "$runs_on" "$run_shell")" = yes ] && { echo plugin; return; }
-  for o_rev in $(git log --format=%H -- "$1" 2>/dev/null); do
-    o_t=$(git show "$o_rev:$1" 2>/dev/null) || continue
+  for o_rev in $(git_bounded 30 log --max-count=200 --format=%H -- "$1" 2>/dev/null); do
+    o_t=$(git_bounded 15 show "$o_rev:$1" 2>/dev/null) || continue
     if [ "$(known_match "$known" "$1" "$o_t" "$runs_on" "$run_shell")" = yes ]; then echo edited; return; fi
   done
   echo own

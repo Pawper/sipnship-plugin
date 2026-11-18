@@ -37,11 +37,11 @@ folder_blocks() {
 fetch_pr_head() {
   fph_dir=${2:-.}
   fph_want=$(pr_field "$1" 2)
-  git -C "$fph_dir" fetch -q origin "+refs/pull/$1/head:refs/queue/pr-$1" 2>/dev/null || true
+  gitb -C "$fph_dir" fetch -q origin "+refs/pull/$1/head:refs/queue/pr-$1" 2>/dev/null || true
   fph_got=$(git -C "$fph_dir" rev-parse -q --verify "refs/queue/pr-$1" 2>/dev/null || true)
   if [ -n "$fph_want" ] && [ "$fph_got" != "$fph_want" ]; then
     fph_branch=$(pr_field "$1" 1)
-    if [ -n "$fph_branch" ] && git -C "$fph_dir" fetch -q origin "+refs/heads/$fph_branch:refs/queue/pr-$1" 2>/dev/null; then
+    if [ -n "$fph_branch" ] && gitb -C "$fph_dir" fetch -q origin "+refs/heads/$fph_branch:refs/queue/pr-$1" 2>/dev/null; then
       fph_got=$(git -C "$fph_dir" rev-parse -q --verify "refs/queue/pr-$1" 2>/dev/null || true)
     fi
   fi
@@ -65,11 +65,11 @@ migration_blocks() {
   # main and the pull request together and then reading FETCH_HEAD names
   # main, the first ref fetched: the gate compared main with itself, saw
   # no migration added, and let three unrun migrations through.
-  git fetch -q origin "+refs/heads/$base:refs/remotes/origin/$base" 2>/dev/null || { echo "its migrations could not be checked (fetching $base failed); it waits for the next round"; return 0; }
+  gitb fetch -q origin "+refs/heads/$base:refs/remotes/origin/$base" 2>/dev/null || { echo "its migrations could not be checked (fetching $base failed); it waits for the next round"; return 0; }
   # The head as the pull request reports it, from its pull ref or, when
   # GitHub's pull ref lags, its branch.
   mb_head=$(fetch_pr_head "$1") || { echo "its migrations could not be checked yet: $fph_why"; return 0; }
-  mb_added=$(git diff --name-only --diff-filter=A "origin/$base...$mb_head" 2>/dev/null)
+  mb_added=$(gitb diff --name-only --diff-filter=A "origin/$base...$mb_head" 2>/dev/null)
   # Files added under a migrations folder that the glob does not match
   # mean the glob is wrong, and the gate would see nothing; say so.
   mb_stray=$(printf '%s\n' "$mb_added" | tr '\\' '/' | awk '/(^|\/)migrations\//' | while IFS= read -r mb_f; do
@@ -77,7 +77,7 @@ migration_blocks() {
     set -f; case "$mb_f" in $mb_glob) ;; *) printf '%s\n' "$mb_f" ;; esac; set +f
   done | head -n 1)
   if [ -n "$mb_stray" ]; then echo "it adds $mb_stray under a migrations folder that the migration glob in .claude/numbering.txt ($mb_glob) does not match; fix the glob so the gate can see it"; return 0; fi
-  mb_pending=$(pending_migrations "$(git show "$mb_head:$mb_manual" 2>/dev/null)" "$mb_added" "$mb_glob")
+  mb_pending=$(pending_migrations "$(gitb show "$mb_head:$mb_manual" 2>/dev/null)" "$mb_added" "$mb_glob")
   [ -n "$mb_pending" ] || return 0
   printf '%s\n' "$mb_pending" | head -n 1 | awk -F'\t' -v m="$mb_manual" '{ printf "it adds migration %s, which is %s in %s; run it, mark it Done in the manual on this branch, then queue it again\n", $1, $2, m }'
 }
@@ -187,14 +187,14 @@ unstick_one() {
     printf '%s\t%s\t%s\t%s\t%s\n' "$us_n" "$us_d" "$(mergeable_word "$(pr_field "$us_n" 5)")" "$(pr_rollup "$us_sha")" "$us_b"
   done)
   us_busy=$(unstick_busy "$us_open" "$base")
-  git fetch -q origin "+refs/heads/$base:refs/remotes/origin/$base" 2>/dev/null || { say "Unsticking: $base could not be fetched; nothing done."; return 0; }
+  gitb fetch -q origin "+refs/heads/$base:refs/remotes/origin/$base" 2>/dev/null || { say "Unsticking: $base could not be fetched; nothing done."; return 0; }
   for us_pr in $(unstick_candidates "$us_open" "$base"); do
     us_row=$(printf '%s\n' "$us_open" | awk -F'\t' -v n="$us_pr" '$1 == n { print; exit }')
     us_mw=$(printf '%s' "$us_row" | cut -f3); us_roll=$(printf '%s' "$us_row" | cut -f4)
     us_head=$(fetch_pr_head "$us_pr") || continue
-    us_behind=$(git rev-list --count "$us_head..origin/$base" 2>/dev/null || echo 0)
+    us_behind=$(gitb rev-list --count "$us_head..origin/$base" 2>/dev/null || echo 0)
     us_merges=yes; us_files=""
-    us_mt=$(git merge-tree --write-tree --name-only "origin/$base" "$us_head" 2>/dev/null) && us_rc=0 || us_rc=$?
+    us_mt=$(gitb merge-tree --write-tree --name-only "origin/$base" "$us_head" 2>/dev/null) && us_rc=0 || us_rc=$?
     case $us_rc in
       0) ;;
       1) us_merges=no; us_files=$(printf '%s\n' "$us_mt" | sed -n '2,$p' | sed '/^$/,$d') ;;

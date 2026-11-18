@@ -149,7 +149,7 @@ close_pr() { # NUMBER REASON
 
 # queue_batch: the --batch mode, run by merge-queue.sh once the lock is taken.
 queue_batch() {
-b_begin=$(git ls-remote origin "refs/heads/$base" 2>/dev/null | cut -f1)
+b_begin=$(gitb ls-remote origin "refs/heads/$base" 2>/dev/null | cut -f1)
 # Batch mode. The batch is built in its own worktree, never in the main
 # checkout, so a person working there is not switched onto the batch
 # branch under their feet. QUEUE_WORKTREE names the folder; the default is
@@ -167,7 +167,7 @@ day=$(date +%Y-%m-%d)  # the owner's local day, like every date in the repositor
 n=1
 stamp=$(date +%H%M%S)
 branch=$(batch_branch_name "$day" "$n" "$stamp")
-while git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; do
+while gitb ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; do
   n=$((n + 1)); branch=$(batch_branch_name "$day" "$n" "$stamp")
 done
 # The main checkout is the first worktree git lists, whatever folder the
@@ -224,9 +224,9 @@ printf 'checking %s\n' "$(printf '%s ' $prs | sed 's/ $//')" > "$flaky_dir/now" 
 pairs=""
 for a in $prs; do for b in $prs; do
   [ "$a" -lt "$b" ] || continue
-  if ! git -C "$wt" merge-tree --write-tree "refs/queue/pr-$a" "refs/queue/pr-$b" >/dev/null 2>&1; then
+  if ! gitb -C "$wt" merge-tree --write-tree "refs/queue/pr-$a" "refs/queue/pr-$b" >/dev/null 2>&1; then
     # a pair that clashes only in generated files is resolved on the batch
-    pf=$(git -C "$wt" merge-tree --write-tree --name-only "refs/queue/pr-$a" "refs/queue/pr-$b" 2>/dev/null | sed -n '2,$p' | sed '/^$/,$d')
+    pf=$(gitb -C "$wt" merge-tree --write-tree --name-only "refs/queue/pr-$a" "refs/queue/pr-$b" 2>/dev/null | sed -n '2,$p' | sed '/^$/,$d')
     if [ "$(generated_only "$pf" "$gen_cfg")" != yes ]; then pairs="$pairs
 $a $b"; fi
   fi
@@ -238,7 +238,7 @@ if [ -n "$pairs" ]; then
   for pr in $prs; do
     case " $group " in *" $pr "*) continue ;; esac
     with=$(printf '%s\n' "$pairs" | awk -v p="$pr" -v g=" $group " '$1 == p && index(g, " " $2 " ") { print $2; exit } $2 == p && index(g, " " $1 " ") { print $1; exit }')
-    files=$(git -C "$wt" merge-tree --write-tree --name-only "refs/queue/pr-$pr" "refs/queue/pr-$with" 2>/dev/null | sed -n '2,$p' | sed '/^$/,$d')
+    files=$(gitb -C "$wt" merge-tree --write-tree --name-only "refs/queue/pr-$pr" "refs/queue/pr-$with" 2>/dev/null | sed -n '2,$p' | sed '/^$/,$d')
     batch_line "$pr" "left for later" "conflicts with #$with, which goes in this batch"
     # The record names the files, the other change by its title, and why.
     printf '%s\t%s\t%s\t%s\t%s\n' "$pr" "$with" "$(pr_field "$with" 3 | tr '\t' ' ')" "$(printf '%s' "$files" | tr '\n' ' ' | sed 's/ *$//')" "conflicts with #$with, which goes in this batch" >> "$flaky_dir/clashes" 2>/dev/null || true
@@ -284,7 +284,7 @@ for pr in $prs; do
   if ! git -C "$wt" merge -q --no-ff --no-edit -m "Merge PR #$pr into $branch: $title" "$head" >/dev/null 2>&1; then
     git -C "$wt" merge --abort >/dev/null 2>&1 || true
     git -C "$wt" reset -q --hard "$good"
-    cfl=$(git -C "$wt" merge-tree --write-tree --name-only "$good" "$head" 2>/dev/null | sed -n '2,$p' | sed '/^$/,$d')
+    cfl=$(gitb -C "$wt" merge-tree --write-tree --name-only "$good" "$head" 2>/dev/null | sed -n '2,$p' | sed '/^$/,$d')
     gen_note=""; if [ "$(generated_only "$cfl" "$gen_cfg")" = yes ]; then gen_note=generated; fi
     # Generated files only (scripts/ci/generated-paths.txt): take either
     # side, rebuild them here, and let the batch's one full run prove it.
@@ -323,7 +323,7 @@ for pr in $prs; do
   # derive the known-hashes list again and commit it before the run.
   kr_line=$(known_refresh "$wt" "$good")
   [ -z "$kr_line" ] || batch_line "$pr" "merged" "$kr_line";   b_lap "#$pr: merge and bookkeeping"
-  changed=$(git -C "$wt" diff --name-only "origin/$base...$head")
+  changed=$(gitb -C "$wt" diff --name-only "origin/$base...$head")
   # a member that changes dependencies gets them installed before its check
   case "
 $changed" in *"
@@ -409,7 +409,7 @@ fi
 
 if [ -f "$wt/status/build.sh" ]; then
   (cd "$wt" && sh status/build.sh) >/dev/null
-  if ! git -C "$wt" diff --quiet -- STATUS.md; then
+  if ! gitb -C "$wt" diff --quiet -- STATUS.md; then
     git -C "$wt" add STATUS.md && git -C "$wt" commit -q -m "Rebuild the status page for $branch"
   fi
 fi

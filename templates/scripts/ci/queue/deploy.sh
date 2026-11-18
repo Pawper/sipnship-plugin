@@ -35,11 +35,11 @@ start_releases() {
 tag_releases() {
   tr_file=${QUEUE_RELEASE_TAG_FILE:-plugin/package.json}; tr_prefix=${QUEUE_RELEASE_TAG_PREFIX:-plugin-v}
   [ "$(release_tag_wanted "$(cat .github/workflows/*.yml 2>/dev/null)" "$tr_prefix")" = yes ] || return 0
-  git fetch -q origin "$base" 2>/dev/null || true
-  for tr_c in $(git rev-list --first-parent --reverse "$1..$2" 2>/dev/null); do
-    tr_tag=$(release_tag "$(git show "$tr_c^1:$tr_file" 2>/dev/null)" "$(git show "$tr_c:$tr_file" 2>/dev/null)" "$tr_prefix")
+  gitb fetch -q origin "$base" 2>/dev/null || true
+  for tr_c in $(gitb rev-list --first-parent --reverse "$1..$2" 2>/dev/null); do
+    tr_tag=$(release_tag "$(gitb show "$tr_c^1:$tr_file" 2>/dev/null)" "$(gitb show "$tr_c:$tr_file" 2>/dev/null)" "$tr_prefix")
     [ -n "$tr_tag" ] || continue
-    if [ -n "$(git ls-remote origin "refs/tags/$tr_tag" 2>/dev/null)" ]; then say "release: $tr_tag is already tagged; left as it is."; continue; fi
+    if [ -n "$(gitb ls-remote origin "refs/tags/$tr_tag" 2>/dev/null)" ]; then say "release: $tr_tag is already tagged; left as it is."; continue; fi
     if gh_write api -X POST "repos/{owner}/{repo}/git/refs" -f ref="refs/tags/$tr_tag" -f sha="$tr_c" >/dev/null 2>"$flaky_dir/tag.err"; then
       say "release: tagged $tr_tag on $(printf '%s' "$tr_c" | cut -c1-7), which starts its release workflow."
     elif grep -q 'already exists' "$flaky_dir/tag.err" 2>/dev/null; then
@@ -60,7 +60,7 @@ tag_releases() {
 # "releases" in .claude/deploy.json are started here, once. A --serial
 # run once ended "queue done" with no deploy started: only the drain did this.
 deploy_if_due() {
-  d_end=$(git ls-remote origin "refs/heads/$base" 2>/dev/null | cut -f1)
+  d_end=$(gitb ls-remote origin "refs/heads/$base" 2>/dev/null | cut -f1)
   if [ "$d_end" = "$1" ]; then say "Nothing merged, so nothing to deploy."; return 0; fi
   # A landing that moved the plugin's version is tagged before any deploy
   # gate, so a held deploy never holds a release.
@@ -81,8 +81,8 @@ deploy_if_due() {
   # began, when none is recorded): start nothing. A template sync that
   # touched only scripts/ci and workflows once started a web build and two
   # Android builds. A later landing that ships deploys everything since.
-  git fetch -q origin "$base" 2>/dev/null || true
-  d_from=$(git ls-remote origin refs/deploy/production 2>/dev/null | cut -f1)
+  gitb fetch -q origin "$base" 2>/dev/null || true
+  d_from=$(gitb ls-remote origin refs/deploy/production 2>/dev/null | cut -f1)
   if [ -z "$d_from" ] || ! git cat-file -e "$d_from^{commit}" 2>/dev/null; then d_from=$1; fi
   if [ "$(ships_since "$d_from" "$d_end")" = skip ]; then
     say "deploy: skipped, nothing that ships changed since $(printf "%s" "$d_from" | cut -c1-7) ($(skip_rule_said))"

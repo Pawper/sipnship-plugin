@@ -106,6 +106,7 @@ shell-2 a failing job says what failed, and a failed check cancels the run
 shell-2 main is gated by one full run after a quiet hour
 shell-2 a hook that runs out of time is named, bounded and logged
 shell-2 the brief says when the installed plugin lags
+shell-2 every unattended git is bound in time and ends with its caller
 shell-2 no test fails on how long something took
 shell-2 temp files stay in the run, and nothing it starts outlives it
 shell-4 hotspots: size limits, overlaps and job time

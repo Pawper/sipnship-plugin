@@ -165,6 +165,7 @@ s_searchindex() {
 s_unreleased() {
   unrel=""; repo_ver=""
   if [ -f plugin/.claude-plugin/plugin.json ] && [ -f "$here/../../scripts/drive/drive-lib.sh" ]; then
+    . "$here/../../templates/scripts/ci/git-bounded-lib.sh"
     . "$here/../../scripts/drive/drive-lib.sh"
     unrel=$(plugin_unreleased_count)
     repo_ver=$(sed -n 's/^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' plugin/.claude-plugin/plugin.json | head -n 1)

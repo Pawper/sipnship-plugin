@@ -9,7 +9,7 @@
 # no remote or the fetch fails; the plan never stops for it.
 release_ref() {
   if git remote get-url origin >/dev/null 2>&1; then
-    if command -v timeout >/dev/null 2>&1; then timeout 30 git fetch -q origin main >/dev/null 2>&1 || true
+    if command -v timeout >/dev/null 2>&1; then timeout -k 5 30 git fetch -q origin main >/dev/null 2>&1 || true
     else git fetch -q origin main >/dev/null 2>&1 || true; fi
     if git rev-parse --verify -q origin/main >/dev/null 2>&1; then echo origin/main; return 0; fi
   fi
@@ -19,7 +19,7 @@ release_ref() {
 # plugin_version_at REF
 # The plugin's version as REF holds it (the local file when REF has none).
 plugin_version_at() {
-  pv_json=$(git show "$1:plugin/.claude-plugin/plugin.json" 2>/dev/null || cat plugin/.claude-plugin/plugin.json 2>/dev/null)
+  pv_json=$(gitb show "$1:plugin/.claude-plugin/plugin.json" 2>/dev/null || cat plugin/.claude-plugin/plugin.json 2>/dev/null)
   json_field "$pv_json" version
 }
 
