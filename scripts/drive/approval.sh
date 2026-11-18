@@ -32,6 +32,7 @@ here=$(dirname "$0")
 . "$here/round-lib.sh"
 . "$here/comment-lib.sh"
 . "$here/round-state-lib.sh"
+. "$here/wake-lib.sh"
 . "$here/worktree-access-lib.sh"
 
 if ! command -v gh >/dev/null 2>&1 || ! gh auth status >/dev/null 2>&1; then
@@ -177,6 +178,12 @@ if [ -z "$started_by" ] && printf '%s\n' "$approved" | grep -q '^dispatch '; the
   # A unit whose pull request has merged or closed has landed, whatever its issues still show (a unit's other issues stay In progress when the pull request did not name them): every open pull request, held ones too, is read once, and running_round drops a unit whose pull request is not among them.
   all_open=$(gh api "repos/{owner}/{repo}/pulls?state=open&per_page=100" --jq '.[] | [.number, (([.labels[].name | ascii_downcase] | index("queue:hold") // index("hold")) != null)] | @tsv' 2>/dev/null | tr -d '\r')
   open_prs=$(printf '%s\n' "$all_open" | awk -F'\t' '$2 == "false" { print $1 }')
+  # A unit counts as running only while there is evidence of it: a round whose units made no pull request and no branch for twenty minutes is dead, and its issues no longer hold the round. The tick's report sends them back to Ready.
+  dead=$(dead_round_issues "$(date -u +%s)" "$(started_at "$comments")" "$(gh api "repos/{owner}/{repo}/git/matching-refs/heads/issue-" --jq '.[].ref' 2>/dev/null)" "$(started_units "$comments")")
+  if [ -n "$dead" ]; then
+    inprog=$(printf '%s\n' "$inprog" | grep -vxF "$(printf '%s\n' $dead)")
+    echo "the running round's units left nothing in twenty minutes (#$(printf '%s' "$dead" | sed 's/ /, #/g')); it no longer holds the next round" >&2
+  fi
   approved=$(hold_dispatch "$approved" "$(running_round "$comments" "$inprog" "$open_prs" "$(printf '%s\n' "$all_open" | cut -f1)")")
 fi
 # An agent needs a worktree: when this run cannot make one (a scheduled run
