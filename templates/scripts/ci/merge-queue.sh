@@ -59,8 +59,7 @@ if [ -z "$QUEUE_FROM_COPY" ]; then
   QUEUE_FROM_COPY=1; export QUEUE_FROM_COPY
   exec sh "$qc/ci/merge-queue.sh" "$@"
 fi
-. "$here/lib.sh"
-. "$here/git-bounded-lib.sh"
+. "$here/lib.sh"; . "$here/git-bounded-lib.sh"
 . "$here/batch-lib.sh"
 . "$here/numbering-lib.sh"
 # One library a step, in this order; each holds functions only. Read from the
