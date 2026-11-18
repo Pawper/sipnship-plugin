@@ -1,0 +1,42 @@
+{
+ "processes": [
+  {
+   "pid": 9,
+   "ppid": 1,
+   "name": "explorer.exe",
+   "cmd": "explorer",
+   "startMs": 1799856000000,
+   "bytes": 107374182
+  },
+  {
+   "pid": 10,
+   "ppid": 9,
+   "name": "claude.exe",
+   "cmd": "claude",
+   "startMs": 1799892000000,
+   "bytes": 2147483648
+  },
+  {
+   "pid": 11,
+   "ppid": 10,
+   "name": "bash.exe",
+   "cmd": "bash -c work",
+   "startMs": 1799910000000,
+   "bytes": 107374182
+  },
+  {
+   "pid": 80,
+   "ppid": 11,
+   "name": "node.exe",
+   "cmd": "node build.js",
+   "startMs": 1799996400000,
+   "bytes": 25769803776
+  }
+ ],
+ "end": [
+  80
+ ],
+ "why": "size",
+ "memory": null,
+ "now": 1800000000000
+}

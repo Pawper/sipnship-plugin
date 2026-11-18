@@ -26,6 +26,18 @@ dir="$home/runner-watch"; mkdir -p "$dir" 2>/dev/null || true
 key=$(printf '%s' "$repo" | tr '/' '-')
 now=$(date +%s)
 
+# 0. The watchdog (scripts/ci/watchdog.mjs): ends a runaway process of the
+# agents' tools, records it first, and keeps its own one-minute task so it
+# runs between these runs; it needs no setup. With --print it only reads.
+if command -v node >/dev/null 2>&1 && [ -f "$here/watchdog.mjs" ]; then
+  if [ "$print_only" = yes ]; then
+    echo "watchdog: $(node "$here/watchdog.mjs" --print 2>&1 | head -n 3 | tr '\n' ' ')"
+  else
+    node "$here/watchdog.mjs" --ensure-task >/dev/null 2>&1 || true
+    node "$here/watchdog.mjs" 2>&1 | sed 's/^/watchdog: /' || true
+  fi
+fi
+
 # 1. The runners, as GitHub sees them.
 runners=$(gh api "repos/$repo/actions/runners" --jq '.runners[] | [.name, .status, (.busy | tostring)] | @tsv' 2>/dev/null | tr -d '\r')
 jobs=$(printf '%s\n' "$runners" | awk -F'\t' '$3 == "true"' | grep -c . || true)

@@ -1,0 +1,44 @@
+{
+ "processes": [
+  {
+   "pid": 20,
+   "ppid": 999,
+   "name": "bash.exe",
+   "cmd": "bash -c source /c/Users/maya/.claude/shell-snapshots/s.sh && work",
+   "startMs": 1799924400000,
+   "bytes": 107374182
+  },
+  {
+   "pid": 21,
+   "ppid": 20,
+   "name": "bash.exe",
+   "cmd": "bash",
+   "startMs": 1799924400000,
+   "bytes": 107374182
+  },
+  {
+   "pid": 22,
+   "ppid": 21,
+   "name": "sh.exe",
+   "cmd": "sh",
+   "startMs": 1799924400000,
+   "bytes": 107374182
+  },
+  {
+   "pid": 23,
+   "ppid": 22,
+   "name": "git.exe",
+   "cmd": "git -C C:/w log",
+   "startMs": 1799924400000,
+   "bytes": 115427246080
+  }
+ ],
+ "end": [
+  20,
+  21,
+  22,
+  23
+ ],
+ "memory": null,
+ "now": 1800000000000
+}

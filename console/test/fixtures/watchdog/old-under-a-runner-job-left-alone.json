@@ -1,0 +1,31 @@
+{
+ "processes": [
+  {
+   "pid": 40,
+   "ppid": 1,
+   "name": "Runner.Listener.exe",
+   "cmd": "Runner.Listener run",
+   "startMs": 1799892000000,
+   "bytes": 107374182
+  },
+  {
+   "pid": 41,
+   "ppid": 40,
+   "name": "Runner.Worker.exe",
+   "cmd": "Runner.Worker",
+   "startMs": 1799982000000,
+   "bytes": 322122547
+  },
+  {
+   "pid": 42,
+   "ppid": 41,
+   "name": "sh.exe",
+   "cmd": "sh -c test",
+   "startMs": 1799985600000,
+   "bytes": 107374182
+  }
+ ],
+ "end": [],
+ "memory": null,
+ "now": 1800000000000
+}

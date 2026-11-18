@@ -1,0 +1,39 @@
+{
+ "processes": [
+  {
+   "pid": 60,
+   "ppid": 1,
+   "name": "explorer.exe",
+   "cmd": "explorer",
+   "startMs": 1799820000000,
+   "bytes": 107374182
+  },
+  {
+   "pid": 61,
+   "ppid": 60,
+   "name": "WindowsTerminal.exe",
+   "cmd": "wt",
+   "startMs": 1799820000000,
+   "bytes": 107374182
+  },
+  {
+   "pid": 62,
+   "ppid": 61,
+   "name": "pwsh.exe",
+   "cmd": "pwsh",
+   "startMs": 1799820000000,
+   "bytes": 107374182
+  },
+  {
+   "pid": 63,
+   "ppid": 62,
+   "name": "git.exe",
+   "cmd": "git repack -a",
+   "startMs": 1799820000000,
+   "bytes": 32212254720
+  }
+ ],
+ "end": [],
+ "memory": null,
+ "now": 1800000000000
+}

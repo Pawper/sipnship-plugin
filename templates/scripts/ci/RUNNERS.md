@@ -41,6 +41,8 @@ The machine, not the count, is the real limit. An idle runner holds about 90 MB 
 
 `sh scripts/ci/runner-watch.sh --print` shows what it sees without writing or commenting. The session brief repeats the conditions that hold. The trade of nothing hosted: when the machine itself is off, nothing reports it within the hour. There is no hosted Runner watch any more: it ran hosted so it could speak when every runner was off, and in a private repository whose hosted minutes are used up it failed at every schedule and emailed the owner. "All runners off" is now said the next morning, by the nightly audit once a runner is back (a run queued over ten minutes, a runner offline, hosted runs not starting), and at every session start, where the brief names a run queued over ten minutes and the queue says "no runner online".
 
+The same run starts the watchdog (`scripts/ci/watchdog.mjs`) and makes sure a one-minute task keeps it going, so there is nothing more to set up. It ends a runaway process of the agents' tools (more than 20 GB, or over three hours with no live session or job above it), records what it was in `~/.sipnship/runner-watch/watchdog.log` first, and says so once on the session brief. It never ends the coordinating session, a runner or its listener, or the drive. Limits are in `~/.sipnship/watchdog.json`; `node scripts/ci/watchdog.mjs --print` shows what it would end.
+
 ## Run two
 
 One runner is a queue of one: a slow job makes every other job wait, and when it goes offline everything stops. Run at least two, on the same machine or on two. One run of `add-runner.ps1 -Count 2` adds both, with one Windows prompt; or run it once for each with a different `-Name`.

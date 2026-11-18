@@ -1,0 +1,15 @@
+{
+ "processes": [
+  {
+   "pid": 50,
+   "ppid": 1,
+   "name": "claude.exe",
+   "cmd": "claude",
+   "startMs": 1799892000000,
+   "bytes": 42949672960
+  }
+ ],
+ "end": [],
+ "memory": null,
+ "now": 1800000000000
+}
