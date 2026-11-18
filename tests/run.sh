@@ -5273,6 +5273,7 @@ case "$*" in
   *labels=drive*) printf '99\tdrive,drive:auto\t3\n' ;;
   "api user --jq .login") echo maya-drive ;;
   *labels=state:in-progress*) echo 214 ;;
+  *matching-refs/heads/issue-*) echo refs/heads/issue-214-seed-packets ;;
   *issues/99/comments*) cat "$SR_DIR/comments" ;;
 esac
 exit 0
@@ -5641,6 +5642,7 @@ case "$*" in
   *labels=drive*) printf '99\tdrive,drive:auto\t2\n' ;;
   "api user --jq .login") echo maya-drive ;;
   *labels=state:in-progress*) echo 214 ;;
+  *matching-refs/heads/issue-*) echo refs/heads/issue-214-seed-packets ;;
   *issues/99/comments*)
     printf '2026-10-31T07:30:00Z\tmaya-drive\tRound started.\\n<!-- sipnship-proposal {"status":"started","units":[{"issues":[214],"areas":[]}],"held":[]} -->\n'
     printf '2026-10-31T07:40:00Z\tmaya-drive\tProposal for Friday\\n1. dispatch 223 Seed packets\\nstop: proposal ready for approval\n' ;;
@@ -6286,6 +6288,13 @@ eq "no branch, old and no agent running is restarted; young or a live agent is s
 305${wk_tab}working" "$(wake_units_read 2000 "$wk_units")"
 eq "a dot is blue only for a unit that made something" "working starting" "$(wake_unit_state 2000 1000 yes no no no) $(wake_unit_state 2000 1000 no no no yes)"
 eq "the restart is said in one line" "1" "$(wake_restart_comment | wc -l | tr -d ' ')"
+dr_units=$(printf '\t301 302\n531\t303\n\t304\n')
+dr_branches=$(printf 'main\nissue-304-seed-packets\nissue-3040\n')
+eq "a round younger than twenty minutes is never dead" "" "$(dead_round_issues 2000 1000 "$dr_branches" "$dr_units")"
+eq "a unit with no pull request and no branch for twenty minutes is dead; a pull request or a branch is evidence" "301 302" "$(dead_round_issues 2400 1000 "$dr_branches" "$dr_units")"
+eq "a branch named for another issue is no evidence (issue-3040 is not 304)" "304" "$(dead_round_issues 2400 1000 "$(printf 'issue-3040\n')" "$(printf '\t304\n')")"
+eq "an unknown start time says nothing" "" "$(dead_round_issues 2400 '' "$dr_branches" "$dr_units")"
+eq "the dead round's restart is said in one line" "1" "$(dead_round_comment | wc -l | tr -d ' ')"
 eq "the tick says how many agents it left running" "Left running when this tick ended: no agents.|Left running when this tick ended: 1 agent.|Left running when this tick ended: 3 agents." "$(wake_agents_left 0)|$(wake_agents_left 1)|$(wake_agents_left 3)"
 wk_yml="$root/../.github/workflows/drive-wake.yml"
 if [ -f "$wk_yml" ]; then

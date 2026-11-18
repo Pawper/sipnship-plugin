@@ -83,3 +83,31 @@ wake_agents_left() {
     *) echo "Left running when this tick ended: $1 agents." ;;
   esac
 }
+
+# dead_round_issues NOW STARTED_EPOCH BRANCHES UNITS [MINUTES]
+# A round counts a unit as running only while there is evidence of it
+# (specs/025-drive-wake, "A round that left nothing"). UNITS is what
+# started_units printed ("PR<TAB>ISSUES", one unit a line); BRANCHES is every
+# branch name on the remote, one a line. Prints the issues, space separated,
+# of the units that left nothing for MINUTES (default 20) after the round
+# started: no pull request and no branch named for any of their issues
+# ("issue-N" or "issue-N-..."). Those units are dead, and their issues go
+# back to Ready first. Nothing while the round is young or has evidence.
+dead_round_issues() {
+  case "$2" in ''|*[!0-9]*) return 0 ;; esac
+  [ $(( $1 - $2 )) -ge $(( ${5:-20} * 60 )) ] || return 0
+  printf '%s\n' "$4" | tr -d '\r' | awk -F'\t' -v br="$3" '
+    BEGIN { n = split(br, a, "\n"); for (i = 1; i <= n; i++) { gsub(/\r/, "", a[i]); sub(/^(refs\/heads\/|origin\/)/, "", a[i]); if (a[i] != "") b[a[i]] = 1 } }
+    $1 == "" && $2 != "" {
+      m = split($2, is, " "); live = 0
+      for (i = 1; i <= m && !live; i++) for (k in b) if (k == "issue-" is[i] || index(k, "issue-" is[i] "-") == 1) { live = 1; break }
+      if (!live) for (i = 1; i <= m; i++) out = out (out == "" ? "" : " ") is[i]
+    }
+    END { if (out != "") print out }'
+}
+
+# dead_round_comment
+# The one line left on an issue whose round left nothing, and said in the round's report.
+dead_round_comment() {
+  echo "Restarted: the round that took this made no branch, commit or pull request in twenty minutes, so nothing was lost. It is back in Ready and starts first in the next round."
+}
