@@ -34,12 +34,33 @@ const isLocal = (model) => LOCAL_PREFIXES.some((p) => String(model || '').starts
 /** An effort level as the runtime records it ("low", "medium", "high"), lower case; anything else is no level. */
 const effortLevel = (v) => (typeof v === 'string' && /^[a-z]{2,12}$/i.test(v.trim()) ? v.trim().toLowerCase() : undefined);
 
+/** The message's first line, cleaned of markdown marks, as its words. */
+function firstLineWords(text) {
+  const first = String(text || '').split(/\r?\n/).map((l) => l.trim()).find((l) => l && !/^[`#>*-]+$/.test(l)) || '';
+  return first.replace(/[`*_#>]/g, '').split(/\s+/).filter(Boolean);
+}
+
 /** The first line of a message, in at most twelve words. */
 function lastLine(text) {
-  const first = String(text || '').split(/\r?\n/).map((l) => l.trim()).find((l) => l && !/^[`#>*-]+$/.test(l)) || '';
-  const words = first.replace(/[`*_#>]/g, '').split(/\s+/).filter(Boolean);
+  const words = firstLineWords(text);
   if (!words.length) return '';
   return words.slice(0, WORDS_MAX).join(' ') + (words.length > WORDS_MAX ? '…' : '');
+}
+
+/** How long the full line is kept, in characters: a few sentences, never a transcript. */
+const FULL_LINE_MAX_CHARS = 400;
+
+/**
+ * The same first line, in full, within the stored limit: kept beside the
+ * short one only when the short one was actually cut, so a reader has
+ * something to open with "Show all". Undefined when the line was not cut,
+ * or there is nothing to keep.
+ */
+function fullLine(text) {
+  const words = firstLineWords(text);
+  if (words.length <= WORDS_MAX) return undefined;
+  const joined = words.join(' ').slice(0, FULL_LINE_MAX_CHARS);
+  return joined || undefined;
 }
 
 /** Numbers matched by a pattern's first group, first few, in order, each once. */
@@ -186,6 +207,8 @@ function readSession(logText, name, { localModels = [] } = {}) {
   if (model && isLocal(s.model)) s.spend = 0;
   const line = lastLine(last);
   if (line) s.lastLine = line;
+  const full = fullLine(last);
+  if (full) s.fullLine = full;
   if (counted && tokens > 0) {
     s.tokens = tokens;
     s.tokensIn = tIn;
@@ -355,4 +378,4 @@ function readSessions({ root, logsDir, worktrees, localModels, now = Date.now(),
   return out.sort((a, b) => b._at - a._at).slice(0, SESSIONS_MAX).map(({ _at, ...s }) => s);
 }
 
-module.exports = { issuesIn, pushedIn, lastLine, readSession, readSessions, issuesInBranch, issuesInBody, logFolder, logsIn, agentMeta, worktreesOf, endedAgents, modelId, isLocal, effortLevel, CATEGORIES, WORDS_MAX, SESSIONS_MAX, RECENT_MS, ENDED_SLACK_MS };
+module.exports = { issuesIn, pushedIn, lastLine, fullLine, readSession, readSessions, issuesInBranch, issuesInBody, logFolder, logsIn, agentMeta, worktreesOf, endedAgents, modelId, isLocal, effortLevel, CATEGORIES, WORDS_MAX, SESSIONS_MAX, RECENT_MS, ENDED_SLACK_MS, FULL_LINE_MAX_CHARS };

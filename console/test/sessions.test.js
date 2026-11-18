@@ -33,6 +33,21 @@ test('a session is read from its log: issues, model, start, branch, last line, t
   assert.strictEqual(s.startedWith, undefined);
 });
 
+test('the full line is kept beside the short one only when the short one was actually cut', () => {
+  const long = 'one two three four five six seven eight nine ten eleven twelve thirteen fourteen';
+  assert.strictEqual(sessions.fullLine(long), long);
+  assert.strictEqual(sessions.fullLine('Reading the schedule screen first.'), undefined, 'nothing to open when the short line already said it all');
+  assert.strictEqual(sessions.fullLine(''), undefined);
+  const way = 'word '.repeat(200).trim();
+  assert.strictEqual(sessions.fullLine(way).length, sessions.FULL_LINE_MAX_CHARS, 'a few sentences at most, never a transcript');
+});
+
+test('a session carries its full first line beside the cut one, so the bubble has something to open', () => {
+  const s = sessions.readSession(log, 'abc');
+  assert.strictEqual(s.fullLine, 'Now moving the reminder time into the shared schedule helper so the screen and the reminder agree on the evening before a frost night.');
+  assert.ok(s.lastLine.endsWith('…'));
+});
+
 test('a log with nothing in it is no session', () => {
   assert.strictEqual(sessions.readSession('not json\n', 'x'), undefined);
 });
