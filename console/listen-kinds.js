@@ -85,7 +85,22 @@ async function scan(ctx, action) {
 // One elevated recording of the antivirus, a fixed length; Windows asks once. The builder starts programs while it runs.
 async function recordAntivirus(ctx) {
   const r = await elevatedRun(ctx, RECORD_SCRIPT, ['-Seconds', String(RECORD_SECONDS)], PROMPT_WAIT_MS + RECORD_SECONDS * 1000);
-  return r.ok ? { outcome: 'done', facts: { seconds: String(RECORD_SECONDS) } } : r;
+  if (!r.ok) return r;
+  return { outcome: 'done', facts: { seconds: String(RECORD_SECONDS), ...readSummary(ctx) } };
+}
+
+// The two figures the script left beside the recording, when it could read it; anything else in the file is ignored.
+function readSummary(ctx) {
+  const dir = ctx.programData || process.env.ProgramData;
+  if (!dir) return {};
+  let text = '';
+  try { text = fs.readFileSync(path.join(dir, 'sipnship', 'antivirus-summary.txt'), 'utf8'); } catch { return {}; }
+  const out = {};
+  const share = /^share=(\d{1,3})\s*$/m.exec(text);
+  const programs = /^programs=([1-9]\d{0,3})\s*$/m.exec(text);
+  if (share) out.share = share[1];
+  if (programs) out.programs = programs[1];
+  return out;
 }
 
 // A workflow dispatched with the person's own gh sign-in; done only when its run ends.
