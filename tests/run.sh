@@ -6721,7 +6721,8 @@ FAKECURL
 chmod +x "$cm_pl/bin/curl"
 cm_pl_run() {
   : > "$cm_pl/log"; CM_PL_LOG="$cm_pl/log"
-  ( PATH="$cm_pl/bin:$PATH"
+  ( mkdir -p "$cm_pl/repo/scripts/ci" && cp "$root/templates/scripts/ci/ask-lib.sh" "$cm_pl/repo/scripts/ci/" && : > "$cm_pl/repo/scripts/ci/service-auth.sh" && cd "$cm_pl/repo" || exit 1
+    PATH="$cm_pl/bin:$PATH"
     QUEUE_SERVICE_AUTH_LOADED=1
     service_sign_in() { if [ "$CM_PL_SIGNED_IN" = yes ]; then sv_token=t; sv_id=77; return 0; fi; return 1; }
     git() { if [ "$*" = "remote get-url origin" ]; then echo "https://github.com/maya/rooftop.git"; else command git "$@"; fi; }
