@@ -30,3 +30,33 @@ pool_record_keep() {
   [ -f "$1" ] || return 0
   tail -n 720 "$1" > "$1.new" 2>/dev/null && mv "$1.new" "$1"
 }
+
+# probe_quiet_update NOW QUIET
+# NOW is sample_measures' own program-start reading, in milliseconds;
+# QUIET the lowest the watch has seen on this machine, or empty for none
+# yet. Print the lower of the two (NOW, the first time there is no QUIET).
+# Kept across runs so a slow start is told from this machine's own quiet
+# one, never a fixed number. Mirrors the session brief's probe_quiet
+# (plugin/hooks/scripts/session-brief-probe.sh): the two keep their own
+# reading apart (a session's start against a scheduled task's), but the
+# shape and the wording below match, so a builder reads the same
+# recommendation whichever reaches them first.
+probe_quiet_update() {
+  case "$1" in ''|*[!0-9]*) printf '%s\n' "$2"; return 0 ;; esac
+  case "$2" in ''|*[!0-9]*) printf '%s\n' "$1"; return 0 ;; esac
+  if [ "$1" -lt "$2" ]; then printf '%s\n' "$1"; else printf '%s\n' "$2"; fi
+}
+
+# probe_verdict NOW QUIET
+# "slow-start|sentence" when NOW takes at least 30 ms and over twice QUIET
+# (and at least 30, so a few milliseconds of jitter is not news); nothing
+# otherwise, including while QUIET is still empty (no baseline yet). Feeds
+# load_verdicts' own "id|sentence" shape, so watch_changes says it once,
+# when it starts and when it ends, and nothing here ever gates a build:
+# time is a metric, not a gate (#1803).
+probe_verdict() {
+  case "$1" in ''|*[!0-9]*) return 0 ;; esac
+  case "$2" in ''|*[!0-9]*) return 0 ;; esac
+  [ "$1" -ge 30 ] && [ "$1" -gt $(( 2 * $2 )) ] || return 0
+  printf 'slow-start|a program now takes %s ms to start, over twice this machine'"'"'s quiet reading of %s ms. Recommended: let the agents and local test runs finish before starting more; if it stays slow with the machine quiet, restart it. A recommendation only, nothing is paused.\n' "$1" "$2"
+}

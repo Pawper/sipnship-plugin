@@ -150,7 +150,16 @@ offline=$(printf '%s\n' "$runners" | awk -F'\t' 'NF >= 2 && $2 != "online" { pri
 online=$(printf '%s\n' "$runners" | awk -F'\t' '$2 == "online"' | grep -c . || true)
 short=""; [ "$online" -lt 2 ] 2>/dev/null && short="short|$status; one runner makes every job wait for the last (add one: scripts/ci/add-runner.ps1)"
 stuckline=""; [ -n "$stuck" ] && stuckline="stuck|$(printf '%s\n' "$stuck" | grep -c .) run(s) queued for more than ten minutes; no runner is picking them up"
-now_lines=$(printf '%s\n%s\n%s\n%s\n' "$verdicts" "$offline" "$short" "$stuckline" | sed '/^$/d')
+# The machine's own slowness (spec 005, "Needs you"): sample_measures'
+# start-time reading against the quietest this machine has shown the watch
+# (kept across runs, never reset), so a start over twice that quiet one
+# says so, as a recommendation only, same words as the session brief's
+# (#1803). Compared against the just-updated quiet reading, so the run
+# that sets a new low never flags itself.
+pq_now=$(printf '%s' "$meas" | cut -f1)
+pq_quiet=$(probe_quiet_update "$pq_now" "$(cat "$dir/probe-quiet.txt" 2>/dev/null)")
+probeline=$(probe_verdict "$pq_now" "$pq_quiet")
+now_lines=$(printf '%s\n%s\n%s\n%s\n%s\n' "$verdicts" "$offline" "$short" "$stuckline" "$probeline" | sed '/^$/d')
 
 if [ "$print_only" = yes ]; then
   echo "runners: $status"
@@ -172,6 +181,7 @@ printf '%s\t%s\n' "$now" "$status" > "$dir/$key.latest"
 # The machine line, for the session brief and the console; one per machine.
 # The measures follow the line, tab-separated, in the order sample_measures gives them.
 printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$now" "${cores:-0}" "${here:-0}" "${busy:-0}" "$mline" "$meas" > "$dir/machine.tsv" 2>/dev/null || true
+printf '%s\n' "$pq_quiet" > "$dir/probe-quiet.txt" 2>/dev/null || true
 
 # The kernel's pools once an hour, thirty days kept, so the trend shows
 # (columns: epoch, uptime h, paged GB, non-paged GB, handles, processes).
