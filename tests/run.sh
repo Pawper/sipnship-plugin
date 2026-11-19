@@ -6709,6 +6709,34 @@ cm_ip=$(mktemp -d); mkdir -p "$cm_ip/scripts/ci"; cp "$root/templates/scripts/ci
 eq "Instructions with no opening sentence are refused, with the reason in plain words" "yes" "$(cd "$cm_ip" && comment_refusal "$fx/ask-plain/instructions-no-reason.md" | grep -q 'no plain sentence saying what this turns on' && echo yes)"
 eq "Instructions with a command that has no words of its own are refused" "yes" "$(cd "$cm_ip" && comment_refusal "$fx/ask-plain/instructions-bare-command.md" | grep -q 'command with no words of its own' && echo yes)"
 eq "Instructions with an opening sentence and a worded command are posted" "" "$(cd "$cm_ip" && comment_refusal "$fx/ask/instructions.md")"
+# An ask with choices is read by the deployed service as a builder who is not yet technical would, before it is
+# posted (#1752); an Instructions comment keeps its own rule above and is never sent to the service.
+cm_pl=$(mktemp -d); mkdir -p "$cm_pl/bin"
+cat > "$cm_pl/bin/curl" <<'FAKECURL'
+#!/bin/sh
+cat > /dev/null
+printf '%s\n' "$*" >> "$CM_PL_LOG"
+printf '%s' "$CM_PL_REPLY"
+FAKECURL
+chmod +x "$cm_pl/bin/curl"
+cm_pl_run() {
+  : > "$cm_pl/log"; CM_PL_LOG="$cm_pl/log"
+  ( PATH="$cm_pl/bin:$PATH"
+    QUEUE_SERVICE_AUTH_LOADED=1
+    service_sign_in() { if [ "$CM_PL_SIGNED_IN" = yes ]; then sv_token=t; sv_id=77; return 0; fi; return 1; }
+    git() { if [ "$*" = "remote get-url origin" ]; then echo "https://github.com/maya/rooftop.git"; else command git "$@"; fi; }
+    export CM_PL_LOG CM_PL_REPLY
+    . "$root/scripts/drive/comment-lib.sh"
+    comment_refusal "$cm_pl/body.md"
+  )
+}
+cp "$fx/ask/one-recommended.md" "$cm_pl/body.md"
+eq "not signed in to the service: nothing is refused, the drive posts as it always did" "" "$(CM_PL_SIGNED_IN=no cm_pl_run)"
+eq "not signed in: no call reached the service at all" "0" "$(CM_PL_SIGNED_IN=no cm_pl_run >/dev/null; wc -l < "$cm_pl/log" | tr -d ' ')"
+eq "signed in and the model says it reads plainly: nothing is refused" "" "$(CM_PL_SIGNED_IN=yes CM_PL_REPLY='{"passes":true}' cm_pl_run)"
+eq "signed in and the model returns it: refused, in the model's own words" "yes" "$(CM_PL_SIGNED_IN=yes CM_PL_REPLY='{"passes":false,"unclear":["Beds-red is the agents own word, not Mayas"]}' cm_pl_run | grep -q 'Beds-red is the agents own word' && echo yes)"
+cp "$fx/ask/instructions.md" "$cm_pl/body.md"
+eq "an Instructions comment is never sent to the service, whatever it would have said" "0" "$(CM_PL_SIGNED_IN=yes CM_PL_REPLY='{"passes":false,"unclear":["should never be seen"]}' cm_pl_run >/dev/null; wc -l < "$cm_pl/log" | tr -d ' ')"
 eq "a long command in its own block is not a bare command" "instructions" "$(printf 'Instructions: Start the hub\n\nThis starts the soil sensors so the frost alert can warn you tonight.\n\n1. Run this in a terminal in your project folder, which connects every bed to the hub:\n\n```\nnpx sensor-hub install --bed herbs --network rooftop --alert frost --notify phone --retries 5 --quiet\n```\n\n2. To tell it worked, open the herb bed page and look for Connected.\n' | ask_check)"
 eq "a back-to-Ready note after the ask means no question is open" "yes" "$(ask_answered '- q r')"
 eq "an ask after a back-to-Ready note is open again" "no" "$(ask_answered 'q r q')"

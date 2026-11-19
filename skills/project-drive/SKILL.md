@@ -486,7 +486,10 @@ Both are fixtures of the check (the plugin's `tests/fixtures/ask-plain/`). The s
   `gh issue edit`, the REST labels call and `sh scripts/state.sh`; the nightly audit names any that got there
   another way, and the plan proposes them as `unasked N`). Each refusal says how to fix the ask. Fix the
   comment, then set the state. Whether the words read plainly beyond these is your judgement: read the ask
-  once as the builder before you post it.
+  once as the builder before you post it. Posting it through `comment.sh` tries the same read once more,
+  through the deployed service's model, when that read can be had; it is never fatal when it cannot (not
+  signed in, the model not set up, the day's ceiling reached), so your own read stays the one that always
+  runs.
 - Reading is never a choice. An ask about something to read (a spec, a mock, a held change) names it by its
   title, with a link that opens it, and its choices are the outcomes that follow the read: "Approve it",
   "Ask for changes" (the builder says what, and the agent takes it from there), and any real alternative
