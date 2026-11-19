@@ -101,6 +101,8 @@ function stepFacts(kind, f) {
     if (ids.length) out.folders = ids.join(',');
   }
   if (kind === 'record-antivirus' && /^[1-9]\d{0,2}$/.test(t('seconds'))) out.seconds = t('seconds');
+  if (kind === 'record-antivirus' && /^\d{1,3}$/.test(t('share'))) out.share = t('share');
+  if (kind === 'record-antivirus' && /^[1-9]\d{0,3}$/.test(t('programs'))) out.programs = t('programs');
   return out;
 }
 

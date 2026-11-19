@@ -183,6 +183,14 @@ test('recording the antivirus runs the plugin\'s one script for a fixed time, on
   assert.deepStrictEqual(rec.calls[0].slice(0, 4), ['elevated', RECORD_SCRIPT, '-Seconds', '60']);
   assert.strictEqual(rec.calls.length, 1);
   assert.deepStrictEqual(rec.steps, ['asking', 'running']);
+  const pd = path.join(scratch, 'pd-' + Date.now());
+  fs.mkdirSync(path.join(pd, 'sipnship'), { recursive: true });
+  fs.writeFileSync(path.join(pd, 'sipnship', 'antivirus-summary.txt'), 'share=14\nprograms=6\nextra=x\n');
+  const read = recorder();
+  assert.deepStrictEqual(await perform('record-antivirus', '', { ...read.ctx, programData: pd }), { outcome: 'done', facts: { seconds: '60', share: '14', programs: '6' } });
+  fs.writeFileSync(path.join(pd, 'sipnship', 'antivirus-summary.txt'), '');
+  assert.deepStrictEqual((await perform('record-antivirus', '', { ...recorder().ctx, programData: pd })).facts, { seconds: '60' });
+  assert.deepStrictEqual(rules.stepFacts('record-antivirus', { share: '14', programs: 6, extra: 'x' }), { share: '14', programs: '6' });
   const no = recorder({ code: 87 });
   assert.strictEqual((await perform('record-antivirus', '', no.ctx)).outcome, 'declined-windows');
   const script = fs.readFileSync(RECORD_SCRIPT, 'utf8');
