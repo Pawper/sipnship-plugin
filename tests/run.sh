@@ -6278,6 +6278,20 @@ eq "the brief's slot names them from the slow read's cache" "1" "$(an_brief | gr
 eq "and the next session start does not name them again" "" "$(an_brief)"
 eq "the slow read keeps the owed answers for it" "1" "$(grep -c 'answers.sh" --all 2>/dev/null | keep answers' "$root/hooks/scripts/session-brief-slow.sh")"
 
+section 'a timed round runs on a model that fits it'
+. "$root/scripts/drive/round-model-lib.sh"
+rm_nl='
+'
+eq "a task with a model line has it replaced" "---${rm_nl}name: rounds${rm_nl}model: sonnet${rm_nl}---${rm_nl}/project-drive" "$(round_model_set "---${rm_nl}name: rounds${rm_nl}model: opus${rm_nl}---${rm_nl}/project-drive" sonnet)"
+eq "a task with none gets the line last in its frontmatter" "---${rm_nl}name: rounds${rm_nl}model: sonnet${rm_nl}---${rm_nl}/project-drive" "$(round_model_set "---${rm_nl}name: rounds${rm_nl}---${rm_nl}/project-drive" sonnet)"
+eq "a task with no frontmatter gets one" "---${rm_nl}model: sonnet${rm_nl}---${rm_nl}/project-drive" "$(round_model_set '/project-drive' sonnet)"
+eq "no model named leaves the text as it was" "/project-drive" "$(round_model_set '/project-drive' '')"
+eq "the model is read back from the frontmatter only" "sonnet" "$(round_model_read "---${rm_nl}model: sonnet${rm_nl}---${rm_nl}model: opus")"
+eq "a body line is not the model" "" "$(round_model_read "---${rm_nl}name: x${rm_nl}---${rm_nl}model: opus")"
+eq "a task on the named model is ok" "ok" "$(round_model_check "---${rm_nl}model: sonnet${rm_nl}---" sonnet)"
+eq "a task on another model says which" "wrong: opus" "$(round_model_check "---${rm_nl}model: opus${rm_nl}---" sonnet)"
+eq "a task naming none says so" "wrong: no model named" "$(round_model_check '/project-drive' sonnet)"
+
 section 'a landing wakes the drive'
 . "$root/scripts/drive/wake-lib.sh"
 wk_tab=$(printf '\t')

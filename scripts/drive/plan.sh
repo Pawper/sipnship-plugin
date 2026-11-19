@@ -292,7 +292,8 @@ auto=$(auto_drive_state "$drive_line")
 auto_line "$auto"
 model=$(setting "$settings" dispatchModel)
 if [ "$aside_after" -gt 0 ] 2>/dev/null; then aside_words="a pull request red $aside_after times is set aside"; else aside_words="a red pull request is never set aside"; fi
-echo "rounds: at most $units_per_round units a round, one round at a time; each unit's agent on ${model:-the model the agent-model hook allows}; $aside_words"
+round_model=$(setting "$settings" roundModel)
+echo "rounds: at most $units_per_round units a round, one round at a time; each unit's agent on ${model:-the model the agent-model hook allows}; the round itself on ${round_model:-the app's default model}; $aside_words"
 held_wait_note "${held_since:-}" "$(date +%s)"
 summary_note
 health_note

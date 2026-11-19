@@ -83,6 +83,14 @@ The drive works the ready list in rounds, so many issues land in little time wit
 
 ## a. Read the state and the standing approval
 
+**A scheduled tick starts with no model reply.** Before reading anything, run
+`sh <plugin path>/scripts/drive/wake-check.sh`. It reads the approval and the requests owed with plain scripts.
+When it prints `nothing: ...` and the proposal it names is already posted (waiting for a reply, or held for a
+running round), end the tick with that one line: no summaries, no plan, no report. When it prints `start: ...`,
+go on. A tick that finds no proposal posted at all goes on to propose, since that needs the plan. The scheduled
+task itself runs on `roundModel` (Config), so even a tick that goes on is not on a heavy model; a decision that
+needs one is a dispatched agent, which the model check can see.
+
 First make sure the picture is complete. Labels and titles are not the state; bodies and comments are. Run
 `/project-status`, which has light readers summarize only the items that changed since their last summary and
 leaves you one line per item. On a quiet board that is no readers at all. A proposal made without it is made
@@ -653,6 +661,10 @@ first round finds the reply and pursues it.
 - `unitsPerRound`: the most units one round holds, within `maxAgents` (default 2)
 - `dispatchModel`: the model each unit's agent runs on, for example `"sonnet"` (default empty: the model the
   agent-model hook allows for the issue's tier)
+- `roundModel`: the model a timed round itself runs on, for example `"sonnet"` (default empty: the app's default
+  model). A round mostly runs fixed scripts and writes a report. `sh <plugin path>/scripts/drive/round-model.sh
+  TASK_FILE` writes it as the `model:` line in the scheduled task's own file, and `--check` says whether the file
+  already names it; setup runs it when it makes the task, so a builder never picks it by hand
 - `setAsideAfterReds`: how many reds, on different commits, before a pull request is set aside instead of
   fixed again (default 2; 0 never sets aside)
 - `summaryAt`: the local time of the once-a-day summary, `"HH:MM"` (default empty: no summary)
