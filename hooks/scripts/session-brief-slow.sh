@@ -18,6 +18,8 @@
 #   main-gate        the line for a gate on main that ended red before its tests
 #   plan             the drive's plan, from CACHE_DIR/facts.tsv (the board
 #                    the hook read)
+#   machine-probe    the line recommending what to do when starts of programs are slow
+#   probe-quiet      the quietest start times seen, "sh_ms git_ms"
 #   stamp            when the last read ended, epoch seconds
 # The steps run side by side, each bounded; one read at a time, held by the
 # CACHE_DIR/lock folder. Fails soft: a step that fails or runs out of time
@@ -50,6 +52,17 @@ have_git=no
 if command -v git >/dev/null 2>&1 && git rev-parse --git-dir >/dev/null 2>&1; then have_git=yes; fi
 have_gh=no
 command -v gh >/dev/null 2>&1 && have_gh=yes
+
+# The machine probe, taken first and alone so the other steps do not slow it:
+# when a start of sh or git takes over twice this machine's quietest reading,
+# the brief recommends what to do. The quietest reading is kept in the cache.
+. "$here/session-brief-probe.sh"
+pr_now=$(run_bounded "$bound" probe_measure 2>/dev/null)
+if [ -n "$pr_now" ]; then
+  pr_quiet=$(probe_quiet "$pr_now" "$(cat "$cache/probe-quiet" 2>/dev/null)")
+  printf '%s\n' "$pr_quiet" | keep probe-quiet
+  probe_line "$pr_now" "$pr_quiet" | keep machine-probe
+fi
 
 # Deploys, when the project's deploy path is not keeping up.
 if [ -f .claude/deploy.json ] && [ -f scripts/ci/deploy-health.sh ]; then

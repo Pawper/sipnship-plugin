@@ -608,6 +608,16 @@ printf 'old\n' > "$od_dir/t/scripts/ci/moved.sh"; printf 'new\n' > "$od_dir/p/sc
 printf 'x\n' > "$od_dir/t/scripts/ci/gone.sh"
 eq "template drift in one pass: a Windows checkout is the same, a change is old, an absent file is missing" "1	1" "$(cd "$od_dir/p" && owned_drift "$(printf 'scripts/ci/same.sh\nscripts/ci/moved.sh\nscripts/ci/gone.sh\n')" "$od_dir/t")"
 
+section 'the machine probe line in the brief'
+. "$root/hooks/scripts/session-brief-probe.sh"
+eq "no quiet reading yet: this reading becomes the quiet one" "17 19" "$(probe_quiet "17 19" "")"
+eq "the quietest of each start is kept on its own" "15 19" "$(probe_quiet "20 19" "15 22")"
+eq "a start under twice the quiet time says nothing" "" "$(probe_line "30 30" "17 19")"
+eq "a small start time says nothing even over twice quiet" "" "$(probe_line "12 8" "5 4")"
+eq "no quiet reading says nothing" "" "$(probe_line "90 90" "")"
+eq "a start over twice quiet is named with both numbers" "1" "$(probe_line "90 40" "17 19" | grep -c 'sh takes 90 ms (quiet: 17 ms) and of git 40 ms (quiet: 19 ms)')"
+eq "slow git alone is enough, and it is a recommendation only" "1" "$(probe_line "17 80" "17 19" | grep -c 'A recommendation only, nothing is paused')"
+
 section 'the session brief inside its start limit'
 # The start hook has 20 seconds. On a busy Windows machine it once took 45
 # to 90 and was cancelled at every start, so agents got no brief and the

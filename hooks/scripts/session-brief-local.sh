@@ -103,6 +103,9 @@ s_drift() {
 
 s_screens() {
   . "$here/session-brief-screens.sh"
+  # Slow starts of programs, measured in the background by session-brief-slow.sh.
+  mp_line=$(with_age "$(cached machine-probe)" "$sb_age")
+  [ -z "$mp_line" ] || add "$mp_line"
   # The files over their size limit, the files several open pull requests
   # edit, and the CI jobs over their time limit: session-brief-hotspots.sh,
   # run in the background, printed with its age.
