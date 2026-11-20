@@ -190,7 +190,10 @@ If the proposal is the same as the one already posted and unanswered, do not pos
 one line. If the proposal's only lines are `defer` and `stop`, end in one line.
 
 **When goals are approved:** pursue them in proposal order, step c, and nothing else. A goal that is no longer
-true (the pull request merged by hand, the issue closed) is skipped with one line in the report.
+true (the pull request merged by hand, the issue closed, a release already published) is skipped with one line
+in the report, and run `sh <plugin path>/scripts/drive/goal-done.sh "GOAL LINE"` (the exact line `approval.sh`
+printed) so the same static proposal and reply never derive it as approved again on a later tick; without this
+it is carried forward and skipped again, in silence or noise, every round after.
 
 ## c. Pursue an approved goal
 

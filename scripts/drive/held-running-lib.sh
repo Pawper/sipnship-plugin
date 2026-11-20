@@ -30,3 +30,11 @@ without_issues() {
 held_pull_numbers() {
   printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' '$2 == "yes" && $1 != "" { print $1 }'
 }
+
+# issue_titles_from_facts FACTS: "NUMBER<TAB>TITLE" for every issue fact line
+# (facts are "issue<TAB>NUMBER<TAB>TITLE<TAB>..."), one a line. An area hold
+# names the issue it waits behind by title, so this must be set on its own
+# reachable line, never hidden after a trailing comment (#2066).
+issue_titles_from_facts() {
+  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' '$1 == "issue" { print $2 "\t" $3 }'
+}

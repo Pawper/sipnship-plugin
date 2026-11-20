@@ -23,6 +23,26 @@ plugin_version_at() {
   json_field "$pv_json" version
 }
 
+# published_plugin_version: the public plugin repository's newest published
+# tag's version (X.Y.Z), one REST call; nothing when it cannot be read. The
+# queue tags a release but makes no GitHub Release object, so this reads
+# tags (sorted here, since the API names no order), never releases/latest.
+published_plugin_version() {
+  gh api "repos/Pawper/sipnship-plugin/tags?per_page=30" --jq '.[].name' 2>/dev/null | tr -d '\r' | sed 's/^plugin-//; s/^v//' | awk -F. 'NF == 3 && $1 ~ /^[0-9]+$/ && $2 ~ /^[0-9]+$/ && $3 ~ /^[0-9]+$/' | sort -t. -k1,1n -k2,2n -k3,3n | tail -n 1
+}
+
+# newer_plugin_version A B: the greater of two X.Y.Z versions, by ver_lt
+# (hooks/scripts/session-brief-versions.sh); either empty passes the other
+# through. The release number always comes from the newer of main's own
+# version and what is already published, never from main alone, so a main
+# that went backwards (a release landed out of order) still gets the next
+# number past what readers already see as released (#2052).
+newer_plugin_version() {
+  if [ -z "$1" ]; then printf '%s\n' "$2"; return 0; fi
+  if [ -z "$2" ]; then printf '%s\n' "$1"; return 0; fi
+  if [ "$(ver_lt "$1" "$2")" = yes ]; then printf '%s\n' "$2"; else printf '%s\n' "$1"; fi
+}
+
 # open_release_issue FACTS VERSION
 # FACTS are board-now.sh's lines. Prints "NUMBER<TAB>TITLE" of an open issue,
 # in any State, whose title names VERSION and says plugin or release: a unit
@@ -46,7 +66,7 @@ open_release_issue() {
 # issue when one does.
 release_proposal() {
   rp_ref=$(release_ref)
-  rp_ver=$(plugin_version_at "$rp_ref")
+  rp_ver=$(newer_plugin_version "$(plugin_version_at "$rp_ref")" "$(published_plugin_version)")
   rp_line=$(release_goal "$rp_ver" "$(plugin_unreleased_count "$rp_ref")")
   [ -n "$rp_line" ] || return 0
   rp_next=$(next_patch "$rp_ver")

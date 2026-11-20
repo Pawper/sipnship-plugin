@@ -68,7 +68,12 @@ suite_tmp_clean() {
   esac
   return 0
 }
+# Only the process that creates SUITE_TMP_ROOT owns it; a --part child that
+# inherits it from a --touching parent (#2063) must release its turn on exit
+# but never delete the root the other parts still need.
+suite_tmp_owner=no
 if [ -z "$SUITE_TMP_ROOT" ]; then
+  suite_tmp_owner=yes
   tt_base=$(git -C "$root" rev-parse --show-toplevel 2>/dev/null) || tt_base=$root
   # The shell's own form of the path (git prints C:/..., and a colon splits a PATH).
   tt_base=$(cd "$tt_base" && pwd)
@@ -172,7 +177,7 @@ if [ -n "$part" ] && [ -z "$RUN_PART" ]; then
   fi
   # A whole part takes the machine's turn (tests/turn-lib.sh), and ends with the reason when it cannot.
   turn_take || exit 3
-  trap 'turn_give; suite_tmp_clean' EXIT
+  trap 'turn_give; [ "$suite_tmp_owner" = yes ] && suite_tmp_clean; true' EXIT
   trap 'exit 130' INT TERM HUP
   part_file=$(mktemp)
   part_script "$part" < "$root/tests/run.sh" > "$part_file"
@@ -6667,8 +6672,20 @@ printf '{"version": "0.1.0"}\n' > "$nb_g/origin/plugin/.claude-plugin/plugin.jso
 git -C "$nb_g/origin" add -A && git -C "$nb_g/origin" commit -q -m release
 git clone -q "$nb_g/origin" "$nb_g/clone" 2>/dev/null
 printf 'x\n' > "$nb_g/origin/plugin/a.txt"; git -C "$nb_g/origin" add -A && git -C "$nb_g/origin" commit -q -m "plugin change"
-eq "a stale checkout proposes the release after its own fetch" "release 0.1.1 (1 plugin commit unreleased)" "$(cd "$nb_g/clone" && release_proposal '' '')"
+eq "a stale checkout proposes the release after its own fetch" "release 0.1.1 (1 plugin commit unreleased)" "$(cd "$nb_g/clone" && gh() { return 1; } && release_proposal '' '')"
 eq "the local main alone would have proposed none" "" "$(cd "$nb_g/clone" && release_goal 0.1.0 "$(plugin_unreleased_count main)")"
+# Two release pull requests landing out of order can leave main's own version
+# behind what is already published (#2052): the release number always comes
+# from the newer of the two, never from main alone.
+eq "newer_plugin_version keeps the greater of two versions" "0.43.45" "$(newer_plugin_version 0.43.44 0.43.45)"
+eq "newer_plugin_version the same either way round" "0.43.45" "$(newer_plugin_version 0.43.45 0.43.44)"
+eq "newer_plugin_version passes a lone version through when the other is empty" "0.43.44 0.43.44" "$(newer_plugin_version '' 0.43.44) $(newer_plugin_version 0.43.44 '')"
+eq "newer_plugin_version is empty when both are" "" "$(newer_plugin_version '' '')"
+# The tags API names no order (a tag for an earlier version can be read after
+# a later one, exactly when releases land out of turn): the highest version
+# wins, never the first or last the call happens to list.
+eq "published_plugin_version takes the highest tag, whatever order the API lists them in" "0.43.45" "$(gh() { printf 'v0.43.44\nv0.43.45\nv0.43.40\n'; } && published_plugin_version)"
+eq "published_plugin_version is empty when the call fails, so main alone still decides" "" "$(gh() { return 1; } && published_plugin_version)"
 
 # A ready issue that fixes a failure on main leads; two issues on one tab's rows are one unit.
 eq "an issue saying a test fails on main fixes main" "yes" "$(fixes_main 'Make the watering test pass again; it fails on main since the last merge')"
@@ -6705,11 +6722,11 @@ git clone -q "$rn_g/origin" "$rn_g/clone" 2>/dev/null
 # An open release pull request for that version: one unnumbered line naming it, never a numbered release goal (#1873).
 rn_prfacts=$(printf 'pr\t410\tRelease the plugin as 0.1.1\tSUCCESS\tMERGEABLE\trelease-0-1-1\tplugin/.claude-plugin/plugin.json\n')
 rn_note="note: the release of 0.1.1 is already in pull request 410; no second release is proposed"
-eq "an open release pull request for the next version is named on a note, not proposed again" "$rn_note" "$(cd "$rn_g/clone" && release_proposal "$rn_prfacts" "$(printf '410\tno\t\n')")"
+eq "an open release pull request for the next version is named on a note, not proposed again" "$rn_note" "$(cd "$rn_g/clone" && gh() { return 1; } && release_proposal "$rn_prfacts" "$(printf '410\tno\t\n')")"
 eq "the note goes in before the stop line and is no goal" "$rn_note
 stop: nothing to propose" "$(add_release "stop: nothing to propose" "$rn_note")"
-eq "an unrelated open pull request leaves the release proposed" "release 0.1.1 (1 plugin commit unreleased)" "$(cd "$rn_g/clone" && release_proposal "$(printf 'pr\t411\tTidy the bed map\tPENDING\tMERGEABLE\ttidy\tsrc/beds/map.ts\n')" "$(printf '411\tno\t\n')")"
-eq "no pull request at all leaves the release proposed" "release 0.1.1 (1 plugin commit unreleased)" "$(cd "$rn_g/clone" && release_proposal '' '')"
+eq "an unrelated open pull request leaves the release proposed" "release 0.1.1 (1 plugin commit unreleased)" "$(cd "$rn_g/clone" && gh() { return 1; } && release_proposal "$(printf 'pr\t411\tTidy the bed map\tPENDING\tMERGEABLE\ttidy\tsrc/beds/map.ts\n')" "$(printf '411\tno\t\n')")"
+eq "no pull request at all leaves the release proposed" "release 0.1.1 (1 plugin commit unreleased)" "$(cd "$rn_g/clone" && gh() { return 1; } && release_proposal '' '')"
 # An issue that names what it comes after is a hold, never also an ask to the owner; other asks stay (#1875).
 rn_round=$(printf 'ask-owner 6\tShow the planter price\tmatched "prices" in: Decision\nask-owner 9\tPick the pot colours\tmatched "policy" in: Decision\nhold 6\tShow the planter price\tWaits on your answer on “Choose the planter price” (after: 5)\nstop: proposal ready for approval\n')
 eq "the ask for an issue held with after: goes; another issue's ask and the hold stay" "ask-owner 9${nb_t}Pick the pot colours${nb_t}matched \"policy\" in: Decision
@@ -6897,6 +6914,7 @@ eq "nothing in the drive posts a body from a file with -f" "0" "$(grep -c -- '-f
 section 'the drive puts priority work first and keeps a hopeless ask-fix quiet (drive)'
 . "$root/scripts/drive/priority-lib.sh"
 . "$root/scripts/drive/ask-gate-lib.sh"
+. "$root/scripts/drive/done-lib.sh"
 . "$root/scripts/drive/bundle-lib.sh"
 . "$root/scripts/drive/hold-reasons-lib.sh"
 . "$root/scripts/drive/round-lib.sh"
@@ -6957,6 +6975,15 @@ mark-waiting 32${pz_t}Pick the label colour (a question to the owner is open)
 dispatch 33${pz_t}Water the beds" "$(quiet_declined_goals "$pz_goals" "$pz_ff" "$pz_dn")"
 eq "with nothing declined every goal is printed" "$pz_goals" "$(quiet_declined_goals "$pz_goals" "$pz_ff" "$pz_dn.none")"
 eq "plan.sh reads the declined note, and goal-seen.sh writes it" "1 1" "$(grep -c 'quiet_declined_goals "$round" "$facts" .scratch/drive/declined.tsv' "$root/scripts/drive/plan.sh") $(grep -c 'declined.tsv' "$root/scripts/drive/goal-seen.sh" | awk '$1 > 0 { print 1 }')"
+# A goal already found done (the release landed, the issue closed) is
+# dropped from the approved list the first time, with one line saying so;
+# without this it is carried from the same static proposal and reply and
+# skipped again, in silence or noise, every round after (#2052).
+pd_goals=$(printf 'release 0.43.44 (1 plugin commit unreleased)\nset-aside 2018 Tune the trellis (red 3 times)\ndispatch 33\tWater the beds\n')
+eq "a goal already recorded as done is dropped, the others pass" "release 0.43.44 (1 plugin commit unreleased)
+dispatch 33${pz_t}Water the beds" "$(drop_done_goals "$pd_goals" "$(printf 'set-aside 2018 Tune the trellis (red 3 times)\n')")"
+eq "with nothing recorded done every goal passes" "$pd_goals" "$(drop_done_goals "$pd_goals" "")"
+eq "approval.sh reads the done record, and goal-done.sh writes it" "1 1" "$(grep -c 'drop_done_goals "\$approved" "\$(cat .scratch/drive/done.tsv' "$root/scripts/drive/approval.sh") $(grep -c 'done.tsv' "$root/scripts/drive/goal-done.sh" | awk '$1 > 0 { print 1 }')"
 eq "a withdrawn ask ends the question, as an answer does" "yes" "$(ask_answered '- q r')"
 eq "the answer line is found with markdown around it" "1" "$(grep -c 'Builder answer:\[ \*_\]\*' "$root/scripts/drive/ask-gate-lib.sh")"
 pz_round2=$(printf 'dispatch 31\tMeasure the soil probe\nstop: proposal ready for approval\n')
@@ -7157,6 +7184,21 @@ eq "the same issue with the held-read unit left out of what is running starts" "
 eq "an issue in the area of a live unit waits behind it" "hold${hr_t}41${hr_t}Water the roof beds on a timer${hr_t}After: Redesign the irrigation plan" "$(area_units "$hr_list" "$hr_unit" "$(printf '31\twater\n')" "$hr_titles")"
 eq "an issue in the area of a unit that is not running starts" "$hr_unit" "$(area_units "$hr_list" "$hr_unit" "" "$hr_titles")"
 eq "plan.sh leaves a held-only issue and a held pull request out of what is running" "4" "$(grep -c 'held_only\|held_pull_numbers' "$root/scripts/drive/plan.sh")"
+# issue_titles was once set by a statement hidden after a trailing # comment,
+# so it was always empty and an area hold named the issue it waits behind by
+# number, never by title (#2066).
+hr_facts=$(printf 'issue\t31\tRedesign the irrigation plan\tstate: in-progress\t\t\n')
+eq "issue_titles_from_facts reads NUMBER and TITLE from an issue fact" "31${hr_t}Redesign the irrigation plan" "$(issue_titles_from_facts "$hr_facts")"
+eq "issue_titles_from_facts is never empty when a fact names an issue (#2066)" "no" "$([ -z "$(issue_titles_from_facts "$hr_facts")" ] && echo yes || echo no)"
+eq "an area hold built from issue_titles_from_facts still names the issue it waits behind, by title" "hold${hr_t}41${hr_t}Water the roof beds on a timer${hr_t}After: Redesign the irrigation plan" "$(area_units "$hr_list" "$hr_unit" "$(printf '31\twater\n')" "$(issue_titles_from_facts "$hr_facts")")"
+eq "plan.sh sets issue_titles on its own reachable statement, not inside a trailing comment" "1" "$(grep -c 'issue_titles=\$(issue_titles_from_facts "\$facts")' "$root/scripts/drive/plan.sh")"
+# The general pattern (#2066): a statement hidden after a trailing # comment,
+# of the shape "# ...; name=$(", never runs. A real trailing comment is
+# preceded by whitespace; a parameter expansion's own # (as in ${v#pattern})
+# is not, so it is not mistaken for one.
+hc_bad=$(cd "$root" && grep -nE '[[:space:]]#.*; *[A-Za-z_][A-Za-z0-9_]*=\$\(' scripts/drive/*.sh)
+eq "no drive script hides a statement after a trailing comment" "" "$hc_bad"
+eq "the check itself still catches the shape of the bug it guards against" "1" "$(printf '%s\n' 'x=$(f "a")  # a note (#1); y=$(g "b")' | grep -cE '[[:space:]]#.*; *[A-Za-z_][A-Za-z0-9_]*=\$\(')"
 # A chain of three names its first cause: the held read at the end, not the issue in the middle.
 hr_facts=$(printf 'issue\t51\tAdd a rain sensor\tstate: ready\t\tafter #52\nissue\t52\tShow sensor history\tstate: ready\t\tafter #53\nissue\t53\tRedesign the irrigation plan\tstate: in-progress\t\t\n')
 eq "a chain of three names its first cause, a held read" "hold${hr_t}51${hr_t}Add a rain sensor${hr_t}Waits on your read of “Redesign the irrigation plan” (after: 52)

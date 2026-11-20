@@ -34,6 +34,7 @@ here=$(dirname "$0")
 . "$here/round-state-lib.sh"
 . "$here/wake-lib.sh"
 . "$here/worktree-access-lib.sh"
+. "$here/done-lib.sh"
 
 if ! command -v gh >/dev/null 2>&1 || ! gh auth status >/dev/null 2>&1; then
   echo "nothing: gh is not available or not signed in"
@@ -164,6 +165,10 @@ else
 fi
 
 approved=$(approved_goals "$proposal" "$reply")
+# A goal already recorded as done (goal-done.sh, after a round found it no
+# longer true) is never derived again from this same static proposal and
+# reply (#2052).
+approved=$(drop_done_goals "$approved" "$(cat .scratch/drive/done.tsv 2>/dev/null)")
 if [ -z "$approved" ]; then
   echo "nothing: $reply_by replied \"$reply\" and approved no goal"
   exit 0
