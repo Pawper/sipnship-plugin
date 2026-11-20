@@ -5109,6 +5109,7 @@ eq "main's full run still refuses an unknown part" "rc 2" "$(printf '%s\n' "$pj_
 
 section 'drive bundles issues by the files they touch'
 . "$root/scripts/drive/bundle-lib.sh"
+. "$root/scripts/drive/hold-reasons-lib.sh"
 db="$fx/drive-bundles"
 db_ready=$(cat "$db/ready.tsv")
 db_units=$(plan_units "$db_ready" "")
@@ -5449,6 +5450,7 @@ section 'drive runs rounds of units'
 . "$root/scripts/drive/drive-lib.sh"
 . "$root/scripts/drive/auto-lib.sh"
 . "$root/scripts/drive/bundle-lib.sh"
+. "$root/scripts/drive/hold-reasons-lib.sh"
 . "$root/scripts/drive/round-lib.sh"
 . "$root/scripts/drive/round-notes-lib.sh"
 . "$root/scripts/drive/round-sizing-lib.sh"
@@ -6890,6 +6892,7 @@ section 'the drive puts priority work first and keeps a hopeless ask-fix quiet (
 . "$root/scripts/drive/priority-lib.sh"
 . "$root/scripts/drive/ask-gate-lib.sh"
 . "$root/scripts/drive/bundle-lib.sh"
+. "$root/scripts/drive/hold-reasons-lib.sh"
 . "$root/scripts/drive/round-lib.sh"
 . "$root/scripts/drive/plan-read-lib.sh"
 . "$root/scripts/drive/areas-lib.sh"
@@ -7125,6 +7128,7 @@ gb_bare=$(cd "$root/.." && grep -nE '(^|[^a-z_])git +(-C +[^ ]+ +)?(fetch|ls-rem
 eq "no unattended script runs an unbound git of a kind that can run long" "" "$gb_bare"
 section 'an issue never waits behind one whose pull request is held for the owner (drive)'
 . "$root/scripts/drive/bundle-lib.sh"
+. "$root/scripts/drive/hold-reasons-lib.sh"
 . "$root/scripts/drive/areas-lib.sh"
 . "$root/scripts/drive/area-plan-lib.sh"
 . "$root/scripts/drive/held-running-lib.sh"
@@ -7135,7 +7139,7 @@ eq "an issue only a held pull request names is held-only" "31" "$(held_only_issu
 eq "an issue a pull request not held closes is not held-only, even when a held one names it" "" "$(held_only_issues "$(printf '201\tyes\t\t32\n202\tno\t32\n')")"
 eq "a held pull request that closes an issue makes it held-only" "31" "$(held_only_issues "$(printf '201\tyes\t31\n')")"
 eq "no pull requests, none held-only" "" "$(held_only_issues '')"
-eq "the held pull requests are named by number" "201" "$(held_pull_numbers "$hr_pulls")"
+eq "the held pull requests are named by number" "201" "$("4" "$(grep -c 'held_only|held_pull_numbers'"$hr_pulls")"
 eq "without_issues drops the named numbers" "32" "$(without_issues "$(printf '31\n32\n')" "31")"
 hr_guess=$(printf '41\tWater the roof beds on a timer\tsrc/water/timer.ts\n')
 hr_run=$(printf 'Redesign the irrigation plan\tsrc/water/timer.ts\n')
@@ -7146,7 +7150,20 @@ eq "an issue overlapping a live unit's files waits behind it" "hold${hr_t}41${hr
 eq "the same issue with the held-read unit left out of what is running starts" "unit${hr_t}41${hr_t}Water the roof beds on a timer${hr_t}${hr_t}src/water/timer.ts" "$(plan_units "$hr_guess" "")"
 eq "an issue in the area of a live unit waits behind it" "hold${hr_t}41${hr_t}Water the roof beds on a timer${hr_t}After: Redesign the irrigation plan" "$(area_units "$hr_list" "$hr_unit" "$(printf '31\twater\n')" "$hr_titles")"
 eq "an issue in the area of a unit that is not running starts" "$hr_unit" "$(area_units "$hr_list" "$hr_unit" "" "$hr_titles")"
-eq "plan.sh leaves a held-only issue and a held pull request out of what is running" "3" "$(grep -c 'held_only\|held_pull_numbers' "$root/scripts/drive/plan.sh")"
+eq "plan.sh leaves a held-only issue and a held pull request out of what is running" "4" "$(grep -c 'held_only\|held_pull_numbers' "$root/scripts/drive/plan.sh")"
+# A chain of three names its first cause: the held read at the end, not the issue in the middle.
+hr_facts=$(printf 'issue\t51\tAdd a rain sensor\tstate: ready\t\tafter #52\nissue\t52\tShow sensor history\tstate: ready\t\tafter #53\nissue\t53\tRedesign the irrigation plan\tstate: in-progress\t\t\n')
+eq "a chain of three names its first cause, a held read" "hold${hr_t}51${hr_t}Add a rain sensor${hr_t}Waits on your read of “Redesign the irrigation plan” (after: 52)
+hold${hr_t}52${hr_t}Show sensor history${hr_t}Waits on your read of “Redesign the irrigation plan” (after: 53)" "$(hold_reasons "$hr_facts" "53")"
+eq "the same chain with an agent at work names the live unit" "hold${hr_t}51${hr_t}Add a rain sensor${hr_t}Waits for “Redesign the irrigation plan” to land (after: 52)
+hold${hr_t}52${hr_t}Show sensor history${hr_t}Waits for “Redesign the irrigation plan” to land (after: 53)" "$(hold_reasons "$hr_facts")"
+hr_ask=$(printf 'issue\t51\tAdd a rain sensor\tstate: ready\t\tafter #52\nissue\t52\tShow sensor history\tstate: ready\t\tafter #53\nissue\t53\tHow often may beds be watered?\tstate: waiting-on-owner\t\t\n')
+eq "a chain ending at a question names the answer" "Waits on your answer on “How often may beds be watered?” (after: 52)" "$(hold_reasons "$hr_ask" | sed -n 1p | cut -f4)"
+# Every ready issue held and runners free is a stall, naming the actions that free the most.
+hr_round=$(hold_reasons "$hr_ask" | sed 's/^hold\t\([0-9]*\)\t/hold \1\t/')
+eq "a stall names the answer that frees the most, with the count" "stall: every ready issue is held and 3 runners are free; answering “How often may beds be watered?” frees 2 issues" "$(stall_note "$hr_round" 3)"
+eq "no stall when an issue is dispatched" "" "$(stall_note "$(printf 'dispatch 9\tWater\n%s\n' "$hr_round")" 3)"
+eq "no stall when no runner is free" "" "$(stall_note "$hr_round" 0)"
 block_end
 # --- end of blocks: the summary, kept in every part.
 eq "no test wrote into the checkout's own queue state" "$queue_picture_before" "$([ "$queue_picture_before" = skipped ] && echo skipped || queue_picture)"

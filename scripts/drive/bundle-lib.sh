@@ -269,32 +269,3 @@ apply_units() {
     !/^(stop:|defer )/ { other++ }
     { print }'
 }
-
-# hold_reasons FACTS
-# FACTS are board-now.sh's lines. A ready issue whose title or body says it
-# comes after another open issue ("after #N", "behind #N", "depends on #N",
-# "blocked by #N", "waits on #N") is held back, naming what it waits on, in
-# the builder's words:
-#   hold  NUMBER  TITLE  Waits on your answer on “TITLE” (after: N)
-#                        when #N waits on the owner
-#   hold  NUMBER  TITLE  Waits for “TITLE” to land (after: N)
-#                        when #N is open and not waiting on the owner
-# An issue named that is not open (closed, or landed) holds nothing: the
-# reason ended with it. Read afresh from the facts on every run; nothing kept.
-hold_reasons() {
-  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' '
-    $1 == "issue" { n++; num[n] = $2; title[n] = $3; labels[n] = "," $4 ","; text[n] = $3 " " $6; open[$2] = n }
-    END {
-      for (i = 1; i <= n; i++) {
-        if (labels[i] !~ /,(state: ?)?ready,/) continue
-        s = tolower(text[i])
-        if (!match(s, /(after|behind|depends on|blocked by|waits on|waiting on) #[0-9]+/)) continue
-        ref = substr(s, RSTART, RLENGTH); sub(/.*#/, "", ref)
-        if (!(ref in open) || ref == num[i]) continue
-        j = open[ref]
-        if (labels[j] ~ /,(state: ?)?waiting-on-owner,/) why = "Waits on your answer on “" title[j] "”"
-        else why = "Waits for “" title[j] "” to land"
-        printf "hold\t%s\t%s\t%s (after: %s)\n", num[i], title[i], why, ref
-      }
-    }'
-}

@@ -37,7 +37,7 @@ fi
 . "$here/drive-lib.sh"
 . "$here/labels-lib.sh"
 . "$here/auto-lib.sh"
-. "$here/bundle-lib.sh"
+. "$here/bundle-lib.sh"; . "$here/hold-reasons-lib.sh"
 . "$here/round-lib.sh"
 . "$here/round-notes-lib.sh"
 . "$here/round-words-lib.sh"
@@ -206,7 +206,7 @@ asked=$(asked_issues "$drive_comments"); ASKED_ISSUES=$asked; export ASKED_ISSUE
 held_only=$(held_only_issues "$pull_links" | tr "
 " " "); guesses=""; running=""; left_reads=0; plan_left_until=$((SECONDS + ${PLAN_LEFT_SECONDS:-90}))
 # A ready issue that says it comes after another open one is held, naming what it waits on, read afresh each run.
-reasons=$(hold_reasons "$facts")
+reasons=$(hold_reasons "$facts" "$held_only")
 # An open pull request that already closes a Ready issue means no agent is started on it again, held or batched (stale-lib.sh).
 reasons=$(printf '%s\n%s\n' "$reasons" "$(carried_holds "$facts" "$pull_links")" | sed '/^$/d')
 # A started unit counts as running while its pull request is open, whatever State its issues show: none of its Ready issues is proposed for dispatch (one hold line each).
@@ -284,7 +284,7 @@ round=$(quiet_declined_goals "$round" "$facts" .scratch/drive/declined.tsv); ext
 round=$(say_every_pr "$round" "$snapshot")  # every open pull request has a line, whatever its checks say
 plan_stage "landing, release and deploy read"
 round=$(lead_red_main "$round")  # a red main's goal is the first numbered line (rank-lib.sh)
-number_proposal "$round"
+number_proposal "$round"; stall_note "$round" "$runners"  # every ready issue held, runners free: said as a stall naming what frees the most (#2055)
 # Auto Drive, from the drive issue's label drive:auto: one REST call. On is a
 # standing approval; off, the proposal is posted and waits for a reply.
 auto=$(auto_drive_state "$drive_line")
