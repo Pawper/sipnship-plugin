@@ -32,3 +32,8 @@ else
   fi
 fi
 rm -f "${TMPDIR:-/tmp}/state.$$.err" 2>/dev/null
+# A change made for the owner's read must not be merged unread (#2030): the hold goes on in the same step.
+case "$(printf '%s' "$state" | tr 'A-Z' 'a-z')" in
+  "waiting on owner"|"waiting-on-owner")
+    if [ -f "$here/ci/waiting-hold-lib.sh" ]; then . "$here/ci/waiting-hold-lib.sh"; hold_prs_for_issue "$issue"; fi ;;
+esac

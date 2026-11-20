@@ -40,6 +40,14 @@ running_round() {
     END { if (out != "") print out }'
 }
 
+# A round that only waits on the owner holds no agent and no runner (#2030), so the approval step reads
+# its issues and pull requests through these two filters (jq programs, run on the REST lists):
+# RUNNING_ISSUES_JQ prints the number of each open issue that is In progress and not also waiting on
+# the owner; HELD_PRS_JQ prints "NUMBER<TAB>held" for each open pull request, held by the queue:hold or
+# hold label or by a "Queue: hold" line in its body (the plan's own reading, held_by in round-lib.sh).
+RUNNING_ISSUES_JQ='.[] | select(([.labels[].name | ascii_downcase] | index("state:waiting-on-owner")) == null) | .number'
+HELD_PRS_JQ='.[] | [.number, ((([.labels[].name | ascii_downcase] | (index("queue:hold") // index("hold"))) != null) or (((.body // "") | test("(^|\n)Queue: hold"; "i")))] | @tsv'
+
 # started_units COMMENTS
 # The units of the latest started round on the drive issue (its sipnship-
 # proposal marker, not its held work), one "PR<TAB>ISSUES" line each: PR is

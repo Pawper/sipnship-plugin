@@ -5721,6 +5721,48 @@ hold	302	Tint the beds	Its pull request (#531) is still open and its unit is run
 hold	303		Its pull request (#531) is still open and its unit is running; no agent is started on it" "$(started_pr_holds "$sr_comments" "$(printf '531\n')" "$(printf '301\tWater the beds\n302\tTint the beds\n')")"
 eq "a unit whose pull request is not open holds nothing" "" "$(started_pr_holds "$sr_comments" "$(printf '540\n')" '')"
 eq "plan.sh reads the started round and holds those issues out of dispatch" "1 1" "$(grep -c 'read_drive_comments "$drive_line"' "$root/scripts/drive/plan.sh") $(grep -c 'started_ready_holds "$drive_comments"' "$root/scripts/drive/plan.sh")"
+# A set-aside already done is not proposed again (#2029): the pull request's issue is blocked and names the cause after its last red run.
+. "$root/scripts/drive/set-aside-lib.sh"
+sa_round=$(printf 'merge 40\nset-aside 2018\tHarvest chart\t(red 2 times)\nset-aside 2019\tSeed packets\t(red 3 times)\nstop: round ready\n')
+eq "a set-aside already done becomes a note, the other stays a goal" "merge 40
+note: pull request 2018 is already set aside; its issue is blocked and names the cause, written after its last red run
+set-aside 2019	Seed packets	(red 3 times)
+stop: round ready" "$(settled_set_asides "$sa_round" "$(printf '2018\n')")"
+eq "nothing settled leaves the round as it is" "$sa_round" "$(settled_set_asides "$sa_round" '')"
+eq "blocked with a comment after the last red run is settled" "yes" "$(set_aside_settled yes 2000 1000)"
+eq "a comment older than the last red run is not settled" "no" "$(set_aside_settled yes 1000 2000)"
+eq "an issue not blocked is not settled" "no" "$(set_aside_settled no 2000 1000)"
+eq "a time not known is not settled" "no" "$(set_aside_settled yes '' 1000)"
+eq "plan.sh reads the settled set-asides before the round is used" "1" "$(grep -c 'drop_settled_set_asides "$round" "$pr_list" "$snapshot"' "$root/scripts/drive/plan.sh")"
+# A round that only waits on the owner holds no agent and no runner (#2030).
+eq "approval.sh leaves out In progress issues that also wait on the owner" "1" "$(grep -c -- '--jq "\$RUNNING_ISSUES_JQ"' "$root/scripts/drive/approval.sh")"
+eq "approval.sh reads a pull request held by its body line as held too" "1" "$(grep -c -- '--jq "\$HELD_PRS_JQ"' "$root/scripts/drive/approval.sh")"
+eq "the filters name the waiting label and both hold forms" "3" "$(printf '%s\n%s\n' "$RUNNING_ISSUES_JQ" "$HELD_PRS_JQ" | grep -o 'state:waiting-on-owner\|queue:hold\|Queue: hold' | wc -l | tr -d ' ')"
+eq "a round whose only pull request is held is not running" "" "$(running_round "$sr_comments" '' "$(printf '540\n')" "$(printf '531\n532\n')")"
+# A change whose issue waits on the owner is held, label or not, and the hold is set with the state (#2030).
+. "$root/templates/scripts/ci/waiting-hold-lib.sh"
+wh_t=$(printf '\t')
+wh_pairs=$(printf '801\tCloses #301 for the owner to read\n802\tcloses #302, fixes #303\n803\tPart of #301\n804\tResolves: #305\n')
+eq "a pull request closing an issue that waits on the owner is named with that issue" "801${wh_t}301
+802${wh_t}303" "$(prs_closing_waiting "$wh_pairs" "$(printf '301\n303\n')")"
+eq "a pull request that only says Part of the issue is not named" "" "$(prs_closing_waiting "$(printf '803\tPart of #301\n')" '301')"
+eq "nothing waiting names nothing" "" "$(prs_closing_waiting "$wh_pairs" '')"
+eq "the colon form closes too" "804${wh_t}305" "$(prs_closing_waiting "$wh_pairs" '305')"
+eq "approval.sh marks a pull request whose issue waits as held" "1 1" "$(grep -c 'wh_prs=$(prs_closing_waiting' "$root/scripts/drive/approval.sh") $(grep -c '^    . .*waiting-hold-lib.sh' "$root/scripts/drive/approval.sh")"
+eq "the merge queue holds it too, from the same helper" "1 1" "$(grep -c 'held_wait=$(prs_closing_waiting' "$root/templates/scripts/ci/queue/held.sh") $(grep -c 'waiting-hold-lib.sh' "$root/templates/scripts/ci/queue/held.sh")"
+wh_dir=$(mktemp -d); mkdir -p "$wh_dir/bin"
+cat > "$wh_dir/bin/gh" <<'WHEOF'
+#!/bin/sh
+case "$*" in
+  *"-X POST"*"/labels"*) echo "$*" >> "$WH_LOG" ;;
+  *"/pulls?"*) printf '801\tfree\tCloses #301 for the owner to read\n802\theld\tCloses #301\n803\tfree\tCloses #399\n' ;;
+  *"/issues?"*) echo 301 ;;
+esac
+WHEOF
+chmod +x "$wh_dir/bin/gh"; : > "$wh_dir/log"
+eq "setting an issue to waiting on the owner puts the hold on its open pull request that has none" "1 1" "$(WH_LOG="$wh_dir/log" PATH="$wh_dir/bin:$PATH" sh -c '. "$1"; open_pr_pairs() { printf "801\tfree\tCloses #301\n802\theld\tCloses #301\n803\tfree\tCloses #399\n"; }; hold_prs_for_issue 301' sh "$root/templates/scripts/ci/waiting-hold-lib.sh" | grep -c '^Pull request #801 ') $(grep -c 'issues/801/labels.*queue:hold' "$wh_dir/log")"
+eq "state.sh calls it when the state is waiting on the owner" "1" "$(grep -c 'hold_prs_for_issue "$issue"' "$root/templates/scripts/state.sh")"
+eq "the audit names a pull request with no hold whose issue waits, and nothing for a held one" "#801: closes #301, which waits on you, and has no queue:hold." "$(PATH="$wh_dir/bin:$PATH" sh "$root/templates/scripts/ci/waiting-hold-audit.sh")"
 # The holds the drive published stay out of the next plan's slots (held-round-lib.sh).
 . "$root/scripts/drive/held-round-lib.sh"
 hr_t=$(printf '\t')
@@ -6495,7 +6537,7 @@ eq "a red change waits 10 minutes from its last push, a conflicting one 30" "1" 
 eq "red, last push 42 minutes ago, is past the red wait" "no" "$(recently_touched 5680 '' 8200 10)"
 eq "leftover remote branches are an unnumbered note, never a goal" "note: 300 branch(es) are still on the remote after their pull request merged or closed. run it
 stop: nothing to propose" "$(propose_round "$(printf 'audit\t300 branch(es) are still on the remote after their pull request merged or closed. run it\n')" 2 4 2 | number_proposal "$(cat)")"
-eq "a held change holds no round: the approval leaves queue:hold pull requests out of the running ones" "1" "$(grep -c 'queue:hold' "$root/scripts/drive/approval.sh")"
+eq "a held change holds no round: the approval leaves queue:hold pull requests out of the running ones" "1" "$(grep -c -- '--jq "$HELD_PRS_JQ"' "$root/scripts/drive/approval.sh")"
 # A round held behind one pull request for over an hour says so, with the time; the other areas' units start anyway.
 eq "held 2 hours 5 minutes is named with its time" "waits: the round has been held behind pull request 53 for 2 hours 5 minutes; units in other areas start anyway" "$(held_wait_note "$(printf '53\t1000\n')" 8500)"
 eq "held 70 minutes reads as one hour" "waits: the round has been held behind pull request 53 for 1 hour 10 minutes; units in other areas start anyway" "$(held_wait_note "$(printf '53\t1000\n')" 5200)"

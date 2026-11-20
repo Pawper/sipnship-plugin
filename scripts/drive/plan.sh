@@ -62,9 +62,7 @@ fi
 . "$here/deploy-goal-lib.sh"
 . "$here/rank-lib.sh"
 . "$here/red-batch-lib.sh"
-. "$here/pr-read-lib.sh"
-. "$here/owner-lib.sh"
-. "$here/left-lib.sh"
+. "$here/pr-read-lib.sh"; . "$here/owner-lib.sh"; . "$here/left-lib.sh"; . "$here/set-aside-lib.sh"
 
 # No GitHub call waits for ever (#1794): a call that has not answered in PLAN_GH_SECONDS (120) is stopped, the plan
 # names it on its error stream, and reads what that call would have told as not known, as for any failed call.
@@ -199,6 +197,8 @@ units_per_round=$(setting "$settings" unitsPerRound)
 aside_after=$(setting "$settings" setAsideAfterReds)
 MAINFIX_ISSUES=$(mainfix_numbers "$facts"); export MAINFIX_ISSUES  # ready fixes for a failure on main lead (rank-lib.sh)
 round=$(propose_round "$snapshot" "$runners" "$max_agents" "$aside_after")
+# A set-aside already done (its issue blocked, the cause written after the pull request's last red run) is a note, not a goal again (set-aside-lib.sh).
+round=$(drop_settled_set_asides "$round" "$pr_list" "$snapshot")
 # Plan the ready issues by the files they touch: overlapping guesses become
 # one bundle (one agent, one pull request), disjoint ones stay apart, and an
 # issue touching files a running issue touches is held, naming it.

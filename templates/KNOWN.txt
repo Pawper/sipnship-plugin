@@ -367,6 +367,7 @@ scripts/ci/line-endings.sh d5fa4cbbe20866ef8c3e753f0ea3c548fa45579c
 scripts/ci/live-report.mjs 8fb8796afd56e82daa413793b346154fd2bbaad4
 scripts/ci/machine-upkeep.sh ce09de3fc5de94d8a9b24b5aec3e36a2928e97e3
 scripts/ci/merge-queue.sh 034292be66f64219bd7816c8d6a217379b39f5ca
+scripts/ci/merge-queue.sh 03ff42af3b9d275b0958292b3e7d3ffab5cda2be
 scripts/ci/merge-queue.sh 04721b915f2035037e871005bdc77d3f80151d34
 scripts/ci/merge-queue.sh 05c2c5006ad4029e70487e2c0fb5acb965f84f75
 scripts/ci/merge-queue.sh 0bce09d72db9e34ea1af24b234bea8b3f0fb07c0
@@ -556,6 +557,8 @@ scripts/ci/queue/halve.sh 48c864f5202cdd6958f660477f7916249b436043
 scripts/ci/queue/halve.sh 567a5b19f986fd568e481b08d2122e0498b2c3c1
 scripts/ci/queue/halve.sh 64e07c31d4a2c65640375fe48f185253f94dd94b
 scripts/ci/queue/held.sh 131d1317a7fc4e892df47d7f866cb6590a436b5c
+scripts/ci/queue/held.sh 4a47ae4363abb99b427ec0b47f19a647136f62a8
+scripts/ci/queue/held.sh 658d1d131a7b5f00c1ca147171cafd2d32a6baa8
 scripts/ci/queue/held.sh 961635f65cfa68d2cb39590b3f36d90af79edbc2
 scripts/ci/queue/overlaps.sh 08515e29a12df47f524644e926f75dc156a6ea9e
 scripts/ci/queue/overlaps.sh 7530b0c2b389cce044b4bee47f5308cd3dbd65e8
@@ -720,6 +723,8 @@ scripts/ci/vercel-ignore.sh 4332c3b3327451b58885d6c769c7d889ab317f22
 scripts/ci/vercel-ignore.sh cefad70378df8684ce0d399154370d6ca615c2c9
 scripts/ci/vercel-ignore.sh cffaae6c27984d90db3c9504214ef29503a8dd49
 scripts/ci/wait-for.sh ef2496d9746c30aa11226714d9448416598e66e3
+scripts/ci/waiting-hold-audit.sh 9fe403c645ef1cf8d79b9b4a29ae0e90b825e0a4
+scripts/ci/waiting-hold-lib.sh d29cc40ba8619bdcf32cc6978dbc8d4800f533e2
 scripts/ci/watchdog.mjs 66b3112c526c6c212b01c9e3fcba95ce725eeb68
 scripts/ci/watchdog.mjs e46cba342cad7d0b3bddaafc2603b0b67777cdf8
 scripts/ci/workflow-breaks.sh be6b9ba6b02e27050210f4fe91fb9f8aa6aab4bb
@@ -779,6 +784,7 @@ scripts/state.sh 492c15f4c4b648ddb9e00939cedebda9977a55ba
 scripts/state.sh 83aa2bb9ddac54bdfaaee27d198595f1fa72d08b
 scripts/state.sh a1e4fcd7135592e78798accf1c3dee1b3fedf74f
 scripts/state.sh f3231f3a8121ffd2c3d7a1da8dd306867da9fd36
+scripts/state.sh f335ac7653b2b9e6bcb552787999015f5f0e71ac
 scripts/state.sh fbb1ffdfd977161455789ebf6203024e29c4a90a
 scripts/state.sh fc8ddd29be6db27be63ed71a65612e77db5de24c
 scripts/supabase-create.sh cfdf32c347e57d06249ede71a3581c3a2e50e125

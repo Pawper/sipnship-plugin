@@ -92,6 +92,12 @@ drain_drop_waiting() {
 /g')")
       if [ -n "$h_why" ]; then printf '%s ' "$h_num"; fi
     done)
+  # A change whose issue waits on the owner is held too, label or not (#2030).
+  [ -f "${here:-scripts/ci}/waiting-hold-lib.sh" ] && . "${here:-scripts/ci}/waiting-hold-lib.sh"
+  if command -v prs_closing_waiting >/dev/null 2>&1; then
+    held_wait=$(prs_closing_waiting "$(open_pr_pairs | awk -F'\t' '{ print $1 "\t" $3 }')" "$(waiting_issue_numbers)" | cut -f1)
+    held=$(printf '%s\n%s\n' "$(printf '%s' "$held" | tr ' ' '\n')" "$held_wait" | awk 'NF && !s[$0]++ { printf "%s ", $0 }')
+  fi
   if [ -n "$held" ]; then
     [ "$held" = "${last_held:-}" ] || say "round $round: held, not merged:$(printf ' #%s' $held)"
     last_held=$held

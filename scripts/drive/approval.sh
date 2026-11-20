@@ -172,11 +172,17 @@ fi
 # progress, its dispatches wait (one more REST call). "Start this round"
 # starts it now, since the drive planned it against the running files.
 if [ -z "$started_by" ] && printf '%s\n' "$approved" | grep -q '^dispatch '; then
-  inprog=$(gh api "repos/{owner}/{repo}/issues?state=open&labels=state:in-progress&per_page=100" --jq '.[].number' 2>/dev/null)
+  inprog=$(gh api "repos/{owner}/{repo}/issues?state=open&labels=state:in-progress&per_page=100" --jq "$RUNNING_ISSUES_JQ" 2>/dev/null)
   # A started unit whose pull request is open is running too, whatever State its issues show (a held change leaves them Ready).
   # A change held for the owner's read holds no runner and no other unit (only its areas stay taken, areas-lib.sh), so it never keeps the round "running".
   # A unit whose pull request has merged or closed has landed, whatever its issues still show (a unit's other issues stay In progress when the pull request did not name them): every open pull request, held ones too, is read once, and running_round drops a unit whose pull request is not among them.
-  all_open=$(gh api "repos/{owner}/{repo}/pulls?state=open&per_page=100" --jq '.[] | [.number, (([.labels[].name | ascii_downcase] | index("queue:hold") // index("hold")) != null)] | @tsv' 2>/dev/null | tr -d '\r')
+  all_open=$(gh api "repos/{owner}/{repo}/pulls?state=open&per_page=100" --jq "$HELD_PRS_JQ" 2>/dev/null | tr -d '\r')
+  # A pull request whose issue waits on the owner is held, label or not (#2030): it is the owner's read, not a running unit.
+  if [ -f "$here/../../templates/scripts/ci/waiting-hold-lib.sh" ]; then
+    . "$here/../../templates/scripts/ci/waiting-hold-lib.sh"
+    wh_prs=$(prs_closing_waiting "$(open_pr_pairs | awk -F'\t' '{ print $1 "\t" $3 }')" "$(waiting_issue_numbers)" | cut -f1)
+    all_open=$(printf '%s\n' "$all_open" | awk -F'\t' -v w="$wh_prs" 'BEGIN { n = split(w, a, "\n"); for (i = 1; i <= n; i++) if (a[i] != "") h[a[i]] = 1 } NF { print $1 "\t" (($1 in h) ? "true" : $2) }')
+  fi
   open_prs=$(printf '%s\n' "$all_open" | awk -F'\t' '$2 == "false" { print $1 }')
   # A unit counts as running only while there is evidence of it: a round whose units made no pull request and no branch for twenty minutes is dead, and its issues no longer hold the round. The tick's report sends them back to Ready.
   dead=$(dead_round_issues "$(date -u +%s)" "$(started_at "$comments")" "$(gh api "repos/{owner}/{repo}/git/matching-refs/heads/issue-" --jq '.[].ref' 2>/dev/null)" "$(started_units "$comments")")
