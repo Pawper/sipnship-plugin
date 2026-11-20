@@ -5764,6 +5764,19 @@ eq "a comment older than the last red run is not settled" "no" "$(set_aside_sett
 eq "an issue not blocked is not settled" "no" "$(set_aside_settled no 2000 1000)"
 eq "a time not known is not settled" "no" "$(set_aside_settled yes '' 1000)"
 eq "plan.sh reads the settled set-asides before the round is used" "1" "$(grep -c 'drop_settled_set_asides "$round" "$pr_list" "$snapshot"' "$root/scripts/drive/plan.sh")"
+# A pull request that only says "Part of #N" (field 6, the refs column), never "Closes #N" (field 5), still
+# has its umbrella issue checked for "already blocked after the pull request's last red run" (#2037): the
+# umbrella can stay open with other parts unsettled while this one part is set aside.
+sa_us=$(printf '\037')
+sa_round2=$(printf 'set-aside 2018\tHarvest chart\t(red 2 times)\n')
+sa_snap2=$(printf 'issue\t1023\tUmbrella\tblocked\n')
+sa_gh() { gh() { case "$*" in *comments*) echo 2000 ;; *actions/runs*) echo 1000 ;; esac; }; }
+sa_closes_list=$(printf '2018%sbranch2018%s%s%s1023%s\n' "$sa_us" "$sa_us" "$sa_us" "$sa_us" "$sa_us")
+sa_refs_list=$(printf '2018%sbranch2018%s%s%s%s1023\n' "$sa_us" "$sa_us" "$sa_us" "$sa_us" "$sa_us")
+eq "a Part of-only pull request settles its set-aside the same as a Closes-only one" "note: pull request 2018 is already set aside; its issue is blocked and names the cause, written after its last red run" "$(us=$sa_us; sa_gh; drop_settled_set_asides "$sa_round2" "$sa_refs_list" "$sa_snap2")"
+eq "a Closes-only pull request still settles (unchanged by the refs fallback)" "note: pull request 2018 is already set aside; its issue is blocked and names the cause, written after its last red run" "$(us=$sa_us; sa_gh; drop_settled_set_asides "$sa_round2" "$sa_closes_list" "$sa_snap2")"
+sa_empty_list=$(printf '2018%sbranch2018%s%s%s%s%s\n' "$sa_us" "$sa_us" "$sa_us" "$sa_us" "$sa_us" "$sa_us")
+eq "a pull request with neither Closes nor Part of is left as a goal, with no REST call" "set-aside 2018	Harvest chart	(red 2 times)" "$(us=$sa_us; gh() { echo "should not be called"; return 1; }; drop_settled_set_asides "$sa_round2" "$sa_empty_list" "$sa_snap2")"
 # A round that only waits on the owner holds no agent and no runner (#2030).
 eq "approval.sh leaves out In progress issues that also wait on the owner" "1" "$(grep -c -- '--jq "\$RUNNING_ISSUES_JQ"' "$root/scripts/drive/approval.sh")"
 eq "approval.sh reads a pull request held by its body line as held too" "1" "$(grep -c -- '--jq "\$HELD_PRS_JQ"' "$root/scripts/drive/approval.sh")"

@@ -29,13 +29,19 @@ set_aside_settled() {
 
 # drop_settled_set_asides ROUND PR_LIST SNAPSHOT
 # Prints ROUND with each already-done "set-aside N" goal turned into a note. PR_LIST is the plan's pull
-# request rows (separated by $us; field 1 the number, 2 the branch, 5 the closed issues) and SNAPSHOT the
-# board's tab rows. Reads each such pull request's issue comments and last red run over REST.
+# request rows (separated by $us; field 1 the number, 2 the branch, 5 the closed issues, 6 the referenced
+# ones, as a "Part of #N" line names) and SNAPSHOT the board's tab rows. A pull request with no Closes line
+# (field 5 empty) falls back to field 6, the same way stale-lib.sh's unit-matching treats a Part of line as
+# belonging to the issue: an umbrella issue can stay open while its part is set aside. Reads each such pull
+# request's issue comments and last red run over REST.
 drop_settled_set_asides() {
   dss_round=$1; dss_list=$2; dss_snap=$3; dss_settled=""
   for sa_pr in $(printf '%s\n' "$dss_round" | sed -n 's/^set-aside \([0-9][0-9]*\).*/\1/p'); do
-    sa_row=$(printf '%s\n' "$dss_list" | awk -F"$us" -v n="$sa_pr" '$1 == n { print $2 "\t" $5 }')
-    sa_ref=$(printf '%s' "$sa_row" | cut -f1); sa_issues=$(printf '%s' "$sa_row" | cut -f2 | tr ',' ' ')
+    sa_row=$(printf '%s\n' "$dss_list" | awk -F"$us" -v n="$sa_pr" '$1 == n { print $2 "\t" $5 "\t" $6 }')
+    sa_ref=$(printf '%s' "$sa_row" | cut -f1)
+    sa_issues=$(printf '%s' "$sa_row" | cut -f2)
+    [ -n "$sa_issues" ] || sa_issues=$(printf '%s' "$sa_row" | cut -f3)
+    sa_issues=$(printf '%s' "$sa_issues" | tr ',' ' ')
     [ -n "$sa_issues" ] || continue
     sa_blocked=yes; sa_comment=0
     for sa_i in $sa_issues; do
