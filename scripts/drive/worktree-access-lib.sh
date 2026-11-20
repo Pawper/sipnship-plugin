@@ -31,14 +31,19 @@ worktrees_dir_pick() {
 }
 
 # worktree_probe DIR
-# Print "ok" when a worktree could be made in DIR, else "denied". It makes one
-# fixed folder, DIR/.write-probe, and writes an empty file in it, the same
-# kind of right `git worktree add` needs, and leaves it there: the same two
-# names every time, so nothing piles up and nothing is deleted. A DIR that
-# does not exist yet is made (git makes it too); when that fails it is denied.
+# Print "ok" when a worktree could be made in DIR, else "denied". It makes a
+# NEW folder under DIR, named for this run (an old probe folder is never
+# reused: it proves nothing about a folder that does not exist yet, which is
+# what every worktree is), writes an empty file in it, then takes both away
+# again, the probe's own and empty; if that fails the folder stays, small and
+# plainly the probe's. A DIR that does not exist yet is made (git makes it
+# too); when that fails it is denied.
 worktree_probe() {
-  mkdir -p "$1/.write-probe" 2>/dev/null || { echo denied; return 0; }
-  : >> "$1/.write-probe/probe" 2>/dev/null || { echo denied; return 0; }
+  mkdir -p "$1" 2>/dev/null || { echo denied; return 0; }
+  wp_new="$1/.write-probe-$(date +%s)-$$"
+  mkdir "$wp_new" 2>/dev/null || { echo denied; return 0; }
+  : >> "$wp_new/probe" 2>/dev/null || { rmdir "$wp_new" 2>/dev/null; echo denied; return 0; }
+  rm -f "$wp_new/probe" 2>/dev/null; rmdir "$wp_new" 2>/dev/null
   echo ok
 }
 

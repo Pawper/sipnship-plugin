@@ -256,8 +256,17 @@ The goal lines and what each means:
   The brief also says: an agent that builds only part of an issue, or finds its part already landed or in another
   area, leaves one comment on the issue with a line of its own, `Left: <what is still to build> | areas: <area names>`;
   the plan plans the issue from that line (the areas file names the areas) instead of from its whole body, and an
-  issue a merged pull request worked on with no such line is marked "partly landed" on its proposal line, so a
-  reader confirms what is left before a runner is taken.
+  issue a merged pull request worked on with no such line is marked "partly landed" on its proposal line.
+- **`read-left N`.** A partly landed issue with no `Left:` line and no read recorded gets its reader from the
+  drive itself, in the round that finds it, once. It runs without approval, like `ask-owner`. Start a light
+  reader (the cheapest model that fits) that reads the issue, the merged pull requests that worked on it and
+  main, then does one of three things: leaves the `Left:` line in the fixed form above
+  with `comment.sh`; or says nothing is left, closing the issue with a comment naming where each part landed; or,
+  when what is left is the owner's, writes the ask for them (below, "How to write an ask") and sets
+  `state:waiting-on-owner`. Then record it: `sh "${CLAUDE_PLUGIN_ROOT}/scripts/drive/left-read.sh" N read`, or,
+  when the reader could not tell, `... N unclear`, which the card then says in plain words as a question about the
+  project. The plan never sends a second reader to a recorded issue, and a card never says a reader will come
+  unless this goal is in the round.
   The plan groups ready issues by the files they are guessed to touch (the paths and specs the body names,
   the project's mocks map, and the files past work on the same spec changed). `dispatch 12 14` with a
   third column "Why together: both change ..." is a bundle: one agent, one worktree, one pull request that
@@ -286,8 +295,8 @@ tab says it waits and on what instead of saying it starts on its own; `status: p
   proposed`) beside the started one. The service keeps the started round and the proposed one apart, so
   both show.
   The round file also carries how the plan sized it and what it left out: one `sized:` line with the plan's
-  own `sized:` words ("5 runners online, 4 free for agents"), which the Work band's "Why this many" tip says,
-  and a `hold:` line for each unit the plan deferred, with `why: No free runner this round`
+  own `sized:` words ("6 ready units free of conflict, 4 started; the limit of 4 agents a round held 2"), which the Work band's "Why this many" tip says,
+  and a `hold:` line for each unit the plan deferred, with `why: The limit of 4 agents a round is reached; it starts in the next round`
   (`deferred_holds` in `scripts/drive/round-lib.sh` prints them from the plan's `defer` line; `sized_line`
   prints the `sized:` line; add each unit's `areas:` to its hold line, which the script requires), so a small round is explained and a deferred unit says why it waits.
   Every run publishes the proposed round, even one that starts nothing: a `hold:` line for each issue you
@@ -657,7 +666,7 @@ first round finds the reply and pursues it.
 
 `.claude/project-drive.json` in the project, all keys optional:
 
-- `runners`: an optional cap on how many agents work at once; with no key the plan reads the runners GitHub lists, online and not busy, less one kept for the queue, and names that number on its heading line
+- `runners`: an optional cap on how many agents work at once, no longer used to size a round: free runners never set the number of agents. A round starts every unit that conflicts with nothing, up to `maxAgents` (the builder's limit) and the computer's load: when the figure the health note reads (`healthCommand`) is over `healthAbove`, the round starts half as many and says "your computer is busy; this starts when it has room". The runners are looked at once, for the round as a whole: with none online the `sized:` words say checks wait until one is, and the round starts anyway
 - `maxAgents`: the most one round dispatches (default 4)
 - `maxMinutes`: the most one round runs (default 90)
 - `worktreesDir`: the folder the project keeps its agents' worktrees in; with no key it is the folder the existing worktrees share, else a `worktrees` folder beside the project. The drive checks it can write there before it starts an agent, and the runner install grants the runner's account access to it

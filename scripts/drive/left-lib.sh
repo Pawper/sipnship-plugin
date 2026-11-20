@@ -43,13 +43,13 @@ left_comments_say() {
 
 # left_title TITLE SAY
 # The title a proposal line shows. A note says what is left, in its words; a
-# partly landed issue says so, so the drive has a reader confirm what is left
-# before it takes a runner; any other issue keeps its title.
+# partly landed issue says so (the drive's own reader then writes the note,
+# left-reader-lib.sh); any other issue keeps its title.
 left_title() {
   lt_tab=$(printf '\t')
   case "$2" in
     left"$lt_tab"*) lt_w=${2#left"$lt_tab"}; lt_w=${lt_w%%"$lt_tab"*}; printf '%s (left: %s)\n' "$1" "$lt_w" ;;
-    partly) printf '%s (partly landed; a reader confirms what is left)\n' "$1" ;;
+    partly) printf '%s (partly landed)\n' "$1" ;;
     *) printf '%s\n' "$1" ;;
   esac
 }

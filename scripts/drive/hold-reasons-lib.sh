@@ -46,15 +46,14 @@ hold_reasons() {
     }'
 }
 
-# stall_note ROUND RUNNERS
-# ROUND is the plan's result after apply_units. When no unit is dispatched,
-# runners are free and every ready issue is held, the round says so as a
-# stall and names the one or two owner actions that free the most issues:
-#   stall: every ready issue is held and N runners are free; answering “T”
+# stall_note ROUND
+# ROUND is the plan's result after apply_units. When no unit is dispatched
+# and every ready issue is held, the round says so as a stall and names the
+# one or two owner actions that free the most issues:
+#   stall: every ready issue is held; answering “T”
 #   frees K issues, reading “U” frees J
 stall_note() {
-  [ "${2:-0}" -gt 0 ] 2>/dev/null || return 0
-  printf '%s\n' "$1" | awk -F'\t' -v runners="$2" '
+  printf '%s\n' "$1" | awk -F'\t' '
     /^dispatch / { go = 1 }
     /^hold / {
       h++
@@ -69,6 +68,6 @@ stall_note() {
       for (a = 1; a <= k; a++) for (b = a + 1; b <= k; b++) if (cnt[ord[b]] > cnt[ord[a]]) { t = ord[a]; ord[a] = ord[b]; ord[b] = t }
       out = ""
       for (a = 1; a <= k && a <= 2; a++) out = out (a > 1 ? ", " : "") ord[a] " frees " cnt[ord[a]] " issue" (cnt[ord[a]] == 1 ? "" : "s")
-      printf "stall: every ready issue is held and %s runner%s %s free; %s\n", runners, (runners == 1 ? "" : "s"), (runners == 1 ? "is" : "are"), out
+      printf "stall: every ready issue is held; %s\n", out
     }'
 }

@@ -67,11 +67,16 @@ summary_note() {
 }
 
 # The health note, when healthNote is set: a recommendation, never a pause.
+health_read() {
+  [ -z "${health_done:-}" ] || return 0
+  health_done=yes; hv=""; health_cmd=$(setting "$settings" healthCommand)
+  [ -n "$health_cmd" ] || return 0
+  if command -v timeout >/dev/null 2>&1; then hv=$(timeout 30 sh -c "$health_cmd" 2>/dev/null | tr -d '\r' | tail -n 1 | tr -d ' ')
+  else hv=$(sh -c "$health_cmd" 2>/dev/null | tr -d '\r' | tail -n 1 | tr -d ' '); fi
+}
 health_note() {
-  health_cmd=$(setting "$settings" healthCommand)
+  health_read
   if [ -n "$health_cmd" ]; then
-    if command -v timeout >/dev/null 2>&1; then hv=$(timeout 30 sh -c "$health_cmd" 2>/dev/null | tr -d '\r' | tail -n 1 | tr -d ' ')
-    else hv=$(sh -c "$health_cmd" 2>/dev/null | tr -d '\r' | tail -n 1 | tr -d ' '); fi
     health_line "$(setting "$settings" healthName)" "$hv" "$(setting "$settings" healthAbove)"
   fi
 }

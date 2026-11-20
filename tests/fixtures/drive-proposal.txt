@@ -2,7 +2,7 @@
 2. fix-pr 47	Broken build
 3. ask-owner 13	Set the price of the plan
 4. dispatch 12	Add the exporter
-defer 2 ready issue(s): no free runner this round
+defer 2 ready issue(s): the limit on agents is reached this round
 5. fix-main 77
 6. audit Open issues with no State label: #33
 7. restart-queue

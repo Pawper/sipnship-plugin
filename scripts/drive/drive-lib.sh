@@ -26,7 +26,7 @@
 # request that conflicts with main up to date (merge-main) unless the queue
 # holds it (a held pull request, red or not, is left alone: no agent is sent
 # to one a builder is reading), ask about what is the owner's, start
-# ready issues up to the smaller of RUNNERS and MAX_AGENTS less what is in
+# ready issues up to MAX_AGENTS (RUNNERS bounds nothing: free runners never size a round) less what is in
 # progress, set right what the audit flagged, restart a stale queue. The
 # last line is a "stop" line saying why the round would end. Nothing here
 # is done; a person approves first.
@@ -81,7 +81,7 @@ propose_round() {
       slots -= inprogress
       dispatched = 0
       for (i = 1; i <= n && dispatched < slots; i++) { print "dispatch " ready[i]; dispatched++; acted++ }
-      if (n > dispatched) print "defer " (n - dispatched) " ready issue(s): no free runner this round"
+      if (n > dispatched) print "defer " (n - dispatched) " ready issue(s): the limit on agents is reached this round"
       if (redmain != "") { print "fix-main " redmain; acted++ }
       # Branches left on the remote are a note, never a goal: nothing the drive may do ends one, and the nightly audit keeps reporting them.
       if (audit ~ /^[0-9]+ branch\(es\) are still on the remote after their pull request/) print "note: " audit

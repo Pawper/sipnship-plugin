@@ -3,7 +3,7 @@
 # held_since, pull_links, pr_list and the overlaid snapshot set for the caller (one shell, no subshell).
 
 read_open_pull_requests() {
-  rest_lines=""; pr_shas=""
+  rest_lines=""; pr_shas=""; unread_prs=0
   pr_list=$(gh api "repos/{owner}/{repo}/pulls?state=open&per_page=100" --jq '.[] | [(.number | tostring), .head.ref, ([.labels[].name] | join(",")), ((.body // "") | [splits("\r?\n")] | map(select(test("^Queue: hold"; "i"))) | first // ""), ((.body // "") | [scan("(?i)(?:closes|fixes|resolves) #([0-9]+)") | .[0]] | join(",")), ((.body // "") | [scan("(?i)\\b(?:refs?|references|spec for|part of|relates to|related to):? #([0-9]+)") | .[0]] | join(","))] | join("\u001f")' 2>/dev/null | tr -d '\r')
   # One separator that is not whitespace, so a pull request with no hold line or no labels keeps its empty field; a tab would collapse it and shift the Closes numbers left.
   pull_links=$(pull_link_row "$pr_list")
@@ -12,6 +12,10 @@ read_open_pull_requests() {
     plan_say "reading pull request $p_num"
     p_info=$(gh api "repos/{owner}/{repo}/pulls/$p_num" --jq '[(.mergeable_state // ""), .head.sha] | @tsv' 2>/dev/null | tr -d '\r')
     p_state=$(printf '%s' "$p_info" | cut -f1); p_sha=$(printf '%s' "$p_info" | cut -f2)
+    if [ -z "$p_sha" ] || [ -z "$p_state" ]; then  # GitHub returned it half read: left out of this round, said in one line (#2074)
+      unread_prs=$((unread_prs + 1)); echo "could not read pull request $p_num from GitHub this round, so it is left out of the round's goals"
+      snapshot=$(printf '%s\n' "$snapshot" | awk -F'\t' -v n="$p_num" '!($1 == "pr" && $2 == n)'); continue
+    fi
     pr_shas="${pr_shas}${p_num}${tab}${p_sha}
   "; p_reds=0; p_ci=$(printf '%s\n' "$snapshot" | awk -F'\t' -v n="$p_num" '$1 == "pr" && $2 == n { print $4 }')
     # A rollup still reading pending after every check ended and one failed or was cancelled is red.
