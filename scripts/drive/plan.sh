@@ -58,7 +58,7 @@ fi
 . "$here/deploy-goal-lib.sh"
 . "$here/rank-lib.sh"
 . "$here/red-batch-lib.sh"
-. "$here/pr-read-lib.sh"; . "$here/owner-lib.sh"; . "$here/left-lib.sh"; . "$here/asked-lib.sh"; . "$here/set-aside-lib.sh"
+. "$here/pr-read-lib.sh"; . "$here/owner-lib.sh"; . "$here/left-lib.sh"; . "$here/asked-lib.sh"; . "$here/set-aside-lib.sh"; . "$here/round-bound-lib.sh"; . "$here/left-reader-lib.sh"
 
 # No GitHub call waits for ever (#1794): a call that has not answered in PLAN_GH_SECONDS (120) is stopped, the plan
 # names it on its error stream, and reads what that call would have told as not known, as for any failed call.
@@ -167,17 +167,11 @@ fi
 extra=$(printf '%s\n%s\n' "$extra" "$(unasked_goals "$facts" "$here/../../templates/scripts/ci/ask-audit.sh")" | sed '/^$/d')
 extra=$(drop_standing_goals "$extra" "$facts")  # the drive and audit issues are never proposed as work or as a question (#1845)
 
-# How many agents may work at once is what GitHub's registered runners say: online and not busy, less one kept for the queue.
+# Runners are looked at once, for the round as a whole (how many are online, for the sized line); they never set how many agents start.
 plan_stage "answers and asks read"
-listing=$(gh api 'repos/{owner}/{repo}/actions/runners?per_page=100' --jq '.runners[] | [.status, (.busy | tostring)] | @tsv' 2>/dev/null | tr -d '\r')
-runners_line=$(agent_runners "$listing" "$runners_cap")
-machines=no
-if [ -n "$runners_line" ]; then machines=yes; runners=${runners_line%%	*}; runners_say=$(agent_runners_say "$runners_line" "$runners_cap")
-else [ "$runners_cap" -gt 0 ] && runners=$runners_cap; runners_say="runners not readable from GitHub, so $runners"; fi
+runners_online=$(gh api 'repos/{owner}/{repo}/actions/runners?per_page=100' --jq '[.runners[] | select(.status == "online")] | length' 2>/dev/null | tr -d '\r')
 [ "$fast" = yes ] || plugin_note  # first line of the output: a proposal made by an old plan is read as such (#1846)
-echo "proposal for $(date '+%A %Y-%m-%d'), the owner's local day (${runners_say}, at most $max_agents agents, at most $max_minutes minutes; $note):"
-# The round file's own line for it (publish-round.sh's "sized:"), so the Work band says how many agents and why.
-echo "sized: ${runners_say}"
+echo "proposal for $(date '+%A %Y-%m-%d'), the owner's local day (at most $max_agents agents, at most $max_minutes minutes; $note):"
 # In progress is not taken on faith: an issue nobody works, or whose pull request is held for the owner, is set right first (./stale-lib.sh).
 stale=$(stale_lines "$facts" "$pull_links" "$(gitb for-each-ref --format='%(committerdate:unix)%09%(refname:short)' refs/heads refs/remotes 2>/dev/null)" "$(date +%s)" 2 "$(started_units "$drive_comments")" "$(started_at "$drive_comments")")
 if [ -n "$stale" ]; then
@@ -192,7 +186,7 @@ plan_stage "stale issues checked"
 units_per_round=$(setting "$settings" unitsPerRound)
 aside_after=$(setting "$settings" setAsideAfterReds)
 MAINFIX_ISSUES=$(mainfix_numbers "$facts"); export MAINFIX_ISSUES  # ready fixes for a failure on main lead (rank-lib.sh)
-round=$(propose_round "$snapshot" "$runners" "$max_agents" "$aside_after")
+round=$(propose_round "$snapshot" "$max_agents" "$max_agents" "$aside_after")
 # A set-aside already done (its issue blocked, the cause written after the pull request's last red run) is a note, not a goal again (set-aside-lib.sh).
 round=$(drop_settled_set_asides "$round" "$pr_list" "$snapshot")
 # Plan the ready issues by the files they touch: overlapping guesses become
@@ -204,7 +198,7 @@ areas_text=""; [ -f .claude/areas.txt ] && areas_text=$(cat .claude/areas.txt)
 past=$(past_spec_files "$(gitb log -n 300 --name-only --format='@@ %s' main 2>/dev/null || gitb log -n 300 --name-only --format='@@ %s' 2>/dev/null)")
 asked=$(asked_issues "$drive_comments"); ASKED_ISSUES=$asked; export ASKED_ISSUES; asked_notes=""  # issues the builder asked for by name keep their place until done (asked-lib.sh, #1930)
 held_only=$(held_only_issues "$pull_links" | tr "
-" " "); guesses=""; running=""; left_reads=0; plan_left_until=$((SECONDS + ${PLAN_LEFT_SECONDS:-90}))
+" " "); guesses=""; running=""; left_reads=0; left_lines=""; plan_left_until=$((SECONDS + ${PLAN_LEFT_SECONDS:-90}))
 # A ready issue that says it comes after another open one is held, naming what it waits on, read afresh each run.
 reasons=$(hold_reasons "$facts" "$held_only")
 # An open pull request that already closes a Ready issue means no agent is started on it again, held or batched (stale-lib.sh).
@@ -228,9 +222,8 @@ while IFS="$us" read -r kind num title a b c d e; do
 $reasons" in *"
 hold	$num	"*) continue ;; esac
       plan_ready_guess  # sets g and title; an issue a merged pull request worked on is planned from what is left (left-lib.sh)
-      case "$left_say" in partly) reasons=$(printf '%s
-hold	%s	%s	Part of it landed; a reader confirms what is left before it takes an agent
-' "$reasons" "$num" "$title" | sed '/^$/d'); continue ;; esac  # a partly landed issue is a hold until that read has happened (#1891)
+      case "$left_say" in partly) lr_state=$(left_read_state "$num" .scratch/drive/left-read.tsv); left_lines="${left_lines}${num}${tab}${title}${tab}${lr_state}
+"; reasons=$(printf '%s\nhold\t%s\t%s\t%s\n' "$reasons" "$num" "$title" "$(left_read_hold_why "$lr_state")" | sed '/^$/d'); continue ;; esac  # a partly landed issue is a hold until its reader has written what is left (#1891, #2047)
       case " $asked " in *" $num "*) asked_notes="${asked_notes}asked: ${num} $(asked_line "$left_say")
 " ;; esac
       guesses="${guesses}${num}${tab}${title}${tab}${g}
@@ -256,11 +249,12 @@ if [ -n "$guesses" ] || [ -n "$reasons" ]; then
   # The proposal is the next round: up to unitsPerRound units (within
   # maxAgents), planned against the running round's files. It starts only
   # once the running round lands (approval.sh holds its dispatches).
-  slots=$units_per_round; [ "$max_agents" -lt "$slots" ] && slots=$max_agents; [ "$runners" -lt "$slots" ] && slots=$runners
-  round=$(apply_units "$round" "$units" "$slots" "$machines" "$MAINFIX_ISSUES" "$(priority_issues "$priorities" "$guesses" "$facts" "$areas_text")")  # a project's priority areas lead, after a fix for main
+  health_read; busy=$(computer_busy "$hv" "$(setting "$settings" healthAbove)"); slots=$(round_slots "$units_per_round" "$max_agents" "$busy")  # the limit and the computer's load, never free runners (#2084)
+  round=$(apply_units "$round" "$units" "$slots" "${busy:-no}" "$MAINFIX_ISSUES" "$(priority_issues "$priorities" "$guesses" "$facts" "$areas_text")")  # a project's priority areas lead, after a fix for main
   round=$(defer_note "$round" "$published_count")  # a small round says which holds kept their issues out of it
   round=$(lead_main_fixes "$round")  # the fix for a failure on main opens the proposal and the approval never holds it behind the round it blocks (rank-lib.sh)
 fi
+round=$(add_left_readers "$round" "$left_lines")  # one reader goal for each partly landed issue not yet read (left-reader-lib.sh)
 round=$(drop_asks_for_after_holds "$round")  # an issue that names what it follows is a hold, never also an ask (#1875)
 # A project whose queue lands green work by itself: rely on it; propose one drain only when green work has sat 15 minutes.
 plan_stage "ready issues placed"
@@ -284,7 +278,7 @@ round=$(quiet_declined_goals "$round" "$facts" .scratch/drive/declined.tsv); ext
 round=$(say_every_pr "$round" "$snapshot")  # every open pull request has a line, whatever its checks say
 plan_stage "landing, release and deploy read"
 round=$(lead_red_main "$round")  # a red main's goal is the first numbered line (rank-lib.sh)
-number_proposal "$round"; stall_note "$round" "$runners"  # every ready issue held, runners free: said as a stall naming what frees the most (#2055)
+number_proposal "$round"; stall_note "$round"  # every ready issue held: said as a stall naming what frees the most (#2055)
 # Auto Drive, from the drive issue's label drive:auto: one REST call. On is a
 # standing approval; off, the proposal is posted and waits for a reply.
 auto=$(auto_drive_state "$drive_line")
@@ -293,6 +287,7 @@ model=$(setting "$settings" dispatchModel)
 if [ "$aside_after" -gt 0 ] 2>/dev/null; then aside_words="a pull request red $aside_after times is set aside"; else aside_words="a red pull request is never set aside"; fi
 round_model=$(setting "$settings" roundModel)
 [ -z "$asked_notes" ] || printf '%s' "$asked_notes"  # one line each: the kept request, in plain words (asked-lib.sh)
+echo "sized: $(sized_words "$(printf '%s\n' "$units" | grep -c '^unit')" "$(printf '%s\n' "$round" | grep -c '^dispatch ')" "${slots:-$max_agents}" "${busy:-no}" "$runners_online" "${unread_prs:-0}")"  # what bounded the round, for the Work band
 echo "rounds: at most $units_per_round units a round, one round at a time; each unit's agent on ${model:-the model the agent-model hook allows}; the round itself on ${round_model:-the app's default model}; $aside_words"
 held_wait_note "${held_since:-}" "$(date +%s)"
 summary_note

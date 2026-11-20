@@ -217,7 +217,8 @@ units_disjoint() {
     }'
 }
 
-# apply_units ROUND UNITS SLOTS [MACHINES [MAINFIX [PRIORITY]]]
+# apply_units ROUND UNITS SLOTS [WHY [MAINFIX [PRIORITY]]]
+# WHY is "yes" when a busy computer cut SLOTS short, else the limit did.
 # Swap the "dispatch N TITLE" goals of a propose_round result for the
 # units: one goal per unit, bundles ranked before loose issues (more issues
 # first), at most SLOTS of them (the rest deferred, named by their issues),
@@ -262,7 +263,7 @@ apply_units() {
     /^stop:/ {
       if (!done) { for (i = 1; i <= g; i++) print goals[i]; done = 1 }
       for (i = 1; i <= h; i++) print holds[i]
-      if (deferred > 0) print "defer " deferred " unit(s): " (machines == "yes" ? "only " slots " free runner" (slots == 1 ? "" : "s") " this round" : "no free runner this round") " (" dn ")"
+      if (deferred > 0) print "defer " deferred " unit(s): " (machines == "yes" ? "your computer is busy; this starts when it has room" : "the limit of " slots " agent" (slots == 1 ? "" : "s") " a round is reached") " (" dn ")"
       if (g == 0 && other == 0 && h > 0 && reasoned) { print "stop: everything left waits on what its hold line names; publish the round with each hold and its reason"; next }
       if (g == 0 && other == 0 && h > 0) { print "stop: work is in flight; nothing to propose until it lands"; next }
     }

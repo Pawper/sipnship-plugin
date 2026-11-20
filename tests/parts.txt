@@ -131,3 +131,4 @@ shell-3 the plan reads what is left of a partly landed issue (drive)
 shell-2 hooks in node: the same verdicts and words
 queue a stalled queue finds its own way back
 shell-3 an issue never waits behind one whose pull request is held for the owner (drive)
+shell-3 a round is sized by its work, never by free runners (drive)

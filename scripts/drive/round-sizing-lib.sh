@@ -56,6 +56,8 @@ deferred_holds() {
       s = $0; i = match(s, /\(#[^)]*\)$/); if (!i) next
       s = substr(s, RSTART + 1, RLENGTH - 2)
       n = split(s, pieces, /, /)
+      why = $0; sub(/^defer [0-9]+ unit\(s\): /, "", why); sub(/ \(#.*$/, "", why); sub(/; the [0-9]+ issues? held.*$/, "", why)
+      why = toupper(substr(why, 1, 1)) substr(why, 2); if (why ~ /^The limit/) why = why "; it starts in the next round"
       for (k = 1; k <= n; k++) {
         p = pieces[k]; gsub(/#/, "", p)
         split(p, first, " "); hit = ""; who = ""; mine = iarea[first[1]]
@@ -64,7 +66,7 @@ deferred_holds() {
           for (x = 1; x <= na && hit == ""; x++) for (y = 1; y <= nb; y++) if (ma[x] != "" && ma[x] == mb[y]) { hit = ma[x]; who = rs[q] }
         }
         if (hit != "") { gsub(/,/, " ", who); print "hold: " p " | after: " who " | why: Its area, " hit ", is owned by the running unit" }
-        else print "hold: " p " | why: No free runner this round"
+        else print "hold: " p " | why: " why
       }
     }'
 }
