@@ -69,17 +69,40 @@ left_areas_files() {
     END { print out }'
 }
 
+# answer_leads COMMENTS
+# COMMENTS is one comment a line, oldest first, a line end inside a comment
+# written as "\n" (left_comments_say's own shape). "yes" when the newest
+# comment is a "Builder answer:" line, the fixed form the service and the
+# dashboard both write (specs/022-asks): the issue just left Needs you by an
+# answer, with no question left open on it, so it leads the next round by
+# itself, with no second press (#2079); "no" otherwise, including an issue
+# no comment ever answered.
+answer_leads() {
+  printf '%s\n' "$1" | tr -d '\r' | awk '
+    NF == 0 { next }
+    {
+      n = split($0, ln, /\\n/); said = 0
+      for (i = 1; i <= n; i++) if (ln[i] ~ /^[ \t>*_]*Builder answer:[ *_]* #[0-9]+ choice [0-9]/) said = 1
+      last = said
+    }
+    END { print (last ? "yes" : "no") }'
+}
+
 # plan_ready_guess
 # For the ready issue plan.sh is reading (num, title, c, mocks_text, areas_text,
 # past, left_reads): sets g to the files it touches and title to its title,
 # planned from what is left when a merged pull request worked on it, else from
-# its whole body. At most PLAN_LEFT_READS reads a plan (12), so the plan stays quick.
+# its whole body; sets ready_answer_led (answer_leads) from the same comments,
+# so an issue the owner just answered leads the next round without a second
+# read. At most PLAN_LEFT_READS reads a plan (12), so the plan stays quick.
 plan_ready_guess() {
-  left_say=""
+  left_say=""; ready_answer_led=no
   # The reads share one time budget (plan_left_until, a count of SECONDS set by plan.sh): a slow GitHub never holds the plan on the issues' comments, and an issue not read is planned from its whole body (#1926).
   if [ "$left_reads" -lt "${PLAN_LEFT_READS:-12}" ] && [ "${SECONDS:-0}" -lt "${plan_left_until:-999999}" ]; then
     left_reads=$((left_reads + 1))
-    left_say=$(left_comments_say "$(gh api "repos/{owner}/{repo}/issues/$num/comments?per_page=100" --jq '.[] | .body | gsub("\r"; "") | gsub("\n"; "\\n")' 2>/dev/null)")
+    prg_comments=$(gh api "repos/{owner}/{repo}/issues/$num/comments?per_page=100" --jq '.[] | .body | gsub("\r"; "") | gsub("\n"; "\\n")' 2>/dev/null)
+    left_say=$(left_comments_say "$prg_comments")
+    ready_answer_led=$(answer_leads "$prg_comments")
   fi
   g=""
   case "$left_say" in

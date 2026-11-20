@@ -7106,6 +7106,17 @@ eq "a note's areas become the first path of each area" "plugin/,scripts/" "$(lef
 eq "a note with no areas, or a partly landed issue, places nothing" "" "$(left_areas_files "left${lf_tab}x${lf_tab}" "$lf_areas")$(left_areas_files partly "$lf_areas")"
 eq "the plan reads the note once per ready issue, and the skill tells agents to leave it" "1 1 1" "$(grep -c 'left_say=$(left_comments_say' "$root/scripts/drive/left-lib.sh") $(grep -c 'Left: <what is still to build> | areas: <area names>' "$root/skills/project-drive/SKILL.md") $(grep -c 'plan_stage "board read"' "$root/scripts/drive/plan.sh")"
 
+# An issue the owner just answered leads the next round by itself, with no second press (#2079).
+eq "an issue with no comments, or none that answered, leads nothing" "no|no" "$(answer_leads '')|$(answer_leads 'Started on the rooftop sensors')"
+eq "a question with no answer yet leads nothing" "no" "$(answer_leads "Keep a year of watering history, or ninety days?\\n1. A year. Recommended.
+2. Ninety days.")"
+eq "the newest comment answering the ask leads the round" "yes" "$(answer_leads "Keep a year of watering history, or ninety days?\\n1. A year. Recommended.
+maya answered on the dashboard: A year.\\nBuilder answer: #214 choice 1 by maya")"
+eq "one of many decisions, the last answered, still leads" "yes" "$(answer_leads "maya answered decision 3 on the dashboard: Yes.\\nBuilder answer: #230 choice 2 by maya ask 123 decision 3")"
+eq "a later comment with no answer of its own closes the lead" "no" "$(answer_leads "maya answered on the dashboard: A year.\\nBuilder answer: #214 choice 1 by maya
+An agent started on this now.")"
+eq "an answered ready issue is wired to lead the next round like an asked one, with no second press" "1 1 1 3" "$(grep -c '^answer_leads()' "$root/scripts/drive/left-lib.sh") $(grep -c 'ready_answer_led=$(answer_leads' "$root/scripts/drive/left-lib.sh") $(grep -c ')${answer_led}")' "$root/scripts/drive/plan.sh") $(grep -c 'answer_led_notes' "$root/scripts/drive/plan.sh")"
+
 section 'hooks in node: the same verdicts and words'
 # specs/027-hooks-in-node: every case is fed to the shell hook and to the Node program.
 . "$root/tests/hooks-node-lib.sh"

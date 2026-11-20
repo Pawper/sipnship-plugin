@@ -204,7 +204,7 @@ areas_text=""; [ -f .claude/areas.txt ] && areas_text=$(cat .claude/areas.txt)
 past=$(past_spec_files "$(gitb log -n 300 --name-only --format='@@ %s' main 2>/dev/null || gitb log -n 300 --name-only --format='@@ %s' 2>/dev/null)")
 asked=$(asked_issues "$drive_comments"); ASKED_ISSUES=$asked; export ASKED_ISSUES; asked_notes=""  # issues the builder asked for by name keep their place until done (asked-lib.sh, #1930)
 held_only=$(held_only_issues "$pull_links" | tr "
-" " "); guesses=""; running=""; left_reads=0; plan_left_until=$((SECONDS + ${PLAN_LEFT_SECONDS:-90}))
+" " "); guesses=""; running=""; left_reads=0; plan_left_until=$((SECONDS + ${PLAN_LEFT_SECONDS:-90})); answer_led=""; answer_led_notes=""
 # A ready issue that says it comes after another open one is held, naming what it waits on, read afresh each run.
 reasons=$(hold_reasons "$facts" "$held_only")
 # An open pull request that already closes a Ready issue means no agent is started on it again, held or batched (stale-lib.sh).
@@ -231,8 +231,12 @@ hold	$num	"*) continue ;; esac
       case "$left_say" in partly) reasons=$(printf '%s
 hold	%s	%s	Part of it landed; a reader confirms what is left before it takes an agent
 ' "$reasons" "$num" "$title" | sed '/^$/d'); continue ;; esac  # a partly landed issue is a hold until that read has happened (#1891)
-      case " $asked " in *" $num "*) asked_notes="${asked_notes}asked: ${num} $(asked_line "$left_say")
-" ;; esac
+      case " $asked " in
+        *" $num "*) asked_notes="${asked_notes}asked: ${num} $(asked_line "$left_say")
+" ;;
+        *) if [ "$ready_answer_led" = yes ]; then answer_led="${answer_led} $num"; answer_led_notes="${answer_led_notes}answered: ${num} You answered this one, so it is first in the next round.
+"; fi ;;
+      esac
       guesses="${guesses}${num}${tab}${title}${tab}${g}
 " ;;
     in-progress)
@@ -251,7 +255,7 @@ if [ -n "$guesses" ] || [ -n "$reasons" ]; then
     issue_titles=$(issue_titles_from_facts "$facts"); units=$(area_units "$areas_text" "$units" "$run_units" "$issue_titles"); units=$(held_area_holds "$areas_text" "$units" "$(published_held_areas "$(printf '%s\n' "$drive_comments" | cut -f3-)")" "$published" "$issue_titles"); units=$(unplaced_holds "$units" "$guesses" "$run_units" "$issue_titles")
   fi
   # Issues a builder rushed (RUSH_ISSUES, space separated, read from work-requests.sh): their bundle leads.
-  units=$(rush_first "$units" "${RUSH_ISSUES:-} $(printf '%s' "$asked_notes" | awk '$1 == "asked:" { printf "%s ", $2 }')")  # asked issues lead, as a rush does
+  units=$(rush_first "$units" "${RUSH_ISSUES:-} $(printf '%s' "$asked_notes" | awk '$1 == "asked:" { printf "%s ", $2 }')${answer_led}")  # asked issues and ones the owner just answered lead, as a rush does (#2079)
   [ -n "$reasons" ] && units=$(printf '%s\n%s\n' "$units" "$reasons" | sed '/^$/d')
   # The proposal is the next round: up to unitsPerRound units (within
   # maxAgents), planned against the running round's files. It starts only
@@ -293,6 +297,7 @@ model=$(setting "$settings" dispatchModel)
 if [ "$aside_after" -gt 0 ] 2>/dev/null; then aside_words="a pull request red $aside_after times is set aside"; else aside_words="a red pull request is never set aside"; fi
 round_model=$(setting "$settings" roundModel)
 [ -z "$asked_notes" ] || printf '%s' "$asked_notes"  # one line each: the kept request, in plain words (asked-lib.sh)
+[ -z "$answer_led_notes" ] || printf '%s' "$answer_led_notes"  # one line each: an issue the owner just answered, leading the round with no second press (left-lib.sh, #2079)
 echo "rounds: at most $units_per_round units a round, one round at a time; each unit's agent on ${model:-the model the agent-model hook allows}; the round itself on ${round_model:-the app's default model}; $aside_words"
 held_wait_note "${held_since:-}" "$(date +%s)"
 summary_note
