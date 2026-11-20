@@ -294,10 +294,16 @@ tab says it waits and on what instead of saying it starts on its own; `status: p
   `why:` says so, so the builder can overrule it with Start this next. An unchanged round is updated in
   place with the time of this look, so the tab shows when you last looked apart from when the round changed.
 - **A rush: `start-next N by LOGIN` or `start-now N by LOGIN` (N above 0).** Replan and bundle a rush on the tick it is read,
-  never on the next round. Put N in one unit with every ready or proposed issue it shares an area with, and bundle
+  never on the next round. Put N in one unit with every ready or proposed issue it shares an area with (an issue asked for by name only with other asked ones, see above), and bundle
   several rushed issues with each other first (`RUSH_ISSUES="N M" sh "${CLAUDE_PLUGIN_ROOT}/scripts/drive/plan.sh"`
   puts that unit first). Dispatch the unit this tick when no running unit or open pull request touches its area;
   otherwise it leads the next round. Publish the proposal again so the dashboard shows the bundle.
+- **An issue asked for by name keeps its place until it is done.** The plan reads every `Queue request: start-next #N`
+  on the drive issue, answered or not, because an answer only says it started once. An open Ready issue one names
+  leads the next round when it returns to Ready with work left, as its own unit or with other asked issues only,
+  never bundled with work nobody asked for, and the builder presses nothing again. The plan prints one
+  `asked: N WORDS` line for each, the plain words of its request (a part landed, what is left, still first); say
+  those words on the drive issue as the request's line. Never close or drop the request yourself; it ends when the issue closes.
 - **`start-now N by LOGIN`, N above 0.** The press was on that one issue: start that issue, at once, as its own
   unit when it shares no area with a running unit or an open pull request (bundled only with what it shares an
   area with), even when the proposal posted a moment ago did not include it. Never answer it with a new

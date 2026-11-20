@@ -75,6 +75,7 @@ area_units() {
   done)
   { printf '%s\n' "$3" | sed 's/^/R\t/'; printf '%s\n' "$4" | sed 's/^/T\t/'; printf '%s\n' "$au_lines" | sed 's/^/U\t/'; } | tr -d '\r' | awk -F'\t' '
     function find(i) { while (par[i] != i) i = par[i]; return i }
+    function asked(nums,   t) { split(nums, t, " "); return index(" " ENVIRON["ASKED_ISSUES"] " ", " " t[1] " ") > 0 }
     function meet(a, b,   x, y, i, j, nx, ny) {
       nx = split(a, x, ","); ny = split(b, y, ",")
       for (i = 1; i <= nx; i++) for (j = 1; j <= ny; j++) if (x[i] != "" && x[i] == y[j]) return x[i]
@@ -101,6 +102,7 @@ area_units() {
       }
       for (i = 1; i <= n; i++) if (held[i] == "") for (j = i + 1; j <= n; j++) if (held[j] == "") {
         s = meet(mar[i], mar[j])
+        if (s != "" && asked(num[i]) != asked(num[j])) s = ""  # an issue asked for by name is never bundled with work that was not (#1930)
         if (s != "") { a = find(i); b = find(j); if (a != b && sz[a] + sz[b] <= cap) { par[b] = a; sz[a] += sz[b]; if (sh[a] == "") sh[a] = s } }
       }
       for (i = 1; i <= n; i++) if (held[i] == "") {

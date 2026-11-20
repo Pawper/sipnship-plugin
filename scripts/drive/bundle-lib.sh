@@ -1,12 +1,10 @@
 #!/bin/sh
-# Pure helpers for planning a round by files (specs/010-work, "The drive
-# plans rounds by files"). Nothing here runs git or gh; every function takes
-# text and prints text, and tests/run.sh covers each from fixtures.
-#
+# Pure helpers for planning a round by files (specs/010-work, "The drive plans
+# rounds by files"). Nothing here runs git or gh: text in, text out.
 # A guess is one line, tab separated:   NUMBER  TITLE  FILE,FILE,...
 # A running unit is one line:           TITLE  FILE,FILE,...
-# A path is a file, or a folder written with a trailing slash; a folder
-# overlaps every path under it.
+# A path is a file, or a folder with a trailing slash that overlaps every path
+# under it. An asked-for issue is never bundled with work not asked for (#1930).
 
 # body_paths BODY
 # The paths a body names, one per line: anything with a slash that ends in
@@ -140,6 +138,7 @@ plan_units() {
       return ""
     }
     function find(i) { while (par[i] != i) i = par[i]; return i }
+    function asked(n) { return index(" " ENVIRON["ASKED_ISSUES"] " ", " " n " ") > 0 }
     # Plugin and CI work shares one test suite, so it always goes together:
     # any path under plugin/, scripts/ci/ or .github/ also carries "@tooling".
     function tooling(f) { return (("," f) ~ /,(plugin|scripts\/ci|\.github)\//) ? f ",@tooling" : f }
@@ -153,6 +152,7 @@ plan_units() {
       }
       for (i = 1; i <= n; i++) if (held[i] == "") for (j = i + 1; j <= n; j++) if (held[j] == "") {
         s = ov(files[i], files[j], 1)
+        if (s != "" && asked(num[i]) != asked(num[j])) s = ""
         if (s != "") {
           a = find(i); b = find(j)
           if (a != b && sz[a] + sz[b] <= cap) { par[b] = a; sz[a] += sz[b] } else s = ""

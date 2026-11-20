@@ -5667,6 +5667,25 @@ eq "a request asked again after its answer is owed again" "start-next 214 by may
 eq "one past its window has already been told it did not happen" "start-next 214 by maya
 start-next 231 by maya" "$(work_requests "$wq_c" 2026-11-04T08:00:00Z 2026-11-05T08:30:00Z)"
 eq "these never count as a reply to the proposal" "1" "$(grep -c 'request: (start-next|start-now|hold-agent|land-next|land-now|deploy-now)' "$root/scripts/drive/approval.sh")"
+# An issue asked for by name keeps its place until it is done (asked-lib.sh, #1930).
+. "$root/scripts/drive/asked-lib.sh"
+. "$root/scripts/drive/left-lib.sh"
+ak_c="2026-11-16T08:00:00Z${wq_t}sipnship[bot]${wq_t}Queue request: start-next #1890 by maya
+2026-11-16T08:05:00Z${wq_t}maya${wq_t}Queue answer: start-next #1890: started-next
+2026-11-16T08:06:00Z${wq_t}tom${wq_t}Queue request: start-next #1891 by maya
+2026-11-16T08:07:00Z${wq_t}maya${wq_t}Queue request: start-next #1812 by maya"
+eq "a request names its issue after its answer too, and only the form left by the App or the person it names" "1890 1812" "$(asked_issues "$ak_c")"
+ak_say=$(left_comments_say "Pull request #12 merged without closing this issue, so it is back to Ready.\nLeft: the bed map on phones | areas: web")
+eq "a part landed and the issue is Ready again: its line says what is left and that it is still first" "A part of this landed. Left: the bed map on phones. It is still first in the next round, so you do not need to ask again." "$(asked_line "$ak_say")"
+eq "an issue nothing landed on says only that it is first" "You asked for this one, so it is first in the next round." "$(asked_line '')"
+eq "the asked issues among the ready ones" "1890" "$(asked_ready "1890 1812" "7 1890 9")"
+ak_g=$(printf '7\tWater the beds\tsrc/beds/\n1890\tBed map on phones\tsrc/beds/list.ts\n')
+eq "without a request the two share a unit" "unit	7 1890	Water the beds | Bed map on phones	both change src/beds/list.ts	src/beds/,src/beds/list.ts" "$(plan_units "$ak_g" "")"
+eq "an asked issue is never placed in a bundle with work that was not" "unit	7	Water the beds		src/beds/
+unit	1890	Bed map on phones		src/beds/list.ts" "$(ASKED_ISSUES=1890 plan_units "$ak_g" "")"
+eq "two asked issues still bundle with each other" "unit	7 1890	Water the beds | Bed map on phones	both change src/beds/list.ts	src/beds/,src/beds/list.ts" "$(ASKED_ISSUES="7 1890" plan_units "$ak_g" "")"
+eq "the next plan puts the asked unit first" "unit	1890	Bed map on phones		src/beds/list.ts
+unit	7	Water the beds		src/beds/" "$(rush_first "$(ASKED_ISSUES=1890 plan_units "$ak_g" "")" "1890")"
 wq_n="2026-11-11T20:00:00Z${wq_t}sipnship[bot]${wq_t}Queue request: start-now #301 by maya
 2026-11-11T20:01:00Z${wq_t}sipnship[bot]${wq_t}Queue request: start-round #0 by maya
 2026-11-11T20:02:00Z${wq_t}sipnship[bot]${wq_t}Queue request: start-next #302 by maya"
