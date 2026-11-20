@@ -7123,6 +7123,31 @@ eq "a git that answers is returned as it is" "$(git rev-parse --git-dir)" "$(sh 
 # Every unattended script bounds its reads: no bare git of the kinds that can run long.
 gb_bare=$(cd "$root/.." && grep -nE '(^|[^a-z_])git +(-C +[^ ]+ +)?(fetch|ls-remote|merge-tree|rev-list|diff-tree|diff|show|log|merge-base|for-each-ref)( |$)' plugin/scripts/drive/*.sh plugin/scripts/sync/known-hashes.sh plugin/scripts/sync/sync-templates.sh plugin/templates/scripts/ci/merge-queue.sh plugin/templates/scripts/ci/queue/*.sh | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(#|say |printf |echo )|timeout .* git |gitb\(\)|git_bounded|^[^:]+:[0-9]+: +else ' | cut -c1-120)
 eq "no unattended script runs an unbound git of a kind that can run long" "" "$gb_bare"
+section 'an issue never waits behind one whose pull request is held for the owner (drive)'
+. "$root/scripts/drive/bundle-lib.sh"
+. "$root/scripts/drive/areas-lib.sh"
+. "$root/scripts/drive/area-plan-lib.sh"
+. "$root/scripts/drive/held-running-lib.sh"
+hr_t=$(printf '\t')
+# Maya's rooftop-garden app: the irrigation redesign is in progress, its only pull request a spec draft held for the owner's read.
+hr_pulls=$(printf '201\tyes\t\t31\n202\tno\t32\n')
+eq "an issue only a held pull request names is held-only" "31" "$(held_only_issues "$hr_pulls")"
+eq "an issue a pull request not held closes is not held-only, even when a held one names it" "" "$(held_only_issues "$(printf '201\tyes\t\t32\n202\tno\t32\n')")"
+eq "a held pull request that closes an issue makes it held-only" "31" "$(held_only_issues "$(printf '201\tyes\t31\n')")"
+eq "no pull requests, none held-only" "" "$(held_only_issues '')"
+eq "the held pull requests are named by number" "201" "$(held_pull_numbers "$hr_pulls")"
+eq "without_issues drops the named numbers" "32" "$(without_issues "$(printf '31\n32\n')" "31")"
+hr_guess=$(printf '41\tWater the roof beds on a timer\tsrc/water/timer.ts\n')
+hr_run=$(printf 'Redesign the irrigation plan\tsrc/water/timer.ts\n')
+hr_list=$(printf 'water\tsrc/water/\n')
+hr_titles=$(printf '31\tRedesign the irrigation plan\n')
+hr_unit=$(printf 'unit\t41\tWater the roof beds on a timer\t\tsrc/water/timer.ts\n')
+eq "an issue overlapping a live unit's files waits behind it" "hold${hr_t}41${hr_t}Water the roof beds on a timer${hr_t}After: Redesign the irrigation plan" "$(plan_units "$hr_guess" "$hr_run")"
+eq "the same issue with the held-read unit left out of what is running starts" "unit${hr_t}41${hr_t}Water the roof beds on a timer${hr_t}${hr_t}src/water/timer.ts" "$(plan_units "$hr_guess" "")"
+eq "an issue in the area of a live unit waits behind it" "hold${hr_t}41${hr_t}Water the roof beds on a timer${hr_t}After: Redesign the irrigation plan" "$(area_units "$hr_list" "$hr_unit" "$(printf '31\twater\n')" "$hr_titles")"
+eq "an issue in the area of a unit that is not running starts" "$hr_unit" "$(area_units "$hr_list" "$hr_unit" "" "$hr_titles")"
+eq "plan.sh leaves a held-only issue and a held pull request out of what is running" "3" "$(grep -c 'held_only\|held_pull_numbers' "$root/scripts/drive/plan.sh")"
+block_end
 # --- end of blocks: the summary, kept in every part.
 eq "no test wrote into the checkout's own queue state" "$queue_picture_before" "$([ "$queue_picture_before" = skipped ] && echo skipped || queue_picture)"
 eq "no process started by this suite is still running" "" "$(spawned_alive)"

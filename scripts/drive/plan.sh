@@ -53,7 +53,7 @@ fi
 . "$here/ask-gate-lib.sh"
 . "$here/../../templates/scripts/ci/ask-lib.sh"  # held_ask for the stale issues' asks, from the plugin's own copy
 . "$here/plan-holds-lib.sh"
-. "$here/stale-lib.sh"
+. "$here/stale-lib.sh"; . "$here/held-running-lib.sh"
 . "$here/release-lib.sh"
 . "$here/deploy-goal-lib.sh"
 . "$here/rank-lib.sh"
@@ -203,7 +203,8 @@ mocks_text=""; [ -f scripts/ci/mocks.txt ] && mocks_text=$(cat scripts/ci/mocks.
 areas_text=""; [ -f .claude/areas.txt ] && areas_text=$(cat .claude/areas.txt)
 past=$(past_spec_files "$(gitb log -n 300 --name-only --format='@@ %s' main 2>/dev/null || gitb log -n 300 --name-only --format='@@ %s' 2>/dev/null)")
 asked=$(asked_issues "$drive_comments"); ASKED_ISSUES=$asked; export ASKED_ISSUES; asked_notes=""  # issues the builder asked for by name keep their place until done (asked-lib.sh, #1930)
-guesses=""; running=""; left_reads=0; plan_left_until=$((SECONDS + ${PLAN_LEFT_SECONDS:-90}))
+held_only=$(held_only_issues "$pull_links" | tr "
+" " "); guesses=""; running=""; left_reads=0; plan_left_until=$((SECONDS + ${PLAN_LEFT_SECONDS:-90}))
 # A ready issue that says it comes after another open one is held, naming what it waits on, read afresh each run.
 reasons=$(hold_reasons "$facts")
 # An open pull request that already closes a Ready issue means no agent is started on it again, held or batched (stale-lib.sh).
@@ -235,7 +236,7 @@ hold	%s	%s	Part of it landed; a reader confirms what is left before it takes an 
       guesses="${guesses}${num}${tab}${title}${tab}${g}
 " ;;
     in-progress)
-      g=$(guess_files "$title $c" "$mocks_text" "$past")
+      g=$(guess_files "$title $c" "$mocks_text" "$past") ; case " $held_only " in *" $num "*) g="" ;; esac  # its only pull request is held for the owner: no agent is at work, so no unit waits behind it (#2055)
       [ -n "$g" ] && running="${running}${title}${tab}${g}
 " ;;
   esac
@@ -246,8 +247,7 @@ if [ -n "$guesses" ] || [ -n "$reasons" ]; then
   units=$(plan_units "$guesses" "$running")
   # The running round's areas, read as publish-round.sh reads them: an issue in an area a running unit owns is a hold behind it, and units sharing an area are one unit, so the proposal publishes as it stands.
   if [ -n "$areas_text" ]; then
-    run_units=$(running_units "$(printf '%s\n' "$drive_comments" | cut -f3-)" "$(printf '%s\n' "$snapshot" | awk -F'\t' '$1 == "issue" && $4 == "in-progress" { print $2 }')" "$(printf '%s\n' "$pr_list" | cut -d"$us" -f1)")
-    issue_titles=$(printf '%s\n' "$facts" | awk -F'\t' '$1 == "issue" { print $2 "\t" $3 }')
+    run_units=$(running_units "$(printf '%s\n' "$drive_comments" | cut -f3-)" "$(without_issues "$(printf '%s\n' "$snapshot" | awk -F'\t' '$1 == "issue" && $4 == "in-progress" { print $2 }')" "$held_only")" "$(without_issues "$(printf '%s\n' "$pr_list" | cut -d"$us" -f1)" "$(held_pull_numbers "$pull_links")")")  # a unit whose pull request is held for the owner is not running (#2055); issue_titles=$(printf '%s\n' "$facts" | awk -F'\t' '$1 == "issue" { print $2 "\t" $3 }')
     units=$(area_units "$areas_text" "$units" "$run_units" "$issue_titles"); units=$(held_area_holds "$areas_text" "$units" "$(published_held_areas "$(printf '%s\n' "$drive_comments" | cut -f3-)")" "$published" "$issue_titles"); units=$(unplaced_holds "$units" "$guesses" "$run_units" "$issue_titles")
   fi
   # Issues a builder rushed (RUSH_ISSUES, space separated, read from work-requests.sh): their bundle leads.

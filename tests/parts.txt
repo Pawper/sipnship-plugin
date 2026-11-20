@@ -130,3 +130,4 @@ shell-3 the drive puts priority work first and keeps a hopeless ask-fix quiet (d
 shell-3 the plan reads what is left of a partly landed issue (drive)
 shell-2 hooks in node: the same verdicts and words
 queue a stalled queue finds its own way back
+shell-3 an issue never waits behind one whose pull request is held for the owner (drive)
