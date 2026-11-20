@@ -5800,6 +5800,7 @@ cat > "$wh_dir/bin/gh" <<'WHEOF'
 #!/bin/sh
 case "$*" in
   *"-X POST"*"/labels"*) echo "$*" >> "$WH_LOG" ;;
+  *"== null)) | .number"*) echo 805 ;;
   *"/pulls?"*) printf '801\tfree\tCloses #301 for the owner to read\n802\theld\tCloses #301\n803\tfree\tCloses #399\n' ;;
   *"/issues?"*) echo 301 ;;
 esac
@@ -5807,7 +5808,12 @@ WHEOF
 chmod +x "$wh_dir/bin/gh"; : > "$wh_dir/log"
 eq "setting an issue to waiting on the owner puts the hold on its open pull request that has none" "1 1" "$(WH_LOG="$wh_dir/log" PATH="$wh_dir/bin:$PATH" sh -c '. "$1"; open_pr_pairs() { printf "801\tfree\tCloses #301\n802\theld\tCloses #301\n803\tfree\tCloses #399\n"; }; hold_prs_for_issue 301' sh "$root/templates/scripts/ci/waiting-hold-lib.sh" | grep -c '^Pull request #801 ') $(grep -c 'issues/801/labels.*queue:hold' "$wh_dir/log")"
 eq "state.sh calls it when the state is waiting on the owner" "1" "$(grep -c 'hold_prs_for_issue "$issue"' "$root/templates/scripts/state.sh")"
-eq "the audit names a pull request with no hold whose issue waits, and nothing for a held one" "#801: closes #301, which waits on you, and has no queue:hold." "$(PATH="$wh_dir/bin:$PATH" sh "$root/templates/scripts/ci/waiting-hold-audit.sh")"
+eq "the audit names a pull request with no hold whose issue waits, and nothing for a held one" "#801: closes #301, which waits on you, and has no queue:hold." "$(PATH="$wh_dir/bin:$PATH" sh "$root/templates/scripts/ci/waiting-hold-audit.sh" | grep -v '^#805')"
+eq "the audit names a pull request whose body says Queue: hold and has no label" "#805: its body says Queue: hold, and it has no queue:hold label." "$(PATH="$wh_dir/bin:$PATH" sh "$root/templates/scripts/ci/waiting-hold-audit.sh" | grep '^#805')"
+. "$root/templates/scripts/pr-lib.sh"
+eq "a body with a Queue: hold line reads as held, in any case and indent" "yes yes" "$(pr_body_held "$(printf 'Closes #9\nQueue: hold, for your read')") $(pr_body_held "$(printf 'x\n  queue:HOLD')")"
+eq "a body that only mentions a hold is not held" "no" "$(pr_body_held "$(printf 'It is not Queue: hold today.')")"
+eq "pr-open.sh puts queue:hold on a pull request whose body says so" "1" "$(grep -c 'pr_body_held' "$root/templates/scripts/pr-open.sh")"
 # The holds the drive published stay out of the next plan's slots (held-round-lib.sh).
 . "$root/scripts/drive/held-round-lib.sh"
 hr_t=$(printf '\t')

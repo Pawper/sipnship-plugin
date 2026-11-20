@@ -29,4 +29,14 @@ out=$(gh api -X POST "repos/{owner}/{repo}/pulls" -f base="$base" -f head="$head
     *) printf '%s\n' "$out" >&2; exit 1 ;;
   esac
 }
-echo "Opened pull request #${out%%	*}: ${out#*	}"
+pr_num=${out%%	*}
+# A body that says "Queue: hold" is held the moment it opens, label or no: the label is added here, so the line
+# and the label never disagree and the queue cannot land it unread.
+if [ "$(pr_body_held "$(cat "$body_file")")" = yes ]; then
+  if gh api -X POST "repos/{owner}/{repo}/issues/$pr_num/labels" -f 'labels[]=queue:hold' >/dev/null 2>&1; then
+    echo "Its body says Queue: hold, so queue:hold is on it and the queue will not land it unread."
+  else
+    echo "Its body says Queue: hold but queue:hold could not be set; set it by hand." >&2
+  fi
+fi
+echo "Opened pull request #$pr_num: ${out#*	}"

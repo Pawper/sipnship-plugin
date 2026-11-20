@@ -32,6 +32,12 @@ open_pr_pairs() {
   gh api "repos/{owner}/{repo}/pulls?state=open&per_page=100" --paginate --jq '.[] | [.number, ((([.labels[].name | ascii_downcase] | (index("queue:hold") // index("hold"))) != null) or ((.body // "") | test("(^|\n)[ \t]*Queue:[ \t]*hold"; "i")) | if . then "held" else "free" end), ((.body // "") | gsub("[\r\n]+"; " "))] | @tsv' 2>/dev/null | tr -d '\r'
 }
 
+# open_pr_body_only_holds: the open pull requests whose body says "Queue: hold" but which carry no hold label,
+# one number per line. The queue holds them anyway; the audit names them so the label is put right.
+open_pr_body_only_holds() {
+  gh api "repos/{owner}/{repo}/pulls?state=open&per_page=100" --paginate --jq '.[] | select(((.body // "") | test("(^|\n)[ \t]*Queue:[ \t]*hold"; "i")) and (([.labels[].name | ascii_downcase] | (index("queue:hold") // index("hold"))) == null)) | .number' 2>/dev/null | tr -d '\r'
+}
+
 # hold_prs_for_issue ISSUE
 # Puts queue:hold on every open pull request that closes ISSUE and has no hold yet, and says each in one
 # line. state.sh calls it in the same step that sets the issue to waiting on the owner.

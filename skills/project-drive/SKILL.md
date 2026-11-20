@@ -70,7 +70,7 @@ The drive works the ready list in rounds, so many issues land in little time wit
   An issue that an open pull request already closes (a `Closes #N` line, in a member of the running batch or in
   a held one) is never proposed as `dispatch`: the plan prints a `hold` line naming the pull request instead.
 - **Every open pull request keeps moving**, except one held for the builder to read (`queue:hold`, or a
-  `Queue: hold` line). Send no fixer and no merge-main to a held one, red or conflicting: its rule checks show
+  `Queue: hold` line; a unit's brief says a change for the owner's read opens with that line in its body, and `pr-open.sh` adds the label from it). Send no fixer and no merge-main to a held one, red or conflicting: its rule checks show
   on its card for the builder, and it runs no test parts until they let it land (`full_run_decide`). The plan
   reads each open pull request
   over REST and its `mergeable_state`: one that conflicts with main and is not held by the queue is a

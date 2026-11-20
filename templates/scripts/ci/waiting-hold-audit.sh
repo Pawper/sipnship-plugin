@@ -1,10 +1,14 @@
 #!/bin/sh
-# For the nightly audit: every open pull request whose issue waits on the owner and carries no hold,
-# one line each, "#PR: closes #N, which waits on you, and has no queue:hold." Such a change is waiting
-# for the owner's read; with no hold the queue could merge it unread. REST only; prints nothing when
-# all is well or GitHub cannot be asked. Needs gh signed in for the repository.
+# For the nightly audit: every open pull request that should be held and carries no hold label, one line each.
+#  - its issue waits on the owner: "#PR: closes #N, which waits on you, and has no queue:hold."
+#  - its body says "Queue: hold": "#PR: its body says Queue: hold, and it has no queue:hold label."
+# Such a change is waiting for the owner's read; the queue reads the line, but the label keeps every other
+# reader honest. REST only; prints nothing when all is well or GitHub cannot be asked. Needs gh signed in.
 here=$(dirname "$0")
 . "$here/waiting-hold-lib.sh"
+for ah_pr in $(open_pr_body_only_holds); do
+  printf '#%s: its body says Queue: hold, and it has no queue:hold label.\n' "$ah_pr"
+done
 waiting=$(waiting_issue_numbers)
 [ -n "$waiting" ] || exit 0
 free=$(open_pr_pairs | awk -F'\t' '$2 == "free" { print $1 "\t" $3 }')

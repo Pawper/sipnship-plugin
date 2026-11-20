@@ -728,7 +728,9 @@ scripts/ci/vercel-ignore.sh 4332c3b3327451b58885d6c769c7d889ab317f22
 scripts/ci/vercel-ignore.sh cefad70378df8684ce0d399154370d6ca615c2c9
 scripts/ci/vercel-ignore.sh cffaae6c27984d90db3c9504214ef29503a8dd49
 scripts/ci/wait-for.sh ef2496d9746c30aa11226714d9448416598e66e3
+scripts/ci/waiting-hold-audit.sh 81b6bfba1f969c7603dee69f03fc337bd005f251
 scripts/ci/waiting-hold-audit.sh 9fe403c645ef1cf8d79b9b4a29ae0e90b825e0a4
+scripts/ci/waiting-hold-lib.sh 9867c168caa92405655154f9b8f4ef987e816dde
 scripts/ci/waiting-hold-lib.sh d29cc40ba8619bdcf32cc6978dbc8d4800f533e2
 scripts/ci/watchdog.mjs 66b3112c526c6c212b01c9e3fcba95ce725eeb68
 scripts/ci/watchdog.mjs e46cba342cad7d0b3bddaafc2603b0b67777cdf8
@@ -778,9 +780,11 @@ scripts/next-number.sh 5e9fdef5b7f1842f267f536ccabb661fb04e4380
 scripts/pr-checks.sh 13e9843fa33f80d250faf4b6fdeb4083730e358e
 scripts/pr-checks.sh 481718adf8508ff45014a34c7cdafa9da96d662b
 scripts/pr-checks.sh 6cbf720a5ae97ea72317b15d945dcd105cd6d32a
+scripts/pr-lib.sh 395cbd16f83941d9e1d82e1c8b579abffffd11bd
 scripts/pr-lib.sh ce954175d5752c901d13da4634d087735c1967cc
 scripts/pr-lib.sh fba9800f546d10f54caf45adf1645f7f636d13cd
 scripts/pr-open.sh 372ca20ab21a6abfaba666d5f7f0a3d462490b46
+scripts/pr-open.sh 76c8a508069abedbc2e933ae4967015a92204b2d
 scripts/pr-open.sh 8f647415b4a7c73c371acfa7986b1ae15a026654
 scripts/protect-main.sh df091fbb0c5b4d9ff6346cd62e759acd8caf7dda
 scripts/rules.sh 4ef5c8d9888c692cdd7c711d8d8df0f01cf9fa76

@@ -44,3 +44,10 @@ pr_red_say() {
     printf '%s: %s failed\n' "$1" "${2:-a step}"
   fi
 }
+
+# pr_body_held BODY
+# "yes" when BODY carries a "Queue: hold" line (the queue and the drive read it as they read the queue:hold
+# label), else "no".
+pr_body_held() {
+  if printf '%s\n' "$1" | tr -d '\r' | grep -qiE '^[[:space:]]*Queue:[[:space:]]*hold'; then echo yes; else echo no; fi
+}
