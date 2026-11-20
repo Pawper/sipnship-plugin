@@ -7139,7 +7139,7 @@ eq "an issue only a held pull request names is held-only" "31" "$(held_only_issu
 eq "an issue a pull request not held closes is not held-only, even when a held one names it" "" "$(held_only_issues "$(printf '201\tyes\t\t32\n202\tno\t32\n')")"
 eq "a held pull request that closes an issue makes it held-only" "31" "$(held_only_issues "$(printf '201\tyes\t31\n')")"
 eq "no pull requests, none held-only" "" "$(held_only_issues '')"
-eq "the held pull requests are named by number" "201" "$("4" "$(grep -c 'held_only|held_pull_numbers'"$hr_pulls")"
+eq "the held pull requests are named by number" "201" "$(held_pull_numbers "$hr_pulls")"
 eq "without_issues drops the named numbers" "32" "$(without_issues "$(printf '31\n32\n')" "31")"
 hr_guess=$(printf '41\tWater the roof beds on a timer\tsrc/water/timer.ts\n')
 hr_run=$(printf 'Redesign the irrigation plan\tsrc/water/timer.ts\n')
