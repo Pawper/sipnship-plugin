@@ -225,8 +225,16 @@ jobs:
             [ -z "$idle" ] || idle=$(printf 'Issues In progress with nothing working on them:\n%s' "$idle")
           fi
 
+          # The drive's plan publishes its proposed round every time it looks: one over an hour
+          # old while ready work waits is a missed publish, said here.
+          looks=""
+          if [ -f scripts/ci/proposal-audit.sh ]; then
+            looks=$(sh scripts/ci/proposal-audit.sh | sed 's/^/- /')
+          fi
+
           body=$(audit_comment "$missing" "$stale" "$red" "$branches")
           if [ -n "$idle" ]; then body=$(printf '%s\n\n%s' "$body" "$idle" | sed '/./,$!d'); fi
+          if [ -n "$looks" ]; then body=$(printf '%s\n\n%s' "$body" "$looks" | sed '/./,$!d'); fi
           if [ -n "$asks" ]; then body=$(printf '%s\n\n%s' "$body" "$asks" | sed '/./,$!d'); fi
           if [ -n "$jobs" ]; then body=$(printf "%s\n\n%s" "$body" "$jobs" | sed "/./,\$!d"); fi
           if [ -n "$runner" ]; then body=$(printf '%s\n\n%s' "$body" "$runner" | sed '/./,$!d'); fi

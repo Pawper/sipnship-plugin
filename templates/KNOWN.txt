@@ -23,6 +23,7 @@
 .github/workflows/audit.yml 746f464f2c7561513ca2144443def9aa357f9698
 .github/workflows/audit.yml 74dacf7dea2391f9d19ccefe2d7423758ef69118
 .github/workflows/audit.yml 7de9ab5ef77e11b2e4e5c441106b9c533b2c06a1
+.github/workflows/audit.yml 8931d3d82cb2a68ab168c0f46cd73d9c37f6cfe0
 .github/workflows/audit.yml af8863db29783e2063eadf2047acaddefd6f7cc2
 .github/workflows/audit.yml bc41e3e0359fbe2d12f66dc1fc7a74d6b2f963fb
 .github/workflows/audit.yml c26459eb0fee6285d36b53edcec77a88e2dad0aa
@@ -495,6 +496,7 @@ scripts/ci/pool-lib.sh 55d012ee70015e2ea6343ad6640bb5b8a201d9a7
 scripts/ci/pool-lib.sh 7e9aad475ffb3e64ff6fbbddf1cb563c27e49e01
 scripts/ci/pool-lib.sh a129024c2469d640ec1278aed12eb144f09e9835
 scripts/ci/pr-text.sh e44b567664decd505f35309620561875fae6b27a
+scripts/ci/proposal-audit.sh 2416e3e979f6b8dad3ed27507353cc6af68e6fbe
 scripts/ci/publish-lib.sh 0188733f153b1328b00168a108ae9c1707a27db2
 scripts/ci/publish-lib.sh 124a6fc4fa2041fc18cc9abf6e90ffb27ffa9707
 scripts/ci/publish-lib.sh 14b5b7f83db73f7f444fe7de9d21cb5c5241fbeb

@@ -90,19 +90,20 @@ state=$(printf '%s\n' "$comments" | awk -F'\t' -v me="$me" '
   # A numbered proposal and the round published after it in the same tick:
   # the round names the dispatches, the proposal keeps every other goal
   # (drain, merge, fix, audit, release), renumbered.
-  function merge_round(prop, gl,   n, a, i, line, s, out, c, m, g) {
-    n = split(prop, a, "\n"); out = ""; c = 0
+  # A dispatch the proposal wrote for the same issues keeps its own words (a "First:" field), so a fix for main still leads.
+  function merge_round(prop, gl,   n, a, i, line, s, out, c, m, g, k, was) {
+    n = split(prop, a, "\n"); out = ""; c = 0; delete was
     for (i = 1; i <= n; i++) {
       line = a[i]; s = line
       if (line ~ /^[0-9]+\. /) {
         sub(/^[0-9]+\. /, "", s)
-        if (s ~ /^dispatch /) continue
+        if (s ~ /^dispatch /) { if (match(s, /^dispatch [0-9]+( [0-9]+)*/)) was[substr(s, 1, RLENGTH)] = s; continue }
         line = (++c) ". " s
       }
       out = out (out == "" ? "" : "\n") line
     }
     m = split(gl, g, "\n")
-    for (i = 1; i <= m; i++) if (g[i] != "") out = out "\n" (++c) ". " g[i]
+    for (i = 1; i <= m; i++) if (g[i] != "") out = out (out == "" ? "" : "\n") (++c) ". " ((g[i] in was) ? was[g[i]] : g[i])
     return out
   }
   function shares(a, b,   n, x, i) { n = split(a, x, " "); for (i = 1; i <= n; i++) if (index(b, " " x[i] " ")) return 1; return 0 }
@@ -116,8 +117,11 @@ state=$(printf '%s\n' "$comments" | awk -F'\t' -v me="$me" '
         # The same round published as started again (a pull request number filled in) is a refresh, not a newer start: it spends no later proposal.
         refresh = (named in seenstart); seenstart[named] = 1
         if (!refresh && proposal != "" && shares(named, pissues)) { proposal = ""; pissues = " "; reply = ""; by = "" }
+        if (!refresh && mk && shares(named, mknamed)) { mk = 0; mkgoals = ""; mknamed = " " }
         next
       }
+      # The latest proposed round on the Work tab: whatever is approved, its units are the dispatches, no other (#2101).
+      mk = 1; mkgoals = goals; mknamed = named
       if (goals != "" && proposal != "" && !frommarker && !within(named, pissues)) {
         proposal = merge_round(proposal, goals); pissues = named; at = $1; reply = ""; by = ""
         next
@@ -139,6 +143,8 @@ state=$(printf '%s\n' "$comments" | awk -F'\t' -v me="$me" '
   }
   END {
     if (proposal == "") { print "noproposal"; exit }
+    # Only when the numbered proposal names other dispatches than the tab shows, so the numbers of a reply keep their meaning otherwise.
+    if (mk) { pd = dispatched(proposal); if (!(within(pd, mknamed) && within(mknamed, pd)) && !(pd == " " && mknamed == " ")) proposal = merge_round(proposal, mkgoals) }
     if (reply == "") print "noreply"
     else print "reply\t" by "\t" reply
     print proposal

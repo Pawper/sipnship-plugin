@@ -5500,7 +5500,7 @@ eq "the sized line carries the plan's words" "sized: 5 runners online, 4 free fo
 eq "no words, no sized line" "" "$(sized_line '')"
 eq "an ask with one recommended choice may be marked without approval" "yes no no no" "$(mark_waiting_ok one) $(mark_waiting_ok none) $(mark_waiting_ok question) $(mark_waiting_ok many)"
 eq "an Instructions ask may be marked without approval, an action-and-deferral one may not" "yes no" "$(mark_waiting_ok instructions) $(mark_waiting_ok actiondefer)"
-eq "the plan prints its own sized line" "1" "$(grep -c '^echo "sized: $(sized_words' "$root/scripts/drive/plan.sh")"
+eq "the plan prints its own sized line" "1" "$(grep -c '^sized_said=$(sized_words .*; echo "sized: $sized_said"' "$root/scripts/drive/plan.sh")"
 eq "the skill says mark-waiting runs without approval, in the shape" "1 1" "$(grep -c 'Like .ask-owner., it runs without approval' "$root/skills/project-drive/SKILL.md") $(grep -c 'scripts/ci/ask-lib.sh. is' "$root/skills/project-drive/SKILL.md")"
 # The plan holds mark-waiting to the ask rule before it proposes it.
 . "$root/scripts/drive/ask-gate-lib.sh"
@@ -7281,6 +7281,134 @@ rb_gh_dir=$(mktemp -d)
 eq "recording a read appends one line, and a bad word is refused" "1" "$(cd "$rb_gh_dir" && sh "$root/scripts/drive/left-read.sh" 1469 read >/dev/null && sh "$root/scripts/drive/left-read.sh" 1469 maybe >/dev/null 2>&1; grep -c . .scratch/drive/left-read.tsv)"
 eq "plan.sh reads the record and adds the reader goals" "1 1" "$(grep -c 'left_read_state "\$num"' "$root/scripts/drive/plan.sh") $(grep -c 'add_left_readers "\$round"' "$root/scripts/drive/plan.sh")"
 eq "the skill describes the read-left goal" "1" "$(grep -c 'read-left N' "$root/skills/project-drive/SKILL.md")"
+block_end
+
+section 'the plan publishes its own proposal, and what starts is what it proposed (drive)'
+. "$root/scripts/drive/round-sizing-lib.sh"
+. "$root/scripts/drive/areas-lib.sh"
+. "$root/scripts/drive/asked-lib.sh"
+. "$root/scripts/drive/wake-lib.sh"
+. "$root/scripts/drive/bundle-lib.sh"
+. "$root/scripts/drive/propose-lib.sh"
+pp_t=$(printf '\t')
+# The plan's lines for Maya's rooftop-garden app: a bundle, a loose issue, a drain, a held issue, a held pull request's own line, a hold behind running work, and one unit the limit left out.
+pp_round=$(printf '1. dispatch 212 214\tFrost alerts | Frost night reminder\tWhy together: both change the frost alerts area\n2. dispatch 217\tCompost bins show when they were last turned\n3. drain 41 42\nhold 233\tCompost reminders repeat until done\tWaits on your read of the bed photos (after: 240)\nhold 41\tSeed list\tIts pull request is held for your read; nothing is sent to it\nhold 236\tWatering log\tAfter: Water the beds\nhold 239\tBed labels\tHeld in the last proposed round: Waits on the label printer; it takes no slot until that changes\ndefer 1 unit(s): the limit of 2 agents a round is reached (#238)\nstop: proposal ready for approval\n')
+pp_units=$(printf 'unit\t212 214\tFrost alerts | Frost night reminder\tboth change the frost alerts area\tsrc/frost/alerts.ts,src/frost/night.ts\nunit\t217\tCompost bins\t\tsrc/compost/bins.ts\nunit\t238\tSeed catalog\t\tdocs/readme.md\n')
+pp_areas=$(printf 'frost src/frost/\ncompost src/compost/\n')
+pp_issues=$(printf '212\n214\n217\n233\n236\n238\n239\n240\n')
+pp_file=$(round_file "$pp_round" "$pp_units" "$pp_areas" "$pp_issues" "4 ready units free of conflict, 2 started; the limit of 2 agents a round held 1")
+eq "the round file names the plan's units, bundle first, each held issue with its reason, and how it was sized" "status: proposed
+unit: 212 214 | why: both change the frost alerts area | areas: frost
+unit: 217 | areas: compost
+hold: 233 | why: Waits on your read of the bed photos | after: 240 | areas: none
+hold: 236 | why: Waits for “Water the beds” to land first, since it changes the same files | areas: none
+hold: 239 | why: Waits on the label printer | areas: none
+sized: 4 ready units free of conflict, 2 started; the limit of 2 agents a round held 1
+hold: 238 | why: The limit of 2 agents a round is reached; it starts in the next round | areas: none" "$pp_file"
+eq "a pull request's own hold line is never read as an issue's" "0" "$(printf '%s\n' "$pp_file" | grep -c '^hold: 41 ')"
+eq "the plan's units and the round file's units are the same" "$(printf '%s\n' "$pp_round" | sed -n 's/^[0-9]*\. dispatch \([0-9 ]*\)\t.*/\1/p')" "$(printf '%s\n' "$pp_file" | sed -n 's/^unit: \([0-9 ]*\) |.*/\1/p')"
+eq "with no areas list a unit's own files stand for its areas, and a unit with none says none" "unit: 5 | areas: src/a.ts, src/b.ts
+unit: 6 | areas: none" "$(round_file "$(printf 'dispatch 5\tA\ndispatch 6\tB\n')" "$(printf 'unit\t5\tA\t\tsrc/a.ts,src/b.ts\nunit\t6\tB\t\t\n')" "" "$(printf '5\n6\n')" "" | grep '^unit')"
+eq "an issue is named once, in its unit before any hold" "unit: 7 | areas: none" "$(round_file "$(printf 'dispatch 7\tA\nhold 7\tA\tAfter: B\n')" "" "" 7 "" | grep -v '^status')"
+eq "round_areas reads none as no area of the list" "unit: 7 | areas:" "$(round_areas "$pp_areas" 'unit: 7 | areas: none')"
+pp_dir=$(mktemp -d); mkdir -p "$pp_dir/bin" "$pp_dir/work/.claude"
+printf '%s\n' "$pp_areas" > "$pp_dir/work/.claude/areas.txt"
+cat > "$pp_dir/bin/gh" <<'FAKE'
+#!/bin/sh
+printf '%s\n' "$*" >> "$PP_DIR/log"
+case "$*" in
+  *labels=drive*) printf '99\t1\n' ;;
+  *-X\ POST*comments*) for a in "$@"; do case "$a" in body=@*) cp "${a#body=@}" "$PP_DIR/comment" ;; esac; done ;;
+  *-X\ PATCH*) for a in "$@"; do case "$a" in body=@*) cp "${a#body=@}" "$PP_DIR/comment" ;; esac; done ;;
+  *comments\?*) [ -f "$PP_DIR/comments" ] && cat "$PP_DIR/comments" ;;
+esac
+exit 0
+FAKE
+chmod +x "$pp_dir/bin/gh"
+pp_pub() { (cd "$pp_dir/work" && here="$root/scripts/drive" PP_DIR="$pp_dir" PATH="$pp_dir/bin:$PATH" publish_proposal "$@"); }
+eq "a dry run writes the round file and says it published nothing" "not published: this run was told not to publish (a dry run); the round is in .scratch/drive/round.txt|$pp_file" "$(PLAN_PUBLISH=no pp_pub "$pp_round" "$pp_units" "$pp_areas" "$(printf 'issue\t212\nissue\t214\nissue\t217\nissue\t233\nissue\t236\nissue\t238\nissue\t239\n')" "4 ready units free of conflict, 2 started; the limit of 2 agents a round held 1")|$(cat "$pp_dir/work/.scratch/drive/round.txt")"
+pp_facts=$(printf 'issue\t212\nissue\t214\nissue\t217\nissue\t233\nissue\t236\nissue\t238\nissue\t239\n')
+eq "the plan publishes the round itself and says so in one line" "published: Published the round on #99: 2 agents, proposed." "$(pp_pub "$pp_round" "$pp_units" "$pp_areas" "$pp_facts" "4 ready units free of conflict, 2 started; the limit of 2 agents a round held 1")"
+eq "the published marker carries the same units, the holds with their reasons, and when it looked" "1 1 1" "$(grep -c '"units":\[{"issues":\[212,214\],"whyTogether":"both change the frost alerts area","areas":\["frost"\]},{"issues":\[217\],"areas":\["compost"\]}\],"looked":"' "$pp_dir/comment") $(grep -c '"why":"Waits on your read of the bed photos"' "$pp_dir/comment") $(grep -c '"sized":"4 ready units' "$pp_dir/comment")"
+# The next look finds nothing new: the same comment is edited with the new time, never a second comment.
+printf '7001\t%s\n' "$(tr '\n' ' ' < "$pp_dir/comment")" > "$pp_dir/comments"
+: > "$pp_dir/log"
+eq "a look with nothing new still updates when it looked, in place" "published: Updated the round on #99: the same round, looked at again.|1|0" "$(pp_pub "$pp_round" "$pp_units" "$pp_areas" "$pp_facts" "4 ready units free of conflict, 2 started; the limit of 2 agents a round held 1")|$(grep -c 'PATCH repos/{owner}/{repo}/issues/comments/7001' "$pp_dir/log")|$(grep -c 'POST' "$pp_dir/log")"
+: > "$pp_dir/comments"
+eq "a look that finds no ready work at all still publishes that it looked" "published: Published the round on #99: 0 agents, proposed.|Proposed next round: nothing to start; your drive looked and found no ready work.|1" "$(pp_pub "$(printf 'stop: nothing to propose\n')" "" "$pp_areas" "" "")|$(sed -n 1p "$pp_dir/comment")|$(grep -c '"units":\[\],"looked":"' "$pp_dir/comment")"
+mkdir -p "$pp_dir/nobin"; printf '#!/bin/sh\nexit 0\n' > "$pp_dir/nobin/gh"; chmod +x "$pp_dir/nobin/gh"
+eq "a publish that cannot go through is said, never passed over" "not published: The round was not published: no open issue is labeled drive. Pass --issue N to name the drive issue." "$(cd "$pp_dir/work" && here="$root/scripts/drive" PATH="$pp_dir/nobin:$PATH" publish_proposal "$pp_round" "$pp_units" "$pp_areas" "$pp_facts" "")"
+eq "plan.sh publishes at its end, a dry run skips it, and a stopped run says it did not" "1 1 2" "$(grep -c '^publish_proposal "\$round" "\$units" "\$areas_text" "\$facts" "\$sized_said"' "$root/scripts/drive/plan.sh") $(grep -c -- '--dry-run) PLAN_PUBLISH=no' "$root/scripts/drive/plan.sh") $(grep -c 'echo "not published: ' "$root/scripts/drive/plan.sh")"
+# A start asked for by name reshapes the proposal before anything starts.
+pp_c=$(printf '2026-11-20T21:00:00Z\tmaya\tQueue request: start-now #233 by maya\n2026-11-20T21:01:00Z\tmaya\tQueue request: start-now #217 by maya\n2026-11-20T21:02:00Z\tsipnship[bot]\tQueue answer: start-now #217: started-now\n2026-11-20T21:03:00Z\tmallory\tQueue request: start-now #9 by maya\n')
+eq "a Start now on one issue still owed leads the plan; an answered one and one in another's name do not" "233" "$(asked_now "$pp_c")"
+eq "a rushed issue's unit comes first in the plan, so in the published round" "unit	217	Compost bins		src/compost/bins.ts" "$(rush_first "$pp_units" "$(asked_now "$(printf '2026-11-20T21:00:00Z\tmaya\tQueue request: start-now #217 by maya\n')")" | sed -n 1p)"
+pp_k=$(printf '2026-11-20T13:00:00Z\tsipnship[bot]\tQueue request: start-next #212 by maya\n2026-11-20T13:05:00Z\tsipnship[bot]\tQueue answer: start-next #212: started-next\n2026-11-20T14:00:00Z\tsipnship[bot]\tQueue request: start-next #217 by maya\n2026-11-20T14:10:00Z\tsipnship[bot]\tQueue answer: start-next #217: cancelled\n')
+eq "a request stands after its answer, until the builder cancels it" "212" "$(asked_cancelled "$pp_k" "$(asked_issues "$pp_k")")"
+eq "a new press after a cancel asks again" "212 217" "$(asked_cancelled "$pp_k
+2026-11-20T15:00:00Z${pp_t}sipnship[bot]${pp_t}Queue request: start-next #217 by maya" "212 217")"
+eq "plan.sh reads cancels and owed Start now requests" "1 1" "$(grep -c 'asked=$(asked_cancelled "$drive_comments"' "$root/scripts/drive/plan.sh") $(grep -c 'asked_now "$drive_comments"' "$root/scripts/drive/plan.sh")"
+# What starts is what the tab shows: the latest proposed round's units are the dispatches, whatever a numbered proposal said.
+pa_dir=$(mktemp -d); mkdir -p "$pa_dir/bin"
+cat > "$pa_dir/bin/gh" <<'FAKE'
+#!/bin/sh
+case "$*" in
+  "auth status") exit 0 ;;
+  *labels=drive*) printf '99\tdrive,drive:auto\t3\n' ;;
+  "api user --jq .login") echo maya-drive ;;
+  *labels=state:in-progress*) ;;
+  *pulls?state=open*) ;;
+  *issues/99/comments*) cat "$PA_DIR/comments" ;;
+esac
+exit 0
+FAKE
+chmod +x "$pa_dir/bin/gh"
+pa_run() { printf '%s\n' "$1" > "$pa_dir/comments"; PA_DIR="$pa_dir" WORKTREE_ACCESS_CHECK=off PATH="$pa_dir/bin:$PATH" sh "$root/scripts/drive/approval.sh" 2>&1; }
+pa_marker='2026-11-20T21:10:00Z	maya-drive	Proposed next round: 2 agents.\n<!-- sipnship-proposal {"status":"proposed","units":[{"issues":[212,214],"whyTogether":"both change the frost alerts area","areas":["frost"]},{"issues":[217],"areas":["compost"]}],"looked":"2026-11-20T21:10:00Z","held":[]} -->'
+eq "a numbered proposal written after the published round starts the published units, and keeps its other goals" "drain 41 42
+dispatch 212 214
+dispatch 217
+approved by Auto Drive" "$(pa_run "$pa_marker
+2026-11-20T21:11:00Z	maya-drive	Proposal for Friday\\n1. dispatch 223 Seed packets\\n2. drain 41 42\\nstop: proposal ready for approval")"
+eq "a dispatch the proposal wrote for the same unit keeps its First field" "dispatch 212 214
+dispatch 217 Compost bins First: A fix for a failure on main
+approved by Auto Drive" "$(pa_run "$pa_marker
+2026-11-20T21:11:00Z	maya-drive	Proposal for Friday\\n1. dispatch 217 Compost bins First: A fix for a failure on main\\nstop: proposal ready for approval")"
+eq "a proposal naming the same units keeps its own lines" "dispatch 212 214 Frost
+dispatch 217 Compost
+approved by Auto Drive" "$(pa_run "$pa_marker
+2026-11-20T21:11:00Z	maya-drive	Proposal for Friday\\n1. dispatch 212 214 Frost\\n2. dispatch 217 Compost\\nstop: proposal ready for approval")"
+eq "a published round that proposes nothing starts nothing a numbered proposal named" "nothing: Auto Drive replied \"all\" and approved no goal" "$(pa_run "2026-11-20T21:11:00Z	maya-drive	Proposal for Friday\\n1. dispatch 223 Seed packets\\nstop: proposal ready for approval
+2026-11-20T21:12:00Z	maya-drive	Proposed next round: nothing to start.\\n<!-- sipnship-proposal {\"status\":\"proposed\",\"units\":[],\"looked\":\"2026-11-20T21:12:00Z\",\"held\":[]} -->")"
+# Every look, timed or woken, runs the plan first, so the tab is fresh before the approval is read.
+pw_dir=$(mktemp -d); mkdir -p "$pw_dir/bin"
+printf '#!/bin/sh\necho "proposal for Friday"\necho "published: Published the round on #99: 1 agent, proposed."\n' > "$pw_dir/plan.sh"
+printf '#!/bin/sh\nexit 1\n' > "$pw_dir/bin/gh"; chmod +x "$pw_dir/bin/gh"
+eq "the wake runs the plan first and says what it published, then reads the approval" "published: Published the round on #99: 1 agent, proposed.
+nothing: gh is not available or not signed in|proposal for Friday" "$(cd "$pw_dir" && WAKE_PLAN="$pw_dir/plan.sh" PATH="$pw_dir/bin:$PATH" sh "$root/scripts/drive/wake-check.sh")|$(sed -n 1p "$pw_dir/.scratch/drive/plan.txt")"
+printf '#!/bin/sh\necho "stop: rate-limited"\n' > "$pw_dir/plan.sh"
+eq "a plan that printed no publish line is said as not published" "1" "$(cd "$pw_dir" && WAKE_PLAN="$pw_dir/plan.sh" PATH="$pw_dir/bin:$PATH" sh "$root/scripts/drive/wake-check.sh" | grep -c '^not published: ')"
+eq "the builder's answer to an ask wakes the drive" "yes no" "$(wake_event_wanted issue_comment "$(printf 'Maya chose Water at dawn.\nBuilder answer: #233 choice 1 by maya')") $(wake_event_wanted issue_comment 'Builder answers are welcome')"
+eq "the wake workflow hears it too" "1" "$([ -f "$root/../.github/workflows/drive-wake.yml" ] || { echo 1; exit 0; }; grep -c "contains(github.event.comment.body, 'Builder answer: #')" "$root/../.github/workflows/drive-wake.yml")"
+eq "the skill leaves publishing to the plan, and starts only the published units" "1 1 0" "$(grep -c 'The plan publishes its own proposal' "$root/skills/project-drive/SKILL.md") $(grep -c 'what starts is the published round' "$root/skills/project-drive/SKILL.md") $(grep -c 'write the round to `.scratch/drive/round.txt`' "$root/skills/project-drive/SKILL.md")"
+# The nightly audit names a proposed round over an hour old while ready work waits.
+pq_dir=$(mktemp -d); mkdir -p "$pq_dir/bin"
+cat > "$pq_dir/bin/gh" <<'FAKE'
+#!/bin/sh
+case "$*" in
+  *labels=drive*) printf '99\t3\n' ;;
+  *labels=state:ready*) echo "$PQ_READY" ;;
+  *labels=state:%20ready*) echo 0 ;;
+  *issues/99/comments*) printf '%s\t%s\n' 1763672160 "$PQ_LOOKED" ;;
+esac
+exit 0
+FAKE
+chmod +x "$pq_dir/bin/gh"
+pq_run() { PQ_READY=$1 PQ_LOOKED=$2 NOW=$3 GH_REPO=maya/rooftop-garden PATH="$pq_dir/bin:$PATH" sh "$root/templates/scripts/ci/proposal-audit.sh"; }
+eq "a proposed round three hours old with ready work is named" "The proposed round on #99 is 3 hours old while 4 ready issue(s) wait: the drive has not looked, or looked and did not publish. Its round report says why on a \"not published:\" line." "$(pq_run 4 '' $((1763672160 + 3 * 3600 + 60)))"
+eq "a fresh look, or no ready work, says nothing" "|" "$(pq_run 4 '' $((1763672160 + 1800)))|$(pq_run 0 '' $((1763672160 + 3 * 3600)))"
+eq "the look's own time counts over the comment's" "" "$(pq_run 4 "$(date -u -d @$((1763672160 + 3 * 3600 - 600)) +%Y-%m-%dT%H:%M:%SZ)" $((1763672160 + 3 * 3600)))"
+eq "the audit workflow runs it and the plugin owns it" "1 1" "$(grep -c 'looks=$(sh scripts/ci/proposal-audit.sh' "$root/templates/.github/workflows/audit.yml") $(grep -c '^scripts/ci/proposal-audit.sh$' "$root/templates/OWNED.txt")"
 block_end
 # --- end of blocks: the summary, kept in every part.
 eq "no test wrote into the checkout's own queue state" "$queue_picture_before" "$([ "$queue_picture_before" = skipped ] && echo skipped || queue_picture)"

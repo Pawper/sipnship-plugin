@@ -17,6 +17,7 @@
 # each unit, hold and apart line's `areas:` (or the older `files:`) field
 # rewritten to the area names it means, or one "error<TAB>MESSAGE" line when
 # a value is on no area, the list is empty, or a unit or hold names no area.
+# The value "none" says the line is on no area of the list: it names none.
 # WHERE names the list in the message (default .claude/areas.txt).
 round_areas() {
   printf '%s\n' "$2" | AREA_LIST=$1 AREA_WHERE=${3:-.claude/areas.txt} awk '
@@ -55,6 +56,8 @@ round_areas() {
         s = trim(part[q]); key = s; sub(/:.*/, "", key); key = tolower(trim(key))
         if (key != "areas" && key != "files") { out = out "| " s " "; continue }
         v = trim(substr(s, index(s, ":") + 1)); m = split(v, vs, ","); names = ""; delete got
+        # "none": on no area of the list, so it shares an area with nothing (the plan says it of a hold, and of a unit whose files are on none).
+        if (tolower(v) == "none") { out = out "| areas: "; seen = 1; continue }
         for (i = 1; i <= m; i++) {
           if (trim(vs[i]) == "") continue
           r = resolve(vs[i])

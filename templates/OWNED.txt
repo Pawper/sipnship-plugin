@@ -125,6 +125,7 @@ scripts/ci/ask-audit.sh
 scripts/ci/waiting-hold-lib.sh
 scripts/ci/waiting-hold-audit.sh
 scripts/ci/in-progress-audit.sh
+scripts/ci/proposal-audit.sh
 scripts/ci/jobs-audit.sh
 feature status
 status/build.sh

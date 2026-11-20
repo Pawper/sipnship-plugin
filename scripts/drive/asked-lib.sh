@@ -43,3 +43,30 @@ asked_line() {
 asked_ready() {
   printf '%s\n' "$2" | tr ' ' '\n' | awk -v a=" $1 " 'NF && index(a, " " $1 " ") { out = out (out == "" ? "" : " ") $1 } END { if (out != "") print out }'
 }
+
+# asked_now COMMENTS
+# The issues a "Start now" on one issue still waits on: each "Queue request:
+# start-now #N by LOGIN" (N above 0) with no "Queue answer: start-now #N: ..."
+# after it, space separated. The plan leads its proposal with them, so the
+# published round is reshaped before anything starts (#2101).
+asked_now() {
+  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' '
+    $3 ~ /^Queue answer: start-now #[0-9]+: / { n = $3; sub(/^Queue answer: start-now #/, "", n); sub(/:.*/, "", n); delete owed[n]; next }
+    $3 ~ /^Queue request: start-now #[1-9][0-9]* by [A-Za-z0-9][A-Za-z0-9-]*(: .*)?$/ {
+      split($3, w, " "); n = w[4]; who = w[6]; sub(/^#/, "", n); sub(/:$/, "", who)
+      if ($2 != who && $2 !~ /\[bot\]$/) next
+      if (!(n in owed)) order[++c] = n; owed[n] = 1
+    }
+    END { for (i = 1; i <= c; i++) if (order[i] in owed) { out = out (out == "" ? "" : " ") order[i]; delete owed[order[i]] } if (out != "") print out }'
+}
+
+# asked_cancelled COMMENTS ASKED
+# ASKED without the issues whose request the builder cancelled: a "Queue
+# answer: start-next #N: cancelled" (the service leaves it when Cancel is
+# pressed on the card) after the last request for N ends that request (#2101).
+asked_cancelled() {
+  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v asked="$2" '
+    $3 ~ /^Queue request: start-next #[0-9]+ by / { n = $3; sub(/^Queue request: start-next #/, "", n); sub(/ .*/, "", n); gone[n] = 0; next }
+    $3 ~ /^Queue answer: start-next #[0-9]+: cancelled$/ { n = $3; sub(/^Queue answer: start-next #/, "", n); sub(/:.*/, "", n); gone[n] = 1 }
+    END { k = split(asked, a, " "); for (i = 1; i <= k; i++) if (!gone[a[i]]) out = out (out == "" ? "" : " ") a[i]; if (out != "") print out }'
+}

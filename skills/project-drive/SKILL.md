@@ -84,10 +84,12 @@ The drive works the ready list in rounds, so many issues land in little time wit
 ## a. Read the state and the standing approval
 
 **A scheduled tick starts with no model reply.** Before reading anything, run
-`sh <plugin path>/scripts/drive/wake-check.sh`. It reads the approval and the requests owed with plain scripts.
-When it prints `nothing: ...` and the proposal it names is already posted (waiting for a reply, or held for a
-running round), end the tick with that one line: no summaries, no plan, no report. When it prints `start: ...`,
-go on. A tick that finds no proposal posted at all goes on to propose, since that needs the plan. The scheduled
+`sh <plugin path>/scripts/drive/wake-check.sh`. It runs the plan, which publishes the proposed round to the
+Work tab by itself, then reads the approval and the requests owed with plain scripts. Its first line is the
+plan's `published:` or `not published:` line; carry a `not published:` line into the round's report on the
+drive issue, in its own words. When it prints `nothing: ...`, end the tick with those lines: no summaries, no
+plan of your own, no report. When it prints `start: ...`, go on, and read the plan it already ran from
+`.scratch/drive/plan.txt` instead of running it again. The scheduled
 task itself runs on `roundModel` (Config), so even a tick that goes on is not on a heavy model; a decision that
 needs one is a dispatched agent, which the model check can see.
 
@@ -96,8 +98,8 @@ First make sure the picture is complete. Labels and titles are not the state; bo
 leaves you one line per item. On a quiet board that is no readers at all. A proposal made without it is made
 from labels alone, and the plan script says so in its first line.
 
-Then run the plan script. It gathers the facts, adds what the digest shows, and prints a numbered proposal
-without doing anything:
+Then run the plan script (unless the wake check ran it this tick). It gathers the facts, adds what the digest
+shows, prints a numbered proposal, and publishes that proposal as the proposed round on the Work tab:
 
 ```bash
 sh "${CLAUDE_PLUGIN_ROOT}/scripts/drive/plan.sh" --snapshot
@@ -275,51 +277,55 @@ The goal lines and what each means:
   `WORKTREE-NAME<TAB>round` (or `next` for a one-off start, `hand` for a terminal) to
   `.scratch/drive/started-with.tsv`. One round runs at a time: propose the next while this one runs, planned
   against the files the running bundles change.
-  The dashboard's Work tab draws a round from a comment on the open issue labeled `drive`, so publish the
-  round whenever you propose it and again when you dispatch it (also when a coordinator is acting as the
-  drive): write the round to `.scratch/drive/round.txt` (one `unit:` line per agent with its issues, `why:`,
-  `areas:` from the project's list and, once its pull request opens, `pr:`; `hold:` lines for work waiting,
-  with `after:` and `areas:`; an `apart:` line with `why:` for two issues in one area kept apart, which the
-  Work tab shows beside the round; one `waits:` line in plain
-words when the whole proposed round waits for something, such as a usage window or a blocked issue, so the
-tab says it waits and on what instead of saying it starts on its own; `status: proposed` or
-  `status: started`; the format is at the top of the script) and run
-  `sh "$CLAUDE_PLUGIN_ROOT/scripts/drive/publish-round.sh" .scratch/drive/round.txt`. With `status: started`
-  it also sets each unit's issues to In progress, so dispatching a unit is what moves its issues; publish
-  again with `pr:` filled in when an agent opens its pull request. Name the issues in the agent's brief
-  or its branch (`issue-538`) so the machine's session report finds the unit.
+  **The plan publishes its own proposal.** The dashboard's Work tab draws a round from a comment on the open
+  issue labeled `drive`. Every run of `plan.sh`, a timed tick, a wake or a run by hand, writes the round it
+  built to `.scratch/drive/round.txt` (one `unit:` line per `dispatch` goal with its `why:` and `areas:`, a
+  `hold:` line for each held issue with its reason in plain words, a hold for each unit the limit left out,
+  and the `sized:` line) and publishes it with `publish-round.sh` as `status: proposed`, with no step of
+  yours in between. A look that finds nothing new updates the same comment with the time it looked; one that
+  finds no ready work says so. Its last line is `published: ...`, or `not published: WHY` when it could not
+  (the board could not be read, the plan was stopped, the publish was refused); a `not published:` line goes
+  into the round's report on the drive issue, in its own words, and the nightly audit names a proposed round
+  over an hour old while ready work waits. Never write the proposed round by hand, and never post a
+  proposal that differs from it: what starts is the published round.
+  **What starts is what was proposed.** `approval.sh` takes the dispatches from the latest published proposed
+  round, unit for unit, whatever a numbered proposal comment says, so dispatch exactly the `dispatch` goals
+  it prints, each with the issues its unit names, and no other unit. When you start them, publish the round
+  as started: copy those `unit:` lines from `.scratch/drive/round.txt` into a file with `status: started`
+  and run `sh "$CLAUDE_PLUGIN_ROOT/scripts/drive/publish-round.sh" FILE`. With `status: started` it also
+  sets each unit's issues to In progress, so dispatching a unit is what moves its issues; publish again with
+  `pr:` filled in when an agent opens its pull request. Name the issues in the agent's brief or its branch
+  (`issue-538`) so the machine's session report finds the unit. A fix for main started while a round runs
+  is the one unit you add to a started round yourself (below).
   If the script says "Another session may have started this round" (every issue of the unit is already
   In progress and this run did not set it), another tick is at work on it: start no agent, publish nothing
   as started, and report it in one line. Two agents never work one unit.
-  The next round is always on the Work tab: while a round runs, publish the proposed next round (`status:
-  proposed`) beside the started one. The service keeps the started round and the proposed one apart, so
-  both show.
-  The round file also carries how the plan sized it and what it left out: one `sized:` line with the plan's
-  own `sized:` words ("6 ready units free of conflict, 4 started; the limit of 4 agents a round held 2"), which the Work band's "Why this many" tip says,
-  and a `hold:` line for each unit the plan deferred, with `why: The limit of 4 agents a round is reached; it starts in the next round`
-  (`deferred_holds` in `scripts/drive/round-lib.sh` prints them from the plan's `defer` line; `sized_line`
-  prints the `sized:` line; add each unit's `areas:` to its hold line, which the script requires), so a small round is explained and a deferred unit says why it waits.
-  Every run publishes the proposed round, even one that starts nothing: a `hold:` line for each issue you
-  hold back, with `why:` its reason in the builder's words ("Waits on your read of the bed map design",
-  never "nothing buildable") and `after:` or `pr:` naming what it waits on, read afresh this run; a round of
-  holds only is a round. When your judgement declines what the plan proposed, that issue is a hold whose
-  `why:` says so, so the builder can overrule it with Start this next. An unchanged round is updated in
-  place with the time of this look, so the tab shows when you last looked apart from when the round changed.
+  **No round of delay with Auto Drive on.** The wake check runs the plan before it reads the approval, so
+  the run that proposes also starts when no round is running. While one runs, the proposal stands on the
+  tab and its dispatches wait (`held:`); the queue's drain finishing wakes the drive, whose plan publishes
+  the round again and starts it, not the next timed look. The service keeps the started round and the
+  proposed one apart, so both show.
+  When your judgement declines what the plan proposed, do not edit the round: leave a comment on the issue
+  saying why and file what it needs, so the next plan holds it with that reason; the builder can overrule it
+  with Start this next.
 - **A rush: `start-next N by LOGIN` or `start-now N by LOGIN` (N above 0).** Replan and bundle a rush on the tick it is read,
-  never on the next round. Put N in one unit with every ready or proposed issue it shares an area with (an issue asked for by name only with other asked ones, see above), and bundle
-  several rushed issues with each other first (`RUSH_ISSUES="N M" sh "${CLAUDE_PLUGIN_ROOT}/scripts/drive/plan.sh"`
-  puts that unit first). Dispatch the unit this tick when no running unit or open pull request touches its area;
-  otherwise it leads the next round. Publish the proposal again so the dashboard shows the bundle.
+  never on the next round. The plan reads both from the drive
+  issue itself (a Start now still owed, and every Start this next not cancelled) and leads its proposal with
+  the issue's unit, then publishes it, so the request reshapes the published round before anything starts.
+  An answered ask does the same: the answer puts the issue back in Ready and wakes the drive. Then what
+  starts is the published round's unit that holds N: dispatch it this tick when no running unit or open pull
+  request touches its area; otherwise it leads the next round. `RUSH_ISSUES="N M"` before `plan.sh` still
+  puts more issues first when you need it.
 - **An issue asked for by name keeps its place until it is done.** The plan reads every `Queue request: start-next #N`
   on the drive issue, answered or not, because an answer only says it started once. An open Ready issue one names
   leads the next round when it returns to Ready with work left, as its own unit or with other asked issues only,
   never bundled with work nobody asked for, and the builder presses nothing again. The plan prints one
   `asked: N WORDS` line for each, the plain words of its request (a part landed, what is left, still first); say
-  those words on the drive issue as the request's line. Never close or drop the request yourself; it ends when the issue closes.
-- **`start-now N by LOGIN`, N above 0.** The press was on that one issue: start that issue, at once, as its own
-  unit when it shares no area with a running unit or an open pull request (bundled only with what it shares an
-  area with), even when the proposal posted a moment ago did not include it. Never answer it with a new
-  proposal. Answer `Queue answer: start-now #N: started-now`, or, when it waits, say what for (the running
+  those words on the drive issue as the request's line. Never close or drop the request yourself; it ends when the issue
+  closes or the builder cancels it on its card, which leaves `Queue answer: start-next #N: cancelled` on the drive issue.
+- **`start-now N by LOGIN`, N above 0.** The press was on that one issue: start the published round's unit that
+  holds it (the plan has already led the round with it), at once, when it shares no area with a running unit or
+  an open pull request. Never answer it with a new proposal. Answer `Queue answer: start-now #N: started-now`, or, when it waits, say what for (the running
   unit and area it shares) in that same answer.
 - **`start-now 0 by LOGIN`.** Dispatch every unit of the proposed round that shares no area with a pull request
   still landing, this tick; the rest wait for what they share. Answer it as below, or say what it waits on.
@@ -327,8 +333,8 @@ tab says it waits and on what instead of saying it starts on its own; `status: p
   issue, which prints as `start-now 0 by LOGIN`: it names no rush, so it means exactly this, for every unit,
   and its answer is `Queue answer: start-now #0: started-now` (or what it waits on).
 - **`start-round by LOGIN`.** Answer it once the round started: `Queue answer: start-round #0: started-round`.
-- **`start-next N by LOGIN`.** Start this issue now if a runner is free and nothing running touches its files:
-  dispatch it as a one-off, set `state:in-progress` (from Parked or another set-aside State too, since the person
+- **`start-next N by LOGIN`.** Start this issue now if nothing running touches its files: dispatch the published
+  round's unit that holds it (the plan led the round with it), set `state:in-progress` (from Parked or another set-aside State too, since the person
   asked for it by name), note `next` in `started-with.tsv`, and answer `Queue answer: start-next #N: started-next`.
   Otherwise make it the first unit of the next round you publish, and leave it unanswered: the dashboard says
   "First in the next round" until it starts. If the issue closed, answer `Queue answer: start-next #N: not-open`.

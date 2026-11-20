@@ -28,8 +28,8 @@
 #                             decline of what the plan proposed is a hold with
 #                             a why; "pr" is a pull request the reason names.
 #                             The tab drops the reason once what it names has
-#                             landed or closed. A round may be holds only: one
-#                             that starts nothing still says why
+#                             landed or closed. A proposed round may be holds only,
+#                             or nothing at all: then it says only that it looked
 #   looked: 2026-11-06T19:00:00-08:00
 #                             when the drive looked (default: now); a proposed
 #                             round the same as the one on the drive issue but
@@ -180,8 +180,8 @@ BEGIN { status = "proposed"; units = ""; held = ""; apart = ""; waits = ""; size
 { bad("a line this script does not know: " $0) }
 END {
   if (failed) exit
-  # A proposed round may start nothing and still say why: holds only. A started round has a unit.
-  if (nu == 0 && (nh == 0 || status == "started")) { print "error\tthe round has no unit line"; exit }
+  # A proposed round may start nothing and still say why (holds only), or say only that the drive looked and found nothing (#2101). A started round has a unit.
+  if (nu == 0 && status == "started") { print "error\tthe round has no unit line"; exit }
   if (waits != "") lines = lines "- Waits on: " waits "\n"
   if (looked == "") looked = now
   print "json\t{\"status\":\"" status "\",\"units\":[" units "]" (status == "proposed" ? ",\"looked\":\"" esc(looked) "\"" : "") ",\"held\":[" held "]" (apart != "" ? ",\"apart\":[" apart "]" : "") (waits != "" ? ",\"waits\":\"" esc(waits) "\"" : "") (sized != "" ? ",\"sized\":\"" esc(sized) "\"" : "") "}"
@@ -203,6 +203,7 @@ list=$(printf '%s\n' "$out" | sed -n '/^lines\t/,$p' | sed '1s/^lines\t//')
 nheld=$(printf '%s\n' "$out" | sed -n 's/^held\t//p')
 agents="$count agent"; [ "$count" = 1 ] || agents="${agents}s"
 if [ "$status" = started ]; then head="Round started: $agents at work."
+elif [ "$count" = 0 ] && [ "$nheld" = 0 ]; then head="Proposed next round: nothing to start; your drive looked and found no ready work."
 elif [ "$count" = 0 ]; then head="Proposed next round: nothing starts yet, $nheld held back."
 else head="Proposed next round: $agents."; fi
 body_file="${TMPDIR:-/tmp}/publish-round.$$.md"
