@@ -88,6 +88,22 @@ answer_leads() {
     END { print (last ? "yes" : "no") }'
 }
 
+# answer_lead_apply NUM ASKED
+# Called from plan.sh's loop of ready issues, right after plan_ready_guess has
+# set ready_answer_led for NUM: when it is yes, and NUM is not already one of
+# ASKED's issues (asked_issues' output; an asked issue leads for that reason,
+# never said twice), adds NUM to answer_led (the numbers rush_first gives the
+# next round, space separated) and a plain line to answer_led_notes, both the
+# caller's own globals, set to "" before the loop (#2079). A function, not a
+# subshell, so it can grow them; nothing when NUM does not lead this way.
+answer_lead_apply() {
+  [ "$ready_answer_led" = yes ] || return 0
+  case " $2 " in *" $1 "*) return 0 ;; esac
+  answer_led="${answer_led} $1"
+  answer_led_notes="${answer_led_notes}answered: $1 You answered this one, so it is first in the next round.
+"
+}
+
 # plan_ready_guess
 # For the ready issue plan.sh is reading (num, title, c, mocks_text, areas_text,
 # past, left_reads): sets g to the files it touches and title to its title,

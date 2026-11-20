@@ -231,12 +231,8 @@ hold	$num	"*) continue ;; esac
       case "$left_say" in partly) reasons=$(printf '%s
 hold	%s	%s	Part of it landed; a reader confirms what is left before it takes an agent
 ' "$reasons" "$num" "$title" | sed '/^$/d'); continue ;; esac  # a partly landed issue is a hold until that read has happened (#1891)
-      case " $asked " in
-        *" $num "*) asked_notes="${asked_notes}asked: ${num} $(asked_line "$left_say")
-" ;;
-        *) if [ "$ready_answer_led" = yes ]; then answer_led="${answer_led} $num"; answer_led_notes="${answer_led_notes}answered: ${num} You answered this one, so it is first in the next round.
-"; fi ;;
-      esac
+      case " $asked " in *" $num "*) asked_notes="${asked_notes}asked: ${num} $(asked_line "$left_say")
+" ;; esac; answer_lead_apply "$num" "$asked"
       guesses="${guesses}${num}${tab}${title}${tab}${g}
 " ;;
     in-progress)
@@ -296,8 +292,7 @@ auto_line "$auto"
 model=$(setting "$settings" dispatchModel)
 if [ "$aside_after" -gt 0 ] 2>/dev/null; then aside_words="a pull request red $aside_after times is set aside"; else aside_words="a red pull request is never set aside"; fi
 round_model=$(setting "$settings" roundModel)
-[ -z "$asked_notes" ] || printf '%s' "$asked_notes"  # one line each: the kept request, in plain words (asked-lib.sh)
-[ -z "$answer_led_notes" ] || printf '%s' "$answer_led_notes"  # one line each: an issue the owner just answered, leading the round with no second press (left-lib.sh, #2079)
+[ -z "$asked_notes" ] || printf '%s' "$asked_notes"; [ -z "$answer_led_notes" ] || printf '%s' "$answer_led_notes"  # one line each: a kept request, or an answer, leading the round in plain words (asked-lib.sh, left-lib.sh, #2079)
 echo "rounds: at most $units_per_round units a round, one round at a time; each unit's agent on ${model:-the model the agent-model hook allows}; the round itself on ${round_model:-the app's default model}; $aside_words"
 held_wait_note "${held_since:-}" "$(date +%s)"
 summary_note
