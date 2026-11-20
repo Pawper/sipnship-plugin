@@ -5819,6 +5819,10 @@ eq "a published hold whose reason is still true takes no slot; a deferral for a 
 eq "a published hold on a pull request that is no longer open is released" "" "$(published_holds "$(printf '%s' "$hr_c" | sed 's/\"waitsOn\":\[304\]/\"waitsOn\":[],\"pr\":77/')" "$hr_facts" "$(printf '12\n')")"
 eq "a hold on an issue that is no longer ready is not repeated" "" "$(published_holds "$hr_c" "$(printf '%s\n' "$hr_facts" | sed 's/301\(.*\)state:ready/301\1state:in-progress/')" '')"
 eq "no published round holds nothing" "" "$(published_holds '' "$hr_facts" '')"
+hr_part="2026-11-14T10:00:00Z${hr_t}sipnship[bot]${hr_t}"'<!-- sipnship-proposal {"status":"proposed","units":[],"held":[{"issues":[301],"waitsOn":[],"areas":[],"why":"Part of it landed; a reader confirms what is left before it takes an agent"},{"issues":[305],"waitsOn":[],"areas":[],"pr":77,"why":"Its pull request is open"}],"sized":"5 runners"} -->'
+eq "a partly landed hold is never carried; a hold behind an open pull request still is" "hold${hr_t}305${hr_t}Seed order${hr_t}Held in the last proposed round: Its pull request is open; it takes no slot until that changes" "$(published_holds "$hr_part" "$hr_facts" "$(printf '77\n')")"
+hr_new=$(printf '%s\n' "$hr_facts" | sed "s/^\(issue${hr_t}305${hr_t}[^${hr_t}]*${hr_t}[^${hr_t}]*${hr_t}\)x/\12026-11-14T11:00:00Z/")
+eq "a carried hold whose issue changed after the proposal is read afresh" "" "$(published_holds "$hr_part" "$hr_new" "$(printf '77\n')")"
 hr_plan="dispatch 305${hr_t}Seed order
 defer 2 unit(s): only 1 free runner this round (#302, #303)"
 eq "the defer line says held issues took no slot, and still ends in its issue list" "dispatch 305${hr_t}Seed order

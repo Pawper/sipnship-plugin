@@ -13,17 +13,20 @@
 # numbers one per line. One "hold<TAB>NUMBER<TAB>TITLE<TAB>WHY" line (the shape
 # of bundle-lib's hold_reasons) for each of its held issues that is still Ready
 # and whose reason is still true: the issues it waits on are still open and its
-# pull request, when it names one, is still open. A deferral for want of a
+# pull request, when it names one, is still open. A hold the plan works out
+# fresh each round (part of the issue landed) is never carried, and any hold
+# whose issue changed after the proposal was published is read afresh (#2048). A deferral for want of a
 # runner is no hold and takes nothing here.
 published_holds() {
   printf '%s\n' "$1" | tr -d '\r' | grep -F 'sipnship-proposal {"status":' | tail -n 1 | awk -v facts="$2" -v open="${3:-}" '
     BEGIN {
       n = split(facts, fl, "\n")
-      for (i = 1; i <= n; i++) { split(fl[i], f, "\t"); if (f[1] == "issue") { isopen[f[2]] = 1; title[f[2]] = f[3]; if (("," f[4] ",") ~ /,(state: ?)?ready,/) ready[f[2]] = 1 } }
+      for (i = 1; i <= n; i++) { split(fl[i], f, "\t"); if (f[1] == "issue") { isopen[f[2]] = 1; title[f[2]] = f[3]; upd[f[2]] = f[5]; if (("," f[4] ",") ~ /,(state: ?)?ready,/) ready[f[2]] = 1 } }
       n = split(open, ol, "\n"); for (i = 1; i <= n; i++) if (ol[i] != "") op[ol[i]] = 1
     }
     {
-      s = $0; i = index(s, "\"held\":["); if (!i) exit
+      s = $0; at = $0; sub(/	.*/, "", at)
+      i = index(s, "\"held\":["); if (!i) exit
       s = substr(s, i + 8)
       if (j = index(s, "\"apart\":[")) s = substr(s, 1, j - 1)
       if (j = index(s, "\"waits\":\"")) s = substr(s, 1, j - 1)
@@ -33,12 +36,13 @@ published_holds() {
         p = parts[k]; iss = p; sub(/\].*/, "", iss); gsub(/,/, " ", iss)
         why = ""; if (match(p, /"why":"([^"\\]|\\.)*"/)) { why = substr(p, RSTART + 7, RLENGTH - 8); gsub(/\\"/, "\"", why) }
         if (why ~ /[Nn]o free runner|free runners? this round/) continue
+        if (why ~ /^Part of it landed/) continue  # the plan reads this one fresh every round from the issue itself (left-lib.sh), so it is never carried
         pr = ""; if (match(p, /"pr":[0-9]+/)) pr = substr(p, RSTART + 5, RLENGTH - 5)
         if (pr != "" && open != "" && !(pr in op)) continue
         wait = ""; if (match(p, /"waitsOn":\[[0-9,]*\]/)) { wait = substr(p, RSTART + 11, RLENGTH - 12); gsub(/,/, " ", wait) }
         if (wait != "") { m = split(wait, w, " "); live = 0; for (x = 1; x <= m; x++) if (w[x] in isopen) live = 1; if (!live) continue }
         m = split(iss, is, " ")
-        for (x = 1; x <= m; x++) if ((is[x] in ready) && !(is[x] in seen)) {
+        for (x = 1; x <= m; x++) if ((is[x] in ready) && !(is[x] in seen) && !(upd[is[x]] ~ /^[0-9][0-9][0-9][0-9]-/ && upd[is[x]] > at)) {  # an issue touched since the proposal is read afresh
           seen[is[x]] = 1
           printf "hold\t%s\t%s\tHeld in the last proposed round%s; it takes no slot until that changes\n", is[x], title[is[x]], (why != "" ? ": " why : "")
         }
