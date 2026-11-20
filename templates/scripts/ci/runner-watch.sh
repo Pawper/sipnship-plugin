@@ -122,6 +122,21 @@ local_runner_names() {
   [ -n "$WINDIR" ] || return 0
   powershell -NoProfile -Command '$p = "actions.runner.'"$key"'."; Get-Service "$p*" -ErrorAction SilentlyContinue | ForEach-Object { $_.Name.Substring($p.Length) }' 2>/dev/null | tr -d '\r'
 }
+# agent_sessions_since SINCE
+# How many agent session transcripts (Claude Code's own, every project
+# on this machine) were touched after SINCE, an epoch, or every one
+# found when SINCE is empty (no earlier pool record to compare against
+# yet). A resumed session keeps writing the same file, so a session that
+# runs all hour is counted the hour it is touched, not only the hour it
+# started. Nothing, as 0, when the folder is not there (#1543).
+agent_sessions_since() {
+  asd="$HOME/.claude/projects"
+  [ -d "$asd" ] || { echo 0; return 0; }
+  case "$1" in
+    ''|*[!0-9]*) find "$asd" -name '*.jsonl' 2>/dev/null | grep -c . || true ;;
+    *) find "$asd" -name '*.jsonl' -newermt "@$1" 2>/dev/null | grep -c . || true ;;
+  esac
+}
 sample_antivirus() {
   [ -n "$WINDIR" ] || return 0
   powershell -NoProfile -Command '
@@ -184,10 +199,14 @@ printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$now" "${cores:-0}" "${here:-0}" "${busy:-0}"
 printf '%s\n' "$pq_quiet" > "$dir/probe-quiet.txt" 2>/dev/null || true
 
 # The kernel's pools once an hour, thirty days kept, so the trend shows
-# (columns: epoch, uptime h, paged GB, non-paged GB, handles, processes).
+# (columns: epoch, uptime h, paged GB, non-paged GB, handles, processes,
+# CI runs and agent sessions since the last record, so growth per run
+# can be read, not only per hour, #1543).
 last_pool=$(tail -n 1 "$dir/pool.tsv" 2>/dev/null | cut -f1)
 if [ "$(pool_record_due "$last_pool" "$now")" = yes ]; then
-  pool_record "$now" "$meas" >> "$dir/pool.tsv" 2>/dev/null || true
+  ci_runs=$(ci_runs_since "$runs" "$last_pool")
+  sessions=$(agent_sessions_since "$last_pool")
+  pool_record "$now" "$meas" "$ci_runs" "$sessions" >> "$dir/pool.tsv" 2>/dev/null || true
   pool_record_keep "$dir/pool.tsv"
 fi
 

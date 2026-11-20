@@ -105,5 +105,27 @@ else
   say warn "runners: gh is not signed in, so the registered runners could not be listed"
 fi
 
+# 5. Windows Defender's scan exclusions, for every runner folder this
+# machine has, however it was registered. add-runner.ps1 adds its own; a
+# folder registered by hand (the drive's, RUNNERS.md "A runner for the
+# drive") does not go through it and can be missed otherwise (#1543).
+if [ -n "$WINDIR" ]; then
+  excl=$(powershell -NoProfile -Command '
+    $roots = @(Get-Item "C:\actions-runner-*" -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })
+    if ($roots.Count -eq 0) { exit 0 }
+    try { $ex = @((Get-MpPreference -ErrorAction Stop).ExclusionPath) } catch { exit 0 }
+    if (($ex | Where-Object { $_ -like "N/A*" }).Count -gt 0) { exit 0 }
+    foreach ($r in $roots) {
+      $rt = $r.TrimEnd("\")
+      $covered = @($ex | Where-Object { $_ -and $rt.StartsWith($_.TrimEnd("\"), [StringComparison]::OrdinalIgnoreCase) }).Count -gt 0
+      "$r`t$(if ($covered) { "present" } else { "missing" })"
+    }' 2>/dev/null | tr -d '\r')
+  lines=$(exclusion_lines "$excl")
+  if [ -n "$lines" ]; then
+    printf '%s\n' "$lines"
+    warns=$((warns + $(printf '%s\n' "$lines" | grep -c '^warn' || true)))
+  fi
+fi
+
 echo
 if [ "$warns" -eq 0 ]; then echo "Everything a run needs is in place.${services:+ ($services runner service(s) found.)}"; else echo "$warns thing(s) to fix before a run on this machine."; exit 1; fi

@@ -39,3 +39,18 @@ policy_verdict() {
 exepath_verdict() {
   if [ -n "$1" ]; then echo warn; else echo ok; fi
 }
+
+# exclusion_lines TSV
+# TSV is one runner folder and its Defender scan state a line ("ROOT
+# present" or "ROOT missing"), from every C:\actions-runner-* folder this
+# machine has and Defender's own exclusion list. One "ok" or "warn" line
+# a root, so a folder registered by hand (the drive's: RUNNERS.md, "A
+# runner for the drive") is named by itself when add-runner.ps1 never
+# added its exclusion (#1543). Nothing for an empty TSV.
+exclusion_lines() {
+  printf '%s\n' "$1" | awk -F'\t' '
+    NF < 2 { next }
+    $2 == "present" { printf "ok    scan exclusion: %s\n", $1; next }
+    { printf "warn  scan exclusion: %s is still scanned by the antivirus; a shell suite runs two to four times slower and the kernel keeps more memory in its paged pool (#1543). Run add-runner.ps1 as administrator, or the Add-MpPreference line in scripts/ci/RUNNERS.md.\n", $1 }
+  '
+}

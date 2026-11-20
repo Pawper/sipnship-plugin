@@ -1029,6 +1029,8 @@ eq "an old runners key is named once" "1" "$(runner_key_note '{ "runners": 4 }' 
 eq "a file without it says nothing" "" "$(runner_key_note '{ "_comment": "x" }')"
 eq "the doctor and the watch hold no count" "0" "$(cat "$root/templates/scripts/ci/runner-doctor.sh" "$root/templates/scripts/ci/runner-watch.sh" | grep -c 'runner_count')"
 eq "the template file has no runners key" "0" "$(grep -c '"runners"[[:space:]]*:' "$root/templates/.claude/runners.json")"
+eq "the doctor checks every runner folder's scan exclusion, named by hand too" "1" "$(grep -c 'exclusion_lines "\$excl"' "$root/templates/scripts/ci/runner-doctor.sh")"
+eq "the drive's own runner gets the exclusion step in the guide" "1" "$(grep -cF "Add-MpPreference -ExclusionPath 'C:\\actions-runner-drive'" "$root/templates/scripts/ci/RUNNERS.md")"
 eq "a quiet machine says nothing" "" "$(load_verdicts "$(printf '20\t40\t135\t1\t1\t9\t32')")"
 eq "jobs waiting on an idle machine want a runner" "idle-wait|jobs waited 14 minutes on average and the processor was 30% busy; one more runner would help" "$(load_verdicts "$(printf '30\t40\t135\t2\t14\t9\t32')")"
 eq "jobs waiting on a saturated machine do not" "saturated|jobs waited 9 minutes on average while the processor was 92% busy with 5 running; more runners would make each job slower: fewer runners, or a second machine" "$(load_verdicts "$(printf '92\t60\t135\t5\t9\t9\t32')")"
@@ -1041,8 +1043,13 @@ pl_meas=$(printf '412\t96.5\t22.6\t1.2\t336655\t683\t3\t0')
 eq "no record yet is due" "yes" "$(pool_record_due '' 1000000)"
 eq "a record ten minutes old is not due" "no" "$(pool_record_due 1000000 1000600)"
 eq "a record fifty-six minutes old is due" "yes" "$(pool_record_due 1000000 1003360)"
-eq "the hourly line carries time, uptime, both pools, handles and processes" "$(printf '1000000\t96.5\t22.6\t1.2\t336655\t683')" "$(pool_record 1000000 "$pl_meas")"
-eq "a machine that gave no paged pool records nothing" "" "$(pool_record 1000000 "$(printf '412\t96.5\t\t\t\t\t\t')")"
+eq "the hourly line carries time, uptime, both pools, handles, processes, CI runs and sessions" "$(printf '1000000\t96.5\t22.6\t1.2\t336655\t683\t2\t5')" "$(pool_record 1000000 "$pl_meas" 2 5)"
+eq "runs and sessions left out count as 0" "$(printf '1000000\t96.5\t22.6\t1.2\t336655\t683\t0\t0')" "$(pool_record 1000000 "$pl_meas")"
+eq "a machine that gave no paged pool records nothing" "" "$(pool_record 1000000 "$(printf '412\t96.5\t\t\t\t\t\t')" 2 5)"
+pl_runs=$(printf '1\tci\tmain\tcompleted\t1000100\t1000110\n2\tci\tmain\tcompleted\t999000\t999010\n')
+eq "runs since the last record are counted by their created time" "1" "$(ci_runs_since "$pl_runs" 1000050)"
+eq "with no earlier record every run fetched counts" "2" "$(ci_runs_since "$pl_runs" '')"
+eq "none fetched is none counted" "0" "$(ci_runs_since '' 1000000)"
 eq "no quiet reading yet: this reading becomes the quiet one" "17" "$(probe_quiet_update 17 "")"
 eq "the quietest reading is kept, not the newest" "15" "$(probe_quiet_update 20 15)"
 eq "a new low becomes the quiet one" "12" "$(probe_quiet_update 12 15)"
@@ -1144,6 +1151,9 @@ eq "a restricted machine policy warns" "warn" "$(policy_verdict 'MachinePolicy=U
 eq "an open policy is fine" "ok" "$(policy_verdict 'MachinePolicy=Undefined LocalMachine=RemoteSigned')"
 eq "a shell that sets NoDefaultCurrentDirectoryInExePath warns" "warn" "$(exepath_verdict 1)"
 eq "a shell that does not set it is fine" "ok" "$(exepath_verdict '')"
+eq "a covered runner folder is fine" "ok    scan exclusion: C:\actions-runner-garden" "$(exclusion_lines "$(printf 'C:\\actions-runner-garden\tpresent')")"
+eq "an uncovered one by hand is named and points at RUNNERS.md" "1 1" "$(exclusion_lines "$(printf 'C:\\actions-runner-drive\tmissing')" | grep -c '^warn  scan exclusion: C:\\actions-runner-drive is still scanned') $(exclusion_lines "$(printf 'C:\\actions-runner-drive\tmissing')" | grep -c 'scripts/ci/RUNNERS.md')"
+eq "a machine with nothing to say for Defender has nothing to say" "" "$(exclusion_lines '')"
 
 section 'board digest'
 . "$root/scripts/board/board-lib.sh"
@@ -4726,6 +4736,7 @@ eq "a job never seen alone has no quiet time and is left out" "0" "$(runner_timi
 eq "a bad line is dropped" "" "$(runner_timings 'x	abc	5')"
 eq "the watch writes the timings beside the machine file" "1" "$(grep -c 'timings.tsv' "$root/templates/scripts/ci/runner-watch.sh")"
 eq "the watch prints the machine line" "1" "$(grep -c 'echo "machine line: $mline"' "$root/templates/scripts/ci/runner-watch.sh")"
+eq "the watch counts CI runs and agent sessions into the pool record" "1 1 1" "$(grep -c 'ci_runs_since "\$runs" "\$last_pool"' "$root/templates/scripts/ci/runner-watch.sh") $(grep -c 'agent_sessions_since "\$last_pool"' "$root/templates/scripts/ci/runner-watch.sh") $(grep -c 'pool_record "\$now" "\$meas" "\$ci_runs" "\$sessions"' "$root/templates/scripts/ci/runner-watch.sh")"
 eq "the brief reads the waits log and the machine file" "1 1" "$(grep -c 'waits_line "$(tail -n 500' "$root/hooks/scripts/session-brief-local.sh") $(grep -c 'machine_brief_line "$(head -n 1' "$root/hooks/scripts/session-brief-local.sh")"
 mv "$wl_dir" "$wl_dir.done" 2>/dev/null || true
 

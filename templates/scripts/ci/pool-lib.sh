@@ -14,14 +14,33 @@ pool_record_due() {
   if [ $(( $2 - $1 )) -ge 3300 ]; then echo yes; else echo no; fi
 }
 
-# pool_record NOW MEASURES
+# pool_record NOW MEASURES RUNS SESSIONS
 # One tab-separated line: NOW (epoch), uptime in hours, paged pool in GB,
-# non-paged pool in GB, handles, processes. MEASURES is sample_measures'
+# non-paged pool in GB, handles, processes, CI runs and agent sessions
+# since the last record (RUNS, SESSIONS; empty, or left out, counts as 0,
+# so an older caller still writes a row). MEASURES is sample_measures'
 # line (program start ms, uptime h, paged GB, non-paged GB, handles,
 # processes, antivirus, old shells). Nothing when the system gave no paged
-# pool reading, so a machine that cannot say records no empty rows.
+# pool reading, so a machine that cannot say records no empty rows. The
+# two added fields let growth be read per run, not only per hour (#1543).
 pool_record() {
-  printf '%s\n' "$2" | awk -F'\t' -v now="$1" '$3 != "" { printf "%s\t%s\t%s\t%s\t%s\t%s\n", now, $2, $3, $4, $5, $6 }'
+  pr_runs=$3; pr_sessions=$4
+  case "$pr_runs" in ''|*[!0-9]*) pr_runs=0 ;; esac
+  case "$pr_sessions" in ''|*[!0-9]*) pr_sessions=0 ;; esac
+  printf '%s\n' "$2" | awk -F'\t' -v now="$1" -v runs="$pr_runs" -v sessions="$pr_sessions" '$3 != "" { printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", now, $2, $3, $4, $5, $6, runs, sessions }'
+}
+
+# ci_runs_since RUNS SINCE
+# How many of RUNS (the runner watch's own "runs" tsv: id, name, branch,
+# status, created epoch, started epoch) have a created epoch after
+# SINCE; every one fetched when SINCE is empty, since there is no
+# earlier pool record yet to compare against.
+ci_runs_since() {
+  printf '%s\n' "$1" | awk -F'\t' -v since="$2" '
+    NF < 5 { next }
+    since == "" || $5 + 0 > since + 0 { n++ }
+    END { print n + 0 }
+  '
 }
 
 # pool_record_keep FILE

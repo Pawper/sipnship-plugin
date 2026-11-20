@@ -99,6 +99,14 @@ Register it from an elevated PowerShell, as `add-runner.ps1` does, but with the 
 
 `claude` (Claude Code) must be on the machine PATH, since the service account sees only that. The runner counts as one of the repository's runners to the doctor and the watch; the CI count rule (one per two cores) is judged on the others.
 
+Give it the same Defender exclusion `add-runner.ps1` gives a registered runner. Registering it by hand, as above, skips the script's own exclusion step, and a folder outside `C:\actions-runner-<repo>` (the drive's is `C:\actions-runner-drive`) is not one `add-runner.ps1` finds on its own later either (#1543). In an administrator PowerShell:
+
+```powershell
+Add-MpPreference -ExclusionPath 'C:\actions-runner-drive','C:\actions-runner-drive\drive\_work'
+```
+
+The doctor (`sh scripts/ci/runner-doctor.sh`) checks every `C:\actions-runner-*` folder on the machine against Defender's exclusion list, the drive's included, and warns by name on the one still scanned, so a folder added by hand is never missed silently.
+
 ## Nobody stops the daemon
 
 A build daemon (Gradle's, Nx's, the .NET build server) is one process for every build on the machine. On a machine that also hosts a runner, an agent that runs `gradlew --stop` from its worktree, meaning to tidy up, kills the runner's daemon mid-build, and the android job fails with "Gradle build daemon has been stopped". The `block-loose-ends` hook refuses `gradlew --stop`, `gradle --stop`, `nx reset`, `nx daemon --stop` and `dotnet build-server shutdown`. Stopping what you started means your own servers and watchers; a daemon idles out on its own. If no runner is on the machine, `DAEMON_STOP_OK=1` in front of the command says so.
