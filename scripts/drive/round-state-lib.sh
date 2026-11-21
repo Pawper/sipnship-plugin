@@ -47,6 +47,8 @@ running_round() {
 # hold label or by a "Queue: hold" line in its body (the plan's own reading, held_by in round-lib.sh).
 RUNNING_ISSUES_JQ='.[] | select(([.labels[].name | ascii_downcase] | index("state:waiting-on-owner")) == null) | .number'
 HELD_PRS_JQ='.[] | [.number, ((([.labels[].name | ascii_downcase] | (index("queue:hold") // index("hold"))) != null) or (((.body // "") | test("(^|\n)Queue: hold"; "i")))] | @tsv'
+# PULL_LINES_JQ: "NUMBER<TAB>held<TAB>CLOSES<TAB>REFS" for each open pull request, the plan's pull-line shape (held-running-lib.sh), so the approval reads which issues only a held pull request names by the same rule as the plan (#2128).
+PULL_LINES_JQ='.[] | [.number, (if ((([.labels[].name | ascii_downcase] | (index("queue:hold") // index("hold"))) != null) or ((.body // "") | test("(^|\n)Queue: hold"; "i"))) then "yes" else "no" end), ((.body // "") | [scan("(?i)(?:closes|fixes|resolves) #([0-9]+)") | .[0]] | join(",")), ((.body // "") | [scan("(?i)\\b(?:refs?|references|spec for|part of|relates to|related to):? #([0-9]+)") | .[0]] | join(","))] | @tsv'
 
 # started_units COMMENTS
 # The units of the latest started round on the drive issue (its sipnship-

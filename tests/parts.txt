@@ -103,6 +103,7 @@ shell-3 a draft tokens file seeded from the mocks
 shell-3 deploy targets
 shell-3 a deploy that met a brief provider outage tries again
 shell-3 test parts: only for the classes touched, side by side, stopping at the first red
+shell-2 the plugin-only email notice, while the project is not connected (#2116)
 shell-2 a failing job says what failed, and a failed check cancels the run
 shell-2 main is gated by one full run after a quiet hour
 shell-2 a hook that runs out of time is named, bounded and logged

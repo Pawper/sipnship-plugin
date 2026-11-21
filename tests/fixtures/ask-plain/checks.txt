@@ -11,3 +11,5 @@ label-in-choice jargon
 plain-term one
 instructions-no-reason noreason
 instructions-bare-command barecommand
+folded-count folded
+one-issue-own-question one

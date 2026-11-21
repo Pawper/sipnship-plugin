@@ -46,17 +46,23 @@ hold_reasons() {
     }'
 }
 
-# stall_note ROUND
+# stall_note ROUND [RUNNERS_ONLINE]
 # ROUND is the plan's result after apply_units. When no unit is dispatched
 # and every ready issue is held, the round says so as a stall and names the
 # one or two owner actions that free the most issues:
 #   stall: every ready issue is held; answering “T”
 #   frees K issues, reading “U” frees J
+# When no owner action frees any of them, the round says that instead, in plain words: how many
+# issues are held and how many wait on what is left of them being written down (#2047), so a round
+# that holds everything is never a quiet one. A RUNNERS_ONLINE of 0 says nothing here: no runner is
+# a different cause, told elsewhere.
 stall_note() {
+  [ "${2:-}" != 0 ] || return 0
   printf '%s\n' "$1" | awk -F'\t' '
     /^dispatch / { go = 1 }
     /^hold / {
       h++
+      if ($3 ~ /^Part of it landed/) part++
       if (match($3, /^Waits on your (answer|read) on “[^”]*”/)) {
         c = substr($3, RSTART, RLENGTH); verb = (c ~ /^Waits on your read/) ? "reading" : "answering"
         sub(/^Waits on your (answer|read) on /, "", c); key = verb " " c; cnt[key]++
@@ -64,7 +70,13 @@ stall_note() {
       }
     }
     END {
-      if (go || h == 0 || k == 0) exit
+      if (go || h == 0) exit
+      if (k == 0) {
+        printf "stall: every ready issue is held (%d), and nothing in it waits on you", h
+        if (part > 0) printf "; %d of them are partly built, and the drive is writing down what is left of each before it starts an agent", part
+        printf "\n"
+        exit
+      }
       for (a = 1; a <= k; a++) for (b = a + 1; b <= k; b++) if (cnt[ord[b]] > cnt[ord[a]]) { t = ord[a]; ord[a] = ord[b]; ord[b] = t }
       out = ""
       for (a = 1; a <= k && a <= 2; a++) out = out (a > 1 ? ", " : "") ord[a] " frees " cnt[ord[a]] " issue" (cnt[ord[a]] == 1 ? "" : "s")

@@ -54,6 +54,7 @@ ask_verdict() { ask_read 0; }
 #   longname   a choice's short name is past the card's 80 characters, so it is cut
 #   pointer    the recommendation's reason points at an issue's section, a file or a number
 #   jargon     the question or a choice's name carries a script, file, label or path
+#   folded     one question stands for several decisions (it names a count of them, or asks to approve them all)
 ask_check() { ask_read 1; }
 
 # The one reader behind both; CHECK is 1 for ask_check.
@@ -137,9 +138,15 @@ ask_read() {
       t = tolower(s)
       return t ~ /#[0-9]+/ || t ~ /(done when|what to change|section|issue.s own|the issue (says|asks)|the spec (says|asks))/ || jargon(s)
     }
+    # One question that stands for several decisions: it names a count of choices or decisions, or asks for approval of the lot.
+    function folded(q,   t) {
+      t = tolower(q)
+      return t ~ /(^|[^a-z])(all |both |the )?(two|three|four|five|six|seven|eight|nine|ten|[0-9]+) (drafted |proposed )?(choices|decisions|options|questions)/ || t ~ /(approve|accept|agree to|sign off on) (all|both|every|the whole|the drafted|the proposed)/ || t ~ /(all|both) (the )?(choices|decisions)/
+    }
     # Why the words of an ask in the shape would stop a builder, or nothing.
     function wording(L, q, at, n,   k, rec) {
       if (jargon(q)) return "jargon"
+      if (folded(q)) return "folded"
       for (k = at; k <= n; k++) {
         if (L[k] == "") continue
         if (!is_choice(L[k])) break
@@ -247,6 +254,8 @@ ask_fix() {
     barecommand) printf '%s\n' 'a step of its Instructions holds a command with no words of its own. Say in plain words what the command does before it, such as "2. Start the sensor hub on your rooftop network (this connects the soil sensors): " and then the command, shown whole; never ask a person to make a secret by a command' ;;
     pointer) printf '%s\n' 'the reason after "Recommended" points at where something is written (a section of an issue, a file, a number) instead of saying what the builder gets. Give it as their benefit, such as "Recommended, so the frost alert reaches your phone before tonight."' ;;
     jargon) printf '%s\n' 'its question or the name of a choice carries one of our working words: a script or file name, a label name or a path. Say it as a decision about their project, such as "Should the watering reminders wait for your read?", and keep the working words out of it (a term such as pull request is fine, said plainly)' ;;
+    folded) printf '%s
+' 'its one question stands for several decisions, so the builder could only approve them all together. Write each decision as its own question with its own choices and exactly one recommendation, and name only that issue'"'"'s own work in it; the review then walks through them one step at a time' ;;
     question) printf '%s\n' 'its ask is a question with no choices. Turn it into choices: keep the question on its own line, then a numbered list of two to four, your best guess first, ending "Recommended." and a short reason why; for an open question, give a draft to say yes to and a last choice such as "I will write my own on the issue."' ;;
     actiondefer) printf '%s\n' 'its ask is a step the owner does outside the app, dressed as a choice between doing it and setting it aside. Write it as Instructions instead: start the comment with the word "Instructions:" and give the steps as a numbered list (what to do, where, any value or command), with no choices and no "Recommended."; if the steps are already done, say so on the issue and move it on instead of waiting' ;;
     putoff) printf '%s\n' 'one of its choices is only to read the thing, or to decide later. Reading is never a choice: the builder is there to read it. Name the file or files to read in the comment (a link that opens it), and make every choice an outcome that follows the read: "Approve it as written", "Ask for changes" (the builder says what), and any real alternative such as "Split it: the spec waits for your read, the rest lands now"' ;;

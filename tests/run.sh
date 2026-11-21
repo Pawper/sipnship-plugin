@@ -5949,7 +5949,7 @@ sa_empty_list=$(printf '2018%sbranch2018%s%s%s%s%s\n' "$sa_us" "$sa_us" "$sa_us"
 eq "a pull request with neither Closes nor Part of is left as a goal, with no REST call" "set-aside 2018	Harvest chart	(red 2 times)" "$(us=$sa_us; gh() { echo "should not be called"; return 1; }; drop_settled_set_asides "$sa_round2" "$sa_empty_list" "$sa_snap2")"
 # A round that only waits on the owner holds no agent and no runner (#2030).
 eq "approval.sh leaves out In progress issues that also wait on the owner" "1" "$(grep -c -- '--jq "\$RUNNING_ISSUES_JQ"' "$root/scripts/drive/approval.sh")"
-eq "approval.sh reads a pull request held by its body line as held too" "1" "$(grep -c -- '--jq "\$HELD_PRS_JQ"' "$root/scripts/drive/approval.sh")"
+eq "approval.sh reads a pull request held by its body line as held too" "1" "$(grep -c -- '--jq "\$PULL_LINES_JQ"' "$root/scripts/drive/approval.sh")"
 eq "the filters name the waiting label and both hold forms" "3" "$(printf '%s\n%s\n' "$RUNNING_ISSUES_JQ" "$HELD_PRS_JQ" | grep -o 'state:waiting-on-owner\|queue:hold\|Queue: hold' | wc -l | tr -d ' ')"
 eq "a round whose only pull request is held is not running" "" "$(running_round "$sr_comments" '' "$(printf '540\n')" "$(printf '531\n532\n')")"
 # A change whose issue waits on the owner is held, label or not, and the hold is set with the state (#2030).
@@ -6482,7 +6482,7 @@ eq "a choice that starts with another word is not reading" "one" "$(printf 'Shou
 # The words of an ask in the shape, held to what a builder who is not technical can answer (Maya's rooftop-garden app).
 ap_fx="$fx/ask-plain"
 ap_cases=$(grep -v '^#' "$ap_fx/checks.txt" | tr -d '\r')
-eq "the plain-words list has its cases" "10" "$(printf '%s\n' "$ap_cases" | grep -c .)"
+eq "the plain-words list has its cases" "12" "$(printf '%s\n' "$ap_cases" | grep -c .)"
 printf '%s\n' "$ap_cases" | while read -r ap_name ap_want; do
   [ -n "$ap_name" ] || continue
   eq "the plain-words case $ap_name reads $ap_want" "$ap_want" "$(ask_check < "$ap_fx/$ap_name.md")"
@@ -6880,7 +6880,7 @@ eq "a red change waits 10 minutes from its last push, a conflicting one 30" "1" 
 eq "red, last push 42 minutes ago, is past the red wait" "no" "$(recently_touched 5680 '' 8200 10)"
 eq "leftover remote branches are an unnumbered note, never a goal" "note: 300 branch(es) are still on the remote after their pull request merged or closed. run it
 stop: nothing to propose" "$(propose_round "$(printf 'audit\t300 branch(es) are still on the remote after their pull request merged or closed. run it\n')" 2 4 2 | number_proposal "$(cat)")"
-eq "a held change holds no round: the approval leaves queue:hold pull requests out of the running ones" "1" "$(grep -c -- '--jq "$HELD_PRS_JQ"' "$root/scripts/drive/approval.sh")"
+eq "a held change holds no round: the approval leaves queue:hold pull requests out of the running ones" "1" "$(grep -c -- '--jq "$PULL_LINES_JQ"' "$root/scripts/drive/approval.sh")"
 # A round held behind one pull request for over an hour says so, with the time; the other areas' units start anyway.
 eq "held 2 hours 5 minutes is named with its time" "waits: the round has been held behind pull request 53 for 2 hours 5 minutes; units in other areas start anyway" "$(held_wait_note "$(printf '53\t1000\n')" 8500)"
 eq "held 70 minutes reads as one hour" "waits: the round has been held behind pull request 53 for 1 hour 10 minutes; units in other areas start anyway" "$(held_wait_note "$(printf '53\t1000\n')" 5200)"
@@ -7480,6 +7480,11 @@ eq "the same issue with the held-read unit left out of what is running starts" "
 eq "an issue in the area of a live unit waits behind it" "hold${hr_t}41${hr_t}Water the roof beds on a timer${hr_t}After: Redesign the irrigation plan" "$(area_units "$hr_list" "$hr_unit" "$(printf '31\twater\n')" "$hr_titles")"
 eq "an issue in the area of a unit that is not running starts" "$hr_unit" "$(area_units "$hr_list" "$hr_unit" "" "$hr_titles")"
 eq "plan.sh leaves a held-only issue and a held pull request out of what is running" "4" "$(grep -c 'held_only\|held_pull_numbers' "$root/scripts/drive/plan.sh")"
+eq "approval.sh reads the running round through the plan's held-only rule" "2" "$(grep -c 'held_only_issues "$pull_lines"\|PULL_LINES_JQ' "$root/scripts/drive/approval.sh")"
+# The Saturday case: an agent ended its unit by opening a held pull request, leaving the irrigation issue In progress; the approval must not read that label as a running round.
+ap_in=$(printf '31\n32\n')
+eq "an In progress issue whose only pull request is held is left out of what is running" "32" "$(without_issues "$ap_in" "$(held_only_issues "$(printf '201\tyes\t31\n202\tno\t32\n')")")"
+eq "the approval's pull-line query keeps the number, the hold and what the body closes" "yes" "$(grep -q 'PULL_LINES_JQ=.*closes|fixes|resolves' "$root/scripts/drive/round-state-lib.sh" && echo yes)"
 # issue_titles was once set by a statement hidden after a trailing # comment,
 # so it was always empty and an area hold named the issue it waits behind by
 # number, never by title (#2066).
@@ -7507,6 +7512,10 @@ eq "a chain ending at a question names the answer" "Waits on your answer on “H
 hr_round=$(hold_reasons "$hr_ask" | sed 's/^hold\t\([0-9]*\)\t/hold \1\t/')
 eq "a stall names the answer that frees the most, with the count" "stall: every ready issue is held; answering “How often may beds be watered?” frees 2 issues" "$(stall_note "$hr_round")"
 eq "no stall when an issue is dispatched" "" "$(stall_note "$(printf 'dispatch 9\tWater\n%s\n' "$hr_round")")"
+# Eleven issues held for one reason, with runners free: the round says so (#2047), and not when no runner is online.
+hr_part=$(printf 'hold 1469\tFrost alerts\tPart of it landed; the drive has a reader working out what is left of it this round\nhold 1752\tSeed list\tPart of it landed; the drive has a reader working out what is left of it this round\n')
+eq "a round holding every issue for a partly landed one says so as a stall" "stall: every ready issue is held (2), and nothing in it waits on you; 2 of them are partly built, and the drive is writing down what is left of each before it starts an agent" "$(stall_note "$hr_part" 6)"
+eq "no runner online is a different cause, so no stall line here" "" "$(stall_note "$hr_part" 0)"
 block_end
 section 'a round is sized by its work, never by free runners (drive)'
 . "$root/scripts/drive/drive-lib.sh"; . "$root/scripts/drive/round-lib.sh"; . "$root/scripts/drive/bundle-lib.sh"; . "$root/scripts/drive/round-sizing-lib.sh"; . "$root/scripts/drive/hold-reasons-lib.sh"; . "$root/scripts/drive/held-round-lib.sh"
