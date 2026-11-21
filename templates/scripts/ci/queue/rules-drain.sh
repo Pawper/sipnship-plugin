@@ -137,15 +137,15 @@ mergeable_word() {
   esac
 }
 
-# drain_hold GREEN WAITING
-# Print "yes" when the drain should wait before merging: one green pull
-# request would merge serially while WAITING others are still
-# running CI, and a serial merge moves main under every one of them, so
-# they are updated and sent back round CI and the batch that follows has
-# nothing. Hold until they finish, then batch. Print "no" when nothing is
-# waiting, nothing is green, or there are enough green ones to batch now.
+# drain_hold GREEN WAITING: "yes" only where a project turned the hold on
+# (QUEUE_HOLD_MINUTES above 0) and one green change, or a round's green ones,
+# would land while WAITING others still run CI. Off by default: a drain lands
+# what is green at once, and a change still in its checks is the next drain's
+# (one afternoon a drain of three green changes waited six rounds for a
+# fourth, and three changes green at 5:08 PM landed at 5:40 PM). Print "no"
+# when the hold is off, nothing is waiting, nothing is green, or enough are.
 drain_hold() {
-  if [ "${2:-0}" -gt 0 ] && { [ "${1:-0}" -eq 1 ] || { [ "${1:-0}" -gt 1 ] && [ "${round_hold:-}" = yes ]; }; }; then echo yes; else echo no; fi
+  if [ "${QUEUE_HOLD_MINUTES:-0}" -gt 0 ] 2>/dev/null && [ "${2:-0}" -gt 0 ] &&{ [ "${1:-0}" -eq 1 ] || { [ "${1:-0}" -gt 1 ] && [ "${round_hold:-}" = yes ]; }; }; then echo yes; else echo no; fi
 }
 
 # rate_wait RATE NOW [FLOOR]

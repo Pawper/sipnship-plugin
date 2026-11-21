@@ -110,7 +110,7 @@ export TMPDIR SUITE_TMP_ROOT GIT_CEILING_DIRECTORIES
 # Blocks that read its text read these two files: the libraries in sourcing
 # order, then the main script (so a function is defined before its call).
 mq_all=$SUITE_TMP_ROOT/merge-queue.all.sh
-cat "$root"/templates/scripts/ci/queue/state.sh "$root"/templates/scripts/ci/queue/requests.sh "$root"/templates/scripts/ci/queue/rush.sh "$root"/templates/scripts/ci/queue/runs.sh "$root"/templates/scripts/ci/queue/choose.sh "$root"/templates/scripts/ci/queue/held.sh "$root"/templates/scripts/ci/queue/rerun.sh "$root"/templates/scripts/ci/queue/rescue.sh "$root"/templates/scripts/ci/queue/serial.sh "$root"/templates/scripts/ci/queue/batch.sh "$root"/templates/scripts/ci/queue/deploy.sh "$root"/templates/scripts/ci/queue/attention.sh "$root"/templates/scripts/ci/queue/wait.sh "$root"/templates/scripts/ci/merge-queue.sh > "$mq_all"
+cat "$root"/templates/scripts/ci/queue/state.sh "$root"/templates/scripts/ci/queue/requests.sh "$root"/templates/scripts/ci/queue/rush.sh "$root"/templates/scripts/ci/queue/runs.sh "$root"/templates/scripts/ci/queue/choose.sh "$root"/templates/scripts/ci/queue/held.sh "$root"/templates/scripts/ci/queue/rerun.sh "$root"/templates/scripts/ci/queue/rescue.sh "$root"/templates/scripts/ci/queue/serial.sh "$root"/templates/scripts/ci/queue/batch.sh "$root"/templates/scripts/ci/queue/deploy.sh "$root"/templates/scripts/ci/queue/attention.sh "$root"/templates/scripts/ci/queue/wait.sh "$root"/templates/scripts/ci/queue/passed.sh "$root"/templates/scripts/ci/merge-queue.sh > "$mq_all"
 bl_all=$SUITE_TMP_ROOT/batch-lib.all.sh
 cat "$root"/templates/scripts/ci/batch-lib.sh "$root"/templates/scripts/ci/queue/rules-*.sh > "$bl_all"
 
@@ -447,11 +447,18 @@ eq "a unit still without a pull request is counted, and held work is not" "411${
 eq "the newest started marker is the running round" "411 412${rd_tab}0" "$(rd_marker markers-two-rounds.txt)"
 eq "no started marker is no round" "" "$(rd_marker marker-none.txt)"
 rd_pool() { round_pool "$(cat "$rd_fx/$1")" "$2" | cut -f1 | tr '\n' ' '; }
-eq "with the round running, only its members are in the pool" "411 412 " "$(rd_pool open-members-green.tsv '411 412')"
-eq "a member still running its checks keeps the pool narrowed" "411 412 " "$(rd_pool open-one-pending.tsv '411 412')"
+eq "with the round running, its members and every green change are in the pool" "411 412 420 " "$(rd_pool open-members-green.tsv '411 412')"
+eq "a member still running its checks never keeps a green change out" "411 412 420 " "$(rd_pool open-one-pending.tsv '411 412')"
+# One afternoon a release green at 4:46 PM and a change green at 4:58 PM were
+# still open at 5:02 PM though two drains had run: the second left both out for
+# the round the drive named, whose two members were still in their checks, and
+# its last line said "Nothing is green yet". The drain's rows, as it read them.
+eq "a green change outside the running round is in the pool, not left for the round" "424 430 431 433 " "$(rd_pool open-green-outside-round.tsv '430 433')"
+eq "so that drain lands both green changes at once" "424 431" "$(drain_candidates "$(round_pool "$(cat "$rd_fx/open-green-outside-round.tsv")" '430 433')" main | tr '\n' ' ' | sed 's/ $//')"
 eq "members that are red or in conflict are set aside, so the rest flows" "411 412 420 " "$(rd_pool open-members-set-aside.tsv '411 412')"
 eq "a round whose members have all landed narrows nothing" "420 421 " "$(rd_pool open-round-done.tsv '411 412')"
 rd_out() { round_outstanding "$(round_pool "$(cat "$rd_fx/$1")" "$2")" "$2" "$3"; }
+eq "and the round's members still running are still counted" "2" "$(rd_out open-green-outside-round.tsv '430 433' 0)"
 eq "all members green and built: nothing is waited on" "0" "$(rd_out open-members-green.tsv '411 412' 0)"
 eq "a member running its checks is waited on" "1" "$(rd_out open-one-pending.tsv '411 412' 0)"
 eq "a unit not yet built is waited on beside it" "2" "$(rd_out open-one-pending.tsv '411 412' 1)"
@@ -1848,6 +1855,28 @@ eq "red again after its retry needs attention" "44	has conflicts with main
 eq "drafts and other bases never need attention here" "" "$(drain_attention "43	true	CONFLICTING	red	main
 45	false	CONFLICTING	red	release" main '43 45')"
 
+# The hold is off by default: a drain lands what is green at once, and a
+# change still in its checks is the next drain's. The words below are a
+# project's that turned it on (QUEUE_HOLD_MINUTES above 0).
+eq "by default one green with others running is not held: it lands now" "no no" "$(drain_hold 1 3) $(round_hold=yes drain_hold 2 1)"
+# A green change a round leaves is named with why; one with no reason lands.
+. "$root/templates/scripts/ci/queue/passed.sh"
+po_open=$(printf '51\tfalse\tMERGEABLE\tgreen\tmain\n52\tfalse\tMERGEABLE\tgreen\tmain\n53\tfalse\tCONFLICTING\tgreen\tmain\n54\ttrue\tMERGEABLE\tgreen\tmain\n55\tfalse\tMERGEABLE\tgreen\trelease\n56\tfalse\tMERGEABLE\tpending\tmain\n')
+eq "a green change already tried, and one in conflict, are named with why" "52	this drain already tried it and it could not land (its line above says why); the next drain tries it again
+53	it conflicts with main; its agent merges main in first" "$(drain_passed_over "$po_open" main 51 52 '' '')"
+eq "a draft, another base and a change in its checks are not named" "" "$(drain_passed_over "$po_open" main "$(printf '51\n52\n53')" '' '' '' | cut -f1 | tr '\n' ' ' | sed 's/ $//')"
+eq "with main red, the green changes not landing say the fix lands first" "51	main is red (issue #60); the change that fixes it lands first" "$(drain_passed_over "$po_open" main '' '52 53' '' 60 | sed -n 1p)"
+eq "with a rush standing, they say it lands first" "51	a rush change (#57) lands first, and this one right after" "$(drain_passed_over "$po_open" main '' '52 53' 57 '' | sed -n 1p)"
+eq "a green change with no reason to stay has an empty reason" "51	" "$(drain_passed_over "$po_open" main '' '52 53' '' '' | sed -n 1p)"
+po_dir=$SUITE_TMP_ROOT/passed; mkdir -p "$po_dir"
+po_out=$(say() { printf '%s\n' "$*"; }; flaky_dir=$po_dir; open=$po_open; base=main; pick=52; tried=""; rush_now=""; rm_issue=""; round=1; passed_round; printf 'pick=%s n=%s\n' "$(printf '%s' "$pick" | tr '\n' ' ')" "$passed_n")
+eq "a green change with no reason to stay is added to the round's landing, and said" "pick=51 52 n=1" "$(printf '%s\n' "$po_out" | tail -n 1)"
+eq "the one in conflict is said in the log with its reason" "1" "$(printf '%s\n' "$po_out" | grep -c '^round 1: #53 is green and does not land in this round: it conflicts with main')"
+eq "and kept for the Queue tab" "53" "$(cut -f1 "$po_dir/passed.tsv")"
+eq "the Queue tab's row for it says why, and keeps its state" "53	Watering reminders	green	green, and not in this landing: it conflicts with main; its agent merges main in first" "$(passed_open_say "$(printf '53\tWatering reminders\tgreen\tgreen and waiting to merge\n56\tFrost alerts\twaiting\tstill running CI\n')" "$(cat "$po_dir/passed.tsv")" | sed -n 1p)"
+eq "other rows are as they were" "56	Frost alerts	waiting	still running CI" "$(passed_open_say "$(printf '53\tWatering reminders\tgreen\tgreen and waiting to merge\n56\tFrost alerts\twaiting\tstill running CI\n')" "$(cat "$po_dir/passed.tsv")" | sed -n 2p)"
+eq "the drain names what it leaves every round, and the publisher shows it" "1 1" "$(grep -c 'redmain_round; passed_round;' "$root/templates/scripts/ci/merge-queue.sh") $(grep -c 'passed_open_say "\$open_tsv"' "$root/templates/scripts/ci/publish-state.sh")"
+QUEUE_HOLD_MINUTES=10; export QUEUE_HOLD_MINUTES
 eq "one green with others running: hold" "yes" "$(drain_hold 1 3)"
 eq "two green: batch now, never one then the other" "no" "$(drain_hold 2 1)"
 eq "three green: batch now" "no" "$(drain_hold 3 4)"
@@ -1857,8 +1886,11 @@ eq "nothing green: nothing to hold" "no" "$(drain_hold 0 2)"
 # A drain on a CI runner that only waits ends and frees the runner, saying
 # what it waits on; one run by hand in a terminal waits as before.
 . "$root/templates/scripts/ci/queue/wait.sh"
+eq "by default no step holds, on a runner or in a terminal" "merge merge" "$(drain_wait_step end 1 2 60 1500 '' 0) $(drain_wait_step wait 1 2 60 1500 '' 0)"
+eq "the 4:50 PM drain of that afternoon: one green, one in its checks, lands now" "merge" "$(drain_wait_step end 1 1 60 1500 '' 0)"
 eq "on a runner the drain ends rather than wait" "end" "$(GITHUB_ACTIONS=true QUEUE_DRAIN_WAIT='' drain_wait_where)"
-eq "in a terminal it waits" "wait" "$(GITHUB_ACTIONS='' QUEUE_DRAIN_WAIT='' drain_wait_where)"
+eq "in a terminal with no Queue drain workflow it waits" "wait" "$(GITHUB_ACTIONS='' QUEUE_DRAIN_WAIT='' QUEUE_DRAIN_WORKFLOW=/nowhere/queue-drain.yml drain_wait_where)"
+eq "in a terminal of a project with the Queue drain workflow it ends too: a finished check starts the next drain" "end" "$(GITHUB_ACTIONS='' QUEUE_DRAIN_WAIT='' QUEUE_DRAIN_WORKFLOW="$root/templates/.github/workflows/queue-drain.yml" drain_wait_where)"
 eq "QUEUE_DRAIN_WAIT chooses either way" "wait end" "$(GITHUB_ACTIONS=true QUEUE_DRAIN_WAIT=wait drain_wait_where) $(GITHUB_ACTIONS='' QUEUE_DRAIN_WAIT=end drain_wait_where)"
 eq "on a runner, nothing green and others running: it ends" "end-wait" "$(drain_wait_step end 0 3 0 1500 '')"
 eq "in a terminal: it waits two minutes" "wait" "$(drain_wait_step wait 0 3 0 1500 '')"
@@ -1886,7 +1918,8 @@ eq "so a green one past the bound is no longer held, on a runner" "merge" "$(dra
 # length: a batch's full run can outlast ten minutes, so it never cuts a drain.
 eq "a hold past its own ten minutes merges, inside the drain's longer bound" "merge end-hold" "$(drain_wait_step end 1 2 600 1500 '' 600) $(drain_wait_step end 1 2 599 1500 '' 600)"
 eq "the hold's bound never stops a wait for others" "end-wait stop" "$(drain_wait_step end 0 2 600 1500 '' 600) $(drain_wait_step end 0 2 1500 1500 '' 600)"
-eq "the end line says what it waits on" "Nothing is green yet; waiting on 3 pull request(s) still running CI, whose checks are all queued for a runner. Ending here to free this runner; a drain starts again when one of their checks finishes." "$(drain_end_line wait 3 yes)"
+eq "the end line says what it waits on" "Nothing is green yet; waiting on 3 pull request(s) still running CI, whose checks are all queued for a runner. Ending here; a drain starts again when one of their checks finishes." "$(drain_end_line wait 3 yes)"
+eq "a round that left green changes never says nothing is green" "Nothing more can land now (2 green, named above with why); waiting on 1 pull request(s) still running CI. Ending here; a drain starts again when one of their checks finishes." "$(passed_n=2 drain_end_line wait 1 no)"
 eq "and for a hold, why the green one is held" "One pull request is green and 2 still running CI; it is held so a merge alone does not send them back round CI. Ending here to free this runner; a drain starts again when one of their checks finishes." "$(drain_end_line hold 2 no)"
 # The loop reads the step, and ends only between rounds: a batch the drain
 # opened is waited for inside the batch, never left to a later drain.
@@ -1897,8 +1930,8 @@ eq "the batch still waits for its own full run" "1" "$(grep -c 'if wait_for_run 
 eq "a batch an earlier run left open is settled by the next drain" "1 1" "$(grep -c 'merged batch #\$bp, left green by an earlier run' "$mq_tpl") $(grep -c 'is still running CI; its members' "$mq_tpl")"
 eq "a batch left green by an earlier run tidies its members' worktrees too" "1" "$(sed -n '/left green by an earlier run/,/elif .\$bstate. = failed/p' "$mq_tpl" | grep -c 'tidy_worktree')"
 eq "the drain loads its waits" "1" "$(grep -c '\. "\$here/queue/wait.sh"' "$mq_tpl")"
-eq "the hold is ten minutes by default, its own number, and bounds the hold, its words and its published limit" "1 1 1" "$(grep -c 'hold_minutes=\${QUEUE_HOLD_MINUTES:-10}' "$mq_tpl") $(grep -c '"$last_look" \$((hold_minutes \* 60)))' "$mq_tpl") $(grep -c 'hold_bound_said "$where" "$held_for" \$((hold_minutes \* 60)) .*drain_hold_note "$step" "$pick" "$held_for" \$((hold_minutes \* 60))$' "$mq_tpl")"
-eq "the drain workflow sets the hold from a variable, ten by default" "1" "$(grep -c "QUEUE_HOLD_MINUTES: \${{ vars.QUEUE_HOLD_MINUTES || '10' }}" "$root/templates/.github/workflows/queue-drain.yml")"
+eq "the hold is off by default, its own number, and bounds the hold, its words and its published limit" "1 1 1" "$(grep -c 'hold_minutes=\${QUEUE_HOLD_MINUTES:-0}' "$mq_tpl") $(grep -c '"$last_look" \$((hold_minutes \* 60)))' "$mq_tpl") $(grep -c 'hold_bound_said "$where" "$held_for" \$((hold_minutes \* 60)) .*drain_hold_note "$step" "$pick" "$held_for" \$((hold_minutes \* 60))$' "$mq_tpl")"
+eq "the drain workflow sets the hold from a variable, off by default" "1" "$(grep -c "QUEUE_HOLD_MINUTES: \${{ vars.QUEUE_HOLD_MINUTES || '0' }}" "$root/templates/.github/workflows/queue-drain.yml")"
 
 # A green change held for a batch says so: the time it is held until at the
 # latest, as a log line and as the published "holds" (spec 001). The rule that
@@ -1924,6 +1957,7 @@ eq "a round that holds writes the hold: the change, when its count began, the li
 eq "a round that does not hold empties it" "0" "$(wc -c < "$hd_dir/hold.tsv" | tr -d ' ')"
 eq "the drain notes every round and says the bound in its hold lines" "1 2" "$(grep -c 'drain_hold_note "\$step"' "$mq_tpl") $(grep -c '\$bound' "$mq_tpl")"
 eq "the publisher adds the holds and says the held row" "1 1" "$(grep -c 'hold_json_add' "$root/templates/scripts/ci/publish-state.sh") $(grep -c 'hold_open_say' "$root/templates/scripts/ci/publish-state.sh")"
+unset QUEUE_HOLD_MINUTES
 
 section 'unsticking a pull request at a drain'"'"'s end'
 . "$root/templates/scripts/ci/batch-lib.sh"
@@ -2223,7 +2257,7 @@ eq "the round that names other changes leaves the fix out, and the log names it"
 eq "main red and the fix not green: no pick, so no batch is built" "" "$(redmain_pick "$(printf '1808\n1809\n')" 1816)"
 eq "main red and the fix still running: the line says what it waits on" "Main is red (issue #1815); no batch is built. Waiting for #1816, the pull request that closes it, to turn green." "$(redmain_say 1815 "" 1816)"
 eq "main red and no fix open: the line says no run is spent" "1" "$(redmain_say 1815 "" "" | grep -c 'no run is spent')"
-eq "the drain reads the red-main issue before it picks" "1" "$(grep -c 'redmain_round; waiting=' "$mq_all")"
+eq "the drain reads the red-main issue before it picks" "1" "$(grep -c 'redmain_round; passed_round; waiting=' "$mq_all")"
 # The whole round: main red, a green fix that is not in the named round, and green round members. The fix lands first,
 # alone, and no line says it waits for the next round; with main green, a green change left out still does.
 rm_round() (
@@ -2308,8 +2342,8 @@ eq "after-drain is a step, so the request stays open" "1" "$(grep -c '\[ "\$4" =
 eq "a failed read is said in the log, never read as a request" "1" "$(grep -c 'going on without them." >&2' "$mq_all")"
 # The case from a real drain: one green with six running, and Land this next on it.
 qr_open=$(printf '48\tfalse\tMERGEABLE\tgreen\tmain\n51\tfalse\tMERGEABLE\tpending\tmain\n53\tfalse\tMERGEABLE\tpending\tmain\n')
-eq "an ordinary green change is held for others' CI" "yes" "$(drain_hold 1 "$(drain_waiting "$qr_open" main "")")"
-eq "a land request is not: with a rush standing, nothing running counts against it" "no" "$(drain_hold 1 "$(drain_waiting "$(rush_only "$qr_open" "48 ")" main "")")"
+eq "where the hold is on, an ordinary green change is held for others' CI" "yes" "$(QUEUE_HOLD_MINUTES=10 drain_hold 1 "$(drain_waiting "$qr_open" main "")")"
+eq "a land request is not: with a rush standing, nothing running counts against it" "no" "$(QUEUE_HOLD_MINUTES=10 drain_hold 1 "$(drain_waiting "$(rush_only "$qr_open" "48 ")" main "")")"
 eq "the wake starts a drain, with no runner spent on other comments" "1 1" "$(grep -c "startsWith(github.event.comment.body, 'Queue request: land-')" "$root/templates/.github/workflows/queue-wake.yml") $(grep -c 'workflows/queue-drain.yml/dispatches' "$root/templates/.github/workflows/queue-wake.yml")"
 # A plain YAML value cannot hold a colon and a space: GitHub cannot load such a workflow, starts no job, and no check says so.
 eq "no workflow's if: line is a plain value holding a colon and a space" "" "$(grep -lE "^ *(- )?if: [^>|\"'].*: " "$root"/templates/.github/workflows/*.yml)"
