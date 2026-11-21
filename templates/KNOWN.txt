@@ -25,6 +25,7 @@
 .github/workflows/audit.yml 74dacf7dea2391f9d19ccefe2d7423758ef69118
 .github/workflows/audit.yml 7de9ab5ef77e11b2e4e5c441106b9c533b2c06a1
 .github/workflows/audit.yml 8931d3d82cb2a68ab168c0f46cd73d9c37f6cfe0
+.github/workflows/audit.yml a6180b76dd49fba6790bdfd052d2fecf82de08ea
 .github/workflows/audit.yml af8863db29783e2063eadf2047acaddefd6f7cc2
 .github/workflows/audit.yml bc41e3e0359fbe2d12f66dc1fc7a74d6b2f963fb
 .github/workflows/audit.yml c26459eb0fee6285d36b53edcec77a88e2dad0aa
@@ -342,6 +343,7 @@ scripts/ci/hotspots-check.sh 22aa834cdfc90ad8525c5145629e3340dca547b9
 scripts/ci/hotspots-check.sh 2929ddea85c0eec715a6dabf3fbfc4baa5c06a4e
 scripts/ci/hotspots-lib.sh 2a6a2017b45fb37b20e2bda6829a69790691eb5c
 scripts/ci/in-progress-audit.sh ea368e4bc41f8dc113fc1498fc08491858031f2e
+scripts/ci/installed-copy-audit.sh 2bdee4464bce5d6398873df999c59a1cd2b84421
 scripts/ci/jobs-audit.sh 0ebf0de9acec02ea5c0f28989323d774fde39932
 scripts/ci/lib.sh 03c38a2b06a071db2523f57540a0bfd3a2859c6a
 scripts/ci/lib.sh 09b4a522ca57989528abddfada64ec50213e6ad1
