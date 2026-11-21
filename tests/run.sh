@@ -6778,6 +6778,27 @@ eq "a request the drive still owes starts a tick with nothing approved" "start${
 eq "approved goals still say goals when requests are owed too" "start${wk_tab}1 goal" "$(wake_decision 'dispatch 301' 'start-next 12 by maya')"
 eq "no request owed leaves the reading as it was" "nothing${wk_tab}no reply yet" "$(wake_decision 'nothing: no reply yet' '')"
 eq "any other comment does not" "no no" "$(wake_event_wanted issue_comment 'Looks good to me') $(wake_event_wanted issue_comment 'Queue request: land-now #12 by maya')"
+# A red change with nobody on it is owed a fix agent within five minutes, before the plan (#1897).
+wf_now=1800000000
+wf_rows="41${wk_tab}yes${wk_tab}no${wk_tab}$((wf_now - 840))${wk_tab}
+42${wk_tab}yes${wk_tab}no${wk_tab}$((wf_now - 270))${wk_tab}
+43${wk_tab}yes${wk_tab}no${wk_tab}$((wf_now - 120))${wk_tab}
+44${wk_tab}yes${wk_tab}yes${wk_tab}$((wf_now - 900))${wk_tab}
+45${wk_tab}no${wk_tab}no${wk_tab}$((wf_now - 900))${wk_tab}
+46${wk_tab}yes${wk_tab}no${wk_tab}$((wf_now - 900))${wk_tab}$((wf_now - 600))
+47${wk_tab}yes${wk_tab}no${wk_tab}$((wf_now - 900))${wk_tab}$((wf_now - 1200))"
+eq "a red change nobody is on for about five minutes is owed a fix agent, the longest first; a young, held, green or already-asked one is not; an ask older than the push is asked again" "fix-agent 47
+fix-agent 41
+fix-agent 42" "$(wake_fix_owed "$wf_now" "$wf_rows")"
+eq "no pull request owes nothing" "" "$(wake_fix_owed "$wf_now" "")"
+eq "an owed fix agent starts a tick even with nothing approved" "start${wk_tab}1 request" "$(wake_decision 'nothing: no reply yet' "$(wake_fix_owed "$wf_now" "41${wk_tab}yes${wk_tab}no${wk_tab}$((wf_now - 840))${wk_tab}")")"
+eq "the ask the wake leaves on a pull request starts the line the look reads" "1" "$(wake_fix_asked_comment | grep -c '^Fix agent asked')"
+eq "the wake check looks for it before the plan, and the ten-minute look ends there with none owed" "1 2 1" "$(grep -c 'fix-owed.sh' "$root/scripts/drive/wake-check.sh") $(grep -c 'WAKE_QUICK' "$root/scripts/drive/wake-check.sh") $(grep -c 'cron:' "$root/../.github/workflows/drive-wake.yml")"
+wf_dir=$(mktemp -d); mkdir -p "$wf_dir/bin"
+printf '#!/bin/sh\necho "fix-agent 51"\n' > "$wf_dir/fix.sh"; printf '#!/bin/sh\nexit 0\n' > "$wf_dir/none.sh"
+eq "the quick look with a fix agent owed goes on and starts a tick" "fix agents owed: 51
+start: 1 request" "$(cd "$wf_dir" && WAKE_QUICK=yes WAKE_FIX_OWED="$wf_dir/fix.sh" WAKE_UPDATE=/dev/null WAKE_PREPARE=/dev/null WAKE_PLAN=/dev/null PATH="$wf_dir/bin:$PATH" sh "$root/scripts/drive/wake-check.sh" | grep -v '^not published')"
+eq "the quick look with none owed ends at once and plans nothing" "nothing: no red change is waiting for an agent" "$(cd "$wf_dir" && WAKE_QUICK=yes WAKE_FIX_OWED="$wf_dir/none.sh" WAKE_UPDATE=/dev/null WAKE_PREPARE=/dev/null WAKE_PLAN=/dev/null PATH="$wf_dir/bin:$PATH" sh "$root/scripts/drive/wake-check.sh")"
 wk_units=$(cat "$fx/drive-wake-restart/units.tsv")
 eq "no branch, old and no agent running is restarted; young or a live agent is starting; a branch or pull request is working" "301${wk_tab}restart
 302${wk_tab}working

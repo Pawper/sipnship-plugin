@@ -37,6 +37,30 @@ approved_not_planned() {
     | awk '{ k = substr($0, 3); gsub(/[ ]+/, " ", k); sub(/ $/, "", k); if ($1 == "P") planned[k] = 1; else if (!(k in planned) && !(k in said)) { said[k] = 1; print k } }'
 }
 
+# wake_fix_owed NOW ROWS [MINUTES]
+# The red changes the wake asks a fix agent for first, for that one change each,
+# before the plan runs (specs/023-drive-on-work, "A stall is named"; the rule is
+# core's fixAgentsOwed). ROWS: one open pull request a line,
+# "NUMBER<TAB>RED<TAB>HELD<TAB>PUSH_EPOCH<TAB>ASKED_EPOCH": RED is "yes" when its
+# newest commit's checks all ended and one failed, HELD "yes" when it is held for the
+# builder, PUSH_EPOCH the head commit's time, ASKED_EPOCH the time of the last
+# "Fix agent asked" comment on it. Prints "fix-agent NUMBER" for each one red and
+# not held whose last push is at least MINUTES (default 5) less a minute of grace
+# old, and which no fix agent was asked for since that push (a push is the agent's
+# evidence, so a later look never asks twice for the same commit). Longest first.
+wake_fix_owed() {
+  printf '%s\n' "$2" | tr -d '\r' | awk -F'\t' -v now="$1" -v m="${3:-5}" '
+    $1 != "" && $2 == "yes" && $3 != "yes" && $4 ~ /^[0-9]+$/ && now - $4 >= (m - 1) * 60 && !($5 ~ /^[0-9]+$/ && $5 >= $4) { print $4 "\t" $1 }' \
+    | sort -n | cut -f2 | sed 's/^/fix-agent /'
+}
+
+# wake_fix_asked_comment
+# The one line left on a pull request when its fix agent is asked for, so the next
+# look reads it as asked until a new push lands.
+wake_fix_asked_comment() {
+  echo "Fix agent asked: this change's checks ended red with nobody on it, so an agent was sent to fix it. A new push from it, or the next failure, is looked at again."
+}
+
 # wake_event_wanted EVENT BODY
 # Which events may start a tick. "yes" for a dispatch (by hand or sent by the
 # service), a finished queue drain, and a comment on the drive issue that is

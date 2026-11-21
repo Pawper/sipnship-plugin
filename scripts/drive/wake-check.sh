@@ -20,6 +20,14 @@ mkdir -p .scratch/drive 2>/dev/null
 sh "${WAKE_UPDATE:-$here/../release/update-if-behind.sh}" 2>/dev/null | tail -n 1
 # And a release is prepared by script when plugin changes sit on main with no release open; nothing is printed when there is none.
 sh "${WAKE_PREPARE:-$here/../release/prepare.sh}" 2>/dev/null | tail -n 1 | grep -v '^release: nothing to release' || true
+# A red change with nobody on it is looked for first, by script, before the slow plan: its fix agent is owed within minutes (#1897).
+fix=$(sh "${WAKE_FIX_OWED:-$here/fix-owed.sh}" 2>/dev/null)
+# The ten-minute look (WAKE_QUICK=yes) is only this: with no fix agent owed it ends here, with no plan and no model.
+if [ "${WAKE_QUICK:-}" = yes ] && [ -z "$fix" ]; then
+  echo "nothing: no red change is waiting for an agent"
+  if [ -n "${GITHUB_OUTPUT:-}" ]; then echo "start=no" >> "$GITHUB_OUTPUT"; echo "why=no red change is waiting for an agent" >> "$GITHUB_OUTPUT"; fi
+  exit 0
+fi
 sh "${WAKE_PLAN:-$here/plan.sh}" --fast > .scratch/drive/plan.txt 2>/dev/null
 pub=$(grep -E '^(published|not published):' .scratch/drive/plan.txt | tail -n 1)
 echo "${pub:-not published: the plan printed no proposal, so the Work tab still shows the last round it was given.}"
@@ -32,6 +40,8 @@ if [ -n "$stale" ]; then
 $out"
 fi
 req=$(sh "$here/work-requests.sh" 2>/dev/null)
+[ -n "$fix" ] && { echo "fix agents owed: $(printf '%s' "$fix" | sed 's/^fix-agent //' | tr '\n' ' ' | sed 's/ $//; s/ /, /g')"; req="$fix
+$req"; }
 d=$(wake_decision "$out" "$req")
 kind=$(printf '%s' "$d" | cut -f1)
 why=$(printf '%s' "$d" | cut -f2)

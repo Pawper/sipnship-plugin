@@ -153,6 +153,15 @@ form `Queue answer: KIND #N: outcome` (start-round's N is 0), one comment each, 
 waits on, so the dashboard's waiting line ends; a request still printed on the next tick is one you owe, so answer
 it then. A request nobody answers tells the person it did not happen: a start after a day, a hold after an hour.
 
+**A red change with nobody on it comes first (#1897).** The wake check also prints `fix agents owed: N, M` and a
+`fix-agent N` line for each pull request whose checks ended red, that is not held, with a last push about five
+minutes old and no `Fix agent asked` comment since that push (`scripts/drive/fix-owed.sh`; a quick look every ten
+minutes finds them, with no plan and no model unless one is owed). Before anything else this tick, and without
+planning the board, dispatch one fix agent for each, exactly as `fix-pr N` below says (never a second on a
+pull request that has one), then leave one comment on that pull request with the line
+`wake_fix_owed`'s companion `wake_fix_asked_comment` (in `scripts/drive/wake-lib.sh`) prints, so the next look reads it as
+asked until a new push lands. The plan and the rest of the tick follow.
+
 **Answers to what was asked.** A choice pressed on a Needs you card is written on the issue (or on its pull
 request, when the question was asked there) as two lines, the second in a fixed form: `Builder answer: #N
 choice K by LOGIN`, ending `changes <comment id>` when it replaces an earlier answer. A person may write the
