@@ -5590,9 +5590,9 @@ issue	9	Ready thing	state:ready	t	x" "$(bc_gh; pr_rollups "$(printf 'pr\t7\tBeds
 eq "the plan names the refusal and the board falls back without failing" "2" "$(grep -c "can't read check results" "$root/hooks/scripts/board-now.sh" "$root/scripts/drive/plan.sh" | awk -F: '$2 > 0' | wc -l | tr -d ' ')"
 # The installed plugin behind the latest release (#1626).
 . "$root/hooks/scripts/session-brief-versions.sh"
-eq "a copy twelve releases behind says so, with both versions and how to update" "plugin: this drive runs 0.43.5, and 0.43.17 is released (12 releases behind). Faults fixed in a release come back in the plan until the installed copy is updated. A scheduled drive updates it itself, first thing (sh plugin/scripts/release/update-installed.sh), and says in its report on the drive issue which release it moved to; the new scripts apply from its next start." "$(plugin_behind_note 0.43.5 0.43.17)"
+eq "a copy twelve releases behind says so, with both versions and how to update" "plugin: this drive runs 0.43.5, and 0.43.17 is released (12 releases behind). Faults fixed in a release come back in the plan until the installed copy is updated. Every drive tick updates it itself, first thing and by script (sh plugin/scripts/release/update-if-behind.sh), and says in its report on the drive issue which release it moved to; the new scripts apply from its next start." "$(plugin_behind_note 0.43.5 0.43.17)"
 eq "a current copy says nothing" "" "$(plugin_behind_note 0.43.17 0.43.17)$(plugin_behind_note 0.43.17 '')"
-eq "a copy a minor behind names no count" "plugin: this drive runs 0.42.9, and 0.43.1 is released. Faults fixed in a release come back in the plan until the installed copy is updated. A scheduled drive updates it itself, first thing (sh plugin/scripts/release/update-installed.sh), and says in its report on the drive issue which release it moved to; the new scripts apply from its next start." "$(plugin_behind_note 0.42.9 0.43.1)"
+eq "a copy a minor behind names no count" "plugin: this drive runs 0.42.9, and 0.43.1 is released. Faults fixed in a release come back in the plan until the installed copy is updated. Every drive tick updates it itself, first thing and by script (sh plugin/scripts/release/update-if-behind.sh), and says in its report on the drive issue which release it moved to; the new scripts apply from its next start." "$(plugin_behind_note 0.42.9 0.43.1)"
 eq "the drive skill has a scheduled tick update the installed copy itself and report the release" "1" "$(grep -c "scheduled tick (not a person.s session) runs" "$root/skills/project-drive/SKILL.md")"
 eq "plan.sh prints the behind line from one release read, before the proposal's own line" "1 1" "$(grep -c '^\[ "\$fast" = yes \] || plugin_note' "$root/scripts/drive/plan.sh") $(awk '/plugin_note  #/ { a = NR } /^echo "proposal for/ { b = NR } END { print (a && b && a < b) ? 1 : 0 }' "$root/scripts/drive/plan.sh")"
 eq "a goal naming the drive or audit issue is dropped, whatever it asks" "ask-owner 9	Water schedule row" "$(drop_standing_goals "$(printf 'ask-owner 5\tDrive\nmark-waiting 6\tAudit\nunasked 5\tDrive\nask-fix 5\tDrive\nask-owner 9\tWater schedule row')" "$(printf 'issue\t5\tDrive\tdrive,state:ready\nissue\t6\tAudit\taudit,state:ready\nissue\t9\tWater schedule row\tstate:ready\n')")"
@@ -7480,9 +7480,61 @@ pw_dir=$(mktemp -d); mkdir -p "$pw_dir/bin"
 printf '#!/bin/sh\necho "proposal for Friday"\necho "published: Published the round on #99: 1 agent, proposed."\n' > "$pw_dir/plan.sh"
 printf '#!/bin/sh\nexit 1\n' > "$pw_dir/bin/gh"; chmod +x "$pw_dir/bin/gh"
 eq "the wake runs the plan first and says what it published, then reads the approval" "published: Published the round on #99: 1 agent, proposed.
-nothing: gh is not available or not signed in|proposal for Friday" "$(cd "$pw_dir" && WAKE_PLAN="$pw_dir/plan.sh" PATH="$pw_dir/bin:$PATH" sh "$root/scripts/drive/wake-check.sh")|$(sed -n 1p "$pw_dir/.scratch/drive/plan.txt")"
+nothing: gh is not available or not signed in|proposal for Friday" "$(cd "$pw_dir" && WAKE_UPDATE=/dev/null WAKE_PREPARE=/dev/null WAKE_PLAN="$pw_dir/plan.sh" PATH="$pw_dir/bin:$PATH" sh "$root/scripts/drive/wake-check.sh")|$(sed -n 1p "$pw_dir/.scratch/drive/plan.txt")"
 printf '#!/bin/sh\necho "stop: rate-limited"\n' > "$pw_dir/plan.sh"
-eq "a plan that printed no publish line is said as not published" "1" "$(cd "$pw_dir" && WAKE_PLAN="$pw_dir/plan.sh" PATH="$pw_dir/bin:$PATH" sh "$root/scripts/drive/wake-check.sh" | grep -c '^not published: ')"
+eq "a plan that printed no publish line is said as not published" "1" "$(cd "$pw_dir" && WAKE_UPDATE=/dev/null WAKE_PREPARE=/dev/null WAKE_PLAN="$pw_dir/plan.sh" PATH="$pw_dir/bin:$PATH" sh "$root/scripts/drive/wake-check.sh" | grep -c '^not published: ')"
+# The installed copy is brought up by script first thing, whoever started the tick, and a release is prepared by script (#2052).
+uf_dir=$(mktemp -d)
+uf_list() { printf '{\n "plugins": {\n  "sipnship@sipnship": [\n   { "scope": "user", "version": "%s" }\n  ]\n }\n}\n' "$1" > "$uf_dir/list.json"; }
+printf '#!/bin/sh\nsed "s/0.43.50/0.43.54/" "$SIPNSHIP_PLUGIN_LIST" > "$SIPNSHIP_PLUGIN_LIST.new" && cat "$SIPNSHIP_PLUGIN_LIST.new" > "$SIPNSHIP_PLUGIN_LIST"\n' > "$uf_dir/up-ok.sh"
+printf '#!/bin/sh\necho "network down"\nexit 1\n' > "$uf_dir/up-bad.sh"
+uf_run() { SIPNSHIP_PLUGIN_LIST="$uf_dir/list.json" SIPNSHIP_PUBLISHED=$1 UPDATE_INSTALLED="$uf_dir/$2" sh "$root/scripts/release/update-if-behind.sh"; }
+uf_list 0.43.50
+eq "a copy behind the published version is updated and the line says to which version" "plugin: moved from 0.43.50 to 0.43.54" "$(uf_run 0.43.54 up-ok.sh)"
+eq "a copy on the published version is left alone" "plugin: current at 0.43.54" "$(uf_run 0.43.54 up-bad.sh)"
+uf_list 0.43.50
+eq "an update that fails says why and stops nothing" "plugin: could not update from 0.43.50 to 0.43.54 (network down)" "$(uf_run 0.43.54 up-bad.sh)"
+eq "the update never asks what kind of session started it" "0" "$(grep -ci "person's session" "$root/scripts/release/update-if-behind.sh")"
+eq "the skill no longer leaves the update to the model's reading of the session" "0 2" "$(grep -c "not a person's session" "$root/skills/project-drive/SKILL.md") $(grep -c 'update-if-behind.sh' "$root/skills/project-drive/SKILL.md")"
+printf '#!/bin/sh\necho "plugin: moved from 0.43.50 to 0.43.54"\n' > "$pw_dir/up.sh"
+printf '#!/bin/sh\necho "release: opened pull request #2151 for 0.43.55 (issue #2150)"\n' > "$pw_dir/prep.sh"
+printf '#!/bin/sh\necho "proposal for Friday"\necho "published: Published the round on #99: 1 agent, proposed."\n' > "$pw_dir/plan.sh"
+eq "the wake check updates the copy and prepares a release before the plan, and says both" "plugin: moved from 0.43.50 to 0.43.54
+release: opened pull request #2151 for 0.43.55 (issue #2150)
+published: Published the round on #99: 1 agent, proposed." "$(cd "$pw_dir" && WAKE_UPDATE="$pw_dir/up.sh" WAKE_PREPARE="$pw_dir/prep.sh" WAKE_PLAN="$pw_dir/plan.sh" PATH="$pw_dir/bin:$PATH" sh "$root/scripts/drive/wake-check.sh" | sed -n 1,3p)"
+# The release script, on a small repository with a bare origin; the issue, the bump and the pull request are stand-ins.
+pr_dir=$(mktemp -d); pr_gh="$pr_dir/bin"; mkdir -p "$pr_gh" "$pr_dir/origin.git"
+printf '#!/bin/sh\ncase "$*" in *tags*) echo plugin-v0.43.54 ;; *) exit 1 ;; esac\n' > "$pr_gh/gh"; chmod +x "$pr_gh/gh"
+git init -q --bare "$pr_dir/origin.git"
+git init -q -b main "$pr_dir/maya-garden"
+(
+  cd "$pr_dir/maya-garden" && git config user.email t@t && git config user.name t && git config core.autocrlf false
+  mkdir -p plugin/.claude-plugin plugin/scripts/release .scratch
+  printf '{\n  "name": "sipnship",\n  "version": "0.43.54"\n}\n' > plugin/.claude-plugin/plugin.json
+  printf '#!/bin/sh\ncd "$(dirname "$0")/../../.." || exit 1\nsed "s/\\"version\\": \\"[^\\"]*\\"/\\"version\\": \\"$1\\"/" plugin/.claude-plugin/plugin.json > plugin/.claude-plugin/plugin.json.new && cat plugin/.claude-plugin/plugin.json.new > plugin/.claude-plugin/plugin.json && rm plugin/.claude-plugin/plugin.json.new\n' > plugin/scripts/release/bump.sh
+  printf '.scratch/\n' > .gitignore
+  git add -A && git commit -q -m "Release the plugin as 0.43.54" && printf 'a\n' > plugin/watering.txt && git add -A && git commit -q -m "A plugin change" && git remote add origin "$pr_dir/origin.git" && git push -q origin main
+) >/dev/null 2>&1
+printf '#!/bin/sh\necho "Filed issue #501: https://example.test/501"\n' > "$pr_dir/issue-open.sh"
+printf '#!/bin/sh\ncat .scratch/body.md > "%s/body-seen.txt"\necho "Opened pull request #502: https://example.test/502"\n' "$pr_dir" > "$pr_dir/pr-open.sh"
+pr_run() { (cd "$pr_dir/maya-garden" && PATH="$pr_gh:$PATH" PREPARE_ISSUES="$pr_dir/issues.txt" ISSUE_OPEN="$pr_dir/issue-open.sh" PR_OPEN="$pr_dir/pr-open.sh" PREPARE_WORKTREES="$pr_dir/worktrees" sh "$root/scripts/release/prepare.sh" "$@" 2>&1); }
+: > "$pr_dir/issues.txt"
+eq "a plugin change on main with no release open is announced by a dry run" "release: would prepare 0.43.55 (1 plugin changes unreleased)" "$(pr_run --dry-run)"
+printf '600\tRelease the plugin as 0.43.55\n' > "$pr_dir/issues.txt"
+eq "a release already open is named and none is prepared" "release: 0.43.55 is already open (#600)" "$(pr_run)"
+: > "$pr_dir/issues.txt"
+eq "with none open the issue is filed, the bump made and the pull request opened" "release: opened pull request #502 for 0.43.55 (issue #501)" "$(pr_run)"
+eq "the release branch carries the bump and the body closes the issue" "0.43.55 1" "$(git -C "$pr_dir/worktrees/release-0-43-55" show HEAD:plugin/.claude-plugin/plugin.json | sed -n 's/.*"version": "\(.*\)".*/\1/p') $(grep -c '^Closes #501$' "$pr_dir/body-seen.txt")"
+eq "a second look finds the branch and prepares nothing more" "release: 0.43.55 is already open (branch release-0-43-55)" "$(pr_run)"
+eq "the wake check runs the release script" "1" "$(grep -c 'release/prepare.sh' "$root/scripts/drive/wake-check.sh")"
+# The nightly audit names an installed copy more than an hour behind.
+ia_dir=$(mktemp -d)
+printf '{\n "plugins": {\n  "sipnship@sipnship": [\n   { "scope": "user", "version": "0.43.50" }\n  ]\n }\n}\n' > "$ia_dir/list.json"
+ia_run() { SIPNSHIP_PLUGIN_LIST="$ia_dir/list.json" SIPNSHIP_PUBLISHED=$1 SIPNSHIP_PUBLISHED_AT=$2 AUDIT_NOW=$3 sh "$root/templates/scripts/ci/installed-copy-audit.sh"; }
+eq "a copy 4 releases and 3 hours behind is named" "The installed plugin copy is on 0.43.50, 4 releases behind 0.43.54, which was published 3 hours ago; the drive updates it first thing in every round, so the update is failing or no round is running. Run sh plugin/scripts/release/update-installed.sh." "$(ia_run 0.43.54 1000000 1010900)"
+eq "a copy behind for 30 minutes is not named" "" "$(ia_run 0.43.54 1000000 1001800)"
+eq "a current copy is not named" "" "$(ia_run 0.43.50 1000000 1090000)"
+eq "the project's copy of the installed-copy audit is the template's, owned, and called by both workflows" "same 1 2" "$(cmp -s "$root/templates/scripts/ci/installed-copy-audit.sh" "$root/../scripts/ci/installed-copy-audit.sh" && echo same || echo differ) $(grep -c '^scripts/ci/installed-copy-audit.sh$' "$root/templates/OWNED.txt") $(grep -c 'installed-copy-audit.sh' "$root/../.github/workflows/audit.yml" "$root/templates/.github/workflows/audit.yml" | awk -F: '{ s += ($2 > 0) } END { print s }')"
 eq "the builder's answer to an ask wakes the drive" "yes no" "$(wake_event_wanted issue_comment "$(printf 'Maya chose Water at dawn.\nBuilder answer: #233 choice 1 by maya')") $(wake_event_wanted issue_comment 'Builder answers are welcome')"
 eq "the wake workflow hears it too" "1" "$([ -f "$root/../.github/workflows/drive-wake.yml" ] || { echo 1; exit 0; }; grep -c "contains(github.event.comment.body, 'Builder answer: #')" "$root/../.github/workflows/drive-wake.yml")"
 eq "the skill leaves publishing to the plan, and starts only the published units" "1 1 0" "$(grep -c 'The plan publishes its own proposal' "$root/skills/project-drive/SKILL.md") $(grep -c 'what starts is the published round' "$root/skills/project-drive/SKILL.md") $(grep -c 'write the round to `.scratch/drive/round.txt`' "$root/skills/project-drive/SKILL.md")"

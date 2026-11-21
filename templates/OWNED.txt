@@ -128,6 +128,7 @@ scripts/ci/in-progress-audit.sh
 scripts/ci/proposal-audit.sh
 scripts/ci/jobs-audit.sh
 scripts/ci/held-change-audit.sh
+scripts/ci/installed-copy-audit.sh
 feature status
 status/build.sh
 status/check.sh

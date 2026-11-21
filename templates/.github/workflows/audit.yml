@@ -243,6 +243,10 @@ jobs:
 
           body=$(audit_comment "$missing" "$stale" "$red" "$branches")
           if [ -n "$heldissue" ]; then body=$(printf '%s\n\n%s' "$body" "$heldissue" | sed '/./,$!d'); fi
+          # The installed plugin copy more than an hour behind the published one, which each round's first step should have updated.
+          installed=""
+          if [ -f scripts/ci/installed-copy-audit.sh ]; then installed=$(sh scripts/ci/installed-copy-audit.sh); fi
+          if [ -n "$installed" ]; then body=$(printf '%s\n\n%s' "$body" "$installed" | sed '/./,$!d'); fi
           if [ -n "$idle" ]; then body=$(printf '%s\n\n%s' "$body" "$idle" | sed '/./,$!d'); fi
           if [ -n "$looks" ]; then body=$(printf '%s\n\n%s' "$body" "$looks" | sed '/./,$!d'); fi
           if [ -n "$asks" ]; then body=$(printf '%s\n\n%s' "$body" "$asks" | sed '/./,$!d'); fi
