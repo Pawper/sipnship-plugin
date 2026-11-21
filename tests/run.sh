@@ -5136,17 +5136,17 @@ eq "the tests job has a plain name, the part in its step" "1 0 1" "$(printf '%s\
 pj_repo="$root/../scripts/ci/classes.txt"
 if [ -f "$pj_repo" ] && grep -q '^!parts plugin' "$pj_repo"; then
   pj_rc=$(cat "$pj_repo")
-  for pj_case in web-only:'[]' plugin:'["shell-1","shell-2","shell-3","shell-4","queue-console"]' ci:'["shell-1","shell-2","shell-3","shell-4","queue-console"]' unclassified:'["shell-1","shell-2","shell-3","shell-4","queue-console","web-types","web-tests","service-types","service-tests","core-types","core-tests"]'; do
+  for pj_case in web-only:'[]' plugin:'["shell-1-4","shell-2","shell-3","shell-5","queue-console"]' ci:'["shell-1-4","shell-2","shell-3","shell-5","queue-console"]' unclassified:'["shell-1-4","shell-2","shell-3","shell-5","queue-console","web-types","web-tests","service-types","service-tests","core-types","core-tests"]'; do
     pj_name=${pj_case%%:*}
     eq "this repository's suite for a $pj_name change" "${pj_case#*:}" "$(parts_matrix "$(class_parts "$(classify_paths "$(cat "$pj_fx/paths-$pj_name.txt")" "$pj_rc")" "$pj_rc")")"
   done
-  eq "each of this repository's plugin parts stops at the first red, and a pull request asks for five machines, four of them one part each" "5 6" "$(class_parts plugin "$pj_rc" | grep -c 'run.sh --fail-fast --part') $(class_parts plugin "$pj_rc" | grep -o 'run.sh --fail-fast --part' | wc -l | tr -d ' ')"
+  eq "each of this repository's plugin parts stops at the first red, and a pull request asks for five machines, not seven" "5 7" "$(class_parts plugin "$pj_rc" | grep -c 'run.sh --fail-fast --part') $(class_parts plugin "$pj_rc" | grep -o 'run.sh --fail-fast --part' | wc -l | tr -d ' ')"
   pj_repo_matrix() { parts_matrix "$(class_parts "$(classify_paths "$(cat "$pj_fx/paths-$1.txt")" "$pj_rc")" "$pj_rc")"; }
   eq "a service change is the service class and runs only the service's two parts" 'service ["service-types","service-tests"]' "$(classify_paths "$(cat "$pj_fx/paths-service.txt")" "$pj_rc") $(pj_repo_matrix service)"
   eq "a core change is the core class and runs core's and the service's parts, since the service imports core" 'core ["service-types","service-tests","core-types","core-tests"]' "$(classify_paths "$(cat "$pj_fx/paths-core.txt")" "$pj_rc") $(pj_repo_matrix core)"
   eq "a change to the lock file runs the service and core parts too" '["service-types","service-tests","core-types","core-tests"]' "$(pj_repo_matrix deps)"
   eq "a web-only change runs neither the service's nor core's parts" '[]' "$(pj_repo_matrix web-only)"
-  eq "a script outside the plugin and CI runs the shell parts and no package part" 'scripts ["shell-1","shell-2","shell-3","shell-4","queue-console"]' "$(classify_paths "$(cat "$pj_fx/paths-scripts.txt")" "$pj_rc") $(pj_repo_matrix scripts)"
+  eq "a script outside the plugin and CI runs the shell parts and no package part" 'scripts ["shell-1-4","shell-2","shell-3","shell-5","queue-console"]' "$(classify_paths "$(cat "$pj_fx/paths-scripts.txt")" "$pj_rc") $(pj_repo_matrix scripts)"
   eq "a design-only change (a mock) runs no part at all" 'design []' "$(classify_paths "$(cat "$pj_fx/paths-design.txt")" "$pj_rc") $(pj_repo_matrix design)"
   eq "a plugin-only change runs neither the service's nor core's parts" "0" "$(pj_repo_matrix plugin | grep -c -e service -e core)"
   eq "an unclassified path runs the service and core parts with the rest" "4" "$(pj_repo_matrix unclassified | tr ',' '\n' | grep -c -e service -e core)"
@@ -5156,7 +5156,7 @@ if [ -f "$pj_repo" ] && grep -q '^!parts plugin' "$pj_repo"; then
   # "main-web" class parts, a class no path names, so they join main's full
   # run (every part of every class) without ever joining a pull request's
   # own matrix beside its "app" job.
-  eq "main's full run also carries the web package's own type-check and tests" '["shell-1","shell-2","shell-3","shell-4","queue-console","web-types","web-tests","service-types","service-tests","core-types","core-tests"]' "$(parts_matrix "$(class_parts all "$pj_rc")" "$pj_rc")"
+  eq "main's full run also carries the web package's own type-check and tests" '["shell-1-4","shell-2","shell-3","shell-5","queue-console","web-types","web-tests","service-types","service-tests","core-types","core-tests"]' "$(parts_matrix "$(class_parts all "$pj_rc")" "$pj_rc")"
   eq "a web-only change never runs them on its own pull request; classify never names main-web" "0" "$(pj_repo_matrix web-only | grep -c 'web-')"
   eq "the web package's type-check and tests each install the packages first" "2" "$(class_parts all "$pj_rc" | awk -F'\t' '$1 ~ /^web-/ && index($2, "install-packages.sh && ")' | grep -c .)"
   pj_ci_repo="$root/../.github/workflows/ci.yml"
