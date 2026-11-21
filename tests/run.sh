@@ -5271,6 +5271,10 @@ if [ -f "$pj_repo" ] && grep -q '^!parts plugin' "$pj_repo"; then
   pj_pr_on=$(for pj_j in checks app tests screens ci-passed; do awk -v j="  $pj_j:" '$0 == j {f=1; next} /^  [a-z-]*:$/ {f=0} f && /^    runs-on:/' "$pj_ci_repo"; done)
   eq "every pull-request job asks for the kept-runner label by one expression, and batch, rush and main take any runner" "5 1 1" "$(printf '%s\n' "$pj_pr_on" | grep -c "vars.CI_KEEP_RUNNER == 'on' && '\[\"self-hosted\",\"windows\",\"pr\"\]' || '\[\"self-hosted\",\"windows\"\]'") $(printf '%s\n' "$pj_pr_on" | sort -u | grep -c .) $(printf '%s\n' "$pj_pr_on" | sort -u | grep -c "github.event_name == 'pull_request' && !startsWith(github.head_ref, 'batch-') && !startsWith(github.head_ref, 'rush-')")"
   eq "the gate, classify and main's jobs take any runner" "0" "$(for pj_j in gate classify full report-red report-green; do awk -v j="  $pj_j:" '$0 == j {f=1; next} /^  [a-z-]*:$/ {f=0} f && /^    runs-on:/' "$pj_ci_repo"; done | grep -c 'CI_KEEP_RUNNER')"
+  # A run started by hand on a branch other than main (to check it fully
+  # before merging) is never read as main going red or green: report-red
+  # and report-green's own "if" also asks for main's own ref (sipnship#2204).
+  eq "report-red and report-green only ever report for a run on main's own commit, in this repository and the template" "1 1 1 1" "$(awk '$0 == "  report-red:" {f=1; next} /^  [a-z-]*:$/ {f=0} f && /^    if:/' "$pj_ci_repo" | grep -c "github.ref == 'refs/heads/main'") $(awk '$0 == "  report-green:" {f=1; next} /^  [a-z-]*:$/ {f=0} f && /^    if:/' "$pj_ci_repo" | grep -c "github.ref == 'refs/heads/main'") $(awk '$0 == "  report-red:" {f=1; next} /^  [a-z-]*:$/ {f=0} f && /^    if:/' "$pj_ci" | grep -c "github.ref == 'refs/heads/main'") $(awk '$0 == "  report-green:" {f=1; next} /^  [a-z-]*:$/ {f=0} f && /^    if:/' "$pj_ci" | grep -c "github.ref == 'refs/heads/main'")"
   eq "a core change also runs the web job, and the tests job carries the Mote's token" "1 1" "$(grep -c "^    if: github.event_name == 'pull_request' && needs.classify.outputs.full == 'yes' && (.*classes, 'core')" "$pj_ci_repo") $(awk '$0 == "  tests:" {f=1; next} /^  [a-z-]*:$/ {f=0} f' "$pj_ci_repo" | grep -c 'GH_PACKAGES_TOKEN')"
   # A change under the web package always runs its own pull request's app
   # job straight away, never deferred to the batch-first cheap gate
@@ -5976,6 +5980,17 @@ eq "every unit merged: In progress issues the pull requests did not name hold no
 eq "a unit whose pull request is held for the owner still holds the round, by its In progress issue" "302" "$(running_round "$sr_comments" "$(printf '302\n')" '' "$(printf '531\n')")"
 eq "a unit with no pull request yet still holds the round by its In progress issues" "320" "$(running_round "$(printf '2026-11-12T18:00:00Z\tmaya-drive\tRound started.\\n<!-- sipnship-proposal {"status":"started","units":[{"issues":[320],"areas":[]}],"held":[]} -->\n')" "$(printf '320\n')" '' '')"
 eq "approval.sh passes every open pull request, held ones too, as the fourth argument" "1" "$(grep -c 'running_round "\$comments" "\$inprog" "\$open_prs" "\$all_nums"' "$root/scripts/drive/approval.sh")"
+# A round is over only when every issue it took is settled, not merely once
+# its pull requests have merged: an issue left open in Ready, with work still
+# to confirm, keeps holding the round until it is closed, or moved to
+# waiting-on-owner or blocked (sipnship#2128).
+rs_two=$(printf '2026-11-20T18:00:00Z\tmaya-drive\tRound started.\\n<!-- sipnship-proposal {"status":"started","units":[{"issues":[410,411],"areas":[],"pr":560}],"held":[]} -->\n')
+eq "a merged pull request with one issue closed and one left Ready still holds the round" "411" "$(running_round "$rs_two" '' '' '' "$(printf '411\n')")"
+eq "the round ends only once the second issue is settled too (closed, here: no longer Ready)" "" "$(running_round "$rs_two" '' '' '' '')"
+eq "an issue moved to waiting-on-owner or blocked is handed on, not loose, so it no longer holds the round either" "" "$(running_round "$rs_two" '' '' '' "$(printf '409\n')")"
+eq "a unit with no pull request yet is still held open by a Ready issue of its own, not only by In progress" "320" "$(running_round "$(printf '2026-11-12T18:00:00Z\tmaya-drive\tRound started.\\n<!-- sipnship-proposal {"status":"started","units":[{"issues":[320],"areas":[]}],"held":[]} -->\n')" '' '' '' "$(printf '320\n')")"
+eq "approval.sh reads every open issue labeled Ready and passes it as running_round's fifth argument (#2128)" "1 1" "$(grep -c 'labels=state:ready' "$root/scripts/drive/approval.sh") $(grep -c 'running_round "\$comments" "\$inprog" "\$open_prs" "\$all_nums" "\$ready"' "$root/scripts/drive/approval.sh")"
+eq "the plan reads the same fifth argument from its own snapshot, by the one rule the approval reads too" "1" "$(grep -c 'running_round "\$1" "\$pr_inprog" "\$pr_open" "\$pr_all" "\$pr_ready"' "$root/scripts/drive/held-running-lib.sh")"
 eq "the plan holds every issue of a unit whose pull request is open, one unnumbered hold line each" "hold	301	Water the beds	Its pull request (#531) is still open and its unit is running; no agent is started on it
 hold	302	Tint the beds	Its pull request (#531) is still open and its unit is running; no agent is started on it
 hold	303		Its pull request (#531) is still open and its unit is running; no agent is started on it" "$(started_pr_holds "$sr_comments" "$(printf '531\n')" "$(printf '301\tWater the beds\n302\tTint the beds\n')")"
@@ -6076,6 +6091,7 @@ eq "an asked-for issue is never kept back by a carried hold" "303" "$(published_
 hl_started="2026-11-20T20:00:00Z${hr_t}bot${hr_t}"'<!-- sipnship-proposal {"status":"started","units":[{"issues":[1434],"areas":["drive"],"pr":2100}],"held":[]} -->'
 eq "a landed round: no unit runs when its pull request has merged, whatever state the issue is left in" "" "$(plan_running "$hl_started" "issue${hr_t}1434${hr_t}Water the beds${hr_t}in-progress" "" "")"
 eq "a round with an open pull request that is not held is running" "1434" "$(plan_running "$hl_started" "issue${hr_t}1434${hr_t}Water the beds${hr_t}blocked" "2100" "2100${hr_t}no${hr_t}Closes #1434")"
+eq "a landed unit whose issue is left Ready with work still to settle still holds the round: a stale In progress label does not, but Ready is never settled on its own (#2128)" "1434" "$(plan_running "$hl_started" "issue${hr_t}1434${hr_t}Water the beds${hr_t}ready" "" "")"
 eq "a landed unit is no running unit for the areas either" "" "$(running_units "$hl_started" '1434' '' '')"
 hl_why="Waits on “Wake's \"tick\" \\ a|b: c” to land"
 . "$root/scripts/drive/propose-lib.sh"

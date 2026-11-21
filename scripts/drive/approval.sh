@@ -212,7 +212,12 @@ if [ -z "$started_by" ] && printf '%s\n' "$approved" | grep -q '^dispatch '; the
   fi
   # A running round takes a unit that conflicts with none of its running units, as a unit of itself; one that shares an area waits for that unit alone (join-round-lib.sh, #2122).
   all_nums=$(printf '%s\n' "$all_open" | cut -f1)
-  approved=$(join_dispatch "$approved" "$(running_round "$comments" "$inprog" "$open_prs" "$all_nums")" "$(running_units "$comments" "$inprog" "$open_prs" "$all_nums")" "$(proposed_units "$comments")")
+  # The round is not over until every issue it took is settled (#2128): an
+  # issue still open and labeled Ready, with none of its unit's pull requests
+  # open, is not running work but is not done either, so it still holds the
+  # round the same way running_round reads it for the plan.
+  ready=$(gh api "repos/{owner}/{repo}/issues?state=open&labels=state:ready&per_page=100" --jq '.[].number' 2>/dev/null)
+  approved=$(join_dispatch "$approved" "$(running_round "$comments" "$inprog" "$open_prs" "$all_nums" "$ready")" "$(running_units "$comments" "$inprog" "$open_prs" "$all_nums")" "$(proposed_units "$comments")")
 fi
 # An agent needs a worktree: when this run cannot make one (a scheduled run
 # under an account with no access to the worktrees folder), start none.
