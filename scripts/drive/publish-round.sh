@@ -63,6 +63,7 @@ here=$(dirname "$0")
 . "$here/../../hooks/scripts/lib.sh"
 . "$here/round-lib.sh"
 . "$here/areas-lib.sh"
+. "$here/join-round-lib.sh"
 
 issue=""; dry=no; labels=yes; file=""; areas_file=.claude/areas.txt
 while [ $# -gt 0 ]; do
@@ -105,10 +106,15 @@ if [ -n "$issue" ]; then
     inprog="$inprog
 $(gh api "repos/{owner}/{repo}/issues?state=open&labels=state:%20in-progress&per_page=100" --jq '.[].number' 2>/dev/null)"
     running=$(running_units "$bodies" "$inprog")
+    running_pr=$(RUNNING_WITH_PR=yes running_units "$bodies" "$inprog")
   fi
 fi
 err=$(area_problem "$round" "$running")
 if [ -n "$err" ]; then echo "The round was not published: $err." >&2; exit 1; fi
+# A round published as started while another runs adds its units to that round: the units still at work stay in the marker beside the new ones, so the round lands as one batch and the new units are not a second round (#2122).
+if [ -n "${running_pr:-}" ] && printf '%s\n' "$round" | grep -qE '^[ 	]*status:[ 	]*started'; then
+  round=$(keep_running_units "$round" "$running_pr")
+fi
 
 # The round as JSON and as a plain comment, or the first thing wrong with it.
 out=$(printf '%s\n' "$round" | awk -v now="$(date -u +%Y-%m-%dT%H:%M:%SZ)" '

@@ -4,7 +4,7 @@
 # A guess is one line, tab separated:   NUMBER  TITLE  FILE,FILE,...
 # A running unit is one line:           TITLE  FILE,FILE,...
 # A path is a file, or a folder with a trailing slash that overlaps every path
-# under it. An asked-for issue is never bundled with work not asked for (#1930).
+# under it. An asked-for issue is bundled like any other and leads the round (#2122).
 
 # body_paths BODY
 # The paths a body names, one per line: anything with a slash that ends in
@@ -152,7 +152,6 @@ plan_units() {
       }
       for (i = 1; i <= n; i++) if (held[i] == "") for (j = i + 1; j <= n; j++) if (held[j] == "") {
         s = ov(files[i], files[j], 1)
-        if (s != "" && asked(num[i]) != asked(num[j])) s = ""
         if (s != "") {
           a = find(i); b = find(j)
           if (a != b && sz[a] + sz[b] <= cap) { par[b] = a; sz[a] += sz[b] } else s = ""
@@ -228,7 +227,7 @@ units_disjoint() {
 # When everything is held the stop line says so: work in flight when only
 # running work holds it, else what each hold line names.
 apply_units() {
-  printf '%s\n' "$1" | awk -v slots="${3:-2}" -v units="$2" -v machines="${4:-}" -v first=" ${5:-} " -v prio="${6:-}" '
+  printf '%s\n' "$1" | awk -v slots="${3:-2}" -v units="$2" -v machines="${4:-}" -v first=" ${5:-} " -v prio="${6:-}" -v askd=" ${7:-} " '
     # The place in the project priorities of the best-placed issue of NUMS (0 when none is in one).
     function best(nums,   x, k, i, b) { k = split(nums, x, " "); b = 0; for (i = 1; i <= k; i++) if ((x[i] in pr) && (b == 0 || pr[x[i]] < b)) b = pr[x[i]]; return b }
     function bestwhy(nums,   x, k, i, b) { k = split(nums, x, " "); b = best(nums); for (i = 1; i <= k; i++) if ((x[i] in pr) && pr[x[i]] == b) return pw[x[i]]; return "" }
@@ -241,7 +240,9 @@ apply_units() {
       # among equals, so a round fills with bundles before loose issues.
       for (i = 1; i <= n; i++) { ul[i] = raw[i]; split(raw[i], f, "\t"); w[i] = (f[1] == "unit") ? split(f[2], tmp, " ") : 0 }
       # A unit with an issue that fixes a failure on main (the fifth argument) outranks every bundle.
-      for (i = 1; i <= n; i++) if (w[i] > 0) { split(raw[i], ff, "\t"); m = split(ff[2], tm, " "); for (j = 1; j <= m; j++) if (index(first, " " tm[j] " ")) w[i] += 1000 }
+      for (i = 1; i <= n; i++) if (w[i] > 0) { split(raw[i], ff, "\t"); m = split(ff[2], tm, " "); for (j = 1; j <= m; j++) if (index(first, " " tm[j] " ")) w[i] += 9000 }
+      # A unit carrying an issue the builder asked for by name (the seventh argument) comes next: nothing goes ahead of it but a fix for main (#2122).
+      for (i = 1; i <= n; i++) if (w[i] > 0) { split(raw[i], ff, "	"); m = split(ff[2], tm, " "); for (j = 1; j <= m; j++) if (index(askd, " " tm[j] " ")) { w[i] += 3000; break } }
       # A unit in a project priority (the sixth argument) comes next, the first entry first: after a fix for main, before any bundle.
       for (i = 1; i <= n; i++) if (w[i] > 0) { split(raw[i], ff, "\t"); b = best(ff[2]); if (b > 0) w[i] += 500 - b }
       for (i = 2; i <= n; i++) { v = ul[i]; c = w[i]; j = i - 1; while (j > 0 && w[j] < c) { ul[j + 1] = ul[j]; w[j + 1] = w[j]; j-- } ul[j + 1] = v; w[j + 1] = c }

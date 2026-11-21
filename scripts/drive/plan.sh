@@ -206,7 +206,7 @@ reasons=$(printf '%s\n%s\n' "$reasons" "$(carried_holds "$facts" "$pull_links")"
 # A started unit counts as running while its pull request is open, whatever State its issues show: none of its Ready issues is proposed for dispatch (one hold line each).
 reasons=$(printf '%s\n%s\n' "$reasons" "$(started_ready_holds "$drive_comments" "$(printf '%s\n' "$pr_list" | cut -d"$us" -f1)" "$facts" "$snapshot")" | sed '/^$/d')
 # The holds the drive published in its last round, with their reasons still true, take no slot again (held-round-lib.sh): the slots go to the next ready unit.
-published=$(published_holds "$drive_comments" "$facts" "$(printf '%s\n' "$pr_list" | cut -d"$us" -f1)")
+published=$(published_holds "$drive_comments" "$facts" "$(printf '%s\n' "$pr_list" | cut -d"$us" -f1)" "$(plan_running "$drive_comments" "$snapshot" "$pr_list" "$pull_links")" "$asked")
 published=$(printf '%s\n' "$published" | awk -F'\t' -v r="$reasons" 'BEGIN { n = split(r, a, "\n"); for (i = 1; i <= n; i++) { split(a[i], f, "\t"); if (f[1] == "hold") seen[f[2]] = 1 } } NF && !($2 in seen)')  # an issue a hold line already names is not held twice
 reasons=$(printf '%s\n%s\n' "$reasons" "$published" | sed '/^$/d')
 published_count=$(printf '%s\n' "$published" | sed '/^$/d' | cut -f2 | sort -u | wc -l | tr -d ' ')
@@ -240,7 +240,7 @@ if [ -n "$guesses" ] || [ -n "$reasons" ]; then
   units=$(plan_units "$guesses" "$running")
   # The running round's areas, read as publish-round.sh reads them: an issue in an area a running unit owns is a hold behind it, and units sharing an area are one unit, so the proposal publishes as it stands.
   if [ -n "$areas_text" ]; then
-    run_units=$(running_units "$(printf '%s\n' "$drive_comments" | cut -f3-)" "$(without_issues "$(printf '%s\n' "$snapshot" | awk -F'\t' '$1 == "issue" && $4 == "in-progress" { print $2 }')" "$held_only")" "$(without_issues "$(printf '%s\n' "$pr_list" | cut -d"$us" -f1)" "$(held_pull_numbers "$pull_links")")")  # a unit whose pull request is held for the owner is not running (#2055)
+    run_units=$(running_units "$(printf '%s\n' "$drive_comments" | cut -f3-)" "$(without_issues "$(printf '%s\n' "$snapshot" | awk -F'\t' '$1 == "issue" && $4 == "in-progress" { print $2 }')" "$held_only")" "$(without_issues "$(printf '%s\n' "$pr_list" | cut -d"$us" -f1)" "$(held_pull_numbers "$pull_links")")" "$(printf '%s\n' "$pr_list" | cut -d"$us" -f1)")  # a unit whose pull request is held for the owner is not running (#2055)
     issue_titles=$(issue_titles_from_facts "$facts"); units=$(area_units "$areas_text" "$units" "$run_units" "$issue_titles"); units=$(held_area_holds "$areas_text" "$units" "$(published_held_areas "$(printf '%s\n' "$drive_comments" | cut -f3-)")" "$published" "$issue_titles"); units=$(unplaced_holds "$units" "$guesses" "$run_units" "$issue_titles")
   fi
   # Issues a builder rushed (RUSH_ISSUES, space separated, read from work-requests.sh): their bundle leads.
@@ -250,7 +250,7 @@ if [ -n "$guesses" ] || [ -n "$reasons" ]; then
   # maxAgents), planned against the running round's files. It starts only
   # once the running round lands (approval.sh holds its dispatches).
   health_read; busy=$(computer_busy "$hv" "$(setting "$settings" healthAbove)"); slots=$(round_slots "$units_per_round" "$max_agents" "$busy")  # the limit and the computer's load, never free runners (#2084)
-  round=$(apply_units "$round" "$units" "$slots" "${busy:-no}" "$MAINFIX_ISSUES" "$(priority_issues "$priorities" "$guesses" "$facts" "$areas_text")")  # a project's priority areas lead, after a fix for main
+  round=$(apply_units "$round" "$units" "$slots" "${busy:-no}" "$MAINFIX_ISSUES" "$(priority_issues "$priorities" "$guesses" "$facts" "$areas_text")" "$asked ${RUSH_ISSUES:-} $(asked_now "$drive_comments")")  # asked-for issues lead after a fix for main, then a project's priority areas (#2122)
   round=$(defer_note "$round" "$published_count")  # a small round says which holds kept their issues out of it
   round=$(lead_main_fixes "$round")  # the fix for a failure on main opens the proposal and the approval never holds it behind the round it blocks (rank-lib.sh)
 fi

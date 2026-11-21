@@ -5,7 +5,7 @@
 # and that answer spends the request; but an issue that lands a part and goes
 # back to Ready with work left is still the one the builder asked for. So the
 # plan reads the requests themselves, answered or not: every open Ready issue
-# one names leads the next round, on its own or with other asked issues only,
+# one names leads the next round, bundled by the files it shares like any other issue,
 # and says what is left. Pure; sourced by plan.sh and the plugin's tests.
 
 # asked_issues COMMENTS

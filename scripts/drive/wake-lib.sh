@@ -25,6 +25,18 @@ wake_decision() {
     }'
 }
 
+# approved_not_planned PLAN APPROVAL
+# PLAN is what plan.sh printed this tick, APPROVAL what approval.sh printed. The
+# issues (one unit a line, as "12 14") of the approved dispatch goals the plan no
+# longer prints: they were approved from an older posted proposal, so the tick
+# starts none of them and says so (#2104). Nothing when every approved dispatch
+# is one the plan prints, or when there is no approved dispatch.
+approved_not_planned() {
+  { printf '%s\n' "$1" | tr -d '\r' | sed 's/^[0-9]*\. //' | awk -F'\t' '$1 ~ /^dispatch [0-9]/ { print "P " substr($1, 10) }'
+    printf '%s\n' "$2" | tr -d '\r' | sed 's/^[0-9]*\. //' | awk -F'\t' '$1 ~ /^dispatch [0-9]/ { print "A " substr($1, 10) }'; } \
+    | awk '{ k = substr($0, 3); gsub(/[ ]+/, " ", k); sub(/ $/, "", k); if ($1 == "P") planned[k] = 1; else if (!(k in planned) && !(k in said)) { said[k] = 1; print k } }'
+}
+
 # wake_event_wanted EVENT BODY
 # Which events may start a tick. "yes" for a dispatch (by hand or sent by the
 # service), a finished queue drain, and a comment on the drive issue that is

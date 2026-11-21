@@ -38,3 +38,18 @@ held_pull_numbers() {
 issue_titles_from_facts() {
   printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' '$1 == "issue" { print $2 "\t" $3 }'
 }
+
+# plan_running COMMENTS SNAPSHOT PR_LIST PULLS
+# The issues of the round really at work, by the one rule approval.sh reads too
+# (running_round, round-state-lib.sh): an issue of the latest started round is in
+# progress without its only pull request held for the owner, or a pull request of
+# a unit is open and not held; a unit whose pull request merged or closed has
+# landed, whatever State its issues are left in (#2104). SNAPSHOT is the plan's
+# snapshot lines, PR_LIST the open pull requests (number first, unit separator
+# between fields), PULLS the plan's pull lines.
+plan_running() {
+  pr_all=$(printf '%s\n' "$3" | cut -d"$(printf '\037')" -f1 | sed '/^$/d')
+  pr_inprog=$(without_issues "$(printf '%s\n' "$2" | awk -F'\t' '$1 == "issue" && $4 == "in-progress" { print $2 }')" "$(held_only_issues "$4")")
+  pr_open=$(without_issues "$pr_all" "$(held_pull_numbers "$4")")
+  running_round "$1" "$pr_inprog" "$pr_open" "$pr_all"
+}

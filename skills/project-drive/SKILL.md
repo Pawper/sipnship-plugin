@@ -47,10 +47,15 @@ The drive works the ready list in rounds, so many issues land in little time wit
 - **A project's plugin or CI work goes in one bundle.** Issues touching `plugin/`, `scripts/ci/` or
   `.github/` share one test suite, so they always clash; the plan puts every such issue into one bundle and
   holds plugin work while a plugin unit is running.
-- **One round at a time.** The next round is proposed while the current one runs, planned against the files
-  it is changing, and started only when the current one has landed (its units merged or set aside).
-  `approval.sh` holds an approved `dispatch` while the latest started round still has issues In progress, and
-  says so on a `held:` line; landing, fixing and asking go ahead meanwhile.
+- **One round, and it takes new units.** A round lands as one batch, but it is not closed to new work: a
+  proposed unit that shares no area with any unit running in it (asked for by name or not) starts at once, as
+  a unit of that round. `approval.sh` lets such a `dispatch` through and holds one that shares an area with a
+  running unit, or whose areas are unknown, saying so on a `held:` line; it waits for that unit alone. When you
+  start the added units, publish the round as `status: started` with only the new `unit:` lines:
+  `publish-round.sh` keeps the units still at work in the marker beside them, so the round stays one. A
+  round has landed once none of its issues is In progress and none of its pull requests is open and not held,
+  whatever State its issues were left in; its holds end in that same run. Landing, fixing and asking go ahead
+  meanwhile.
 - **In progress is not taken on faith.** An issue is In progress only while an agent is on it. Before it judges
   whether the round has landed, the plan checks each In progress issue: with no open pull request and nothing
   touched in two hours (no comment, no commit on a branch named for it or for any issue of its unit), or with
@@ -318,8 +323,9 @@ The goal lines and what each means:
   puts more issues first when you need it.
 - **An issue asked for by name keeps its place until it is done.** The plan reads every `Queue request: start-next #N`
   on the drive issue, answered or not, because an answer only says it started once. An open Ready issue one names
-  leads the next round when it returns to Ready with work left, as its own unit or with other asked issues only,
-  never bundled with work nobody asked for, and the builder presses nothing again. The plan prints one
+  leads the next round when it returns to Ready with work left, bundled by the files it shares with any other
+  issue, asked for or not, and only a fix for a red main goes ahead of it; no carried hold keeps it back, and
+  the builder presses nothing again. The plan prints one
   `asked: N WORDS` line for each, the plain words of its request (a part landed, what is left, still first); say
   those words on the drive issue as the request's line. Never close or drop the request yourself; it ends when the issue
   closes or the builder cancels it on its card, which leaves `Queue answer: start-next #N: cancelled` on the drive issue.

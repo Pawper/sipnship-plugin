@@ -102,7 +102,7 @@ area_units() {
       }
       for (i = 1; i <= n; i++) if (held[i] == "") for (j = i + 1; j <= n; j++) if (held[j] == "") {
         s = meet(mar[i], mar[j])
-        if (s != "" && asked(num[i]) != asked(num[j])) s = ""  # an issue asked for by name is never bundled with work that was not (#1930)
+        # an issue asked for by name is bundled by the files it shares like any other, with asked and unasked issues alike (#2122)
         if (s != "") { a = find(i); b = find(j); if (a != b && sz[a] + sz[b] <= cap) { par[b] = a; sz[a] += sz[b]; if (sh[a] == "") sh[a] = s } }
       }
       for (i = 1; i <= n; i++) if (held[i] == "") {

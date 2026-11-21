@@ -5340,7 +5340,17 @@ sr_ask='2026-11-04T02:05:00Z	sipnship[bot]	Queue request: start-round by maya
 eq "Start this round starts a round published only for the dashboard, even while one runs" "dispatch 226
 dispatch 223 240
 approved by maya, with Start this round" "$(sr_run "$sr_started$sr_proposed$sr_ask")"
-eq "the published round is the proposal Auto Drive approves, and it waits for the running round" "nothing: 2 dispatch goal(s) wait for the running round (#214) to land" "$(sr_run "$sr_started$sr_proposed")"
+sr_started_q=$(printf '%s' "$sr_started" | sed 's/"areas":\["schedule"\]/"areas":["queue"]/')
+sr_started_s=$(printf '%s' "$sr_started" | sed 's/"areas":\["schedule"\]/"areas":["seeds"]/')
+eq "a proposed unit that shares an area with no running unit joins the running round at once; one that shares the running unit's area waits for it alone (#2122)" "dispatch 223 240
+held: 1 dispatch goal(s) wait for the running round (#214) to land
+approved by Auto Drive" "$(sr_run "$sr_started_q
+$sr_proposed")"
+eq "both proposed units start in the running round when neither shares its area" "dispatch 226
+dispatch 223 240
+approved by Auto Drive" "$(sr_run "$sr_started$sr_proposed")"
+eq "units that share the running unit's area both wait for it" "nothing: 2 dispatch goal(s) wait for the running round (#214) to land" "$(sr_run "$sr_started_q
+$(printf '%s' "$sr_proposed" | sed 's/"areas":\["seeds"\]/"areas":["queue"]/')")"
 sr_go='2026-11-04T02:06:26Z	maya-drive	Round started: 2 agents at work.\n\n<!-- sipnship-proposal {"status":"started","units":[{"issues":[226],"areas":["queue"]},{"issues":[223,240],"areas":["seeds"]}],"held":[]} -->
 '
 eq "once that round is published as started, the request does not start it again" "nothing: no proposal on issue 99 yet" "$(sr_run "$sr_started$sr_proposed$sr_ask$sr_go")"
@@ -5364,7 +5374,8 @@ sr_two_round='2026-11-04T03:00:20Z	maya-drive	Proposed next round: 1 agent.\n\n-
 eq "a numbered proposal keeps its drain and fix when a round with other dispatches is published after it" "drain 231: the running round's change is green
 fix-pr 232: its check is red
 held: 1 dispatch goal(s) wait for the running round (#214) to land
-approved by Auto Drive" "$(sr_run "$sr_started$sr_two$sr_two_round")"
+approved by Auto Drive" "$(sr_run "$sr_started_s
+$sr_two$sr_two_round")"
 eq "the same, with no round running, adds the round's dispatches to the drain and the fix" "drain 231: the running round's change is green
 fix-pr 232: its check is red
 dispatch 226 223 241
@@ -5690,11 +5701,13 @@ eq "an issue nothing landed on says only that it is first" "You asked for this o
 eq "the asked issues among the ready ones" "1890" "$(asked_ready "1890 1812" "7 1890 9")"
 ak_g=$(printf '7\tWater the beds\tsrc/beds/\n1890\tBed map on phones\tsrc/beds/list.ts\n')
 eq "without a request the two share a unit" "unit	7 1890	Water the beds | Bed map on phones	both change src/beds/list.ts	src/beds/,src/beds/list.ts" "$(plan_units "$ak_g" "")"
-eq "an asked issue is never placed in a bundle with work that was not" "unit	7	Water the beds		src/beds/
-unit	1890	Bed map on phones		src/beds/list.ts" "$(ASKED_ISSUES=1890 plan_units "$ak_g" "")"
+eq "an asked issue is bundled with the work that shares its files, asked or not (#2122)" "unit	7 1890	Water the beds | Bed map on phones	both change src/beds/list.ts	src/beds/,src/beds/list.ts" "$(ASKED_ISSUES=1890 plan_units "$ak_g" "")"
 eq "two asked issues still bundle with each other" "unit	7 1890	Water the beds | Bed map on phones	both change src/beds/list.ts	src/beds/,src/beds/list.ts" "$(ASKED_ISSUES="7 1890" plan_units "$ak_g" "")"
-eq "the next plan puts the asked unit first" "unit	1890	Bed map on phones		src/beds/list.ts
-unit	7	Water the beds		src/beds/" "$(rush_first "$(ASKED_ISSUES=1890 plan_units "$ak_g" "")" "1890")"
+ak_g2=$(printf '7	Water the beds	src/beds/
+1890	Bed map on phones	src/map/list.ts
+')
+eq "the next plan puts the asked unit first" "unit	1890	Bed map on phones		src/map/list.ts
+unit	7	Water the beds		src/beds/" "$(rush_first "$(ASKED_ISSUES=1890 plan_units "$ak_g2" "")" "1890")"
 wq_n="2026-11-11T20:00:00Z${wq_t}sipnship[bot]${wq_t}Queue request: start-now #301 by maya
 2026-11-11T20:01:00Z${wq_t}sipnship[bot]${wq_t}Queue request: start-round #0 by maya
 2026-11-11T20:02:00Z${wq_t}sipnship[bot]${wq_t}Queue request: start-next #302 by maya"
@@ -5754,7 +5767,7 @@ eq "a unit whose pull request merged does not hold the round for an issue it did
 eq "every unit merged: In progress issues the pull requests did not name hold nothing" "" "$(running_round "$sr_comments" "$(printf '302\n310\n')" '' '')"
 eq "a unit whose pull request is held for the owner still holds the round, by its In progress issue" "302" "$(running_round "$sr_comments" "$(printf '302\n')" '' "$(printf '531\n')")"
 eq "a unit with no pull request yet still holds the round by its In progress issues" "320" "$(running_round "$(printf '2026-11-12T18:00:00Z\tmaya-drive\tRound started.\\n<!-- sipnship-proposal {"status":"started","units":[{"issues":[320],"areas":[]}],"held":[]} -->\n')" "$(printf '320\n')" '' '')"
-eq "approval.sh passes every open pull request, held ones too, as the fourth argument" "1" "$(grep -c 'running_round "\$comments" "\$inprog" "\$open_prs" "\$(printf' "$root/scripts/drive/approval.sh")"
+eq "approval.sh passes every open pull request, held ones too, as the fourth argument" "1" "$(grep -c 'running_round "\$comments" "\$inprog" "\$open_prs" "\$all_nums"' "$root/scripts/drive/approval.sh")"
 eq "the plan holds every issue of a unit whose pull request is open, one unnumbered hold line each" "hold	301	Water the beds	Its pull request (#531) is still open and its unit is running; no agent is started on it
 hold	302	Tint the beds	Its pull request (#531) is still open and its unit is running; no agent is started on it
 hold	303		Its pull request (#531) is still open and its unit is running; no agent is started on it" "$(started_pr_holds "$sr_comments" "$(printf '531\n')" "$(printf '301\tWater the beds\n302\tTint the beds\n')")"
@@ -5844,6 +5857,62 @@ eq "the defer line says held issues took no slot, and still ends in its issue li
 defer 2 unit(s): the limit of 1 agent a round is reached; the 1 issue held since the last round takes no slot (#302, #303)" "$(defer_note "$hr_plan" 1)"
 eq "the defer line is unchanged when nothing was held" "$hr_plan" "$(defer_note "$hr_plan" 0)"
 eq "plan.sh keeps the last round's holds out of the slots and says so" "1 1" "$(grep -c 'published_holds "$drive_comments"' "$root/scripts/drive/plan.sh") $(grep -c 'defer_note "$round"' "$root/scripts/drive/plan.sh")"
+# A landed round is no running round, and a reason is written and read back whole (#2104).
+. "$root/scripts/drive/round-state-lib.sh"; . "$root/scripts/drive/held-running-lib.sh"; . "$root/scripts/drive/areas-lib.sh"
+hl_run="2026-11-20T23:43:00Z${hr_t}sipnship[bot]${hr_t}"'<!-- sipnship-proposal {"status":"proposed","units":[],"held":[{"issues":[301],"waitsOn":[],"areas":[],"why":"Waits on the running round (#1434) to land"},{"issues":[303],"waitsOn":[],"areas":[],"why":"Its pull request (#9) is held for your read"}]} -->'
+hl_facts="issue${hr_t}301${hr_t}Water the beds${hr_t}state:ready${hr_t}2026-11-01T00:00:00Z
+issue${hr_t}303${hr_t}Map the beds${hr_t}state:ready${hr_t}2026-11-01T00:00:00Z"
+eq "a hold that waits on a round that has landed is not carried" "hold${hr_t}303${hr_t}Map the beds${hr_t}Held in the last proposed round: Its pull request (#9) is held for your read; it takes no slot until that changes" "$(published_holds "$hl_run" "$hl_facts" '' '')"
+eq "a hold that waits on a round still running is carried" "301 303" "$(published_holds "$hl_run" "$hl_facts" '' '1434' | cut -f2 | tr '\n' ' ' | sed 's/ $//')"
+eq "an asked-for issue is never kept back by a carried hold" "303" "$(published_holds "$hl_run" "$hl_facts" '' '1434' '301' | cut -f2)"
+hl_started="2026-11-20T20:00:00Z${hr_t}bot${hr_t}"'<!-- sipnship-proposal {"status":"started","units":[{"issues":[1434],"areas":["drive"],"pr":2100}],"held":[]} -->'
+eq "a landed round: no unit runs when its pull request has merged, whatever state the issue is left in" "" "$(plan_running "$hl_started" "issue${hr_t}1434${hr_t}Water the beds${hr_t}in-progress" "" "")"
+eq "a round with an open pull request that is not held is running" "1434" "$(plan_running "$hl_started" "issue${hr_t}1434${hr_t}Water the beds${hr_t}blocked" "2100" "2100${hr_t}no${hr_t}Closes #1434")"
+eq "a landed unit is no running unit for the areas either" "" "$(running_units "$hl_started" '1434' '' '')"
+hl_why="Waits for “Wake's \"tick\" \\ a|b: c” to land"
+. "$root/scripts/drive/propose-lib.sh"
+hl_dir=$(mktemp -d); echo "none none" > "$hl_dir/areas.txt"
+hl_round=$(round_file "hold 302${hr_t}Water${hr_t}${hl_why} (after: 5)" "" "" "$(printf '302\n')" "")
+printf '%s\n' "$hl_round" > "$hl_dir/round.txt"
+hl_pub=$(sh "$root/scripts/drive/publish-round.sh" --dry-run --areas "$hl_dir/areas.txt" "$hl_dir/round.txt" | grep '^<!-- sipnship-proposal')
+hl_back=$(published_holds "2026-11-20T23:43:00Z${hr_t}bot${hr_t}${hl_pub}" "issue${hr_t}5${hr_t}Five${hr_t}state:in-progress${hr_t}x
+issue${hr_t}302${hr_t}Water${hr_t}state:ready${hr_t}2026-11-01T00:00:00Z" '' | cut -f4)
+eq "a reason holding a double quote, a backslash, an apostrophe, a colon and a pipe is published and read back whole" "Held in the last proposed round: Waits for “Wake's \"tick\" \\ a/b: c” to land; it takes no slot until that changes" "$hl_back"
+eq "the drive's comments are read without @tsv, which doubled every backslash" "0" "$(grep -c 'page=\$rdc_page.*| @tsv' "$root/scripts/drive/plan-read-lib.sh")"
+# Asked-for issues lead, bundled, and join the running round (#2122).
+. "$root/scripts/drive/join-round-lib.sh"; . "$root/scripts/drive/bundle-lib.sh"; . "$root/scripts/drive/area-plan-lib.sh"; . "$root/scripts/drive/wake-lib.sh"
+ja_units="unit${hr_t}3 4${hr_t}Water | Tint${hr_t}both change the beds${hr_t}src/beds/
+unit${hr_t}5${hr_t}Map${hr_t}${hr_t}src/map/
+unit${hr_t}9${hr_t}Fix main${hr_t}${hr_t}src/ci/"
+eq "a loose asked-for issue goes ahead of a bundle nobody asked for" "dispatch 5${hr_t}Map" "$(apply_units "$(printf 'dispatch 1\ndispatch 2\nstop: x\n')" "$ja_units" 1 no '' '' '5' | sed -n 1p)"
+eq "a fix for a red main still goes ahead of an asked-for issue" "dispatch 9${hr_t}Fix main${hr_t}First: A fix for a failure on main" "$(apply_units "$(printf 'dispatch 1\ndispatch 2\nstop: x\n')" "$ja_units" 1 no 9 '' '5' | sed -n 1p)"
+eq "an unasked bundle leads when nothing was asked" "dispatch 3 4${hr_t}Water | Tint${hr_t}Why together: both change the beds" "$(apply_units "$(printf 'dispatch 1\ndispatch 2\nstop: x\n')" "$ja_units" 1 no '' '' '' | sed -n 1p)"
+ja_areas='work specs/023-drive-on-work/ plugin/scripts/drive/
+other packages/web/'
+ja_in="unit${hr_t}2096${hr_t}Wake${hr_t}${hr_t}specs/023-drive-on-work/
+unit${hr_t}2052${hr_t}Releases${hr_t}${hr_t}plugin/scripts/drive/plan.sh
+unit${hr_t}2104${hr_t}Landed round${hr_t}${hr_t}plugin/scripts/drive/approval.sh
+unit${hr_t}1897${hr_t}Red with nobody${hr_t}${hr_t}plugin/scripts/drive/wake-lib.sh"
+eq "issues in one area, some asked for and some not, are one unit, not four" "unit${hr_t}2096 2052 2104 1897${hr_t}Wake | Releases | Landed round | Red with nobody${hr_t}all 4 change the work area${hr_t}specs/023-drive-on-work/,plugin/scripts/drive/plan.sh,plugin/scripts/drive/approval.sh,plugin/scripts/drive/wake-lib.sh" "$(ASKED_ISSUES='2096 2052 2104' area_units "$ja_areas" "$ja_in" '' '')"
+# A running round of one unit, then two asked-for issues in another area arrive: one bundle that starts in the running round at once; one in the running unit's area waits for that unit only.
+ja_run="2026-11-20T20:00:00Z${hr_t}bot${hr_t}"'<!-- sipnship-proposal {"status":"started","units":[{"issues":[1434],"areas":["work"]}],"held":[]} -->'
+ja_prop="2026-11-20T21:00:00Z${hr_t}bot${hr_t}"'<!-- sipnship-proposal {"status":"proposed","units":[{"issues":[2300,2301],"whyTogether":"both change the web","areas":["other"]},{"issues":[2302],"areas":["work"]}],"held":[]} -->'
+ja_ru=$(running_units "$ja_run" '1434')
+eq "two asked issues in another area start in the running round as one unit; the one that shares the running unit's area waits for it" "dispatch 2300 2301${hr_t}A | B${hr_t}Why together: both change the web
+held: 1 dispatch goal(s) wait for the running round (#1434) to land" "$(join_dispatch "$(printf 'dispatch 2300 2301\tA | B\tWhy together: both change the web\ndispatch 2302\n')" 1434 "$ja_ru" "$(proposed_units "$ja_prop")")"
+eq "a unit of the proposed round whose areas are unknown never joins a running round blind" "held: 1 dispatch goal(s) wait for the running round (#1434) to land" "$(join_dispatch "$(printf 'dispatch 7\n')" 1434 "$ja_ru" "$(printf '7\t\n')")"
+eq "a goal naming an issue already running is never started twice" "held: 1 dispatch goal(s) wait for the running round (#1434) to land" "$(join_dispatch "$(printf 'dispatch 1434\n')" 1434 "$ja_ru" "$(printf '1434\tother\n')")"
+eq "publishing a started round while another runs keeps the running unit in it, with its pull request" "unit: 2300 2301 | areas: other
+unit: 1434 | areas: work | pr: 2100" "$(keep_running_units "$(printf 'status: started\nunit: 2300 2301 | areas: other\n')" "$(printf '1434\twork\t2100\n')" | sed -n '2,3p')"
+eq "a running unit the round already names is not added twice" "1" "$(keep_running_units "$(printf 'status: started\nunit: 1434 | areas: work\n')" "$(printf '1434\twork\t\n')" | grep -c '^unit:')"
+eq "publish-round.sh adds the running units to a round it publishes as started" "1" "$(grep -c 'keep_running_units "\$round" "\$running_pr"' "$root/scripts/drive/publish-round.sh")"
+# A tick that finds approved goals the plan no longer prints starts none of them and says so (#2104).
+wp_plan="1. dispatch 2300 2301${hr_t}A | B
+2. merge 41${hr_t}x"
+eq "an approved dispatch the plan still prints is not stale" "" "$(approved_not_planned "$wp_plan" "$(printf 'dispatch 2300 2301\tA | B\nmerge 41\napproved by x\n')")"
+eq "approved dispatches the plan no longer prints are named, each once" "226
+223 240" "$(approved_not_planned "$wp_plan" "$(printf 'dispatch 2300 2301\tA\ndispatch 226\tx\ndispatch 223 240\ty\napproved by x\n')")"
+eq "wake-check.sh says so and starts none of them" "1" "$(grep -c 'approved_not_planned' "$root/scripts/drive/wake-check.sh")"
 # A request with no issue: the round-wide Start now.
 wq_r="2026-11-12T18:56:00Z${wq_t}sipnship[bot]${wq_t}Queue request: start-now by maya
 2026-11-12T18:57:00Z${wq_t}sipnship[bot]${wq_t}Queue request: start-now #301 by maya"
@@ -7347,7 +7416,7 @@ pp_k=$(printf '2026-11-20T13:00:00Z\tsipnship[bot]\tQueue request: start-next #2
 eq "a request stands after its answer, until the builder cancels it" "212" "$(asked_cancelled "$pp_k" "$(asked_issues "$pp_k")")"
 eq "a new press after a cancel asks again" "212 217" "$(asked_cancelled "$pp_k
 2026-11-20T15:00:00Z${pp_t}sipnship[bot]${pp_t}Queue request: start-next #217 by maya" "212 217")"
-eq "plan.sh reads cancels and owed Start now requests" "1 1" "$(grep -c 'asked=$(asked_cancelled "$drive_comments"' "$root/scripts/drive/plan.sh") $(grep -c 'asked_now "$drive_comments"' "$root/scripts/drive/plan.sh")"
+eq "plan.sh reads cancels and owed Start now requests" "1 2" "$(grep -c 'asked=$(asked_cancelled "$drive_comments"' "$root/scripts/drive/plan.sh") $(grep -c 'asked_now "$drive_comments"' "$root/scripts/drive/plan.sh")"
 # What starts is what the tab shows: the latest proposed round's units are the dispatches, whatever a numbered proposal said.
 pa_dir=$(mktemp -d); mkdir -p "$pa_dir/bin"
 cat > "$pa_dir/bin/gh" <<'FAKE'

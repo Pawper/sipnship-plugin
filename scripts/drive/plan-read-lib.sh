@@ -80,7 +80,7 @@ read_drive_comments() {
   case "$rdc_n" in ""|*[!0-9]*) return 0 ;; esac
   rdc_all=""
   for rdc_page in $(comment_pages "$(printf '%s\n' "$1" | head -n 1 | cut -f3)"); do
-    rdc_all="${rdc_all}$(gh api "repos/{owner}/{repo}/issues/$rdc_n/comments?per_page=100&page=$rdc_page" --jq '.[] | [.created_at, .user.login, (.body | gsub("\t"; " ") | gsub("\r"; ""))] | @tsv' 2>/dev/null)
+    rdc_all="${rdc_all}$(gh api "repos/{owner}/{repo}/issues/$rdc_n/comments?per_page=100&page=$rdc_page" --jq '.[] | .created_at + "\t" + .user.login + "\t" + (.body | gsub("\t"; " ") | gsub("\r"; "") | gsub("\n"; "\\n"))' 2>/dev/null)  # not @tsv, which doubles every backslash and cut a reason at its quote (#2104); a newline stays the two characters \n as @tsv wrote it
 "
   done
   without_bare_path_comments "$rdc_all" | sed '/^$/d'  # a body that is only a file name is no comment

@@ -16,7 +16,9 @@
 # "Start this round": a reply "Queue request: start-round by LOGIN" (the
 # dashboard's button) approves the latest proposal whole, at once.
 #
-# One round at a time: while the latest started round on the drive issue
+# One round, taking new units (#2122): a dispatch whose unit shares no area with a unit
+# running in the started round joins it at once (join-round-lib.sh). While the latest
+# started round on the drive issue
 # (its sipnship-proposal marker) still has issues In progress, or a unit
 # whose pull request is still open, approved
 # dispatch goals wait and a "held:" line says so; landing, fixing and
@@ -30,6 +32,8 @@ here=$(dirname "$0")
 . "$here/drive-lib.sh"
 . "$here/auto-lib.sh"
 . "$here/round-lib.sh"
+. "$here/areas-lib.sh"
+. "$here/join-round-lib.sh"
 . "$here/comment-lib.sh"
 . "$here/round-state-lib.sh"
 . "$here/wake-lib.sh"
@@ -201,7 +205,9 @@ if [ -z "$started_by" ] && printf '%s\n' "$approved" | grep -q '^dispatch '; the
     inprog=$(printf '%s\n' "$inprog" | grep -vxF "$(printf '%s\n' $dead)")
     echo "the running round's units left nothing in twenty minutes (#$(printf '%s' "$dead" | sed 's/ /, #/g')); it no longer holds the next round" >&2
   fi
-  approved=$(hold_dispatch "$approved" "$(running_round "$comments" "$inprog" "$open_prs" "$(printf '%s\n' "$all_open" | cut -f1)")")
+  # A running round takes a unit that conflicts with none of its running units, as a unit of itself; one that shares an area waits for that unit alone (join-round-lib.sh, #2122).
+  all_nums=$(printf '%s\n' "$all_open" | cut -f1)
+  approved=$(join_dispatch "$approved" "$(running_round "$comments" "$inprog" "$open_prs" "$all_nums")" "$(running_units "$comments" "$inprog" "$open_prs" "$all_nums")" "$(proposed_units "$comments")")
 fi
 # An agent needs a worktree: when this run cannot make one (a scheduled run
 # under an account with no access to the worktrees folder), start none.
