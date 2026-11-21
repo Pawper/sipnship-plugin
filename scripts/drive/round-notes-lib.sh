@@ -109,7 +109,7 @@ plugin_behind_note() {
   pb_n=$(awk -v a="$1" -v b="$2" 'BEGIN { split(a, x, "."); split(b, y, "."); if (x[1] == y[1] && x[2] == y[2]) print y[3] - x[3] }')
   pb_how=""
   if [ "$pb_n" = 1 ]; then pb_how=" (1 release behind)"; elif [ -n "$pb_n" ]; then pb_how=" ($pb_n releases behind)"; fi
-  echo "plugin: this drive runs $1, and $2 is released$pb_how. Faults fixed in a release come back in the plan until the installed copy is updated. A scheduled drive updates it itself, first thing (sh plugin/scripts/release/update-installed.sh), and says in its report on the drive issue which release it moved to; the new scripts apply from its next start."
+  echo "plugin: this drive runs $1, and $2 is released$pb_how. Faults fixed in a release come back in the plan until the installed copy is updated. Every drive tick updates it itself, first thing and by script (sh plugin/scripts/release/update-if-behind.sh), and says in its report on the drive issue which release it moved to; the new scripts apply from its next start."
 }
 
 # plugin_note: the line above for the copy this plan runs from, one REST call.

@@ -9,14 +9,18 @@
 # runner. So a drain on a runner ends when it has nothing to do now, says
 # what it waits on, and is started again when a pull request's checks finish
 # (queue-drain.yml's workflow_run trigger) or a person asks (queue-wake.yml).
-# A drain run by hand in a terminal holds no runner and waits as before.
+# A drain run by hand in a terminal ends the same way when the project has
+# the Queue drain workflow: a terminal that waited two minutes a round for a
+# change still in its checks turned the drains on GitHub away meanwhile, and
+# that change's finished checks start a drain of their own anyway.
 
 # drain_wait_where: "end" when this drain runs on a CI runner (GitHub
-# Actions sets GITHUB_ACTIONS), "wait" in a terminal. QUEUE_DRAIN_WAIT=end
-# or wait chooses either way.
+# Actions sets GITHUB_ACTIONS) or the project has the Queue drain workflow
+# (QUEUE_DRAIN_WORKFLOW, default .github/workflows/queue-drain.yml); "wait"
+# in a terminal with no such workflow. QUEUE_DRAIN_WAIT=end or wait chooses.
 drain_wait_where() {
   case "${QUEUE_DRAIN_WAIT:-}" in end|wait) echo "$QUEUE_DRAIN_WAIT"; return 0 ;; esac
-  if [ -n "${GITHUB_ACTIONS:-}" ]; then echo end; else echo wait; fi
+  if [ -n "${GITHUB_ACTIONS:-}" ] || [ -f "${QUEUE_DRAIN_WORKFLOW:-.github/workflows/queue-drain.yml}" ]; then echo end; else echo wait; fi
 }
 
 # drain_wait_step WHERE GREEN WAITING HELD LIMIT LOOKED [HOLD] (needs batch-lib.sh)
@@ -69,12 +73,15 @@ drain_held_for() {
 
 # drain_end_line KIND WAITING [QUEUED_ONLY] [BOUND]: the drain's last line when
 # it ends rather than wait. KIND is hold or wait; BOUND is hold_bound_said's.
+# A round that left green changes (passed_n, queue/passed.sh) never says
+# nothing is green: one drain once did, with two green changes left out.
 drain_end_line() {
   del_q=""; [ "${3:-}" = yes ] && del_q=", whose checks are all queued for a runner"
   del_b=""; [ -n "${4:-}" ] && del_b=" It is held $4; once that time has passed, the next drain that runs lands it alone."
   case "$1" in
     hold) printf 'One pull request is green and %s still running CI%s; it is held so a merge alone does not send them back round CI.%s Ending here to free this runner; a drain starts again when one of their checks finishes.\n' "$2" "$del_q" "$del_b" ;;
-    *) printf 'Nothing is green yet; waiting on %s pull request(s) still running CI%s. Ending here to free this runner; a drain starts again when one of their checks finishes.\n' "$2" "$del_q" ;;
+    *) del_w="Nothing is green yet"; [ "${passed_n:-0}" -gt 0 ] 2>/dev/null && del_w="Nothing more can land now ($passed_n green, named above with why)"
+       printf '%s; waiting on %s pull request(s) still running CI%s. Ending here; a drain starts again when one of their checks finishes.\n' "$del_w" "$2" "$del_q" ;;
   esac
 }
 

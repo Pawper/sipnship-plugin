@@ -73,7 +73,7 @@ fi
 . "$here/queue/serial.sh"
 . "$here/queue/batch.sh"
 . "$here/queue/deploy.sh"
-. "$here/queue/halve.sh"; . "$here/queue/round.sh"; . "$here/queue/attention.sh"; . "$here/queue/wait.sh"; . "$here/queue/rules-said.sh"; . "$here/queue/settle.sh"; . "$here/queue/tc-cache.sh"
+. "$here/queue/halve.sh"; . "$here/queue/round.sh"; . "$here/queue/attention.sh"; . "$here/queue/wait.sh"; . "$here/queue/rules-said.sh"; . "$here/queue/settle.sh"; . "$here/queue/tc-cache.sh"; . "$here/queue/passed.sh"
 rules=$(cat "$here/classes.txt")
 
 mode=""
@@ -189,14 +189,14 @@ have_lock=no
 queue_step="starting"
 # Drain: merge everything that is green, round after round, so nobody
 # writes their own loop. Each round reads every open pull request in one
-# call, merges the green ones (as a batch whenever two or more are green), and,
-# in a terminal, waits for the running ones; on a CI runner it ends instead
-# (queue/wait.sh). It stops when nothing is left, after --rounds (six), or
-# after QUEUE_DRAIN_MINUTES (ninety); one green waits QUEUE_HOLD_MINUTES (ten).
+# call and lands every green one at once (as a batch whenever two or more are
+# green); a change still in its checks is the next drain's, and the drain ends
+# rather than wait for it where a finished check starts one (queue/wait.sh). It
+# stops when nothing is left, after --rounds (six) or QUEUE_DRAIN_MINUTES.
 take_lock
 if [ "$mode" = drain ]; then
   rounds=${rounds:-6}
-  drain_minutes=${QUEUE_DRAIN_MINUTES:-90}; hold_minutes=${QUEUE_HOLD_MINUTES:-10}
+  drain_minutes=${QUEUE_DRAIN_MINUTES:-90}; hold_minutes=${QUEUE_HOLD_MINUTES:-0}
   # A drain started in a session says so, so the scheduled drain skips
   # instead of racing it. The window is QUEUE_DRAIN_MINUTES (default 25),
   # renewed each round and cleared by the exit trap however the drain
@@ -308,7 +308,7 @@ if [ "$mode" = drain ]; then
     queue_step="drain round $round: choosing what to merge"; round_read "$open"
     pick=$(drain_candidates "$round_pool_list" "$base" "$tried")
     if [ -n "$(printf '%s' "$rush_now" | tr -d ' ')" ]; then pick=$(rush_pick "$pick" "$(printf '%s' "$rush_now" | awk '{print $1}')"); fi
-    redmain_round; waiting=$(( $(drain_waiting "$round_pool_list" "$base" "$retried") + round_out ))
+    redmain_round; passed_round; waiting=$(( $(drain_waiting "$round_pool_list" "$base" "$retried") + round_out ))
     n=$(printf '%s\n' "$pick" | sed '/^$/d' | wc -l | tr -d ' ')
     elapsed=$(( $(date +%s) - d_start ))
     # Wait here, or end and free the runner (queue/wait.sh)? On a runner a

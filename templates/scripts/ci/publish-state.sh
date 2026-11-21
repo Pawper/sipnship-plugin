@@ -17,7 +17,7 @@
 here=$(dirname "$0")
 . "$here/publish-lib.sh"
 . "$here/batch-lib.sh"
-. "$here/gate-lib.sh"; . "$here/queue/wait.sh" # the hold's words and fields (functions only)
+. "$here/gate-lib.sh"; . "$here/queue/wait.sh"; . "$here/queue/passed.sh" # the hold's words and fields (functions only)
 mode=idle; open_file=""; print_only=no
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -87,7 +87,7 @@ open_tsv=$(printf '%s\n' "$rows" | sed '/^$/d' | while IFS="$tab" read -r n d mw
   fi
   printf '%s\t%s\t%s\t%s\n' "$n" "$t" "$s" "$say"
 done)
-hold_tsv=$(head -n 1 "$flaky_dir/hold.tsv" 2>/dev/null | tr -d '\r'); open_tsv=$(hold_open_say "$open_tsv" "$hold_tsv") # a green change the drain holds for others (queue/wait.sh)
+hold_tsv=$(head -n 1 "$flaky_dir/hold.tsv" 2>/dev/null | tr -d '\r'); open_tsv=$(hold_open_say "$open_tsv" "$hold_tsv"); open_tsv=$(passed_open_say "$open_tsv" "$(cat "$flaky_dir/passed.tsv" 2>/dev/null)") # a green change held for others (queue/wait.sh), or left with why (queue/passed.sh)
 # The open batch pull request, if any.
 batch_row=$(printf '%s\n' "$titles" | awk -F'\t' '$4 ~ /<!-- merge-queue:batch -->/ || $4 ~ /^One integration run for the pull requests below/ { print $1; exit }')
 batch_tsv=""

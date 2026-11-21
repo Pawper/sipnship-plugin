@@ -4,11 +4,13 @@
 # The drive starts a round by posting a marker on the drive issue:
 #   <!-- sipnship-proposal {"status":"started","units":[{"issues":[784],"areas":[..],"pr":979}, ...],"held":[...]} -->
 # A unit carries "pr" once its pull request is open, so the round's members
-# are named by pull request. While that round runs the drain batches exactly
-# its members: it waits (up to the hold's bound) for a member still running
-# its checks or still being built, and a member that goes ahead after the
-# bound lands with one line saying why. A member that is held, red, in
-# conflict or gone is set aside: it is not waited on.
+# are named by pull request. While that round runs the drain reads its
+# members and every green change besides: a green change outside the round is
+# never left for the round (one drain left two green changes out that way and
+# said "Nothing is green yet"). A member still running its checks or being
+# built is waited on only where a project turned the hold on
+# (QUEUE_HOLD_MINUTES); one that goes ahead lands with one line saying why. A
+# member that is held, red, in conflict or gone is set aside, not waited on.
 
 # round_marker COMMENTS: the newest "started" marker line of the comments
 # (one comment body per line, or whole bodies), or nothing.
@@ -29,12 +31,12 @@ round_parse() {
 }
 
 # round_pool OPEN PRS: OPEN's lines (number<TAB>draft<TAB>mergeable<TAB>rollup
-# <TAB>base) of the round's members when at least one member is green or
-# still running; OPEN unchanged otherwise (no round, or nothing of it left to
-# wait for or merge).
+# <TAB>base) of the round's members and of every green change, when at least
+# one member is green or still running; OPEN unchanged otherwise (no round,
+# or nothing of it left to wait for or merge).
 round_pool() {
   printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v m=" $2 " '
-    NF >= 5 { all[++n] = $0; if (index(m, " " $1 " ") > 0) { mem[n] = 1; if ($2 == "false" && toupper($3) != "CONFLICTING" && ($4 == "green" || $4 == "pending" || $4 == "cancelled")) live = 1 } }
+    NF >= 5 { all[++n] = $0; if ($4 == "green") mem[n] = 1; if (index(m, " " $1 " ") > 0) { mem[n] = 1; if ($2 == "false" && toupper($3) != "CONFLICTING" && ($4 == "green" || $4 == "pending" || $4 == "cancelled")) live = 1 } }
     END { for (i = 1; i <= n; i++) if (!live || mem[i]) print all[i] }'
 }
 

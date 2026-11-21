@@ -110,7 +110,7 @@ export TMPDIR SUITE_TMP_ROOT GIT_CEILING_DIRECTORIES
 # Blocks that read its text read these two files: the libraries in sourcing
 # order, then the main script (so a function is defined before its call).
 mq_all=$SUITE_TMP_ROOT/merge-queue.all.sh
-cat "$root"/templates/scripts/ci/queue/state.sh "$root"/templates/scripts/ci/queue/requests.sh "$root"/templates/scripts/ci/queue/rush.sh "$root"/templates/scripts/ci/queue/runs.sh "$root"/templates/scripts/ci/queue/choose.sh "$root"/templates/scripts/ci/queue/held.sh "$root"/templates/scripts/ci/queue/rerun.sh "$root"/templates/scripts/ci/queue/rescue.sh "$root"/templates/scripts/ci/queue/serial.sh "$root"/templates/scripts/ci/queue/batch.sh "$root"/templates/scripts/ci/queue/deploy.sh "$root"/templates/scripts/ci/queue/attention.sh "$root"/templates/scripts/ci/queue/wait.sh "$root"/templates/scripts/ci/merge-queue.sh > "$mq_all"
+cat "$root"/templates/scripts/ci/queue/state.sh "$root"/templates/scripts/ci/queue/requests.sh "$root"/templates/scripts/ci/queue/rush.sh "$root"/templates/scripts/ci/queue/runs.sh "$root"/templates/scripts/ci/queue/choose.sh "$root"/templates/scripts/ci/queue/held.sh "$root"/templates/scripts/ci/queue/rerun.sh "$root"/templates/scripts/ci/queue/rescue.sh "$root"/templates/scripts/ci/queue/serial.sh "$root"/templates/scripts/ci/queue/batch.sh "$root"/templates/scripts/ci/queue/deploy.sh "$root"/templates/scripts/ci/queue/attention.sh "$root"/templates/scripts/ci/queue/wait.sh "$root"/templates/scripts/ci/queue/passed.sh "$root"/templates/scripts/ci/merge-queue.sh > "$mq_all"
 bl_all=$SUITE_TMP_ROOT/batch-lib.all.sh
 cat "$root"/templates/scripts/ci/batch-lib.sh "$root"/templates/scripts/ci/queue/rules-*.sh > "$bl_all"
 
@@ -447,11 +447,18 @@ eq "a unit still without a pull request is counted, and held work is not" "411${
 eq "the newest started marker is the running round" "411 412${rd_tab}0" "$(rd_marker markers-two-rounds.txt)"
 eq "no started marker is no round" "" "$(rd_marker marker-none.txt)"
 rd_pool() { round_pool "$(cat "$rd_fx/$1")" "$2" | cut -f1 | tr '\n' ' '; }
-eq "with the round running, only its members are in the pool" "411 412 " "$(rd_pool open-members-green.tsv '411 412')"
-eq "a member still running its checks keeps the pool narrowed" "411 412 " "$(rd_pool open-one-pending.tsv '411 412')"
+eq "with the round running, its members and every green change are in the pool" "411 412 420 " "$(rd_pool open-members-green.tsv '411 412')"
+eq "a member still running its checks never keeps a green change out" "411 412 420 " "$(rd_pool open-one-pending.tsv '411 412')"
+# One afternoon a release green at 4:46 PM and a change green at 4:58 PM were
+# still open at 5:02 PM though two drains had run: the second left both out for
+# the round the drive named, whose two members were still in their checks, and
+# its last line said "Nothing is green yet". The drain's rows, as it read them.
+eq "a green change outside the running round is in the pool, not left for the round" "424 430 431 433 " "$(rd_pool open-green-outside-round.tsv '430 433')"
+eq "so that drain lands both green changes at once" "424 431" "$(drain_candidates "$(round_pool "$(cat "$rd_fx/open-green-outside-round.tsv")" '430 433')" main | tr '\n' ' ' | sed 's/ $//')"
 eq "members that are red or in conflict are set aside, so the rest flows" "411 412 420 " "$(rd_pool open-members-set-aside.tsv '411 412')"
 eq "a round whose members have all landed narrows nothing" "420 421 " "$(rd_pool open-round-done.tsv '411 412')"
 rd_out() { round_outstanding "$(round_pool "$(cat "$rd_fx/$1")" "$2")" "$2" "$3"; }
+eq "and the round's members still running are still counted" "2" "$(rd_out open-green-outside-round.tsv '430 433' 0)"
 eq "all members green and built: nothing is waited on" "0" "$(rd_out open-members-green.tsv '411 412' 0)"
 eq "a member running its checks is waited on" "1" "$(rd_out open-one-pending.tsv '411 412' 0)"
 eq "a unit not yet built is waited on beside it" "2" "$(rd_out open-one-pending.tsv '411 412' 1)"
@@ -1848,6 +1855,28 @@ eq "red again after its retry needs attention" "44	has conflicts with main
 eq "drafts and other bases never need attention here" "" "$(drain_attention "43	true	CONFLICTING	red	main
 45	false	CONFLICTING	red	release" main '43 45')"
 
+# The hold is off by default: a drain lands what is green at once, and a
+# change still in its checks is the next drain's. The words below are a
+# project's that turned it on (QUEUE_HOLD_MINUTES above 0).
+eq "by default one green with others running is not held: it lands now" "no no" "$(drain_hold 1 3) $(round_hold=yes drain_hold 2 1)"
+# A green change a round leaves is named with why; one with no reason lands.
+. "$root/templates/scripts/ci/queue/passed.sh"
+po_open=$(printf '51\tfalse\tMERGEABLE\tgreen\tmain\n52\tfalse\tMERGEABLE\tgreen\tmain\n53\tfalse\tCONFLICTING\tgreen\tmain\n54\ttrue\tMERGEABLE\tgreen\tmain\n55\tfalse\tMERGEABLE\tgreen\trelease\n56\tfalse\tMERGEABLE\tpending\tmain\n')
+eq "a green change already tried, and one in conflict, are named with why" "52	this drain already tried it and it could not land (its line above says why); the next drain tries it again
+53	it conflicts with main; its agent merges main in first" "$(drain_passed_over "$po_open" main 51 52 '' '')"
+eq "a draft, another base and a change in its checks are not named" "" "$(drain_passed_over "$po_open" main "$(printf '51\n52\n53')" '' '' '' | cut -f1 | tr '\n' ' ' | sed 's/ $//')"
+eq "with main red, the green changes not landing say the fix lands first" "51	main is red (issue #60); the change that fixes it lands first" "$(drain_passed_over "$po_open" main '' '52 53' '' 60 | sed -n 1p)"
+eq "with a rush standing, they say it lands first" "51	a rush change (#57) lands first, and this one right after" "$(drain_passed_over "$po_open" main '' '52 53' 57 '' | sed -n 1p)"
+eq "a green change with no reason to stay has an empty reason" "51	" "$(drain_passed_over "$po_open" main '' '52 53' '' '' | sed -n 1p)"
+po_dir=$SUITE_TMP_ROOT/passed; mkdir -p "$po_dir"
+po_out=$(say() { printf '%s\n' "$*"; }; flaky_dir=$po_dir; open=$po_open; base=main; pick=52; tried=""; rush_now=""; rm_issue=""; round=1; passed_round; printf 'pick=%s n=%s\n' "$(printf '%s' "$pick" | tr '\n' ' ')" "$passed_n")
+eq "a green change with no reason to stay is added to the round's landing, and said" "pick=51 52 n=1" "$(printf '%s\n' "$po_out" | tail -n 1)"
+eq "the one in conflict is said in the log with its reason" "1" "$(printf '%s\n' "$po_out" | grep -c '^round 1: #53 is green and does not land in this round: it conflicts with main')"
+eq "and kept for the Queue tab" "53" "$(cut -f1 "$po_dir/passed.tsv")"
+eq "the Queue tab's row for it says why, and keeps its state" "53	Watering reminders	green	green, and not in this landing: it conflicts with main; its agent merges main in first" "$(passed_open_say "$(printf '53\tWatering reminders\tgreen\tgreen and waiting to merge\n56\tFrost alerts\twaiting\tstill running CI\n')" "$(cat "$po_dir/passed.tsv")" | sed -n 1p)"
+eq "other rows are as they were" "56	Frost alerts	waiting	still running CI" "$(passed_open_say "$(printf '53\tWatering reminders\tgreen\tgreen and waiting to merge\n56\tFrost alerts\twaiting\tstill running CI\n')" "$(cat "$po_dir/passed.tsv")" | sed -n 2p)"
+eq "the drain names what it leaves every round, and the publisher shows it" "1 1" "$(grep -c 'redmain_round; passed_round;' "$root/templates/scripts/ci/merge-queue.sh") $(grep -c 'passed_open_say "\$open_tsv"' "$root/templates/scripts/ci/publish-state.sh")"
+QUEUE_HOLD_MINUTES=10; export QUEUE_HOLD_MINUTES
 eq "one green with others running: hold" "yes" "$(drain_hold 1 3)"
 eq "two green: batch now, never one then the other" "no" "$(drain_hold 2 1)"
 eq "three green: batch now" "no" "$(drain_hold 3 4)"
@@ -1857,8 +1886,11 @@ eq "nothing green: nothing to hold" "no" "$(drain_hold 0 2)"
 # A drain on a CI runner that only waits ends and frees the runner, saying
 # what it waits on; one run by hand in a terminal waits as before.
 . "$root/templates/scripts/ci/queue/wait.sh"
+eq "by default no step holds, on a runner or in a terminal" "merge merge" "$(drain_wait_step end 1 2 60 1500 '' 0) $(drain_wait_step wait 1 2 60 1500 '' 0)"
+eq "the 4:50 PM drain of that afternoon: one green, one in its checks, lands now" "merge" "$(drain_wait_step end 1 1 60 1500 '' 0)"
 eq "on a runner the drain ends rather than wait" "end" "$(GITHUB_ACTIONS=true QUEUE_DRAIN_WAIT='' drain_wait_where)"
-eq "in a terminal it waits" "wait" "$(GITHUB_ACTIONS='' QUEUE_DRAIN_WAIT='' drain_wait_where)"
+eq "in a terminal with no Queue drain workflow it waits" "wait" "$(GITHUB_ACTIONS='' QUEUE_DRAIN_WAIT='' QUEUE_DRAIN_WORKFLOW=/nowhere/queue-drain.yml drain_wait_where)"
+eq "in a terminal of a project with the Queue drain workflow it ends too: a finished check starts the next drain" "end" "$(GITHUB_ACTIONS='' QUEUE_DRAIN_WAIT='' QUEUE_DRAIN_WORKFLOW="$root/templates/.github/workflows/queue-drain.yml" drain_wait_where)"
 eq "QUEUE_DRAIN_WAIT chooses either way" "wait end" "$(GITHUB_ACTIONS=true QUEUE_DRAIN_WAIT=wait drain_wait_where) $(GITHUB_ACTIONS='' QUEUE_DRAIN_WAIT=end drain_wait_where)"
 eq "on a runner, nothing green and others running: it ends" "end-wait" "$(drain_wait_step end 0 3 0 1500 '')"
 eq "in a terminal: it waits two minutes" "wait" "$(drain_wait_step wait 0 3 0 1500 '')"
@@ -1886,7 +1918,8 @@ eq "so a green one past the bound is no longer held, on a runner" "merge" "$(dra
 # length: a batch's full run can outlast ten minutes, so it never cuts a drain.
 eq "a hold past its own ten minutes merges, inside the drain's longer bound" "merge end-hold" "$(drain_wait_step end 1 2 600 1500 '' 600) $(drain_wait_step end 1 2 599 1500 '' 600)"
 eq "the hold's bound never stops a wait for others" "end-wait stop" "$(drain_wait_step end 0 2 600 1500 '' 600) $(drain_wait_step end 0 2 1500 1500 '' 600)"
-eq "the end line says what it waits on" "Nothing is green yet; waiting on 3 pull request(s) still running CI, whose checks are all queued for a runner. Ending here to free this runner; a drain starts again when one of their checks finishes." "$(drain_end_line wait 3 yes)"
+eq "the end line says what it waits on" "Nothing is green yet; waiting on 3 pull request(s) still running CI, whose checks are all queued for a runner. Ending here; a drain starts again when one of their checks finishes." "$(drain_end_line wait 3 yes)"
+eq "a round that left green changes never says nothing is green" "Nothing more can land now (2 green, named above with why); waiting on 1 pull request(s) still running CI. Ending here; a drain starts again when one of their checks finishes." "$(passed_n=2 drain_end_line wait 1 no)"
 eq "and for a hold, why the green one is held" "One pull request is green and 2 still running CI; it is held so a merge alone does not send them back round CI. Ending here to free this runner; a drain starts again when one of their checks finishes." "$(drain_end_line hold 2 no)"
 # The loop reads the step, and ends only between rounds: a batch the drain
 # opened is waited for inside the batch, never left to a later drain.
@@ -1897,8 +1930,8 @@ eq "the batch still waits for its own full run" "1" "$(grep -c 'if wait_for_run 
 eq "a batch an earlier run left open is settled by the next drain" "1 1" "$(grep -c 'merged batch #\$bp, left green by an earlier run' "$mq_tpl") $(grep -c 'is still running CI; its members' "$mq_tpl")"
 eq "a batch left green by an earlier run tidies its members' worktrees too" "1" "$(sed -n '/left green by an earlier run/,/elif .\$bstate. = failed/p' "$mq_tpl" | grep -c 'tidy_worktree')"
 eq "the drain loads its waits" "1" "$(grep -c '\. "\$here/queue/wait.sh"' "$mq_tpl")"
-eq "the hold is ten minutes by default, its own number, and bounds the hold, its words and its published limit" "1 1 1" "$(grep -c 'hold_minutes=\${QUEUE_HOLD_MINUTES:-10}' "$mq_tpl") $(grep -c '"$last_look" \$((hold_minutes \* 60)))' "$mq_tpl") $(grep -c 'hold_bound_said "$where" "$held_for" \$((hold_minutes \* 60)) .*drain_hold_note "$step" "$pick" "$held_for" \$((hold_minutes \* 60))$' "$mq_tpl")"
-eq "the drain workflow sets the hold from a variable, ten by default" "1" "$(grep -c "QUEUE_HOLD_MINUTES: \${{ vars.QUEUE_HOLD_MINUTES || '10' }}" "$root/templates/.github/workflows/queue-drain.yml")"
+eq "the hold is off by default, its own number, and bounds the hold, its words and its published limit" "1 1 1" "$(grep -c 'hold_minutes=\${QUEUE_HOLD_MINUTES:-0}' "$mq_tpl") $(grep -c '"$last_look" \$((hold_minutes \* 60)))' "$mq_tpl") $(grep -c 'hold_bound_said "$where" "$held_for" \$((hold_minutes \* 60)) .*drain_hold_note "$step" "$pick" "$held_for" \$((hold_minutes \* 60))$' "$mq_tpl")"
+eq "the drain workflow sets the hold from a variable, off by default" "1" "$(grep -c "QUEUE_HOLD_MINUTES: \${{ vars.QUEUE_HOLD_MINUTES || '0' }}" "$root/templates/.github/workflows/queue-drain.yml")"
 
 # A green change held for a batch says so: the time it is held until at the
 # latest, as a log line and as the published "holds" (spec 001). The rule that
@@ -1924,6 +1957,7 @@ eq "a round that holds writes the hold: the change, when its count began, the li
 eq "a round that does not hold empties it" "0" "$(wc -c < "$hd_dir/hold.tsv" | tr -d ' ')"
 eq "the drain notes every round and says the bound in its hold lines" "1 2" "$(grep -c 'drain_hold_note "\$step"' "$mq_tpl") $(grep -c '\$bound' "$mq_tpl")"
 eq "the publisher adds the holds and says the held row" "1 1" "$(grep -c 'hold_json_add' "$root/templates/scripts/ci/publish-state.sh") $(grep -c 'hold_open_say' "$root/templates/scripts/ci/publish-state.sh")"
+unset QUEUE_HOLD_MINUTES
 
 section 'unsticking a pull request at a drain'"'"'s end'
 . "$root/templates/scripts/ci/batch-lib.sh"
@@ -2223,7 +2257,7 @@ eq "the round that names other changes leaves the fix out, and the log names it"
 eq "main red and the fix not green: no pick, so no batch is built" "" "$(redmain_pick "$(printf '1808\n1809\n')" 1816)"
 eq "main red and the fix still running: the line says what it waits on" "Main is red (issue #1815); no batch is built. Waiting for #1816, the pull request that closes it, to turn green." "$(redmain_say 1815 "" 1816)"
 eq "main red and no fix open: the line says no run is spent" "1" "$(redmain_say 1815 "" "" | grep -c 'no run is spent')"
-eq "the drain reads the red-main issue before it picks" "1" "$(grep -c 'redmain_round; waiting=' "$mq_all")"
+eq "the drain reads the red-main issue before it picks" "1" "$(grep -c 'redmain_round; passed_round; waiting=' "$mq_all")"
 # The whole round: main red, a green fix that is not in the named round, and green round members. The fix lands first,
 # alone, and no line says it waits for the next round; with main green, a green change left out still does.
 rm_round() (
@@ -2308,8 +2342,8 @@ eq "after-drain is a step, so the request stays open" "1" "$(grep -c '\[ "\$4" =
 eq "a failed read is said in the log, never read as a request" "1" "$(grep -c 'going on without them." >&2' "$mq_all")"
 # The case from a real drain: one green with six running, and Land this next on it.
 qr_open=$(printf '48\tfalse\tMERGEABLE\tgreen\tmain\n51\tfalse\tMERGEABLE\tpending\tmain\n53\tfalse\tMERGEABLE\tpending\tmain\n')
-eq "an ordinary green change is held for others' CI" "yes" "$(drain_hold 1 "$(drain_waiting "$qr_open" main "")")"
-eq "a land request is not: with a rush standing, nothing running counts against it" "no" "$(drain_hold 1 "$(drain_waiting "$(rush_only "$qr_open" "48 ")" main "")")"
+eq "where the hold is on, an ordinary green change is held for others' CI" "yes" "$(QUEUE_HOLD_MINUTES=10 drain_hold 1 "$(drain_waiting "$qr_open" main "")")"
+eq "a land request is not: with a rush standing, nothing running counts against it" "no" "$(QUEUE_HOLD_MINUTES=10 drain_hold 1 "$(drain_waiting "$(rush_only "$qr_open" "48 ")" main "")")"
 eq "the wake starts a drain, with no runner spent on other comments" "1 1" "$(grep -c "startsWith(github.event.comment.body, 'Queue request: land-')" "$root/templates/.github/workflows/queue-wake.yml") $(grep -c 'workflows/queue-drain.yml/dispatches' "$root/templates/.github/workflows/queue-wake.yml")"
 # A plain YAML value cannot hold a colon and a space: GitHub cannot load such a workflow, starts no job, and no check says so.
 eq "no workflow's if: line is a plain value holding a colon and a space" "" "$(grep -lE "^ *(- )?if: [^>|\"'].*: " "$root"/templates/.github/workflows/*.yml)"
@@ -5649,10 +5683,10 @@ issue	9	Ready thing	state:ready	t	x" "$(bc_gh; pr_rollups "$(printf 'pr\t7\tBeds
 eq "the plan names the refusal and the board falls back without failing" "2" "$(grep -c "can't read check results" "$root/hooks/scripts/board-now.sh" "$root/scripts/drive/plan.sh" | awk -F: '$2 > 0' | wc -l | tr -d ' ')"
 # The installed plugin behind the latest release (#1626).
 . "$root/hooks/scripts/session-brief-versions.sh"
-eq "a copy twelve releases behind says so, with both versions and how to update" "plugin: this drive runs 0.43.5, and 0.43.17 is released (12 releases behind). Faults fixed in a release come back in the plan until the installed copy is updated. A scheduled drive updates it itself, first thing (sh plugin/scripts/release/update-installed.sh), and says in its report on the drive issue which release it moved to; the new scripts apply from its next start." "$(plugin_behind_note 0.43.5 0.43.17)"
+eq "a copy twelve releases behind says so, with both versions and how to update" "plugin: this drive runs 0.43.5, and 0.43.17 is released (12 releases behind). Faults fixed in a release come back in the plan until the installed copy is updated. Every drive tick updates it itself, first thing and by script (sh plugin/scripts/release/update-if-behind.sh), and says in its report on the drive issue which release it moved to; the new scripts apply from its next start." "$(plugin_behind_note 0.43.5 0.43.17)"
 eq "a current copy says nothing" "" "$(plugin_behind_note 0.43.17 0.43.17)$(plugin_behind_note 0.43.17 '')"
-eq "a copy a minor behind names no count" "plugin: this drive runs 0.42.9, and 0.43.1 is released. Faults fixed in a release come back in the plan until the installed copy is updated. A scheduled drive updates it itself, first thing (sh plugin/scripts/release/update-installed.sh), and says in its report on the drive issue which release it moved to; the new scripts apply from its next start." "$(plugin_behind_note 0.42.9 0.43.1)"
-eq "the drive skill has a scheduled tick update the installed copy itself and report the release" "1" "$(grep -c "scheduled tick (not a person.s session) runs" "$root/skills/project-drive/SKILL.md")"
+eq "a copy a minor behind names no count" "plugin: this drive runs 0.42.9, and 0.43.1 is released. Faults fixed in a release come back in the plan until the installed copy is updated. Every drive tick updates it itself, first thing and by script (sh plugin/scripts/release/update-if-behind.sh), and says in its report on the drive issue which release it moved to; the new scripts apply from its next start." "$(plugin_behind_note 0.42.9 0.43.1)"
+eq "the drive skill has the wake check update the installed copy itself, by script, and report the release" "1 1" "$(grep -c 'the wake check does it before anything else' "$root/skills/project-drive/SKILL.md") $(grep -c 'update-if-behind.sh' "$root/scripts/drive/wake-check.sh")"
 eq "plan.sh prints the behind line from one release read, before the proposal's own line" "1 1" "$(grep -c '^\[ "\$fast" = yes \] || plugin_note' "$root/scripts/drive/plan.sh") $(awk '/plugin_note  #/ { a = NR } /^echo "proposal for/ { b = NR } END { print (a && b && a < b) ? 1 : 0 }' "$root/scripts/drive/plan.sh")"
 eq "a goal naming the drive or audit issue is dropped, whatever it asks" "ask-owner 9	Water schedule row" "$(drop_standing_goals "$(printf 'ask-owner 5\tDrive\nmark-waiting 6\tAudit\nunasked 5\tDrive\nask-fix 5\tDrive\nask-owner 9\tWater schedule row')" "$(printf 'issue\t5\tDrive\tdrive,state:ready\nissue\t6\tAudit\taudit,state:ready\nissue\t9\tWater schedule row\tstate:ready\n')")"
 eq "plan.sh drops goals for the standing issues before it proposes" "1" "$(grep -c 'extra=$(drop_standing_goals' "$root/scripts/drive/plan.sh")"
@@ -7539,9 +7573,61 @@ pw_dir=$(mktemp -d); mkdir -p "$pw_dir/bin"
 printf '#!/bin/sh\necho "proposal for Friday"\necho "published: Published the round on #99: 1 agent, proposed."\n' > "$pw_dir/plan.sh"
 printf '#!/bin/sh\nexit 1\n' > "$pw_dir/bin/gh"; chmod +x "$pw_dir/bin/gh"
 eq "the wake runs the plan first and says what it published, then reads the approval" "published: Published the round on #99: 1 agent, proposed.
-nothing: gh is not available or not signed in|proposal for Friday" "$(cd "$pw_dir" && WAKE_PLAN="$pw_dir/plan.sh" PATH="$pw_dir/bin:$PATH" sh "$root/scripts/drive/wake-check.sh")|$(sed -n 1p "$pw_dir/.scratch/drive/plan.txt")"
+nothing: gh is not available or not signed in|proposal for Friday" "$(cd "$pw_dir" && WAKE_UPDATE=/dev/null WAKE_PREPARE=/dev/null WAKE_PLAN="$pw_dir/plan.sh" PATH="$pw_dir/bin:$PATH" sh "$root/scripts/drive/wake-check.sh")|$(sed -n 1p "$pw_dir/.scratch/drive/plan.txt")"
 printf '#!/bin/sh\necho "stop: rate-limited"\n' > "$pw_dir/plan.sh"
-eq "a plan that printed no publish line is said as not published" "1" "$(cd "$pw_dir" && WAKE_PLAN="$pw_dir/plan.sh" PATH="$pw_dir/bin:$PATH" sh "$root/scripts/drive/wake-check.sh" | grep -c '^not published: ')"
+eq "a plan that printed no publish line is said as not published" "1" "$(cd "$pw_dir" && WAKE_UPDATE=/dev/null WAKE_PREPARE=/dev/null WAKE_PLAN="$pw_dir/plan.sh" PATH="$pw_dir/bin:$PATH" sh "$root/scripts/drive/wake-check.sh" | grep -c '^not published: ')"
+# The installed copy is brought up by script first thing, whoever started the tick, and a release is prepared by script (#2052).
+uf_dir=$(mktemp -d)
+uf_list() { printf '{\n "plugins": {\n  "sipnship@sipnship": [\n   { "scope": "user", "version": "%s" }\n  ]\n }\n}\n' "$1" > "$uf_dir/list.json"; }
+printf '#!/bin/sh\nsed "s/0.43.50/0.43.54/" "$SIPNSHIP_PLUGIN_LIST" > "$SIPNSHIP_PLUGIN_LIST.new" && cat "$SIPNSHIP_PLUGIN_LIST.new" > "$SIPNSHIP_PLUGIN_LIST"\n' > "$uf_dir/up-ok.sh"
+printf '#!/bin/sh\necho "network down"\nexit 1\n' > "$uf_dir/up-bad.sh"
+uf_run() { SIPNSHIP_PLUGIN_LIST="$uf_dir/list.json" SIPNSHIP_PUBLISHED=$1 UPDATE_INSTALLED="$uf_dir/$2" sh "$root/scripts/release/update-if-behind.sh"; }
+uf_list 0.43.50
+eq "a copy behind the published version is updated and the line says to which version" "plugin: moved from 0.43.50 to 0.43.54" "$(uf_run 0.43.54 up-ok.sh)"
+eq "a copy on the published version is left alone" "plugin: current at 0.43.54" "$(uf_run 0.43.54 up-bad.sh)"
+uf_list 0.43.50
+eq "an update that fails says why and stops nothing" "plugin: could not update from 0.43.50 to 0.43.54 (network down)" "$(uf_run 0.43.54 up-bad.sh)"
+eq "the update never asks what kind of session started it" "0" "$(grep -ci "person's session" "$root/scripts/release/update-if-behind.sh")"
+eq "the skill no longer leaves the update to the model's reading of the session" "0 2" "$(grep -c "not a person's session" "$root/skills/project-drive/SKILL.md") $(grep -c 'update-if-behind.sh' "$root/skills/project-drive/SKILL.md")"
+printf '#!/bin/sh\necho "plugin: moved from 0.43.50 to 0.43.54"\n' > "$pw_dir/up.sh"
+printf '#!/bin/sh\necho "release: opened pull request #2151 for 0.43.55 (issue #2150)"\n' > "$pw_dir/prep.sh"
+printf '#!/bin/sh\necho "proposal for Friday"\necho "published: Published the round on #99: 1 agent, proposed."\n' > "$pw_dir/plan.sh"
+eq "the wake check updates the copy and prepares a release before the plan, and says both" "plugin: moved from 0.43.50 to 0.43.54
+release: opened pull request #2151 for 0.43.55 (issue #2150)
+published: Published the round on #99: 1 agent, proposed." "$(cd "$pw_dir" && WAKE_UPDATE="$pw_dir/up.sh" WAKE_PREPARE="$pw_dir/prep.sh" WAKE_PLAN="$pw_dir/plan.sh" PATH="$pw_dir/bin:$PATH" sh "$root/scripts/drive/wake-check.sh" | sed -n 1,3p)"
+# The release script, on a small repository with a bare origin; the issue, the bump and the pull request are stand-ins.
+pr_dir=$(mktemp -d); pr_gh="$pr_dir/bin"; mkdir -p "$pr_gh" "$pr_dir/origin.git"
+printf '#!/bin/sh\ncase "$*" in *tags*) echo plugin-v0.43.54 ;; *) exit 1 ;; esac\n' > "$pr_gh/gh"; chmod +x "$pr_gh/gh"
+git init -q --bare "$pr_dir/origin.git"
+git init -q -b main "$pr_dir/maya-garden"
+(
+  cd "$pr_dir/maya-garden" && git config user.email t@t && git config user.name t && git config core.autocrlf false
+  mkdir -p plugin/.claude-plugin plugin/scripts/release .scratch
+  printf '{\n  "name": "sipnship",\n  "version": "0.43.54"\n}\n' > plugin/.claude-plugin/plugin.json
+  printf '#!/bin/sh\ncd "$(dirname "$0")/../../.." || exit 1\nsed "s/\\"version\\": \\"[^\\"]*\\"/\\"version\\": \\"$1\\"/" plugin/.claude-plugin/plugin.json > plugin/.claude-plugin/plugin.json.new && cat plugin/.claude-plugin/plugin.json.new > plugin/.claude-plugin/plugin.json && rm plugin/.claude-plugin/plugin.json.new\n' > plugin/scripts/release/bump.sh
+  printf '.scratch/\n' > .gitignore
+  git add -A && git commit -q -m "Release the plugin as 0.43.54" && printf 'a\n' > plugin/watering.txt && git add -A && git commit -q -m "A plugin change" && git remote add origin "$pr_dir/origin.git" && git push -q origin main
+) >/dev/null 2>&1
+printf '#!/bin/sh\necho "Filed issue #501: https://example.test/501"\n' > "$pr_dir/issue-open.sh"
+printf '#!/bin/sh\ncat .scratch/body.md > "%s/body-seen.txt"\necho "Opened pull request #502: https://example.test/502"\n' "$pr_dir" > "$pr_dir/pr-open.sh"
+pr_run() { (cd "$pr_dir/maya-garden" && PATH="$pr_gh:$PATH" PREPARE_ISSUES="$pr_dir/issues.txt" ISSUE_OPEN="$pr_dir/issue-open.sh" PR_OPEN="$pr_dir/pr-open.sh" PREPARE_WORKTREES="$pr_dir/worktrees" sh "$root/scripts/release/prepare.sh" "$@" 2>&1); }
+: > "$pr_dir/issues.txt"
+eq "a plugin change on main with no release open is announced by a dry run" "release: would prepare 0.43.55 (1 plugin changes unreleased)" "$(pr_run --dry-run)"
+printf '600\tRelease the plugin as 0.43.55\n' > "$pr_dir/issues.txt"
+eq "a release already open is named and none is prepared" "release: 0.43.55 is already open (#600)" "$(pr_run)"
+: > "$pr_dir/issues.txt"
+eq "with none open the issue is filed, the bump made and the pull request opened" "release: opened pull request #502 for 0.43.55 (issue #501)" "$(pr_run)"
+eq "the release branch carries the bump and the body closes the issue" "0.43.55 1" "$(git -C "$pr_dir/worktrees/release-0-43-55" show HEAD:plugin/.claude-plugin/plugin.json | sed -n 's/.*"version": "\(.*\)".*/\1/p') $(grep -c '^Closes #501$' "$pr_dir/body-seen.txt")"
+eq "a second look finds the branch and prepares nothing more" "release: 0.43.55 is already open (branch release-0-43-55)" "$(pr_run)"
+eq "the wake check runs the release script" "1" "$(grep -c 'release/prepare.sh' "$root/scripts/drive/wake-check.sh")"
+# The nightly audit names an installed copy more than an hour behind.
+ia_dir=$(mktemp -d)
+printf '{\n "plugins": {\n  "sipnship@sipnship": [\n   { "scope": "user", "version": "0.43.50" }\n  ]\n }\n}\n' > "$ia_dir/list.json"
+ia_run() { SIPNSHIP_PLUGIN_LIST="$ia_dir/list.json" SIPNSHIP_PUBLISHED=$1 SIPNSHIP_PUBLISHED_AT=$2 AUDIT_NOW=$3 sh "$root/templates/scripts/ci/installed-copy-audit.sh"; }
+eq "a copy 4 releases and 3 hours behind is named" "The installed plugin copy is on 0.43.50, 4 releases behind 0.43.54, which was published 3 hours ago; the drive updates it first thing in every round, so the update is failing or no round is running. Run sh plugin/scripts/release/update-installed.sh." "$(ia_run 0.43.54 1000000 1010900)"
+eq "a copy behind for 30 minutes is not named" "" "$(ia_run 0.43.54 1000000 1001800)"
+eq "a current copy is not named" "" "$(ia_run 0.43.50 1000000 1090000)"
+eq "the project's copy of the installed-copy audit is the template's, owned, and called by both workflows" "same 1 2" "$(cmp -s "$root/templates/scripts/ci/installed-copy-audit.sh" "$root/../scripts/ci/installed-copy-audit.sh" && echo same || echo differ) $(grep -c '^scripts/ci/installed-copy-audit.sh$' "$root/templates/OWNED.txt") $(grep -c 'installed-copy-audit.sh' "$root/../.github/workflows/audit.yml" "$root/templates/.github/workflows/audit.yml" | awk -F: '{ s += ($2 > 0) } END { print s }')"
 eq "the builder's answer to an ask wakes the drive" "yes no" "$(wake_event_wanted issue_comment "$(printf 'Maya chose Water at dawn.\nBuilder answer: #233 choice 1 by maya')") $(wake_event_wanted issue_comment 'Builder answers are welcome')"
 eq "the wake workflow hears it too" "1" "$([ -f "$root/../.github/workflows/drive-wake.yml" ] || { echo 1; exit 0; }; grep -c "contains(github.event.comment.body, 'Builder answer: #')" "$root/../.github/workflows/drive-wake.yml")"
 eq "the skill leaves publishing to the plan, and starts only the published units" "1 1 0" "$(grep -c 'The plan publishes its own proposal' "$root/skills/project-drive/SKILL.md") $(grep -c 'what starts is the published round' "$root/skills/project-drive/SKILL.md") $(grep -c 'write the round to `.scratch/drive/round.txt`' "$root/skills/project-drive/SKILL.md")"
