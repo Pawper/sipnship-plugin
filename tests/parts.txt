@@ -31,107 +31,107 @@ queue a green pull request starts the drain
 queue the queue signs in as its own App or with the workflow token
 queue the drain reads with its own token and merges with the queue token
 queue builds that find a place, and the rescue of a build stuck on a machine that went offline
+queue a stalled queue finds its own way back
+shell-1 the session brief inside its start limit
+shell-1 runner doctor
+shell-1 worktrees
+shell-1 shared code and ended branches
+shell-1 classify_paths
+shell-1 state_label_from_body
+shell-1 spec_check_reason
+shell-1 audit helpers
+shell-1 quoted text is text, and nothing waits on input
+shell-1 numbering
+shell-1 template refresh
+shell-1 the CI template is three jobs on a pull request, and the screens job where mocks have routes
+shell-1 one design source for every platform
+shell-1 drive release goal
+shell-1 drive sets right an In progress issue nobody works
+shell-1 rule switches in the checks
+shell-1 a deploy that met a brief provider outage tries again
+shell-1 main is gated by one full run after a quiet hour
+shell-1 the brief says when the installed plugin lags
+shell-1 the suite runs the parts a change touches, and says where it is
+shell-1 the worktrees and batch folders stay out of the Windows search index (drive)
+shell-1 the drive reads every open pull request from its own facts (drive)
+shell-1 the drive puts priority work first and keeps a hopeless ask-fix quiet (drive)
+shell-1 the plan reads what is left of a partly landed issue (drive)
+shell-1 a round is sized by its work, never by free runners (drive)
 shell-2 json_field
-shell-2 split_commands
-shell-2 delete_reason
-shell-2 force_push_reason
-shell-2 full_sweep_reason
-shell-2 generated_page_reason
 shell-2 state_label_reason
-shell-2 session brief
-shell-2 the machine probe line in the brief
-shell-2 the session brief inside its start limit
-shell-2 runner doctor
 shell-2 board digest
-shell-2 clean endings (hook library)
-shell-2 long_command_reason
 shell-2 daemon_stop_reason
-shell-2 worktrees
-shell-2 shared code and ended branches
-shell-2 project drive
-shell-2 task_tier and agent_model_reason
-shell-2 workflow_model_reason
-shell-2 status page
-shell-2 status check
-shell-2 classify_paths
 shell-2 needs_rerun
-shell-2 state_label_from_body
-shell-2 spec_check_reason
 shell-2 rerun-free classes
 shell-2 board mappings
-shell-2 workflow_breaks
 shell-2 drain_late
-shell-2 audit helpers
-shell-2 setup_check_reason and has_crlf
-shell-2 quoted text is text, and nothing waits on input
-shell-2 board calls refused for a rate limit
-shell-2 pull request bodies, stray closing keywords
-shell-2 decisions, one file each
 shell-2 the package a file belongs to
-shell-2 numbering
-shell-2 decision numbers inside a file
-shell-2 env-lib
-shell-1 template refresh
-shell-4 template refresh, the sync in a throwaway project
-shell-2 the CI template is three jobs on a pull request, and the screens job where mocks have routes
 shell-2 set -e never swallows a return code
-shell-2 what an agent did after a refusal
-shell-3 one design source for every platform
-shell-3 a screen and its mock change together
-shell-3 copy from the mocks
-shell-3 token names a stylesheet defines for itself
-shell-3 a screen beside its mock
+shell-2 a screen and its mock change together
+shell-2 copy from the mocks
+shell-2 token names a stylesheet defines for itself
+shell-2 a screen beside its mock
+shell-2 hook counterparts
+shell-2 the rules guard
+shell-2 one list of rules builds the table
+shell-2 deploy targets
+shell-2 a failing job says what failed, and a failed check cancels the run
+shell-2 temp files stay in the run, and nothing it starts outlives it
+shell-2 the drive reads answers
+shell-2 a timed round runs on a model that fits it
+shell-2 the plan names a release already underway and asks nothing the issue itself settles (drive)
+shell-2 hooks in node: the same verdicts and words
+shell-3 split_commands
+shell-3 generated_page_reason
+shell-3 clean endings (hook library)
+shell-3 workflow_model_reason
+shell-3 status page
+shell-3 status check
+shell-3 decision numbers inside a file
+shell-3 env-lib
+shell-3 template refresh, the sync in a throwaway project
 shell-3 runner watch
 shell-3 deploys: keeping the host's build CPU down
 shell-3 drive skill scheduling
-shell-3 drive release goal
 shell-3 drive bundles issues by the files they touch
-shell-3 drive publishes its rounds
 shell-3 drive reads Auto Drive
-shell-3 drive sets right an In progress issue nobody works
-shell-3 drive runs rounds of units
-shell-3 hook counterparts
-shell-3 rule switches in the hooks
 shell-3 block-rule-switch
-shell-3 rule switches in the checks
-shell-3 the rules guard
-shell-3 one list of rules builds the table
 shell-3 a rule switch reaches the repository
 shell-3 the delete check
-shell-3 workspace install
 shell-3 a draft tokens file seeded from the mocks
-shell-3 deploy targets
-shell-3 a deploy that met a brief provider outage tries again
 shell-3 test parts: only for the classes touched, side by side, stopping at the first red
-shell-2 a failing job says what failed, and a failed check cancels the run
-shell-2 main is gated by one full run after a quiet hour
-shell-2 a hook that runs out of time is named, bounded and logged
-shell-2 the brief says when the installed plugin lags
-shell-2 every unattended git is bound in time and ends with its caller
-shell-2 no test fails on how long something took
-shell-2 temp files stay in the run, and nothing it starts outlives it
-shell-4 hotspots: size limits, overlaps and job time
-shell-4 quick checks before a push
-shell-4 the suite runs the parts a change touches, and says where it is
-shell-3 an ask with choices recommends one
-shell-3 a job says what it is for
-shell-3 the drive reads answers
-shell-3 a timed round runs on a model that fits it
+shell-3 a hook that runs out of time is named, bounded and logged
+shell-3 every unattended git is bound in time and ends with its caller
+shell-3 hotspots: size limits, overlaps and job time
 shell-3 a landing wakes the drive
 shell-3 a press wakes the drive on the builder machine
 shell-3 nothing connected
-shell-3 the drive checks it can make a worktree before it starts an agent (drive)
-shell-3 the worktrees and batch folders stay out of the Windows search index (drive)
-shell-3 the plan reads areas like publish-round, and no second release (drive)
-shell-3 a drain is not proposed again after its batches went red on the same commits (drive)
 shell-3 the drive reads a red pull request nobody works, a stale main, and a release already underway (drive)
-shell-3 the plan names a release already underway and asks nothing the issue itself settles (drive)
-shell-3 the drive reads every open pull request from its own facts (drive)
-shell-3 the drive posts a file by its contents and ignores a bare file name (drive)
-shell-3 the drive puts priority work first and keeps a hopeless ask-fix quiet (drive)
-shell-3 the plan reads what is left of a partly landed issue (drive)
-shell-2 hooks in node: the same verdicts and words
-queue a stalled queue finds its own way back
 shell-3 an issue never waits behind one whose pull request is held for the owner (drive)
-shell-3 a round is sized by its work, never by free runners (drive)
-shell-3 the plan publishes its own proposal, and what starts is what it proposed (drive)
+shell-4 delete_reason
+shell-4 force_push_reason
+shell-4 full_sweep_reason
+shell-4 session brief
+shell-4 the machine probe line in the brief
+shell-4 long_command_reason
+shell-4 project drive
+shell-4 task_tier and agent_model_reason
+shell-4 workflow_breaks
+shell-4 setup_check_reason and has_crlf
+shell-4 board calls refused for a rate limit
+shell-4 pull request bodies, stray closing keywords
+shell-4 decisions, one file each
+shell-4 what an agent did after a refusal
+shell-4 drive publishes its rounds
+shell-4 drive runs rounds of units
+shell-4 rule switches in the hooks
+shell-4 workspace install
+shell-4 no test fails on how long something took
+shell-4 quick checks before a push
+shell-4 an ask with choices recommends one
+shell-4 a job says what it is for
+shell-4 the drive checks it can make a worktree before it starts an agent (drive)
+shell-4 the plan reads areas like publish-round, and no second release (drive)
+shell-4 a drain is not proposed again after its batches went red on the same commits (drive)
+shell-4 the drive posts a file by its contents and ignores a bare file name (drive)
+shell-4 the plan publishes its own proposal, and what starts is what it proposed (drive)
