@@ -6546,6 +6546,22 @@ if [ -f "$wk_yml" ]; then
   eq "the wake is started by the four events" "4" "$(grep -cE '^  (workflow_dispatch|repository_dispatch|workflow_run|issue_comment):' "$wk_yml")"
   eq "the model step runs only when something is approved" "1" "$(grep -c "if: steps.check.outputs.start == 'yes'" "$wk_yml")"
 fi
+
+# specs/030-plugin-wake: the plugin's own connection. The cases run in console/test/wake.test.js
+# (node); each block runs its own cases by name, and checks the hook that starts the connection.
+section 'a press wakes the drive on the builder machine'
+. "$root/tests/node-cases-lib.sh"
+node_cases "a wake runs one look, a second waits behind it, nothing approved spends no model, a handled wake and another repository's are no-ops, a refused token is said once" "$root/console/test/wake.test.js" 'one message|one look|no model|headless|already handled|runner wake|lock|hears a wake|refused token|once per repository|growing|verdict'
+pw_hooks="$root/hooks/hooks.json"
+eq "the connection is started at a session's start and kept at each turn's end" "2" "$(grep -c 'wake-start.sh' "$pw_hooks")"
+pw_home=$(mktemp -d)
+eq "a machine with no token starts nothing and says nothing" "0:" "$(printf '{"hook_event_name":"SessionStart","cwd":"%s"}' "$root" | SIPNSHIP_HOME="$pw_home" CLAUDE_PROJECT_DIR= sh "$root/hooks/scripts/wake-start.sh"; printf '%s:' "$?")$(ls "$pw_home")"
+rm -rf "$pw_home"
+
+# The service's side, that its reading then falls back to the timed drive's words, is packages/core/test/work-wake.test.ts.
+section 'nothing connected'
+. "$root/tests/node-cases-lib.sh"
+node_cases "the plugin offline sends no heartbeat and ends once no session is seen" "$root/console/test/wake.test.js" 'nothing connected'
 section 'the plan reads areas like publish-round, and no second release (drive)'
 . "$root/scripts/drive/area-plan-lib.sh"
 da_list=$(cat "$fx/drive-areas/areas.txt")

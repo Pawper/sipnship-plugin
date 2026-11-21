@@ -30,3 +30,4 @@ reading if there is one, otherwise it lets the call through.
 | watch-resolution | 5 to 6 s | A refusal's outcome is not noted for the console | Nothing needed; the note is only for the console's feed |
 | session-brief | 20 s | No brief is printed; the session starts without it | `sh scripts/gh-budget.sh` and `board-now.sh` give the same facts on demand |
 | session-sample | 5 to 10 s | A sample of the session is not taken | Nothing needed |
+| wake-start | 5 to 10 s | This machine's connection is not started, so a press on the dashboard waits for the drive's next look | Nothing needed; the next turn's end starts it, and the timed drive starts the round meanwhile |
