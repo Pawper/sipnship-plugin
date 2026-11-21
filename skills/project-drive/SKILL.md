@@ -90,7 +90,11 @@ The drive works the ready list in rounds, so many issues land in little time wit
 
 **A scheduled tick starts with no model reply.** Before reading anything, run
 `sh <plugin path>/scripts/drive/wake-check.sh`. It runs the plan, which publishes the proposed round to the
-Work tab by itself, then reads the approval and the requests owed with plain scripts. Its first line is the
+Work tab by itself, then reads the approval and the requests owed with plain scripts. Before the plan it
+runs two scripts of its own, so no model decides either: `release/update-if-behind.sh` brings the installed
+copy up to the newest published version when it is behind, and `release/prepare.sh` prepares the release (issue,
+bump, pull request) when plugin changes sit on main with no release open. Their lines (`plugin: moved from X
+to Y`, `release: opened ...`) come first; carry each into the round's report on the drive issue. After them comes the
 plan's `published:` or `not published:` line; carry a `not published:` line into the round's report on the
 drive issue, in its own words. When it prints `nothing: ...`, end the tick with those lines: no summaries, no
 plan of your own, no report. When it prints `start: ...`, go on, and read the plan it already ran from
@@ -171,11 +175,12 @@ so it stays held until the builder lets it land; say so on the issue, and do not
 The plan's closing lines also say the round's settings (`rounds:`, with the units per round, the dispatch
 model and the red limit), `summary: due` when the daily summary should be written (below), and `health:`
 when a health note is set (below). A `plugin:` line says the copy running the drive is older than the latest
-release; carry it into the report on the drive issue, since faults already fixed come back in the plan until
-the installed copy is updated. The builder said a scheduled drive may update the installed copy itself, so a
-scheduled tick (not a person's session) runs `sh <plugin path>/scripts/release/update-installed.sh` first thing
-when it sees that line, and the report says which release the copy moved to, or that the update could not run
-and why. The new scripts apply from the next start; this tick finishes on the ones it began with.
+release; carry it into the report on the drive issue. The builder said a drive may update the installed copy
+itself, and the wake check does it before anything else (`release/update-if-behind.sh`, by script, whoever
+started the tick: no model judges what kind of session this is). Its
+`plugin:` line says which release the copy moved to, or that the update could not run and why; put it in the
+report. When it says the update could not run, run `sh <plugin path>/scripts/release/update-installed.sh`
+once yourself. The new scripts apply from the next start; this tick finishes on the ones it began with.
 
 ## b. Propose, or pursue
 

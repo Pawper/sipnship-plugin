@@ -90,6 +90,7 @@ scripts/ci/queue/rules-due.sh
 scripts/ci/queue/due.sh
 scripts/ci/queue/rescue.sh
 scripts/ci/queue/wait.sh
+scripts/ci/queue/passed.sh
 scripts/ci/run-lib.sh
 scripts/ci/run-test-file.mjs
 scripts/ci/QUEUE.md
@@ -128,6 +129,7 @@ scripts/ci/in-progress-audit.sh
 scripts/ci/proposal-audit.sh
 scripts/ci/jobs-audit.sh
 scripts/ci/held-change-audit.sh
+scripts/ci/installed-copy-audit.sh
 feature status
 status/build.sh
 status/check.sh
