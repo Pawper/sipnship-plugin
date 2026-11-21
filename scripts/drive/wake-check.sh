@@ -16,6 +16,10 @@
 here=$(dirname "$0")
 . "$here/wake-lib.sh"
 mkdir -p .scratch/drive 2>/dev/null
+# First thing, by script: a copy behind the published version is brought up, whoever started this run.
+sh "${WAKE_UPDATE:-$here/../release/update-if-behind.sh}" 2>/dev/null | tail -n 1
+# And a release is prepared by script when plugin changes sit on main with no release open; nothing is printed when there is none.
+sh "${WAKE_PREPARE:-$here/../release/prepare.sh}" 2>/dev/null | tail -n 1 | grep -v '^release: nothing to release' || true
 sh "${WAKE_PLAN:-$here/plan.sh}" --fast > .scratch/drive/plan.txt 2>/dev/null
 pub=$(grep -E '^(published|not published):' .scratch/drive/plan.txt | tail -n 1)
 echo "${pub:-not published: the plan printed no proposal, so the Work tab still shows the last round it was given.}"
