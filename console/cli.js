@@ -30,6 +30,7 @@ function usage() {
   sipnship queue-identity [--repo OWNER/NAME] [--org ORG]   give the merge queue its own GitHub App (two clicks)
   sipnship deploy-key [--repo OWNER/NAME] [--host cloudflare|vercel] [--terminal]   open a page on this machine that takes the hosting key once and sets the deploy secrets (--terminal: a hidden prompt instead, for a machine with no screen)
   sipnship listen [on|off|status]  carry out what you approve on the dashboard (off until turned on here)
+  sipnship wake [status]           whether a press on the dashboard starts your drive on this machine now (it listens while a session or your timed drive runs)
   sipnship ask add-runner [NAME | --count N] | remove-runner NAME | migrate [PR] | deploy | scan-skip | scan-again | record-antivirus
   sipnship land-next N ["reason"]   land this green pull request next, pausing nothing
   sipnship land-now N ["reason"]    land this pull request now, before anything else
@@ -104,6 +105,16 @@ async function main() {
     } else if (rest[0] === 'off') process.exitCode = l.turn(false, { repo });
     else if (rest[0] === 'status') process.exitCode = l.status();
     else process.exitCode = await l.listen({});
+    return;
+  }
+  if (args.command === 'wake') {
+    // start: the session hooks' call; run: the connection itself, started by start; status, or nothing: for a person.
+    const rest = process.argv.slice(3);
+    const value = (name) => { const i = rest.indexOf(name); return i >= 0 ? rest[i + 1] : undefined; };
+    const w = require('./wake');
+    if (rest[0] === 'start') w.start({ cwd: value('--root') || process.cwd() });
+    else if (rest[0] === 'run') await w.run({ repoId: Number(value('--repo')), root: value('--root') || process.cwd() });
+    else process.exitCode = w.status();
     return;
   }
   if (args.command === 'setup') {
