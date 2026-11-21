@@ -239,6 +239,20 @@ full_run_decide() {
   echo no
 }
 
+# own_run_decide CLASSES RULES
+# "yes" when a change of CLASSES runs its test parts on its own pull request
+# although the pull request is not a full run: a class named on an
+# "!own-run" line of classes.txt. Those are the changes whose only other
+# full read would be on main, such as the suite's own scripts and tests: a
+# change to the thing that does the testing is proved by it before it lands.
+own_run_decide() {
+  ord_names=$(printf '%s\n' "$2" | tr -d '\r' | awk '{ sub(/#.*/, "") } $1 == "!own-run" { $1 = ""; print; exit }')
+  for ord_c in $1; do
+    case " $ord_names " in *" $ord_c "*) echo yes; return ;; esac
+  done
+  echo no
+}
+
 # cheap_gate_say: what a green pull request that has run only its rule
 # checks is told, in the words a person reads (the Queue and Work cards).
 cheap_gate_say() { echo "Its rule checks passed; it lands with the next batch"; }

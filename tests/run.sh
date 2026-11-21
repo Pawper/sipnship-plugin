@@ -413,6 +413,31 @@ eq "a batch head runs the full run" "yes" "$(full_run_decide batch-2026-11-10 ''
 eq "a rush head runs the full run" "yes" "$(full_run_decide rush-beds-fix '' 'docs')"
 eq "a change held for the builder runs only its rule checks, even a change to CI" "no" "$(full_run_decide pr-rooftop-watering 'state:ready,queue:hold' 'app ci')"
 eq "a held change that is let land is full again when CI changed" "yes" "$(full_run_decide pr-rooftop-watering 'state:ready' 'app ci')"
+# A change to the suite's own files runs its parts on its pull request (#2204).
+. "$root/templates/scripts/ci/lib.sh"
+od_rules=$(printf '!own-run plugin-code\n')
+eq "a class on the own-run line runs its parts on the pull request" "yes" "$(own_run_decide 'docs plugin-code' "$od_rules")"
+eq "a class off that line does not" "no" "$(own_run_decide 'docs plugin' "$od_rules")"
+eq "a project with no own-run line asks for nothing" "no" "$(own_run_decide 'plugin-code' '')"
+if [ -f "$root/../scripts/ci/classes.txt" ] && grep -q '^!own-run' "$root/../scripts/ci/classes.txt"; then
+  od_repo=$(cat "$root/../scripts/ci/classes.txt")
+  od_m() { parts_matrix "$(class_parts "$(classify_paths "$1" "$od_repo")" "$od_repo")"; }
+  for od_path in plugin/scripts/drive/comment-lib.sh plugin/tests/run.sh plugin/hooks/scripts/session-brief.sh plugin/console/cli.js; do
+    eq "a change to $od_path is the plugin-code class and runs every plugin part on its pull request" "plugin-code yes" "$(classify_paths "$od_path" "$od_repo") $(own_run_decide "$(classify_paths "$od_path" "$od_repo")" "$od_repo")"
+    eq "its parts for $od_path are the shell parts" '["shell-2","queue-console","shell-5","shell-3","shell-1-4"]' "$(od_m "$od_path")"
+  done
+  eq "a plugin skill or template is not an own run" "plugin no" "$(classify_paths plugin/skills/project-drive/SKILL.md "$od_repo") $(own_run_decide "$(classify_paths plugin/skills/project-drive/SKILL.md "$od_repo")" "$od_repo")"
+fi
+# The red-main report speaks only for a run on main (#2204).
+rr_stub=$(mktemp -d); mkdir -p "$rr_stub/bin"
+printf '#!/bin/sh\necho "gh called" >> "%s/calls"\n' "$rr_stub" > "$rr_stub/bin/gh"; chmod +x "$rr_stub/bin/gh"
+rr_out=$(PATH="$rr_stub/bin:$PATH" GITHUB_REF=refs/heads/unit-beds-fix GH_REPO=maya/rooftop sh "$root/../scripts/ci/report-red.sh" result failure skipped skipped 1 abc 2>&1)
+eq "a hand-started run on another branch reports nothing for main" "no calls|Run on refs/heads/unit-beds-fix, not main: nothing reported for main." "$([ -f "$rr_stub/calls" ] && echo calls || echo 'no calls')|$rr_out"
+rr_out=$(PATH="$rr_stub/bin:$PATH" GITHUB_REF=refs/heads/main GH_REPO=maya/rooftop sh "$root/../scripts/ci/report-red.sh" result success success success 1 abc 2>&1)
+eq "a run on main is read as before" "Run 1 was not red." "$rr_out"
+eq "the report jobs name main's ref" "2 2" "$(grep -c "github.ref == 'refs/heads/main'" "$root/templates/.github/workflows/ci.yml" | tr -d ' ') $(grep -c "github.ref == 'refs/heads/main'" "$root/../.github/workflows/ci.yml" | tr -d ' ')"
+rm -rf "$rr_stub"
+
 eq "the words a green pull request on its rule checks is told" "Its rule checks passed; it lands with the next batch" "$(cheap_gate_say)"
 eq "rule checks green, test jobs skipped: the cheap gate" "yes" "$(cheap_gate_held '  checks      success
   classify    success
@@ -424,7 +449,7 @@ eq "a test job that ran is not the cheap gate" "no" "$(cheap_gate_held '  checks
   CI passed   success')"
 eq "rule checks not green is not the cheap gate" "no" "$(cheap_gate_held '  checks      failure
   app         skipped')"
-eq "the classify job reads the label, the branch and the class" "1 1 1" "$(grep -c 'LABELS: \${{ join(github.event.pull_request.labels.\*.name' "$root/templates/.github/workflows/ci.yml") $(grep -c 'full=$(full_run_decide "$HEAD_REF" "$LABELS" "$classes")' "$root/templates/.github/workflows/ci.yml") $(grep -c 'if \[ "\$full" = yes \]; then parts=' "$root/templates/.github/workflows/ci.yml")"
+eq "the classify job reads the label, the branch and the class" "1 1 1" "$(grep -c 'LABELS: \${{ join(github.event.pull_request.labels.\*.name' "$root/templates/.github/workflows/ci.yml") $(grep -c 'full=$(full_run_decide "$HEAD_REF" "$LABELS" "$classes")' "$root/templates/.github/workflows/ci.yml") $(grep -c 'if \[ "\$full" = yes \] || \[ "\$own" = yes \]; then parts=' "$root/templates/.github/workflows/ci.yml")"
 eq "app and screens wait on the full run; tests get no parts without it" "2" "$(grep -c "needs.classify.outputs.full == 'yes'" "$root/templates/.github/workflows/ci.yml")"
 # A red batch finds its member by halving.
 . "$root/templates/scripts/ci/queue/rules-batch.sh"

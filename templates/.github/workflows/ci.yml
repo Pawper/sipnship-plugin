@@ -295,7 +295,10 @@ jobs:
           if [ "$full" = yes ]; then echo "Full run: yes"; else echo "Full run: no; its tests run in the batch, current with main."; fi
           # The test parts of those classes (the "!parts" lines of
           # classes.txt), as the "tests" job's matrix; [] when none.
-          if [ "$full" = yes ]; then parts=$(sh scripts/ci/test-parts.sh matrix "$classes"); else parts='[]'; fi
+          # A change whose only other full read would be on main (a class on
+          # the "!own-run" line of classes.txt) runs its own parts here too.
+          own=$(own_run_decide "$classes" "$(cat scripts/ci/classes.txt)")
+          if [ "$full" = yes ] || [ "$own" = yes ]; then parts=$(sh scripts/ci/test-parts.sh matrix "$classes"); else parts='[]'; fi
           echo "parts=$parts" >> "$GITHUB_OUTPUT"
           echo "Test parts: $parts"
 
@@ -527,7 +530,7 @@ jobs:
     # Whatever job was red: a failed test, the gate itself, a run that did not
     # finish. The comment says which kind (scripts/ci/gate-lib.sh red_kind).
     needs: [gate, full, tests]
-    if: always() && github.event_name != 'pull_request' && (needs.gate.result == 'failure' || needs.full.result == 'failure' || needs.tests.result == 'failure' || needs.tests.result == 'cancelled' || needs.full.result == 'cancelled')
+    if: always() && github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && (needs.gate.result == 'failure' || needs.full.result == 'failure' || needs.tests.result == 'failure' || needs.tests.result == 'cancelled' || needs.full.result == 'cancelled')
     runs-on: RUNS_ON
     permissions:
       contents: read
@@ -545,7 +548,7 @@ jobs:
     # Main went green again: close the red-main issue with a comment, so it
     # does not outlive its cause and the audit stops mentioning it.
     needs: [full, tests]
-    if: always() && github.event_name != 'pull_request' && needs.full.result == 'success' && needs.tests.result == 'success'
+    if: always() && github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && needs.full.result == 'success' && needs.tests.result == 'success'
     runs-on: RUNS_ON
     steps:
       - name: Close the red-main issue now that main is green

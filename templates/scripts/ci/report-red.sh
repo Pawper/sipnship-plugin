@@ -9,6 +9,12 @@
 #       job of its own could say so): report it once, and say when it is the
 #       second in a row. The next hourly gate runs the check once more.
 # Needs GH_TOKEN and GH_REPO; REST for reading, `gh issue create` once.
+# Only a run on main's own commit speaks for main: a run started by hand on
+# another branch never opens or comments on the red-main issue.
+case "${GITHUB_REF:-refs/heads/main}" in
+  refs/heads/main) ;;
+  *) echo "Run on ${GITHUB_REF}, not main: nothing reported for main."; exit 0 ;;
+esac
 here=$(dirname "$0")
 . "$here/gate-lib.sh"
 repo=${GH_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)}
