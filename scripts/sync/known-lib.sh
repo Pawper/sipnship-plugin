@@ -15,10 +15,25 @@ norm_hash() {
 # as written or with the project's runner and shell put back to their
 # placeholders, is a "PATH HASH" line of KNOWN (templates/KNOWN.txt).
 known_match() {
+  # The three readings are tried one after another and the first line that
+  # matches ends it: a plugin file as it stands (most of them) costs one
+  # hash, and each lookup is the shell's own, not a process.
   km_a=$(norm_hash "$3")
+  km_in "$1" "$2 $km_a" && { echo yes; return 0; }
   km_b=$(norm_hash "$(unfill_text "$3" "$4" "$5")")
+  km_in "$1" "$2 $km_b" && { echo yes; return 0; }
   km_c=$(norm_hash "$(unfill_text "$(unfill_comments "$(unfill_comments "$3" RUNS_ON "$4")" RUN_SHELL "$5")" "$4" "$5")")
-  if printf '%s\n' "$1" | grep -qxF -e "$2 $km_a" -e "$2 $km_b" -e "$2 $km_c"; then echo yes; else echo no; fi
+  km_in "$1" "$2 $km_c" && { echo yes; return 0; }
+  echo no
+}
+# km_in LIST LINE: whether LINE is one whole line of LIST, as grep -x says.
+km_in() {
+  case "
+$1
+" in *"
+$2
+"*) return 0 ;; esac
+  return 1
 }
 
 # known_missing TEMPLATES_DIR

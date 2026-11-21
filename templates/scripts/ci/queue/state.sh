@@ -218,7 +218,7 @@ EOF_RUN
     st=""; [ -n "${remote_id:-}" ] || st=$(cat "$flaky_dir/drain.state" 2>/dev/null | head -n 1)
     [ -n "$st" ] && last="$st; ${last}"
     follow="tail -f .scratch/queue/log"; [ -z "${remote_id:-}" ] || follow="gh api repos/{owner}/{repo}/actions/runs/$remote_id/jobs, its own log on GitHub"
-    echo "Another queue is running: $why${last:+; its last line: $last}. Wait for it to finish rather than starting a second one; follow it with $follow."
+    remote_lock_owe; echo "Another queue is running: $why${last:+; its last line: $last}. $(queue_kept_words) Follow it with $follow."
     queue_busy_exit
   fi
   # The lock every queue sees, on GitHub (queue/lock.sh), before this checkout's own.

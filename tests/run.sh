@@ -2896,9 +2896,16 @@ cat > "$rl/bin/gh" <<'GH'
 #!/bin/sh
 msg=""; for a in "$@"; do case "$a" in message=*) msg=${a#message=} ;; sha=*) rsha=${a#sha=} ;; esac; done
 case "$*" in
-  *"-X POST"*"git/commits"*) s="c$$$(date +%s)"; printf '%s' "$msg" > "$RL_DIR/commit-$s"; echo "$s" ;;
+  *"-X POST"*"git/commits"*) s="c$$$(date +%s)$RANDOM"; printf '%s' "$msg" > "$RL_DIR/commit-$s"; echo "$s" ;;
+  *"-X POST"*"git/refs"*"ref=refs/queue/owed"*) echo "$rsha" > "$RL_DIR/owed" ;;
   *"-X POST"*"git/refs"*) if [ -f "$RL_DIR/ref" ]; then echo "HTTP 422: Reference already exists" >&2; exit 1; fi; echo "$rsha" > "$RL_DIR/ref" ;;
+  *"-X PATCH"*"git/refs/queue/lock"*) [ -f "$RL_DIR/ref" ] || exit 1; echo "$rsha" > "$RL_DIR/ref" ;;
   *"-X DELETE"*"git/refs/queue/lock"*) rm -f "$RL_DIR/ref" ;;
+  *"-X DELETE"*"git/refs/queue/owed"*) rm -f "$RL_DIR/owed" ;;
+  *"git/ref/queue/owed"*) [ -f "$RL_DIR/owed" ] && cat "$RL_DIR/owed" || exit 1 ;;
+  *"-X POST"*"dispatches"*) echo "dispatch $*" >> "$RL_DIR/said" ;;
+  *"-X POST"*"/comments"*) for a in "$@"; do case "$a" in body=*) echo "comment ${a#body=}" >> "$RL_DIR/said" ;; esac; done ;;
+  *"issues?labels=queue"*) echo 7 ;;
   *"actions/runs/"*) echo "${RL_RUN_STATUS:-in_progress}" ;;
   *"git/ref/queue/lock"*) [ -f "$RL_DIR/ref" ] && cat "$RL_DIR/ref" || exit 1 ;;
   *"git/commits/"*) cat "$RL_DIR/commit-${1##*/}" 2>/dev/null || for a in "$@"; do case "$a" in */git/commits/*) cat "$RL_DIR/commit-${a##*/}" ;; esac; done ;;
@@ -2918,12 +2925,12 @@ take_lock
 echo "took the lock"
 trap - EXIT
 RLS
-rl_take() { ( cd "$rl/$1" && PATH="$rl/bin:$PATH" RL_DIR="$rl" GITHUB_ACTIONS= sh "$rl/take.sh" 2>&1 ); }
+rl_take() { ( cd "$rl/$1" && PATH="$rl/bin:$PATH" RL_DIR="$rl" GITHUB_ACTIONS= QUEUE_LOCK_BEAT=0 sh "$rl/take.sh" 2>&1 ); }
 rl_a=$(rl_take a)
 eq "the first drain takes the lock" "took the lock" "$rl_a"
 eq "the lock is one ref, held by a commit that names the drain" "1 1" "$(ls "$rl"/commit-* | wc -l | tr -d ' ') $(grep -c 'queue lock: --drain pid' "$rl"/commit-*)"
 rl_b=$(rl_take b)
-eq "a second drain in another checkout is refused, naming the first" "yes" "$(case "$rl_b" in "Another queue is running: a --drain started 0 minute(s) ago is still running (pid "*") on "*". Wait for it"*) echo yes ;; *) echo "no: $rl_b" ;; esac)"
+eq "a second drain in another checkout is refused, naming the first" "yes" "$(case "$rl_b" in "Another queue is running: a --drain started 0 minute(s) ago is still running (pid "*") on "*". Your request is kept: "*"a drain starts the moment that queue ends"*) echo yes ;; *) echo "no: $rl_b" ;; esac)"
 eq "and never takes the lock, nor its own file lock" "no" "$([ -f "$rl/b/q/lock" ] && echo yes || echo no)"
 # A drain GitHub starts because a CI run ended finds the queue that waited for that run: it ends as passed, with one plain line.
 
@@ -2940,6 +2947,7 @@ printf '%s' "$rl_old" > "$rl/commit-old"; echo old > "$rl/ref"
 eq "a lock older than three hours is taken over, whoever held it" "yes" "$(rl_b=$(rl_take b); case "$rl_b" in *"Taking over"*"took the lock") echo yes ;; *) echo "no: $rl_b" ;; esac)"
 eq "the holder's words read as the file lock's do" "a --drain started 12 minute(s) ago is still running (pid 4242) on GARDEN-PC, Queue drain run 77" "$(. "$root/templates/scripts/ci/queue/rules-drain.sh"; . "$root/templates/scripts/ci/queue/lock.sh"; remote_lock_reason "$(remote_lock_message drain 4242 GARDEN-PC 77 1 1000)" 1720 yes)"
 eq "a finished Queue drain run is no holder" "" "$(. "$root/templates/scripts/ci/queue/rules-drain.sh"; . "$root/templates/scripts/ci/queue/lock.sh"; remote_lock_reason "$(remote_lock_message drain 4242 GARDEN-PC 77 1 1000)" 1720 no)"
+rm -f "$rl/owed"
 eq "the lock is released only by the queue that holds it" "gone kept" "$(cd "$rl/a" && . "$root/templates/scripts/ci/queue/state.sh" && . "$root/templates/scripts/ci/queue/lock.sh" && PATH="$rl/bin:$PATH" RL_DIR="$rl" && export PATH RL_DIR && { echo mine > "$rl/ref"; remote_lock_sha=mine; remote_lock_release; [ -f "$rl/ref" ] && printf 'kept' || printf 'gone'; echo theirs > "$rl/ref"; remote_lock_sha=mine; remote_lock_release; printf ' '; [ -f "$rl/ref" ] && printf 'kept' || printf 'gone'; })"
 eq "the merge queue and its unlock load and release it" "1 1 1" "$(grep -c 'queue/lock.sh' "$root/templates/scripts/ci/merge-queue.sh") $(grep -c 'remote_lock_take' "$root/templates/scripts/ci/queue/state.sh") $(grep -c 'remote_lock_release' "$root/templates/scripts/ci/queue/state.sh")"
 # A lock a crash left behind ends at the drain's own bound, not three hours later.
@@ -2951,6 +2959,57 @@ rl_run=$(. "$root/templates/scripts/ci/queue/lock.sh"; remote_lock_message drain
 eq "a lock held by a GitHub run that has completed is dead" "no" "$(. "$root/templates/scripts/ci/queue/lock.sh"; PATH="$rl/bin:$PATH" RL_DIR="$rl" RL_RUN_STATUS=completed remote_lock_alive "$rl_run")"
 eq "a lock held by a GitHub run still going is alive" "yes" "$(. "$root/templates/scripts/ci/queue/lock.sh"; PATH="$rl/bin:$PATH" RL_DIR="$rl" RL_RUN_STATUS=in_progress remote_lock_alive "$rl_run")"
 eq "the refusal names the bound, not three hours" "0" "$(grep -c 'after three hours' "$root/templates/scripts/ci/queue/lock.sh")"
+# A holder outside GitHub's runs beats: its lock is renewed while it lives, and
+# one whose beat stopped is taken over within a minute, whatever the lock's age.
+. "$root/templates/scripts/ci/queue/lock.sh"
+rl_beat=$(remote_lock_message drain 4242 GARDEN-PC - 1 1000 1000)
+eq "a lock that beats says when it last did" "queue lock: --drain pid 4242 host GARDEN-PC run - dir 1 at 1000 beat 1000" "$rl_beat"
+eq "a holder that beat half a minute ago is alive" "yes" "$([ -n "$(. "$root/templates/scripts/ci/queue/rules-drain.sh"; remote_lock_reason "$rl_beat" 1030 yes)" ] && echo yes || echo no)"
+eq "a holder whose beat stopped over a minute ago is gone, though its lock is young" "" "$(. "$root/templates/scripts/ci/queue/rules-drain.sh"; remote_lock_reason "$rl_beat" 1061 yes)"
+eq "a run on GitHub writes no beat: its own status says when it ends" "" "$(remote_lock_field "$(remote_lock_message drain 4242 GARDEN-PC 77 1 1000)" beat)"
+rm -f "$rl/ref" "$rl/owed" "$rl/said" "$rl"/commit-*; rm -rf "$rl/a/q" "$rl/b/q"
+cat > "$rl/hold.sh" <<RLH
+#!/bin/sh
+here="$root/templates/scripts/ci"
+. "\$here/lib.sh"
+for rl_f in "\$here"/queue/rules-*.sh; do . "\$rl_f"; done
+. "\$here/queue/state.sh"; . "\$here/queue/lock.sh"
+tab=\$(printf '\t'); flaky_dir="\$PWD/q"; mkdir -p "\$flaky_dir"; log_file="\$flaky_dir/log"; gh_err="\$flaky_dir/gh.err"; lock_file="\$flaky_dir/lock"
+have_lock=no; base=main; mode=drain; QUEUE_LOCKED=""
+take_lock
+trap - EXIT
+sleep "\${RL_HOLD:-3}"
+[ -n "\${RL_RELEASE:-}" ] && { remote_lock_release; echo released; }
+exit 0
+RLH
+rl_hold() { ( cd "$rl/$1" && PATH="$rl/bin:$PATH" RL_DIR="$rl" GITHUB_ACTIONS= GITHUB_RUN_ID= QUEUE_LOCK_BEAT=1 sh "$rl/hold.sh" >/dev/null 2>&1 ); }
+rl_first=""
+RL_HOLD=3 rl_hold a
+eq "a holder that lives renews its lock: each beat is a new commit naming the time" "yes" "$(n=$(grep -l ' beat ' "$rl"/commit-* 2>/dev/null | wc -l | tr -d ' '); [ "$n" -ge 2 ] && echo yes || echo "no: $n beats")"
+sleep 3
+rl_dead=$(cd "$rl/b" && PATH="$rl/bin:$PATH" RL_DIR="$rl" GITHUB_ACTIONS= QUEUE_LOCK_BEAT=0 QUEUE_LOCK_BEAT_STALE=2 sh "$rl/take.sh" 2>&1)
+eq "a holder that died is taken over at once, not after the drain's bound" "yes" "$(case "$rl_dead" in *"Taking over a queue lock on GitHub whose holder is gone"*"took the lock") echo yes ;; *) echo "no: $rl_dead" ;; esac)"
+eq "the takeover is said on the Queue tab" "1" "$(grep -c 'stopped without finishing; this one took its place' "$rl/b/q/notice.tsv")"
+eq "and on the Merge queue issue, once" "1" "$(grep -c '^comment A queue run (--drain' "$rl/said")"
+# A queue turned away is kept: it leaves its ask, and the holder starts the next drain as it lets go.
+rm -f "$rl/ref" "$rl/owed" "$rl/said"; rm -rf "$rl/a/q" "$rl/b/q"
+mkdir -p "$rl/a/.github/workflows" && : > "$rl/a/.github/workflows/queue-drain.yml"
+( RL_HOLD=4 RL_RELEASE=yes; export RL_HOLD RL_RELEASE; rl_hold a ) &
+rl_hp=$!
+sleep 2
+rl_kept=$(cd "$rl/b" && PATH="$rl/bin:$PATH" RL_DIR="$rl" GITHUB_ACTIONS= QUEUE_LOCK_BEAT=0 prs=48 sh "$rl/take.sh" 2>&1)
+eq "a queue turned away hears its request is kept" "1" "$(printf '%s\n' "$rl_kept" | grep -c 'Your request is kept: .*a drain starts the moment that queue ends')"
+eq "and leaves its ask on GitHub" "yes" "$([ -f "$rl/owed" ] && echo yes || echo no)"
+wait "$rl_hp" 2>/dev/null
+eq "the holder, letting go, starts the next drain and clears the ask" "1 no" "$(grep -c '^dispatch .*queue-drain.yml/dispatches' "$rl/said" 2>/dev/null) $([ -f "$rl/owed" ] && echo yes || echo no)"
+eq "a GitHub drain turned away by a queue in a terminal leaves its ask too" "1" "$(grep -c 'remote_lock_owe' "$root/templates/scripts/ci/queue/lock.sh" | awk '{ print ($1 >= 2) ? 1 : 0 }')"
+eq "a local queue turned away by a running drain on GitHub leaves its ask" "1" "$(grep -c 'remote_lock_owe; echo "Another queue is running' "$root/templates/scripts/ci/queue/state.sh")"
+# A --serial that others are ready to land with lands with them as one batch, said on the Queue tab.
+sb_out=$(. "$root/templates/scripts/ci/queue/serial.sh"; say() { printf 'say %s\n' "$*"; }; queue_notice() { printf 'notice %s\n' "$*"; }; sh() { printf 'run %s\n' "$*"; }; prs=48; base=main; log_file=/dev/null; serial_as_batch "2 other green pull request(s) are ready to land with it (#50 #51); merge them together with --drain (or --batch), or give the reason" "50 51 ")
+eq "a refused --serial lands with the others as one batch" "1" "$(printf '%s\n' "$sb_out" | grep -c '^run .* --batch --base main 48 50 51$')"
+eq "and says so in the log and on the Queue tab" "2" "$(printf '%s\n' "$sb_out" | grep -c 'Asked to land #48 alone, but 2 other green pull request(s) are ready to land with it (#50 #51); so they land together now, as one batch: #48 #50 #51.')"
+eq "the serial mode no longer ends with a refusal nobody sees" "0 1" "$(grep -c 'Refused --serial' "$root/templates/scripts/ci/queue/serial.sh") $(grep -c 'serial_as_batch "\$why" "\$s_ready"' "$root/templates/scripts/ci/queue/serial.sh")"
+eq "the Queue tab's sentence leads with the queue's notice" "1" "$(grep -c 'notice.tsv' "$root/templates/scripts/ci/publish-state.sh")"
 # A batch whose member landed meanwhile is closed, never merged a second time.
 bm_dir=$(mktemp -d); mkdir -p "$bm_dir/bin"
 cat > "$bm_dir/bin/gh" <<'GH'
@@ -6251,6 +6310,12 @@ qc_push() {
   qc_out=$(printf '%s' "$qc_in" | CHECKS_LOCAL_OFFLINE=1 HOOK_LOG=0 sh "$root/hooks/scripts/require-local-checks.sh" 2>&1)
   printf 'rc=%s\n%s\n' "$?" "$qc_out"
 }
+# qc_ci full|lean: which ci.yml the fixture repository holds. The full one is
+# the template's own; the lean one keeps only its size and mock steps, so a run
+# that asks about one of those starts a few hundred processes, not thousands.
+# One full run (a clean push) and one with a body still read every step.
+(cd "$qc" && cp .github/workflows/ci.yml .scratch/ci.full && awk '/^  [a-z-]+:/ { flush(); injob = ($0 ~ /^  checks:/) } injob && /^      - / { flush(); step = 1 } function flush() { if (!step || buf ~ /hotspots-check[.]sh|mock-check[.]sh|id: classes/) printf "%s", buf; buf = ""; step = 0 } { buf = buf $0 "\n" } END { flush() }' .scratch/ci.full > .scratch/ci.lean) >/dev/null 2>&1
+qc_ci() { cp "$qc/.scratch/ci.$1" "$qc/.github/workflows/ci.yml"; }
 qc_size=$(qc_push size)
 eq "a file grown past its limit refuses the push" "rc=2" "$(printf '%s\n' "$qc_size" | head -n 1)"
 eq "the refusal carries the size check's own words" "1" "$(printf '%s\n' "$qc_size" | grep -c 'lib/watering.ts has 50 lines, over the limit of 40')"
@@ -6258,7 +6323,9 @@ eq "and names the CI step that would fail" "1" "$(printf '%s\n' "$qc_size" | gre
 qc_budget=$(cd "$qc" && git checkout -q size && CHECKS_LOCAL_SECONDS=0 CHECKS_LOCAL_OFFLINE=1 sh scripts/ci/checks-local.sh 2>&1)
 eq "the size check runs first and never under the time budget: it still refuses at a budget of 0" "Failed: Fail when a change grows" "$(printf '%s\n' "$qc_budget" | head -n 1 | cut -c1-32)"
 eq "and in its own words, with no timeout beside it" "1 0" "$(printf '%s\n' "$qc_budget" | grep -c 'lib/watering.ts has 50 lines, over the limit of 40') $(printf '%s\n' "$qc_budget" | grep -c 'still running after')"
+qc_ci lean
 qc_mock=$(qc_push mock)
+qc_ci full
 eq "a screen changed without its mock refuses the push" "rc=2" "$(printf '%s\n' "$qc_mock" | head -n 1)"
 eq "the refusal carries the mock check's own words" "1" "$(printf '%s\n' "$qc_mock" | grep -c 'These screens changed but their mocks did not: beds')"
 qc_fine=$(qc_push fine)
@@ -6277,19 +6344,20 @@ eq "and a failure no body line could allow does not mention the body" "0" "$(pri
 # A first push, before any body is written: a new screen file beside the
 # mocked one, with no line mapping it, is refused in the mock check's words.
 (cd "$qc" && git checkout -q main && git checkout -q -b paths && printf 'export const paths = 1\n' > src/paths.ts && git add -A && git commit -qm paths) >/dev/null 2>&1
+qc_ci lean
 qc_unmapped=$(qc_push paths)
 eq "with no body, a new unmapped screen file refuses the push" "rc=2" "$(printf '%s\n' "$qc_unmapped" | head -n 1)"
 eq "the refusal carries the mock check's own words" "1" "$(printf '%s\n' "$qc_unmapped" | grep -c 'no line in scripts/ci/mocks.txt names them: src/paths.ts')"
 eq "and says a body line might allow a check that reads it" "1" "$(printf '%s\n' "$qc_unmapped" | grep -c 'No pull request body was found')"
 # The steps come from ci.yml: a step taken out there is not run here.
-(cd "$qc" && grep -v 'hotspots-check.sh' .github/workflows/ci.yml > .scratch/ci.yml && cp .scratch/ci.yml .github/workflows/ci.yml)
+(cd "$qc" && grep -v 'hotspots-check.sh' .scratch/ci.lean > .scratch/ci.yml && cp .scratch/ci.yml .github/workflows/ci.yml)
 eq "a step taken out of ci.yml is not run" "0" "$(cd "$qc" && CHECKS_LOCAL_OFFLINE=1 sh scripts/ci/checks-local.sh 2>&1 | grep -c 'over the limit')"
 eq "the push check is registered through the Node program" "1 1" "$(grep -c 'hook-node.sh.* pre-bash' "$root/hooks/hooks.json") $(grep -c "'require-local-checks'" "$root/hooks/node/checks.js")"
 # A check that runs out of time is not a failure: named apart, and the push goes on.
 qc_slow=$(cd "$qc" && git checkout -q fine && CHECKS_LOCAL_SECONDS=0 CHECKS_LOCAL_OFFLINE=1 sh scripts/ci/checks-local.sh 2>&1; echo "rc=$?")
 eq "steps that ran out of time are named as not a failure, in their own lines" "yes" "$(printf '%s\n' "$qc_slow" | grep -q '^Did not finish in 0 s (not a failure): ' && echo yes)"
 eq "and are never listed as failed, but say the change was not checked (exit 3)" "0 1" "$(printf '%s\n' "$qc_slow" | grep -c '^Failed: ') $(printf '%s\n' "$qc_slow" | grep -c '^Not checked: ')"
-eq "the run exits 3 for a timeout" "3" "$(cd "$qc" && CHECKS_LOCAL_SECONDS=0 CHECKS_LOCAL_OFFLINE=1 sh scripts/ci/checks-local.sh >/dev/null 2>&1; echo $?)"
+eq "the run exits 3 for a timeout" "3" "$(printf '%s\n' "$qc_slow" | sed -n 's/^rc=//p')"
 qc_hold=$(CHECKS_LOCAL_SECONDS=0 qc_push fine)
 eq "the hook refuses a push whose checks ran out of time, saying it was not checked" "rc=2 1" "$(printf '%s\n' "$qc_hold" | head -n 1) $(printf '%s\n' "$qc_hold" | grep -c 'so this change was not checked')"
 eq "the old wording for a timeout is gone" "0" "$(printf '%s\n' "$qc_slow" | grep -c 'still running after')"
@@ -6611,6 +6679,22 @@ if [ -f "$wk_yml" ]; then
   eq "the wake is started by the four events" "4" "$(grep -cE '^  (workflow_dispatch|repository_dispatch|workflow_run|issue_comment):' "$wk_yml")"
   eq "the model step runs only when something is approved" "1" "$(grep -c "if: steps.check.outputs.start == 'yes'" "$wk_yml")"
 fi
+
+# specs/030-plugin-wake: the plugin's own connection. The cases run in console/test/wake.test.js
+# (node); each block runs its own cases by name, and checks the hook that starts the connection.
+section 'a press wakes the drive on the builder machine'
+. "$root/tests/node-cases-lib.sh"
+node_cases "a wake runs one look, a second waits behind it, nothing approved spends no model, a handled wake and another repository's are no-ops, a refused token is said once" "$root/console/test/wake.test.js" 'one message|one look|no model|headless|already handled|runner wake|lock|hears a wake|refused token|once per repository|growing|verdict'
+pw_hooks="$root/hooks/hooks.json"
+eq "the connection is started at a session's start and kept at each turn's end" "2" "$(grep -c 'wake-start.sh' "$pw_hooks")"
+pw_home=$(mktemp -d)
+eq "a machine with no token starts nothing and says nothing" "0:" "$(printf '{"hook_event_name":"SessionStart","cwd":"%s"}' "$root" | SIPNSHIP_HOME="$pw_home" CLAUDE_PROJECT_DIR= sh "$root/hooks/scripts/wake-start.sh"; printf '%s:' "$?")$(ls "$pw_home")"
+rm -rf "$pw_home"
+
+# The service's side, that its reading then falls back to the timed drive's words, is packages/core/test/work-wake.test.ts.
+section 'nothing connected'
+. "$root/tests/node-cases-lib.sh"
+node_cases "the plugin offline sends no heartbeat and ends once no session is seen" "$root/console/test/wake.test.js" 'nothing connected'
 section 'the plan reads areas like publish-round, and no second release (drive)'
 . "$root/scripts/drive/area-plan-lib.sh"
 da_list=$(cat "$fx/drive-areas/areas.txt")
