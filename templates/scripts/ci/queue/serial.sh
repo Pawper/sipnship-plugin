@@ -145,14 +145,27 @@ tidy_worktree() {
   sh "$here/../worktrees.sh" prune --apply --branch "$1" 2>/dev/null | grep -E '^(removed|skipped)' || true
 }
 
+# serial_as_batch WHY READY: a --serial that other green changes are ready to
+# land with is not refused and dropped: one afternoon that refusal reached only
+# the terminal that ran it, and nothing landed. They land together now as one
+# batch, said in the log and on the Queue tab (queue_notice, queue/lock.sh).
+serial_as_batch() {
+  sab_all=$(printf '%s\n' $prs $2 | sed '/^$/d' | sort -n -u | tr '\n' ' ' | sed 's/ $//')
+  sab_line="Asked to land $(printf '#%s ' $prs | sed 's/ $//') alone, but $(printf '%s' "$1" | sed 's/;.*//'); so they land together now, as one batch: $(printf '#%s ' $sab_all | sed 's/ $//')."
+  say "$sab_line"; queue_notice "$sab_line"
+  sh "$0" --batch --base "$base" $sab_all 2>&1 | tee -a "$log_file" || true
+  exit 0
+}
+
 # queue_serial: the --serial mode, run by merge-queue.sh once the lock is taken.
 queue_serial() {
   # The rule lives here, not only in a hook on the command line: a script
   # that wraps the queue hides the call from the hook. Run by a drain or a
   # batch, the choice was already made.
   if [ -z "$QUEUE_IN_DRAIN" ] && [ -z "$because" ]; then
-    why=$(serial_refusal "$(ready_others "$(printf '%s ' $prs)")" "$because")
-    if [ -n "$why" ]; then say "Refused --serial: $why"; exit 2; fi
+    s_ready=$(ready_others "$(printf '%s ' $prs)")
+    why=$(serial_refusal "$s_ready" "$because")
+    if [ -n "$why" ]; then serial_as_batch "$why" "$s_ready"; fi
   fi
   [ -n "$because" ] || { [ -n "$QUEUE_IN_DRAIN" ] && because=drain; }
   s_begin=$(gitb ls-remote origin "refs/heads/$base" 2>/dev/null | cut -f1)
