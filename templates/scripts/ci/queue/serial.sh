@@ -17,7 +17,7 @@ serial_one() {
   # Held: not merged, unless a person ran --serial with a reason.
   hw=$(pr_held "$pr")
   if [ -n "$hw" ] && { [ -n "$QUEUE_IN_DRAIN" ] || [ -z "$because" ]; }; then batch_line "$pr" "not merged" "$hw; remove the hold, or merge it with --serial $pr --because \"why\""; return 0; fi
-  why=$(folder_blocks "$pr"); [ -n "$why" ] || why=$(migration_blocks "$pr")
+  why=$(folder_blocks "$pr"); [ -n "$why" ] || why=$(migration_blocks "$pr"); [ -n "$why" ] || why=$(release_blocks "$pr")
   if [ -n "$why" ]; then batch_line "$pr" "refused" "$why"; return 0; fi
   if ! fetch_base "pull/$pr/head"; then
     batch_line "$pr" "not merged" "could not fetch $base; it is tried again next round"

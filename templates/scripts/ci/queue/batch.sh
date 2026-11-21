@@ -275,7 +275,7 @@ for pr in $prs; do
     "closed true") batch_out "$pr" "skipped" "already merged"; continue ;;
     closed*) batch_out "$pr" "skipped" "closed"; continue ;;
   esac
-  why=$(folder_blocks "$pr"); [ -n "$why" ] || why=$(migration_blocks "$pr")
+  why=$(folder_blocks "$pr"); [ -n "$why" ] || why=$(migration_blocks "$pr"); [ -n "$why" ] || why=$(release_blocks "$pr" "$wt")
   if [ -n "$why" ]; then batch_out "$pr" "refused" "$why"; continue; fi
   # Merge the head the pull request reports: from its pull ref, or from
   # its branch when GitHub's pull ref lags behind.
