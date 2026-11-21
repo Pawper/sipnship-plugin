@@ -251,6 +251,7 @@ if [ -n "$guesses" ] || [ -n "$reasons" ]; then
   # once the running round lands (approval.sh holds its dispatches).
   slots=$(round_slots "$units_per_round" "$max_agents")  # the builder's limit alone: never free runners (#2084), never the health note (#2129)
   round=$(apply_units "$round" "$units" "$slots" "$MAINFIX_ISSUES" "$(priority_issues "$priorities" "$guesses" "$facts" "$areas_text")" "$asked ${RUSH_ISSUES:-} $(asked_now "$drive_comments")")  # asked-for issues lead after a fix for main, then a project's priority areas (#2122)
+  round=$(dispatch_area_holds "$round" "$units" "$areas_text")  # two dispatches apply_units kept can still share one area; the later holds behind the earlier so the round always publishes (#2136)
   round=$(defer_note "$round" "$published_count")  # a small round says which holds kept their issues out of it
   round=$(lead_main_fixes "$round")  # the fix for a failure on main opens the proposal and the approval never holds it behind the round it blocks (rank-lib.sh)
 fi
