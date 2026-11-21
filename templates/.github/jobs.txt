@@ -15,10 +15,8 @@ tests (shell-2) | Checks that the plugin's scripts still work, the hooks and the
 tests (shell-3) | Checks that the plugin's scripts still work, the look and the rules, so one broken rule check cannot reach main.
 tests (shell-5) | Checks that the plugin's scripts still work, the drive that proposes and starts work, so one broken rule check cannot reach main.
 tests (queue-console) | The queue's own tests and the owner's console tests: landing, batching and holding changes, and the window that shows what the agents are doing, so a change to either cannot stop other changes from landing.
-tests (service-types) | Checks the service's code for mistakes in how its pieces fit together, before it can break the dashboard.
-tests (service-tests) | Runs the service's tests: how it reads GitHub and keeps each project's state, so the dashboard stays right.
-tests (core-types) | Checks the shared rules' code for mistakes in how its pieces fit together, before the dashboard and service use them.
-tests (core-tests) | Runs the tests of the shared rules, the words and counts every screen uses, so a screen cannot say something different.
+tests (packages) | Checks the service's and the shared rules' code for mistakes and runs their tests, how the service reads GitHub and keeps each project's state and the words and counts every screen uses, so the dashboard stays right.
+tests (web) | Checks the dashboard's own code for mistakes and runs its tests, on main's full run, so a broken screen is seen even when no pull request ran them.
 screens | Draws the screens beside their mocks, so a change to how something looks is seen before it lands.
 CI passed | The one final check the merge rule waits on. It turns green once every other job on the change has passed.
 full | Runs every test on main after a quiet hour, to be sure that what already landed still works together.
