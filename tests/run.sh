@@ -3896,7 +3896,7 @@ rm -f "$pt/n"
 pt_err=$(PATH="$pt/bin:$PATH" PR_TEXT_WAIT=0 RUNNER_TEMP="$pt" sh "$root/templates/scripts/ci/pr-text.sh" 7 "the mock check" 2>&1 >/dev/null; echo "rc=$?")
 eq "never read, it says so in the check's place and fails on the read" "yes yes 3" "$(printf '%s' "$pt_err" | grep -q 'could not be read from GitHub (3 tries), so the mock check did not run' && echo yes || echo no) $(printf '%s' "$pt_err" | grep -q 'rc=1' && echo yes || echo no) $(cat "$pt/n")"
 eq "and the failure report reads the same words" "1" "$(grep -c 'so the mock check did not run' "$pt/check.log")"
-eq "no body step falls back to the title alone or skips the retry" "0 4" "$(grep -c 'SPEC_TEXT=\$(gh api\|PR_TEXT=\$(gh api\|PR_BODY=\$(gh api' "$root/templates/.github/workflows/ci.yml") $(grep -c 'scripts/ci/pr-text.sh' "$root/templates/.github/workflows/ci.yml")"
+eq "no body step falls back to the title alone or skips the retry" "0 5" "$(grep -c 'SPEC_TEXT=\$(gh api\|PR_TEXT=\$(gh api\|PR_BODY=\$(gh api' "$root/templates/.github/workflows/ci.yml") $(grep -c 'scripts/ci/pr-text.sh' "$root/templates/.github/workflows/ci.yml")"
 eq "the CI template runs the mock check where mocks.txt exists" "1" "$(grep -c "hashFiles('scripts/ci/mocks.txt') != ''" "$root/templates/.github/workflows/ci.yml")"
 eq "the template mocks.txt has no live lines" "" "$(mock_lines "$(cat "$root/templates/scripts/ci/mocks.txt")")"
 eq "the brief has a stale-mock line" "1" "$(grep -c 'mock-check.sh" --stale' "$root/hooks/scripts/session-brief-slow.sh")"
