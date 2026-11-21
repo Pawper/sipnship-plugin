@@ -143,7 +143,7 @@ state=$(printf '%s\n' "$comments" | awk -F'\t' -v me="$me" '
     # The round-wide Start now (no issue number, with or without words) starts the round as Start this round does.
     if (proposal != "" && $2 != me && body ~ /^Queue request: start-now( #0)? by /) { first = body; sub(/\n.*/, "", first); reply = first; by = $2; next }
     # The other requests and answers left here are not a reply to the proposal (work-requests.sh reads them).
-    if (body ~ /^Queue (request: (start-next|start-now|hold-agent|land-next|land-now|deploy-now) ?|answer: )/) next
+    if (body ~ /^Queue (request: (start-next|start-now|hold-agent|send-agent|land-next|land-now|deploy-now) ?|answer: )/) next
     if (proposal != "" && $2 != me) { first = body; sub(/\n.*/, "", first); reply = first; by = $2 }
   }
   END {

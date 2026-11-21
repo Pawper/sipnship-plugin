@@ -65,15 +65,15 @@ wake_fix_asked_comment() {
 # Which events may start a tick. "yes" for a dispatch (by hand or sent by the
 # service), a finished queue drain, and a comment on the drive issue that is
 # dashboard's start form (`Queue request: start-round`, `start-now`,
-# `start-next` or `hold-agent`, the requests the drive answers), and the
-# builder's answer to an ask on any issue (a `Builder answer: #N` line), which
-# reshapes the proposal at once (#2101); "no" for any other comment, a landing
-# request included (the queue's own wake hears it).
+# `start-next`, `hold-agent` or `send-agent`, the requests the drive answers),
+# and the builder's answer to an ask on any issue (a `Builder answer: #N`
+# line), which reshapes the proposal at once (#2101); "no" for any other
+# comment, a landing request included (the queue's own wake hears it).
 wake_event_wanted() {
   case "$1" in
     workflow_dispatch|repository_dispatch|workflow_run) echo yes ;;
     issue_comment)
-      case "$2" in 'Queue request: start-round'*|'Queue request: start-now'*|'Queue request: start-next'*|'Queue request: hold-agent'*|*'Builder answer: #'*) echo yes ;; *) echo no ;; esac ;;
+      case "$2" in 'Queue request: start-round'*|'Queue request: start-now'*|'Queue request: start-next'*|'Queue request: hold-agent'*|'Queue request: send-agent'*|*'Builder answer: #'*) echo yes ;; *) echo no ;; esac ;;
     *) echo no ;;
   esac
 }

@@ -140,18 +140,20 @@ and once that round is published as started, the request is spent. With the labe
 dispatch only on a reply or that request: post the proposal and wait, as below.
 
 **Requests from the Work tab.** SipNShip's app also leaves `Queue request: start-next #N by LOGIN` and
-`Queue request: start-now #N by LOGIN` and `Queue request: hold-agent #N by LOGIN` on the drive issue. They are a person's word about one issue, so they
+`Queue request: start-now #N by LOGIN` and `Queue request: hold-agent #N by LOGIN` and `Queue request: send-agent
+#N by LOGIN` on the drive issue. They are a person's word about one issue, so they
 need no proposal or reply. Read them on every tick, whatever `approval.sh` said:
 
 ```bash
 sh "${CLAUDE_PLUGIN_ROOT}/scripts/drive/work-requests.sh"
 ```
 
-It prints one line per request still owed, `start-next N by LOGIN`, `start-now N by LOGIN` (N is 0 for the round-wide button; one that carries the builder's own words prints as `start-now ? by LOGIN: WORDS`, one line each, so read the words and match each to its issue; `Queue answer: start-now #0: ...` spends them all), `hold-agent N by LOGIN`
-or `start-round by LOGIN`, or nothing. Do each (step c). Every request is answered on the drive issue in the fixed
+It prints one line per request still owed, `start-next N by LOGIN`, `start-now N by LOGIN` (N is 0 for the round-wide button; one that carries the builder's own words prints as `start-now ? by LOGIN: WORDS`, one line each, so read the words and match each to its issue; `Queue answer: start-now #0: ...` spends them all), `hold-agent N by LOGIN`,
+`send-agent N by LOGIN` or `start-round by LOGIN`, or nothing. Do each (step c). Every request is answered on the drive issue in the fixed
 form `Queue answer: KIND #N: outcome` (start-round's N is 0), one comment each, saying what happened or what it
 waits on, so the dashboard's waiting line ends; a request still printed on the next tick is one you owe, so answer
-it then. A request nobody answers tells the person it did not happen: a start after a day, a hold after an hour.
+it then. A request nobody answers tells the person it did not happen: a start after a day, a hold after an hour
+(`send-agent` too, within the hour).
 
 **A red change with nobody on it comes first (#1897).** The wake check also prints `fix agents owed: N, M` and a
 `fix-agent N` line for each pull request whose checks ended red, that is not held, with a last push about five
@@ -387,6 +389,18 @@ The goal lines and what each means:
   `Queue answer: hold-agent #N: held-agent`. An agent you cannot reach (another session's, or one in a person's
   terminal) is not held: change no State and answer `Queue answer: hold-agent #N: not-held`, so the person hears
   it at once. Never set the State without stopping the agent.
+- **`send-agent N by LOGIN`.** The press on a stalled row's handle (./change-stall): N is a pull request or an
+  issue, whichever the row named, and either may already have an agent by the time you read this, so check first.
+  - A pull request, red, with nobody on it (no running unit owns it, no recent push): do what `fix-pr N` below
+    does, on that one change, then answer `Queue answer: send-agent #N: sent`.
+  - An issue In progress with nobody on it (no open pull request, no running unit): start it now, the same way
+    `start-next N` below does (dispatch the published round's unit that holds it, or, when none is published
+    for it yet, dispatch it directly with isolation as `dispatch N` does), then answer `Queue answer: send-agent
+    #N: sent`.
+  - Either already has an agent (a running unit, or a push within its own busy window): send nothing new, and
+    answer `Queue answer: send-agent #N: not-sent`.
+  - N is closed, or neither red nor In progress by the time you read it: answer `Queue answer: send-agent #N:
+    not-sent`; nothing was stalled to send one to.
 - **`hold N TITLE After: RUNNING TITLE`.** The issue touches files a running bundle touches. Do not start it;
   it is shown as waiting after that bundle and is planned again in the next proposal. It needs no approval
   and does nothing.

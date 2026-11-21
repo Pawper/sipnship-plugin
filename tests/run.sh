@@ -5898,7 +5898,12 @@ eq "a request asked again after its answer is owed again" "start-next 214 by may
 2026-11-05T08:02:00Z${wq_t}maya${wq_t}Queue request: start-next #214 by maya" 2026-11-04T08:00:00Z 2026-11-05T07:00:00Z)"
 eq "one past its window has already been told it did not happen" "start-next 214 by maya
 start-next 231 by maya" "$(work_requests "$wq_c" 2026-11-04T08:00:00Z 2026-11-05T08:30:00Z)"
-eq "these never count as a reply to the proposal" "1" "$(grep -c 'request: (start-next|start-now|hold-agent|land-next|land-now|deploy-now)' "$root/scripts/drive/approval.sh")"
+# "Send an agent" on a stalled row (#1897): the same road as "Hold it for me", an issue or a pull request alike.
+wq_s="2026-11-05T08:00:00Z${wq_t}maya${wq_t}Queue request: send-agent #41 by maya"
+eq "Send an agent is owed within the hour-wide window, like Hold it for me" "send-agent 41 by maya" "$(work_requests "$wq_s" 2026-11-04T08:00:00Z 2026-11-05T07:00:00Z)"
+eq "an answer spends it" "" "$(work_requests "$wq_s
+2026-11-05T08:05:00Z${wq_t}maya${wq_t}Queue answer: send-agent #41: sent" 2026-11-04T08:00:00Z 2026-11-05T07:00:00Z)"
+eq "these never count as a reply to the proposal" "1" "$(grep -c 'request: (start-next|start-now|hold-agent|send-agent|land-next|land-now|deploy-now)' "$root/scripts/drive/approval.sh")"
 # An issue asked for by name keeps its place until it is done (asked-lib.sh, #1930).
 . "$root/scripts/drive/asked-lib.sh"
 . "$root/scripts/drive/left-lib.sh"
@@ -6773,7 +6778,7 @@ eq "held lines alone start nothing" "nothing${wk_tab}1 dispatch goal(s) wait for
 eq "an empty reading starts nothing" "nothing${wk_tab}nothing approved" "$(wake_decision '')"
 eq "a dispatch wakes the drive" "yes yes yes" "$(wake_event_wanted workflow_dispatch '') $(wake_event_wanted repository_dispatch '') $(wake_event_wanted workflow_run '')"
 eq "the start-round comment wakes it" "yes" "$(wake_event_wanted issue_comment 'Queue request: start-round by maya')"
-eq "so do Start now, Start this next and hold-agent" "yes yes yes" "$(wake_event_wanted issue_comment 'Queue request: start-now by maya') $(wake_event_wanted issue_comment 'Queue request: start-next #12 by maya') $(wake_event_wanted issue_comment 'Queue request: hold-agent #12 by maya')"
+eq "so do Start now, Start this next, hold-agent and send-agent" "yes yes yes yes" "$(wake_event_wanted issue_comment 'Queue request: start-now by maya') $(wake_event_wanted issue_comment 'Queue request: start-next #12 by maya') $(wake_event_wanted issue_comment 'Queue request: hold-agent #12 by maya') $(wake_event_wanted issue_comment 'Queue request: send-agent #41 by maya')"
 eq "a request the drive still owes starts a tick with nothing approved" "start${wk_tab}1 request" "$(wake_decision 'nothing: no reply yet' 'start-now 12 by maya')"
 eq "approved goals still say goals when requests are owed too" "start${wk_tab}1 goal" "$(wake_decision 'dispatch 301' 'start-next 12 by maya')"
 eq "no request owed leaves the reading as it was" "nothing${wk_tab}no reply yet" "$(wake_decision 'nothing: no reply yet' '')"

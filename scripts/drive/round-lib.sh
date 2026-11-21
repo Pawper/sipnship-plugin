@@ -245,23 +245,25 @@ start_request() {
 # work_requests COMMENTS START_SINCE HOLD_SINCE
 # COMMENTS are the drive issue's comments, one "at<TAB>login<TAB>body" a line,
 # oldest first. Prints the requests the drive still owes an answer, one
-# "start-next N by LOGIN", "start-now N by LOGIN", "hold-agent N by LOGIN" or
-# "start-round by LOGIN" a line (a start-now with no issue reads as "start-now 0 by LOGIN"). A request is the exact form, left by the App
-# or by the person it names; an answer in the form `Queue answer: KIND #N:
-# outcome` (start-round's N is 0) spends it; one older than its SINCE (a UTC
-# time, compared as text) has already been told it did not happen. A request
-# nobody answered stays owed on every later read, so the drive reports it.
+# "start-next N by LOGIN", "start-now N by LOGIN", "hold-agent N by LOGIN",
+# "send-agent N by LOGIN" (a stalled row, ./change-stall) or "start-round by
+# LOGIN" a line (a start-now with no issue reads as "start-now 0 by LOGIN"). A
+# request is the exact form, left by the App or by the person it names; an
+# answer in the form `Queue answer: KIND #N: outcome` (start-round's N is 0)
+# spends it; one older than its SINCE (a UTC time, compared as text) has
+# already been told it did not happen. A request nobody answered stays owed
+# on every later read, so the drive reports it.
 work_requests() {
   printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v s="$2" -v h="$3" '
     {
-      if (match($3, /^Queue answer: (start-next|start-now|hold-agent|start-round) #[0-9]+: /)) {
+      if (match($3, /^Queue answer: (start-next|start-now|hold-agent|send-agent|start-round) #[0-9]+: /)) {
         split(substr($3, 15), a, /[ #:]+/)
         if (a[1] == "start-round") a[2] = ""
         delete owed[a[1] " " a[2]]; delete line[a[1] " " a[2]]
         if (a[1] == "start-now" && a[2] == "0") for (k in owed) if (index(k, "start-now ? ") == 1) { delete owed[k]; delete line[k] }
         next
       }
-      if ($3 !~ /^Queue request: ((start-next|start-now|hold-agent) #[0-9]+|start-now|start-round( #0)?) by [A-Za-z0-9][A-Za-z0-9-]*(: .*)?$/) next
+      if ($3 !~ /^Queue request: ((start-next|start-now|hold-agent|send-agent) #[0-9]+|start-now|start-round( #0)?) by [A-Za-z0-9][A-Za-z0-9-]*(: .*)?$/) next
       split($3, w, " ")
       kind = w[3]; n = w[4]; who = w[6]
       if (kind == "start-round") { n = ""; who = (w[4] == "by") ? w[5] : w[6] }
@@ -269,7 +271,7 @@ work_requests() {
       if (kind == "start-now" && w[4] == "by") { n = "0"; who = w[5] }
       sub(/^#/, "", n); sub(/:$/, "", who)
       if ($2 != who && $2 !~ /\[bot\]$/) next
-      if ($1 < (kind == "hold-agent" ? h : s)) next
+      if ($1 < (kind == "hold-agent" || kind == "send-agent" ? h : s)) next
       key = kind " " n; text = kind (n == "" ? "" : " " n) " by " who
       # A round-wide Start now with words (the builder own, after the form) is printed with them, one line each, so the drive reads what was asked: no issue number is "?".
       if (kind == "start-now" && n == "0" && match($3, /by [A-Za-z0-9-]+: ./)) { key = "start-now ? " $1; text = "start-now ? by " who ": " substr($3, RSTART + 5 + length(who)) }
