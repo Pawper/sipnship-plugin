@@ -328,10 +328,12 @@ scripts/ci/failure-lib.sh 4014bb44ce82abdaa8d426274c5869f5f88e3ec6
 scripts/ci/failure-lib.sh 50e052598f25e423d683da3b5cc586dfa6410775
 scripts/ci/failure-lib.sh 9c080e6aa2178c7a865eac769975a14eb3d87550
 scripts/ci/failure-lib.sh b8e82ebafe18a8303dd315f72410a1e6e19c2048
+scripts/ci/failure-lib.sh f5462e7c12ed6c5b6d3ff02011e2545112e9a420
 scripts/ci/failure-report.sh 0cc2380b15156856af9c3a3a695b6eccbc293809
 scripts/ci/failure-report.sh 1cd3706b70a7aae34fea8218fa15a5701c953118
 scripts/ci/failure-report.sh 83addfaecd490577926db622eaed797ea200f419
 scripts/ci/failure-report.sh 85d567c3e4b1880e02ccea09611b2a822fcb5a94
+scripts/ci/failure-report.sh 97cd30002d223999e618a20f2aa6ecd2080b9cef
 scripts/ci/failure-report.sh c0b689751b744df98a15ef56e2e9ff737762fa5b
 scripts/ci/failure-report.sh cc4c4d83c9d74beab74b084f09d66df890b2a3d7
 scripts/ci/gate-lib.sh 1cf6ce6f01346af62c99aecde44568b19bb7334a

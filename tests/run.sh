@@ -2066,6 +2066,16 @@ eq "the summary names the slow block beside the failed step" "1 1" "$(failure_su
 eq "the annotation carries it too" "1" "$(failure_annotation tests 'Run the shell-1 part' 'FAIL  the planter count' "$(slow_say "$fl_log")" | grep -c 'Also slow, and not the cause')"
 eq "no slow block, no extra words" "0" "$(failure_summary 'tests' 'Run the shell-1 part' 'FAIL  the planter count' '' | grep -c 'Also slow')"
 eq "the report reads the whole log, not its last lines" "1" "$(grep -c 'slow=$(slow_say "$(cat "$2")")' "$root/templates/scripts/ci/failure-report.sh")"
+# A part the run stops says why, never that it ran out of minutes it did not use.
+sp_jobs=$(printf '9\ttests (shell-1-4)\tcompleted\tfailure\tr1\tRun the shell-1-4 part\t2026-11-21T20:07:44Z\t2026-11-21T20:07:00Z\n10\ttests (shell-2-4)\tin_progress\t\tr2\t\t\t2026-11-21T20:07:01Z\n')
+eq "the part that failed is named for the stopped one" "tests (shell-1-4)" "$(failed_others "$sp_jobs" 'tests (shell-2-4)')"
+eq "a part stopped after two minutes is not out of time" "The shell-2-4 part was stopped because another part failed (tests (shell-1-4)), after 1 minutes. It did not fail and did not run out of time." "$(stopped_say shell-2-4 100 180 'tests (shell-1-4)')"
+eq "stopped with no failed part says from outside, with how long" "The queue-console part was stopped from outside after 45 seconds. It did not run out of time." "$(stopped_say queue-console 45 180 '')"
+eq "only a part at its limit says it ran out of time" "The shell-1-4 part ran out of its 180 minutes." "$(stopped_say shell-1-4 10800 180 '')"
+eq "a stopped part never says it ran out of minutes" "0" "$(stopped_say shell-1-4 109 180 'tests (shell-2-4)' | grep -c 'ran out of its')"
+eq "the cancelled step asks the report for the reason" "1" "$(grep -c 'failure-report.sh stopped "${{ matrix.part }}" 180' "$root/templates/.github/workflows/ci.yml")"
+eq "the old fixed words are gone from the workflow" "0" "$(grep -c 'ran out of its 180 minutes' "$root/templates/.github/workflows/ci.yml")"
+eq "the run's report lists failed jobs by end time" "1" "$(grep -c 'sort -t .* -k7,7)" "$lines"' "$root/templates/scripts/ci/failure-report.sh")"
 eq "every check step of the checks job keeps its output" "yes" "$(for n in line-endings numbering-check spec-check setup-check shared-check hotspots-check delete-check client-env-check design-check mock-check; do grep -q "check-log.sh sh scripts/ci/$n.sh" "$root/templates/.github/workflows/ci.yml" || echo no; done | grep -q no && echo no || echo yes)"
 eq "the failing job's annotation is fed the check log" "1" "$(grep -c 'failure-report.sh job "\$RUNNER_TEMP/check.log"' "$root/templates/.github/workflows/ci.yml")"
 eq "red outside the code, up to date: CI again" "rerun" "$(unstick_action "$(us_row MERGEABLE red fff999 0 yes 'an install error (EPERM)' done)" "" no)"

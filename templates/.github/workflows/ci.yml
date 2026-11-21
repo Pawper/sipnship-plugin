@@ -377,12 +377,15 @@ jobs:
           # clear and never piles up in the machine's Temp folder.
           TMPDIR: ${{ runner.temp }}
         run: sh scripts/ci/test-parts.sh run "${{ matrix.part }}" 2>&1 | tee "$RUNNER_TEMP/part.log"
-      - name: Say a part hung
-        # The part ran out of its time: name it and the last test it started.
+      - name: Say why a part stopped
+        # The part was stopped from outside: usually because another part
+        # failed (the matrix cancels the rest), rarely its own time limit.
+        # It says which, and how long it had run; only a part that reached
+        # its limit says it ran out of time, with the last test it started.
         if: cancelled()
-        run: |
-          last=$(grep '^# ' "$RUNNER_TEMP/part.log" 2>/dev/null | tail -n 1)
-          echo "::error title=A test part hung::The ${{ matrix.part }} part ran out of its 180 minutes. The last test it started: ${last#\# }"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: sh scripts/ci/failure-report.sh stopped "${{ matrix.part }}" 180 "$RUNNER_TEMP/part.log"
       - name: Say what failed
         # A summary and an annotation naming the failed step and its last
         # lines. A failure here never cancels the run: the other jobs
