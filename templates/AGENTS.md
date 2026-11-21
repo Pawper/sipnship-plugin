@@ -68,6 +68,7 @@ The table is built by `sh scripts/rules.sh build` from `.claude/rules.txt` (the 
 |---|---|
 | Never delete | The `block-delete` hook refuses rm, del, Remove-Item and git clean |
 | Never delete, on the pull request | The `delete-check` step of the `checks` CI job fails a pull request that deletes a tracked file unless its body carries a line `Deletes: <reason>` |
+| One change closes its issue | The `closes-check` step of the `checks` CI job fails a pull request whose body has no `Closes #N` line, and one whose `Leftover: #M` line names an issue that is not open; what a change leaves undone is a new issue filed before the change lands |
 | Never force-push | The `block-force-push` hook refuses any forced push |
 | Tests per file | The `block-full-test-sweep` hook refuses a bare test command; CI runs the full suite on main |
 | Nothing appended to a generated page | The `block-generated-page` hook refuses direct edits to the pages in `.claude/generated-pages.txt`; `sh status/check.sh` fails in CI when `STATUS.md` is stale |

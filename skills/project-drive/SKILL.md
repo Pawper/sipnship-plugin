@@ -29,6 +29,9 @@ The drive works the ready list in rounds, so many issues land in little time wit
   `publish-round.sh` refuses two units that share an area, with what to do: bundle them, or hold one behind
   the other. When two issues in one area must still run side by side, an `apart:` line says why, and the
   Work tab shows it.
+- **File to fit one change.** An issue is written to fit one pull request: when a request has more than a few
+  unrelated points, split it into issues at filing (`scripts/issue-open.sh`), one per change, so none is built in
+  pieces and left open. A leftover is filed the same way, before the pull request that leaves it opens.
 - **Feedback during a round joins the plan, not a new agent.** When a person brings up a change while a round
   runs, the coordinator files it as a ready issue (`scripts/issue-open.sh`, State ready) and leaves the
   planning to the drive. An issue in an area a running unit owns goes to that unit: the same agent, in the
@@ -290,20 +293,14 @@ The goal lines and what each means:
   Keep the brief in a file and the prompt short: name the issue, the worktree and the pull request to open, and
   point at the brief file ("read your brief first and follow it"). The agent-model hook reads such a prompt as a
   unit of work, never a lookup, so `dispatchModel` is allowed for it whatever its length.
-  The brief also says: an agent that builds only part of an issue, or finds its part already landed or in another
-  area, leaves one comment on the issue with a line of its own, `Left: <what is still to build> | areas: <area names>`;
-  the plan plans the issue from that line (the areas file names the areas) instead of from its whole body, and an
-  issue a merged pull request worked on with no such line is marked "partly landed" on its proposal line.
-- **`read-left N`.** A partly landed issue with no `Left:` line and no read recorded gets its reader from the
-  drive itself, in the round that finds it, once. It runs without approval, like `ask-owner`. Start a light
-  reader (the cheapest model that fits) that reads the issue, the merged pull requests that worked on it and
-  main, then does one of three things: leaves the `Left:` line in the fixed form above
-  with `comment.sh`; or says nothing is left, closing the issue with a comment naming where each part landed; or,
-  when what is left is the owner's, writes the ask for them (below, "How to write an ask") and sets
-  `state:waiting-on-owner`. Then record it: `sh "${CLAUDE_PLUGIN_ROOT}/scripts/drive/left-read.sh" N read`, or,
-  when the reader could not tell, `... N unclear`, which the card then says in plain words as a question about the
-  project. The plan never sends a second reader to a recorded issue, and a card never says a reader will come
-  unless this goal is in the round.
+  The brief also says: an agent whose pull request does not do everything its issue asked files a new issue for
+  what is left before the pull request opens (`sh scripts/issue-open.sh`, with the original's State), names it on a
+  body line `Leftover: #M`, and still closes its own issue with `Closes #N`; open then means not started or being
+  worked, closed means landed. The leftover carries the original's "Start this next" mark and its place in the
+  round. An agent that finds its part already landed or in another area says so on the issue and leaves one comment,
+  with a line of its own, `Left: <what is still to build> | areas: <area names>`;
+  the plan plans the issue from that line (the areas file names the areas) instead of from its whole body, and
+  never reads an issue as partly landed.
   The plan groups ready issues by the files they are guessed to touch (the paths and specs the body names,
   the project's mocks map, and the files past work on the same spec changed). `dispatch 12 14` with a
   third column "Why together: both change ..." is a bundle: one agent, one worktree, one pull request that

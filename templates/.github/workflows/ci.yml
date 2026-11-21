@@ -213,6 +213,16 @@ jobs:
           PR_BODY=$(sh scripts/ci/pr-text.sh --body "${{ github.event.pull_request.number }}" "the delete check") || exit 1
           export PR_BODY
           sh scripts/ci/check-log.sh sh scripts/ci/delete-check.sh "$BASE" "${{ github.sha }}"
+      - name: Fail when a pull request closes no issue, or names a leftover that is not open
+        # One change closes its issue; what it leaves undone is a new issue,
+        # named on a line of the body: "Leftover: #M".
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PR_BODY=$(sh scripts/ci/pr-text.sh --body "${{ github.event.pull_request.number }}" "the closes check") || exit 1
+          export PR_BODY
+          sh scripts/ci/check-log.sh sh scripts/ci/closes-check.sh
       - name: Fail when a client file hands process.env to anything whole
         if: github.event_name == 'pull_request' && (contains(steps.classes.outputs.classes, 'app') || contains(steps.classes.outputs.classes, 'other'))
         run: sh scripts/ci/check-log.sh sh scripts/ci/client-env-check.sh

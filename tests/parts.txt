@@ -130,7 +130,7 @@ shell-5 the plan names a release already underway and asks nothing the issue its
 shell-5 the drive reads every open pull request from its own facts (drive)
 shell-5 the drive posts a file by its contents and ignores a bare file name (drive)
 shell-5 the drive puts priority work first and keeps a hopeless ask-fix quiet (drive)
-shell-5 the plan reads what is left of a partly landed issue (drive)
+shell-5 the plan reads what an agent said is left of an issue (drive)
 shell-2 hooks in node: the same verdicts and words
 queue a stalled queue finds its own way back
 queue releases land in order (queue)

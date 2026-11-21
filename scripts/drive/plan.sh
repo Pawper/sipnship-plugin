@@ -58,7 +58,7 @@ fi
 . "$here/deploy-goal-lib.sh"
 . "$here/rank-lib.sh"
 . "$here/red-batch-lib.sh"
-. "$here/pr-read-lib.sh"; . "$here/owner-lib.sh"; . "$here/left-lib.sh"; . "$here/asked-lib.sh"; . "$here/set-aside-lib.sh"; . "$here/round-bound-lib.sh"; . "$here/left-reader-lib.sh"; . "$here/propose-lib.sh"
+. "$here/pr-read-lib.sh"; . "$here/owner-lib.sh"; . "$here/left-lib.sh"; . "$here/asked-lib.sh"; . "$here/set-aside-lib.sh"; . "$here/round-bound-lib.sh"; . "$here/propose-lib.sh"
 
 # No GitHub call waits for ever (#1794): a call that has not answered in PLAN_GH_SECONDS (120) is stopped, the plan
 # names it on its error stream, and reads what that call would have told as not known, as for any failed call.
@@ -198,7 +198,7 @@ areas_text=""; [ -f .claude/areas.txt ] && areas_text=$(cat .claude/areas.txt)
 past=$(past_spec_files "$(gitb log -n 300 --name-only --format='@@ %s' main 2>/dev/null || gitb log -n 300 --name-only --format='@@ %s' 2>/dev/null)")
 asked=$(asked_cancelled "$drive_comments" "$(asked_issues "$drive_comments")"); ASKED_ISSUES=$asked; export ASKED_ISSUES; asked_notes=""  # issues the builder asked for by name keep their place until done (asked-lib.sh, #1930)
 held_only=$(held_only_issues "$pull_links" | tr "
-" " "); guesses=""; running=""; left_reads=0; left_lines=""; plan_left_until=$((SECONDS + ${PLAN_LEFT_SECONDS:-90})); answer_led=""; answer_led_notes=""
+" " "); guesses=""; running=""; left_reads=0; plan_left_until=$((SECONDS + ${PLAN_LEFT_SECONDS:-90})); answer_led=""; answer_led_notes=""
 # A ready issue that says it comes after another open one is held, naming what it waits on, read afresh each run.
 reasons=$(hold_reasons "$facts" "$held_only")
 # An open pull request that already closes a Ready issue means no agent is started on it again, held or batched (stale-lib.sh).
@@ -222,8 +222,6 @@ while IFS="$us" read -r kind num title a b c d e; do
 $reasons" in *"
 hold	$num	"*) continue ;; esac
       plan_ready_guess  # sets g and title; an issue a merged pull request worked on is planned from what is left (left-lib.sh)
-      case "$left_say" in partly) lr_state=$(left_read_state "$num" .scratch/drive/left-read.tsv); left_lines="${left_lines}${num}${tab}${title}${tab}${lr_state}
-"; reasons=$(printf '%s\nhold\t%s\t%s\t%s\n' "$reasons" "$num" "$title" "$(left_read_hold_why "$lr_state")" | sed '/^$/d'); continue ;; esac  # a partly landed issue is a hold until its reader has written what is left (#1891, #2047)
       case " $asked " in *" $num "*) asked_notes="${asked_notes}asked: ${num} $(asked_line "$left_say")
 " ;; esac; answer_lead_apply "$num" "$asked"
       guesses="${guesses}${num}${tab}${title}${tab}${g}
@@ -255,7 +253,6 @@ if [ -n "$guesses" ] || [ -n "$reasons" ]; then
   round=$(defer_note "$round" "$published_count")  # a small round says which holds kept their issues out of it
   round=$(lead_main_fixes "$round")  # the fix for a failure on main opens the proposal and the approval never holds it behind the round it blocks (rank-lib.sh)
 fi
-round=$(add_left_readers "$round" "$left_lines")  # one reader goal for each partly landed issue not yet read (left-reader-lib.sh)
 round=$(drop_asks_for_after_holds "$round")  # an issue that names what it follows is a hold, never also an ask (#1875)
 # A project whose queue lands green work by itself: rely on it; propose one drain only when green work has sat 15 minutes.
 plan_stage "ready issues placed"

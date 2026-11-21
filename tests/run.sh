@@ -5985,17 +5985,11 @@ eq "every unit merged: In progress issues the pull requests did not name hold no
 eq "a unit whose pull request is held for the owner still holds the round, by its In progress issue" "302" "$(running_round "$sr_comments" "$(printf '302\n')" '' "$(printf '531\n')")"
 eq "a unit with no pull request yet still holds the round by its In progress issues" "320" "$(running_round "$(printf '2026-11-12T18:00:00Z\tmaya-drive\tRound started.\\n<!-- sipnship-proposal {"status":"started","units":[{"issues":[320],"areas":[]}],"held":[]} -->\n')" "$(printf '320\n')" '' '')"
 eq "approval.sh passes every open pull request, held ones too, as the fourth argument" "1" "$(grep -c 'running_round "\$comments" "\$inprog" "\$open_prs" "\$all_nums"' "$root/scripts/drive/approval.sh")"
-# A round is over only when every issue it took is settled, not merely once
-# its pull requests have merged: an issue left open in Ready, with work still
-# to confirm, keeps holding the round until it is closed, or moved to
-# waiting-on-owner or blocked (sipnship#2128).
+# A round whose issues have all closed is over: one change closes its issue, so nothing keeps holding a round
+# once its pull requests have merged and its issues are closed.
 rs_two=$(printf '2026-11-20T18:00:00Z\tmaya-drive\tRound started.\\n<!-- sipnship-proposal {"status":"started","units":[{"issues":[410,411],"areas":[],"pr":560}],"held":[]} -->\n')
-eq "a merged pull request with one issue closed and one left Ready still holds the round" "411" "$(running_round "$rs_two" '' '' '' "$(printf '411\n')")"
-eq "the round ends only once the second issue is settled too (closed, here: no longer Ready)" "" "$(running_round "$rs_two" '' '' '' '')"
-eq "an issue moved to waiting-on-owner or blocked is handed on, not loose, so it no longer holds the round either" "" "$(running_round "$rs_two" '' '' '' "$(printf '409\n')")"
-eq "a unit with no pull request yet is still held open by a Ready issue of its own, not only by In progress" "320" "$(running_round "$(printf '2026-11-12T18:00:00Z\tmaya-drive\tRound started.\\n<!-- sipnship-proposal {"status":"started","units":[{"issues":[320],"areas":[]}],"held":[]} -->\n')" '' '' '' "$(printf '320\n')")"
-eq "approval.sh reads every open issue labeled Ready and passes it as running_round's fifth argument (#2128)" "1 1" "$(grep -c 'labels=state:ready' "$root/scripts/drive/approval.sh") $(grep -c 'running_round "\$comments" "\$inprog" "\$open_prs" "\$all_nums" "\$ready"' "$root/scripts/drive/approval.sh")"
-eq "the plan reads the same fifth argument from its own snapshot, by the one rule the approval reads too" "1" "$(grep -c 'running_round "\$1" "\$pr_inprog" "\$pr_open" "\$pr_all" "\$pr_ready"' "$root/scripts/drive/held-running-lib.sh")"
+eq "a merged pull request whose issues have all closed leaves the round over" "" "$(running_round "$rs_two" '' '' '')"
+eq "approval.sh no longer reads the Ready issues, and running_round takes four arguments" "0 1" "$(grep -c 'labels=state:ready' "$root/scripts/drive/approval.sh") $(grep -c 'running_round "\$comments" "\$inprog" "\$open_prs" "\$all_nums")' "$root/scripts/drive/approval.sh")"
 eq "the plan holds every issue of a unit whose pull request is open, one unnumbered hold line each" "hold	301	Water the beds	Its pull request (#531) is still open and its unit is running; no agent is started on it
 hold	302	Tint the beds	Its pull request (#531) is still open and its unit is running; no agent is started on it
 hold	303		Its pull request (#531) is still open and its unit is running; no agent is started on it" "$(started_pr_holds "$sr_comments" "$(printf '531\n')" "$(printf '301\tWater the beds\n302\tTint the beds\n')")"
@@ -6096,7 +6090,7 @@ eq "an asked-for issue is never kept back by a carried hold" "303" "$(published_
 hl_started="2026-11-20T20:00:00Z${hr_t}bot${hr_t}"'<!-- sipnship-proposal {"status":"started","units":[{"issues":[1434],"areas":["drive"],"pr":2100}],"held":[]} -->'
 eq "a landed round: no unit runs when its pull request has merged, whatever state the issue is left in" "" "$(plan_running "$hl_started" "issue${hr_t}1434${hr_t}Water the beds${hr_t}in-progress" "" "")"
 eq "a round with an open pull request that is not held is running" "1434" "$(plan_running "$hl_started" "issue${hr_t}1434${hr_t}Water the beds${hr_t}blocked" "2100" "2100${hr_t}no${hr_t}Closes #1434")"
-eq "a landed unit whose issue is left Ready with work still to settle still holds the round: a stale In progress label does not, but Ready is never settled on its own (#2128)" "1434" "$(plan_running "$hl_started" "issue${hr_t}1434${hr_t}Water the beds${hr_t}ready" "" "")"
+eq "a landed unit whose issue is left Ready holds nothing: the change that lands an issue closes it" "" "$(plan_running "$hl_started" "issue${hr_t}1434${hr_t}Water the beds${hr_t}ready" "" "")"
 eq "a landed unit is no running unit for the areas either" "" "$(running_units "$hl_started" '1434' '' '')"
 hl_why="Waits on “Wake's \"tick\" \\ a|b: c” to land"
 . "$root/scripts/drive/propose-lib.sh"
@@ -7419,7 +7413,7 @@ eq "seven issues in one file are a bundle of four and the rest" "1 2 3 4|5 6 7" 
 eq "past the limit an area bundle stops at four too" "4" "$(area_units "$bu_areas" "$(printf 'unit\t1\tA\t\tsrc/beds/a.ts\nunit\t2\tB\t\tsrc/beds/b.ts\nunit\t3\tC\t\tsrc/beds/c.ts\nunit\t4\tD\t\tsrc/beds/d.ts\nunit\t5\tE\t\tsrc/beds/e.ts\n')" '' '' | awk -F'\t' '$1 == "unit" { n = split($2, q, " "); if (n > m) m = n } END { print m }')"
 eq "a spec folder still joins issues" "1" "$(plan_units "$(printf '1\tA\tspecs/040-docs/,specs/040-docs/a.md\n2\tB\tspecs/040-docs/,specs/040-docs/b.md\n')" '' | grep -c '^unit')"
 eq "a unit's areas are read in one process, whatever its files" "beds,garden-docs" "$(unit_areas "$bu_areas" 'src/beds/a.ts,docs/x.md,notes/x.txt')"
-eq "plan.sh holds a partly landed issue and bounds the comment reads" "1 1" "$(grep -c 'partly) lr_state=' "$root/scripts/drive/plan.sh") $(grep -c 'plan_left_until=' "$root/scripts/drive/plan.sh")"
+eq "plan.sh reads no issue as partly landed and bounds the comment reads" "0 1" "$(grep -c 'partly' "$root/scripts/drive/plan.sh") $(grep -c 'plan_left_until=' "$root/scripts/drive/plan.sh")"
 section 'the drive checks it can make a worktree before it starts an agent (drive)'
 . "$root/scripts/drive/worktree-access-lib.sh"
 wa_dir=$(mktemp -d)
@@ -7490,27 +7484,27 @@ eq "the note names no issue number and no setting" "0" "$(search_index_note "gar
 eq "the drive's worktree check leaves the folders out after it probes" "1" "$(grep -c 'search-index.sh" exclude' "$root/scripts/drive/worktree-access.sh")"
 eq "the brief reads the search index slot" "1" "$(grep -c 'slot s21 s_searchindex' "$root/hooks/scripts/session-brief.sh")"
 
-section 'the plan reads what is left of a partly landed issue (drive)'
+section 'the plan reads what an agent said is left of an issue (drive)'
 . "$root/scripts/drive/left-lib.sh"
 lf_settle='Pull request #12 merged without closing this issue, so it is back to Ready; nobody is on it now.'
 lf_tab=$(printf '\t')
 eq "an issue no merged pull request worked on says nothing" "" "$(left_comments_say 'Watering schedule shows the wrong day')"
-eq "a merged pull request with no note says partly landed" "partly" "$(left_comments_say "Started on the rooftop sensors\\n$lf_settle")"
+eq "a merged pull request with no note says nothing: an issue is never read as partly landed" "" "$(left_comments_say "Started on the rooftop sensors\\n$lf_settle")"
 eq "a note in the fixed form says what is left and where" "left${lf_tab}the soil probe page${lf_tab}plugin, ci" "$(left_comments_say "$lf_settle
 Done the sensors.\\nLeft: the soil probe page | areas: plugin, ci")"
 eq "a note with no areas still says what is left" "left${lf_tab}the soil probe page${lf_tab}" "$(left_comments_say "$lf_settle
 Left: the soil probe page")"
 eq "the newest note wins" "left${lf_tab}the planter map${lf_tab}plugin" "$(left_comments_say "Left: the soil probe page | areas: ci
 Left: the planter map | areas: plugin")"
-eq "a pull request merged after the note makes it partly landed again" "partly" "$(left_comments_say "Left: the soil probe page | areas: ci
+eq "a pull request merged after the note leaves the note as it was" "left${lf_tab}the soil probe page${lf_tab}ci" "$(left_comments_say "Left: the soil probe page | areas: ci
 $lf_settle")"
-eq "a title says what is left, or that part landed, or nothing" "Water the beds (left: the soil probe page)|Water the beds (partly landed)|Water the beds" "$(left_title 'Water the beds' "left${lf_tab}the soil probe page${lf_tab}plugin")|$(left_title 'Water the beds' partly)|$(left_title 'Water the beds' '')"
+eq "a title says what is left, or nothing" "Water the beds (left: the soil probe page)|Water the beds" "$(left_title 'Water the beds' "left${lf_tab}the soil probe page${lf_tab}plugin")|$(left_title 'Water the beds' '')"
 lf_areas='# areas
 plugin          plugin/
 ci              scripts/ .github/
 design-system   design/tokens.json'
 eq "a note's areas become the first path of each area" "plugin/,scripts/" "$(left_areas_files "left${lf_tab}x${lf_tab}Plugin, CI" "$lf_areas")"
-eq "a note with no areas, or a partly landed issue, places nothing" "" "$(left_areas_files "left${lf_tab}x${lf_tab}" "$lf_areas")$(left_areas_files partly "$lf_areas")"
+eq "a note with no areas places nothing" "" "$(left_areas_files "left${lf_tab}x${lf_tab}" "$lf_areas")"
 eq "the plan reads the note once per ready issue, and the skill tells agents to leave it" "1 1 1" "$(grep -c 'left_say=$(left_comments_say' "$root/scripts/drive/left-lib.sh") $(grep -c 'Left: <what is still to build> | areas: <area names>' "$root/skills/project-drive/SKILL.md") $(grep -c 'plan_stage "board read"' "$root/scripts/drive/plan.sh")"
 
 # An issue the owner just answered leads the next round by itself, with no second press (#2079).
@@ -7636,13 +7630,12 @@ eq "a stall names the answer that frees the most, with the count" "stall: every 
 eq "no stall when an issue is dispatched" "" "$(stall_note "$(printf 'dispatch 9\tWater\n%s\n' "$hr_round")")"
 # Eleven issues held for one reason, with runners free: the round says so (#2047), and not when no runner is online.
 hr_part=$(printf 'hold 1469\tFrost alerts\tPart of it landed; the drive has a reader working out what is left of it this round\nhold 1752\tSeed list\tPart of it landed; the drive has a reader working out what is left of it this round\n')
-eq "a round holding every issue for a partly landed one says so as a stall" "stall: every ready issue is held (2), and nothing in it waits on you; 2 of them are partly built, and the drive is writing down what is left of each before it starts an agent" "$(stall_note "$hr_part" 6)"
+eq "a round holding every issue says so as a stall" "stall: every ready issue is held (2), and nothing in it waits on you" "$(stall_note "$hr_part" 6)"
 eq "no runner online is a different cause, so no stall line here" "" "$(stall_note "$hr_part" 0)"
 block_end
 section 'a round is sized by its work, never by free runners (drive)'
 . "$root/scripts/drive/drive-lib.sh"; . "$root/scripts/drive/round-lib.sh"; . "$root/scripts/drive/bundle-lib.sh"; . "$root/scripts/drive/round-sizing-lib.sh"; . "$root/scripts/drive/hold-reasons-lib.sh"; . "$root/scripts/drive/held-round-lib.sh"
 . "$root/scripts/drive/round-bound-lib.sh"
-. "$root/scripts/drive/left-reader-lib.sh"
 rb_t=$(printf '\t')
 rb_units=$(printf 'unit\t1\tTint the beds\t\ta.ts\nunit\t2\tWater schedule\t\tb.ts\nunit\t3\tFaster frost alerts\t\tc.ts\nunit\t4\tSeed list\t\td.ts\nunit\t5\tPhoto upload\t\te.ts\nunit\t6\tBed labels\t\tf.ts\n')
 rb_round=$(printf 'dispatch 1\tTint\nstop: proposal ready for approval\n')
@@ -7679,23 +7672,6 @@ unread=1
 left=0" "$(printf '%s\n' "$rb_out" | grep -v '^$')"
 eq "a half-read pull request prints no shell error" "0" "$(printf '%s\n' "$rb_out" | grep -ci 'syntax error\|not found\|bad substitution')"
 
-# A partly landed issue gets its reader from the drive, once.
-rb_seen="$(mktemp)"
-eq "an issue with no read is unread" "unread" "$(left_read_state 1469 "$rb_seen")"
-printf '1469\tread\t1\n' > "$rb_seen"
-eq "a recorded read is remembered, and another issue is still unread" "read unread" "$(left_read_state 1469 "$rb_seen") $(left_read_state 1752 "$rb_seen")"
-rb_left=$(printf '1469\tFrost alerts\tread\n1752\tSeed list\tunread\n')
-eq "a partly landed issue gets a reader goal in the plan, and one already read does not" "read-left 1752${rb_t}Seed list" "$(left_reader_goals "$rb_left")"
-eq "the reader goal goes into the round before its stop line" "dispatch 1${rb_t}Tint
-read-left 1752${rb_t}Seed list
-stop: proposal ready for approval" "$(add_left_readers "$rb_round" "$rb_left")"
-eq "with nothing to read the round is unchanged" "$(printf '%s' "$rb_round")" "$(add_left_readers "$rb_round" "$(printf '1469\tFrost alerts\tread\n')")"
-eq "a card never says a reader will come unless one is at work" "0" "$(left_read_hold_why read | grep -c 'a reader will\|a reader confirms')"
-eq "an issue the reader could not tell is a question to the builder, in plain words" "Part of it landed, and the drive could not tell what is left; it needs your word on what to do with it" "$(left_read_hold_why unclear)"
-rb_gh_dir=$(mktemp -d)
-eq "recording a read appends one line, and a bad word is refused" "1" "$(cd "$rb_gh_dir" && sh "$root/scripts/drive/left-read.sh" 1469 read >/dev/null && sh "$root/scripts/drive/left-read.sh" 1469 maybe >/dev/null 2>&1; grep -c . .scratch/drive/left-read.tsv)"
-eq "plan.sh reads the record and adds the reader goals" "1 1" "$(grep -c 'left_read_state "\$num"' "$root/scripts/drive/plan.sh") $(grep -c 'add_left_readers "\$round"' "$root/scripts/drive/plan.sh")"
-eq "the skill describes the read-left goal" "1" "$(grep -c 'read-left N' "$root/skills/project-drive/SKILL.md")"
 block_end
 
 section 'the plan publishes its own proposal, and what starts is what it proposed (drive)'

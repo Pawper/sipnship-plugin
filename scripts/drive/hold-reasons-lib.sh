@@ -62,7 +62,6 @@ stall_note() {
     /^dispatch / { go = 1 }
     /^hold / {
       h++
-      if ($3 ~ /^Part of it landed/) part++
       if ($3 ~ /^(After: |Waits for “)/) {
         w = $3; sub(/ \(after: [0-9 ,#]+\)$/, "", w); sub(/^(After: |Waits for “)/, "", w); sub(/” to land.*$/, "", w); wc[w]++
         if (wc[w] > wtop) { wtop = wc[w]; wname = w }
@@ -77,7 +76,6 @@ stall_note() {
       if (go || h == 0) exit
       if (k == 0) {
         printf "stall: every ready issue is held (%d), and nothing in it waits on you", h
-        if (part > 0) printf "; %d of them are partly built, and the drive is writing down what is left of each before it starts an agent", part
         if (wtop * 2 > h) printf "; %d of them wait for “%s” to land, the reason most share", wtop, wname
         printf "\n"
         exit

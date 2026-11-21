@@ -1,30 +1,23 @@
 #!/bin/sh
-# What is left of an issue a merged pull request worked on but did not close
-# (#1623). An issue returns to Ready looking whole; the plan must not size and
-# place it from its whole body. Two things on the issue say what is true now:
-#
-#   a note in the fixed form, on a line of its own in a comment:
+# What is left of an issue, when an agent that built only part said so (#1623).
+# One change closes its issue and a leftover is a new issue, so nothing here
+# reads an issue as partly landed. A note in the fixed form, on a line of its
+# own in a comment, sizes and places the issue from what it names:
 #     Left: <what is still to build> | areas: <area names>
-#   the settle step's comment "Pull request #N merged without closing this
-#     issue, so it is back to Ready", which says part of it landed.
-#
-# The newest of the two wins. A note after the settle comment says what is
-# left; the settle comment with no note after it means "partly landed, nobody
-# has said what is left". Pure; sourced by plan.sh and the plugin's tests.
+# The newest note wins. Pure; sourced by plan.sh and the plugin tests.
 
 # left_comments_say COMMENTS
 # COMMENTS is one comment per line, oldest first, a line end inside a comment
 # written as the two characters "\n" (gh's --jq does this). Prints
 #   left<TAB>WORDS<TAB>AREAS   when the newest note is in the fixed form,
-#   partly                     when part landed and no note says what is left,
-# and nothing for an issue no merged pull request worked on.
+# and nothing otherwise: an issue is closed by the change that lands it, and what a
+# change leaves undone is a new issue, so no issue is read as partly landed.
 left_comments_say() {
   printf '%s\n' "$1" | tr -d '\r' | awk '
     function trim(s) { gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
     NF == 0 { next }
     {
       n = split($0, ln, /\\n/)
-      if (index($0, "merged without closing this issue")) { state = "partly"; words = ""; areas = "" }
       for (i = 1; i <= n; i++) {
         if (ln[i] ~ /^[ \t]*Left:[ \t]*[^|]+(\|[ \t]*areas:.*)?$/) {
           l = ln[i]; sub(/^[ \t]*Left:[ \t]*/, "", l)
@@ -37,19 +30,16 @@ left_comments_say() {
     }
     END {
       if (state == "left" && words != "") printf "left\t%s\t%s\n", words, areas
-      else if (state == "partly") print "partly"
     }'
 }
 
 # left_title TITLE SAY
-# The title a proposal line shows. A note says what is left, in its words; a
-# partly landed issue says so (the drive's own reader then writes the note,
-# left-reader-lib.sh); any other issue keeps its title.
+# The title a proposal line shows. A note says what is left, in its words; any
+# other issue keeps its title.
 left_title() {
   lt_tab=$(printf '\t')
   case "$2" in
     left"$lt_tab"*) lt_w=${2#left"$lt_tab"}; lt_w=${lt_w%%"$lt_tab"*}; printf '%s (left: %s)\n' "$1" "$lt_w" ;;
-    partly) printf '%s (partly landed)\n' "$1" ;;
     *) printf '%s\n' "$1" ;;
   esac
 }

@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        One issue per task. The PR that does the work closes it. Decisions about the task are comments here, not in a status file.
+        One issue per task, written to fit one change; an issue with more than a few unrelated points is split at filing. The PR that does the work closes it, and anything it leaves undone becomes a new issue filed before it lands. Decisions about the task are comments here, not in a status file.
   - type: dropdown
     id: state
     attributes:

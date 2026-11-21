@@ -1,4 +1,5 @@
 .claude/rules.txt 302bcd5e29321b6f03639be2940432cea0f9816b
+.claude/rules.txt 40ddf9116756a368d8673468e557ce643ae3f5a9
 .claude/rules.txt 41651f1b74636b2f4be9347c377b1c0d72f63411
 .claude/rules.txt 532c2186219314f129ad6caeb57a201a72ee316d
 .claude/rules.txt 59509b6d30c8a479477849e105014a50824c361d
@@ -278,6 +279,7 @@ scripts/ci/checks-local.sh f987bc04330f81f5ca96fac710e237c60d29a174
 scripts/ci/classify.sh ffce692eabc9f10dae99261c194270f388824ca3
 scripts/ci/client-env-check.sh 0c054b2adbe91f3418b4e3027bfa5edc6ac6684e
 scripts/ci/client-env-check.sh cd03fc4c7be5190255753e229f35272b7e05d0c6
+scripts/ci/closes-check.sh a779503411e34e106cd42434b7c095c3d641926d
 scripts/ci/delete-check.sh 1c178aca4caf68a99969bc7da7c9a84ddf7e0cad
 scripts/ci/delete-check.sh de832e14b50d2c16ca2639ba95b67d54fec6ad7c
 scripts/ci/deploy-gate.sh 2f4f9d68d4057094a6f8ed81d69ef169a8b3a1e8

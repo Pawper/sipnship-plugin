@@ -5,12 +5,14 @@
 # Nothing here runs git or gh; every function takes text and prints text,
 # and tests/run.sh covers each. Sourced by approval.sh and plan.sh.
 
-# running_round COMMENTS IN_PROGRESS [OPEN_PRS [ALL_OPEN [READY]]]
+# running_round COMMENTS IN_PROGRESS [OPEN_PRS [ALL_OPEN]]
 # COMMENTS are the drive issue's comments, one per line. IN_PROGRESS is the
 # open issues labeled In progress, one number per line. Prints the issues
 # of the latest started round (its units, not its held work) that still
 # hold it, space separated: while any does, that round is running and no
-# other starts. Nothing when the round is over.
+# other starts. Nothing when the round is over: one change closes its issue, so a
+# round whose pull requests have all merged or closed, or whose issues have all
+# closed, is over.
 #
 # A unit also counts as running while its pull request is open, whatever
 # State its issues show (a change held for the builder's read leaves them
@@ -25,29 +27,20 @@
 # them is no longer held by that stale label. A unit with no "pr" yet, or
 # whose pull request is open (held or not), holds as before.
 #
-# The round is not over, though, until every issue it took is settled
-# (sipnship#2128): READY, a fifth argument, is the open issues labeled Ready,
-# one per line (closed, waiting-on-owner and blocked issues are left out of
-# it, since those are handed on, not loose). An issue of the round that is
-# still Ready keeps holding the round whether or not its unit's pull request
-# has merged: nobody is working it and nothing says it needs no more. Once it
-# is closed, or moved to waiting-on-owner or blocked, it drops out of READY
-# and stops holding the round.
 running_round() {
   rr_units=$(started_units "$1")
   [ -n "$rr_units" ] || return 0
-  printf '%s\n' "$rr_units" | awk -F'\t' -v inprog="$2" -v open="${3:-}" -v haveall="${4+yes}" -v all="${4:-}" -v ready="${5:-}" '
+  printf '%s\n' "$rr_units" | awk -F'\t' -v inprog="$2" -v open="${3:-}" -v haveall="${4+yes}" -v all="${4:-}" '
     BEGIN {
       n = split(all, a, "\n"); for (i = 1; i <= n; i++) { gsub(/\r/, "", a[i]); if (a[i] != "") ao[a[i]] = 1 }
       n = split(inprog, a, "\n"); for (i = 1; i <= n; i++) { gsub(/\r/, "", a[i]); if (a[i] != "") ip[a[i]] = 1 }
       n = split(open, a, "\n"); for (i = 1; i <= n; i++) { gsub(/\r/, "", a[i]); if (a[i] != "") op[a[i]] = 1 }
-      n = split(ready, a, "\n"); for (i = 1; i <= n; i++) { gsub(/\r/, "", a[i]); if (a[i] != "") rd[a[i]] = 1 }
     }
     {
       landed = (haveall == "yes" && $1 != "" && !($1 in ao))
       m = split($2, is, " ")
       for (i = 1; i <= m; i++) {
-        hold = (!landed && (is[i] in ip)) || ($1 != "" && ($1 in op)) || (is[i] in rd)
+        hold = (!landed && (is[i] in ip)) || ($1 != "" && ($1 in op))
         if (hold && !(is[i] in seen)) { seen[is[i]] = 1; out = out (out == "" ? "" : " ") is[i] }
       }
     }

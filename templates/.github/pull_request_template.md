@@ -10,4 +10,5 @@ Parity: none, <reason>           this screen has no other side, and why
 Design: <reason>                 a literal colour, size or font that must stay
 Mock: unchanged, <reason>        a screen changed and its mock still holds, and why
 Deletes: <reason>                a file the change must delete, and why
+Leftover: #<open issue>          what this change does not do, filed as its own issue first; a change closes its issue, never "Part of"
 -->
