@@ -57,7 +57,7 @@ deferred_holds() {
       s = substr(s, RSTART + 1, RLENGTH - 2)
       n = split(s, pieces, /, /)
       why = $0; sub(/^defer [0-9]+ unit\(s\): /, "", why); sub(/ \(#.*$/, "", why); sub(/; the [0-9]+ issues? held.*$/, "", why)
-      why = toupper(substr(why, 1, 1)) substr(why, 2); if (why ~ /^The limit/) why = why "; it starts in the next round"
+      why = toupper(substr(why, 1, 1)) substr(why, 2); if (why ~ /^The limit/) why = why "; it starts as soon as one finishes"
       for (k = 1; k <= n; k++) {
         p = pieces[k]; gsub(/#/, "", p)
         split(p, first, " "); hit = ""; who = ""; mine = iarea[first[1]]
