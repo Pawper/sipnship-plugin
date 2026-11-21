@@ -2322,6 +2322,10 @@ eq "the round that names other changes leaves the fix out, and the log names it"
 eq "main red and the fix not green: no pick, so no batch is built" "" "$(redmain_pick "$(printf '1808\n1809\n')" 1816)"
 eq "main red and the fix still running: the line says what it waits on" "Main is red (issue #1815); no batch is built. Waiting for #1816, the pull request that closes it, to turn green." "$(redmain_say 1815 "" 1816)"
 eq "main red and no fix open: the line says no run is spent" "1" "$(redmain_say 1815 "" "" | grep -c 'no run is spent')"
+rm_files=$(printf '1808\tpackages/web/src/card.tsx\n1816\tplugin/tests/run.sh plugin/README.md\n')
+eq "a green change whose diff holds the failing test's file is a fix without Closes" "1816" "$(printf '%s\n' "$rm_files" | redmain_diff_fixes 'plugin/tests/run.sh > every block is named' | tr '\n' ' ' | sed 's/ $//')"
+eq "a change that touches nothing the failure names is not" "" "$(printf '%s\n' "$rm_files" | redmain_diff_fixes 'packages/core/a.test.ts > x')"
+eq "a diff-found fix is said as holding the fix" "1" "$(redmain_say 1815 1816 1816 yes | grep -c 'whose changes already fix the failing check')"
 eq "the drain reads the red-main issue before it picks" "1" "$(grep -c 'redmain_round; passed_round; waiting=' "$mq_all")"
 # The whole round: main red, a green fix that is not in the named round, and green round members. The fix lands first,
 # alone, and no line says it waits for the next round; with main green, a green change left out still does.

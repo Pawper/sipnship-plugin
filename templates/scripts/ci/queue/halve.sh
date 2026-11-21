@@ -143,6 +143,32 @@ redmain_fixes() {
       if (match(b, "(close[sd]?|fix(e[sd])?|resolve[sd]?)[: ]+#" n "([^0-9]|$)")) print $1 }'
 }
 
+# redmain_diff_fixes FAILED < pull requests as "NUMBER<TAB>CHANGED FILES (space
+# between)": the pull requests whose diff already holds the fix for the failing
+# check, one number a line. FAILED is the failed-test text of main's red run
+# (failed_tests_from_log); a pull request is a fix when it changes a file whose
+# path, or whose name, FAILED names. A person never writes "Closes" for it.
+redmain_diff_fixes() {
+  tr -d '\r' | awk -F'\t' -v f="$1" '
+    { n = split($2, a, " "); for (i = 1; i <= n; i++) { p = a[i]; b = p; sub(/^.*\//, "", b)
+        if (p != "" && (index(f, p) > 0 || (length(b) >= 5 && index(f, b) > 0))) { print $1; break } } }'
+}
+
+# redmain_found ISSUE CANDIDATES: the green CANDIDATES (one number a line) whose
+# diff already fixes the check main's last red run failed, read from the run the
+# red-main issue names. REST only; the log is read once, and only when a
+# candidate exists. One a line, or nothing.
+redmain_found() {
+  [ -n "$2" ] || return 0
+  rf_run=$(gh api "repos/{owner}/{repo}/issues/$1/comments?per_page=100" --jq '.[].body' 2>/dev/null | tr -d '\r' | grep -o '/actions/runs/[0-9]*' | tail -n 1 | grep -o '[0-9]*$')
+  [ -n "$rf_run" ] || return 0
+  rf_failed=$(failed_tests_from_log "$(gh run view "$rf_run" --log-failed 2>/dev/null)")
+  [ -n "$rf_failed" ] || return 0
+  for rf_pr in $2; do
+    printf '%s\t%s\n' "$rf_pr" "$(gh api "repos/{owner}/{repo}/pulls/$rf_pr/files?per_page=100" --jq '[.[].filename] | join(" ")' 2>/dev/null | tr -d '\r')"
+  done | redmain_diff_fixes "$rf_failed"
+}
+
 # redmain_pick CANDIDATES FIXES: while main is red, the one pull request the
 # drain lands, first and alone: the first of CANDIDATES (the green ones, one
 # a line) that is also in FIXES. Nothing when none of them is green.
@@ -154,7 +180,9 @@ redmain_pick() {
 # which pull request lands first, or that no batch is built and what the
 # round waits on.
 redmain_say() {
-  if [ -n "$2" ]; then
+  if [ -n "$2" ] && [ -n "${4:-}" ]; then
+    echo "Main is red (issue #$1); landing #$2, whose changes already fix the failing check, first and alone. No batch is built before it."
+  elif [ -n "$2" ]; then
     echo "Main is red (issue #$1); landing #$2, which closes it, first and alone. No batch is built before it."
   elif [ -n "$(printf '%s' "$3" | tr -d ' \n')" ]; then
     echo "Main is red (issue #$1); no batch is built. Waiting for #$(printf '%s' "$3" | tr '\n' ' ' | sed 's/ *$//; s/ / #/g'), the pull request that closes it, to turn green."
@@ -188,8 +216,17 @@ redmain_round() {
     say "round $round: #$lo is green but not in the round the drive named, so it waits for the next round."
   done
   [ -n "$rm_issue" ] || return 0
-  pick=$(redmain_pick "$(drain_candidates "$open" "$base" "$tried")" "$rm_fixes")
-  say "round $round: $(redmain_say "$rm_issue" "$pick" "$rm_fixes")"
+  rm_cands=$(drain_candidates "$open" "$base" "$tried"); rm_found=""
+  # No pull request closes it: a green one whose diff already holds the fix goes first, said on the issue once.
+  [ -n "$(redmain_pick "$rm_cands" "$rm_fixes")" ] || rm_found=$(redmain_found "$rm_issue" "$(printf '%s\n' "$rm_cands" | cut -f1 | sed '/^$/d')")
+  if [ -n "$rm_found" ]; then
+    rm_fixes=$rm_found
+    rm_first=$(printf '%s\n' "$rm_found" | sed -n 1p)
+    gh api "repos/{owner}/{repo}/issues/$rm_issue/comments?per_page=100" --jq '.[].body' 2>/dev/null | grep -qF "Pull request #$rm_first already holds the fix" || \
+      gh_write api -X POST "repos/{owner}/{repo}/issues/$rm_issue/comments" -f body="Pull request #$rm_first already holds the fix for the failing check and is green, so the queue lands it first, alone, with no Closes line needed." >/dev/null 2>&1 || true
+  fi
+  pick=$(redmain_pick "$rm_cands" "$rm_fixes")
+  say "round $round: $(redmain_say "$rm_issue" "$pick" "$rm_fixes" "$rm_found")"
   if [ -n "$pick" ]; then redmain_landed=$pick; round_pool_list=$open; fi
   return 0
 }
