@@ -686,6 +686,7 @@ scripts/ci/queue/settle.sh 02d64c5f769241e3761e22f700f7dd1323b8fea8
 scripts/ci/queue/settle.sh 0c178697aea719c4dc465182dd0ee2ec8fedd90c
 scripts/ci/queue/settle.sh 4e61a1d498da3a3df9a780fe6e310e2708446052
 scripts/ci/queue/settle.sh 5e6a6e691682e7ddeb7bdd436358afb395ec7b57
+scripts/ci/queue/settle.sh 665b66a0b991dc443e9dce71f52eef8fc385e794
 scripts/ci/queue/settle.sh e350e294550e28947fc42beef4a97e947dbc9474
 scripts/ci/queue/state.sh 3d0018cf070564db8112e90bb1d487a8eaa33d25
 scripts/ci/queue/state.sh 40cf87c66ba7f3e01bae1a501ffb7bd225408937

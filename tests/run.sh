@@ -1778,6 +1778,7 @@ case "$*" in
   *"pulls/501"*) printf 'issue-230\nMakes the shed list sortable.\n\nCloses #230\n' ;;
   *"pulls?state=open"*) cat "$ST_DIR/open-pulls" 2>/dev/null ;;
   *"pulls/503"*) printf 'bed-photos\nMakes the shed list sortable.\n\nPart of #240\nPart of #241\n' ;;
+  *"pulls/504"*) printf 'bed-photos\nMakes the shed list sortable.\n\nNot built here: #226 stays open with its Left note.\nPart of #226\n' ;;
   *"pulls/502"*) printf 'bed-photos\nNo issue is named here.\n' ;;
   *"/issues/"*"/labels"*) n=$(num "$@"); cut -f2 "$ST_DIR/issue-$n" | tr '|' '\n' ;;
   *"/issues/"*) n=$(num "$@"); cat "$ST_DIR/issue-$n" ;;
@@ -1791,6 +1792,9 @@ printf 'open\tstate:in-progress|task\n' > "$st/issue-226"; : > "$st/log"
 st_run settle_merged 500
 eq "a merged pull request that did not close its issue leaves no In progress issue behind" ". 1" "$(st_in_progress 226) $(grep -c '^PUT 226 {"labels":\["task","state:ready"\]}' "$st/log")"
 eq "and says so on the issue" "1" "$(grep -c '^POST 226 Pull request #500 merged without closing this issue' "$st/log")"
+printf 'open\tstate:in-progress|task\n' > "$st/issue-226"; : > "$st/log"
+st_run settle_merged 504
+eq "a pull request whose body says the issue stays open still returns it to Ready, with no second comment" "1 0" "$(grep -c '^PUT 226 .*state:ready' "$st/log") $(grep -c '^POST 226' "$st/log")"
 printf 'closed\tstate:in-progress|task\n' > "$st/issue-226"; : > "$st/log"
 st_run settle_merged 500
 eq "an issue GitHub closed is left alone" "0" "$(grep -c '^PUT' "$st/log")"
