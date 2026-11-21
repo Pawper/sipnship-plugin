@@ -2865,9 +2865,16 @@ cat > "$rl/bin/gh" <<'GH'
 #!/bin/sh
 msg=""; for a in "$@"; do case "$a" in message=*) msg=${a#message=} ;; sha=*) rsha=${a#sha=} ;; esac; done
 case "$*" in
-  *"-X POST"*"git/commits"*) s="c$$$(date +%s)"; printf '%s' "$msg" > "$RL_DIR/commit-$s"; echo "$s" ;;
+  *"-X POST"*"git/commits"*) s="c$$$(date +%s)$RANDOM"; printf '%s' "$msg" > "$RL_DIR/commit-$s"; echo "$s" ;;
+  *"-X POST"*"git/refs"*"ref=refs/queue/owed"*) echo "$rsha" > "$RL_DIR/owed" ;;
   *"-X POST"*"git/refs"*) if [ -f "$RL_DIR/ref" ]; then echo "HTTP 422: Reference already exists" >&2; exit 1; fi; echo "$rsha" > "$RL_DIR/ref" ;;
+  *"-X PATCH"*"git/refs/queue/lock"*) [ -f "$RL_DIR/ref" ] || exit 1; echo "$rsha" > "$RL_DIR/ref" ;;
   *"-X DELETE"*"git/refs/queue/lock"*) rm -f "$RL_DIR/ref" ;;
+  *"-X DELETE"*"git/refs/queue/owed"*) rm -f "$RL_DIR/owed" ;;
+  *"git/ref/queue/owed"*) [ -f "$RL_DIR/owed" ] && cat "$RL_DIR/owed" || exit 1 ;;
+  *"-X POST"*"dispatches"*) echo "dispatch $*" >> "$RL_DIR/said" ;;
+  *"-X POST"*"/comments"*) for a in "$@"; do case "$a" in body=*) echo "comment ${a#body=}" >> "$RL_DIR/said" ;; esac; done ;;
+  *"issues?labels=queue"*) echo 7 ;;
   *"actions/runs/"*) echo "${RL_RUN_STATUS:-in_progress}" ;;
   *"git/ref/queue/lock"*) [ -f "$RL_DIR/ref" ] && cat "$RL_DIR/ref" || exit 1 ;;
   *"git/commits/"*) cat "$RL_DIR/commit-${1##*/}" 2>/dev/null || for a in "$@"; do case "$a" in */git/commits/*) cat "$RL_DIR/commit-${a##*/}" ;; esac; done ;;
@@ -2887,12 +2894,12 @@ take_lock
 echo "took the lock"
 trap - EXIT
 RLS
-rl_take() { ( cd "$rl/$1" && PATH="$rl/bin:$PATH" RL_DIR="$rl" GITHUB_ACTIONS= sh "$rl/take.sh" 2>&1 ); }
+rl_take() { ( cd "$rl/$1" && PATH="$rl/bin:$PATH" RL_DIR="$rl" GITHUB_ACTIONS= QUEUE_LOCK_BEAT=0 sh "$rl/take.sh" 2>&1 ); }
 rl_a=$(rl_take a)
 eq "the first drain takes the lock" "took the lock" "$rl_a"
 eq "the lock is one ref, held by a commit that names the drain" "1 1" "$(ls "$rl"/commit-* | wc -l | tr -d ' ') $(grep -c 'queue lock: --drain pid' "$rl"/commit-*)"
 rl_b=$(rl_take b)
-eq "a second drain in another checkout is refused, naming the first" "yes" "$(case "$rl_b" in "Another queue is running: a --drain started 0 minute(s) ago is still running (pid "*") on "*". Wait for it"*) echo yes ;; *) echo "no: $rl_b" ;; esac)"
+eq "a second drain in another checkout is refused, naming the first" "yes" "$(case "$rl_b" in "Another queue is running: a --drain started 0 minute(s) ago is still running (pid "*") on "*". Your request is kept: "*"a drain starts the moment that queue ends"*) echo yes ;; *) echo "no: $rl_b" ;; esac)"
 eq "and never takes the lock, nor its own file lock" "no" "$([ -f "$rl/b/q/lock" ] && echo yes || echo no)"
 # A drain GitHub starts because a CI run ended finds the queue that waited for that run: it ends as passed, with one plain line.
 
@@ -2909,6 +2916,7 @@ printf '%s' "$rl_old" > "$rl/commit-old"; echo old > "$rl/ref"
 eq "a lock older than three hours is taken over, whoever held it" "yes" "$(rl_b=$(rl_take b); case "$rl_b" in *"Taking over"*"took the lock") echo yes ;; *) echo "no: $rl_b" ;; esac)"
 eq "the holder's words read as the file lock's do" "a --drain started 12 minute(s) ago is still running (pid 4242) on GARDEN-PC, Queue drain run 77" "$(. "$root/templates/scripts/ci/queue/rules-drain.sh"; . "$root/templates/scripts/ci/queue/lock.sh"; remote_lock_reason "$(remote_lock_message drain 4242 GARDEN-PC 77 1 1000)" 1720 yes)"
 eq "a finished Queue drain run is no holder" "" "$(. "$root/templates/scripts/ci/queue/rules-drain.sh"; . "$root/templates/scripts/ci/queue/lock.sh"; remote_lock_reason "$(remote_lock_message drain 4242 GARDEN-PC 77 1 1000)" 1720 no)"
+rm -f "$rl/owed"
 eq "the lock is released only by the queue that holds it" "gone kept" "$(cd "$rl/a" && . "$root/templates/scripts/ci/queue/state.sh" && . "$root/templates/scripts/ci/queue/lock.sh" && PATH="$rl/bin:$PATH" RL_DIR="$rl" && export PATH RL_DIR && { echo mine > "$rl/ref"; remote_lock_sha=mine; remote_lock_release; [ -f "$rl/ref" ] && printf 'kept' || printf 'gone'; echo theirs > "$rl/ref"; remote_lock_sha=mine; remote_lock_release; printf ' '; [ -f "$rl/ref" ] && printf 'kept' || printf 'gone'; })"
 eq "the merge queue and its unlock load and release it" "1 1 1" "$(grep -c 'queue/lock.sh' "$root/templates/scripts/ci/merge-queue.sh") $(grep -c 'remote_lock_take' "$root/templates/scripts/ci/queue/state.sh") $(grep -c 'remote_lock_release' "$root/templates/scripts/ci/queue/state.sh")"
 # A lock a crash left behind ends at the drain's own bound, not three hours later.
@@ -2920,6 +2928,57 @@ rl_run=$(. "$root/templates/scripts/ci/queue/lock.sh"; remote_lock_message drain
 eq "a lock held by a GitHub run that has completed is dead" "no" "$(. "$root/templates/scripts/ci/queue/lock.sh"; PATH="$rl/bin:$PATH" RL_DIR="$rl" RL_RUN_STATUS=completed remote_lock_alive "$rl_run")"
 eq "a lock held by a GitHub run still going is alive" "yes" "$(. "$root/templates/scripts/ci/queue/lock.sh"; PATH="$rl/bin:$PATH" RL_DIR="$rl" RL_RUN_STATUS=in_progress remote_lock_alive "$rl_run")"
 eq "the refusal names the bound, not three hours" "0" "$(grep -c 'after three hours' "$root/templates/scripts/ci/queue/lock.sh")"
+# A holder outside GitHub's runs beats: its lock is renewed while it lives, and
+# one whose beat stopped is taken over within a minute, whatever the lock's age.
+. "$root/templates/scripts/ci/queue/lock.sh"
+rl_beat=$(remote_lock_message drain 4242 GARDEN-PC - 1 1000 1000)
+eq "a lock that beats says when it last did" "queue lock: --drain pid 4242 host GARDEN-PC run - dir 1 at 1000 beat 1000" "$rl_beat"
+eq "a holder that beat half a minute ago is alive" "yes" "$([ -n "$(. "$root/templates/scripts/ci/queue/rules-drain.sh"; remote_lock_reason "$rl_beat" 1030 yes)" ] && echo yes || echo no)"
+eq "a holder whose beat stopped over a minute ago is gone, though its lock is young" "" "$(. "$root/templates/scripts/ci/queue/rules-drain.sh"; remote_lock_reason "$rl_beat" 1061 yes)"
+eq "a run on GitHub writes no beat: its own status says when it ends" "" "$(remote_lock_field "$(remote_lock_message drain 4242 GARDEN-PC 77 1 1000)" beat)"
+rm -f "$rl/ref" "$rl/owed" "$rl/said" "$rl"/commit-*; rm -rf "$rl/a/q" "$rl/b/q"
+cat > "$rl/hold.sh" <<RLH
+#!/bin/sh
+here="$root/templates/scripts/ci"
+. "\$here/lib.sh"
+for rl_f in "\$here"/queue/rules-*.sh; do . "\$rl_f"; done
+. "\$here/queue/state.sh"; . "\$here/queue/lock.sh"
+tab=\$(printf '\t'); flaky_dir="\$PWD/q"; mkdir -p "\$flaky_dir"; log_file="\$flaky_dir/log"; gh_err="\$flaky_dir/gh.err"; lock_file="\$flaky_dir/lock"
+have_lock=no; base=main; mode=drain; QUEUE_LOCKED=""
+take_lock
+trap - EXIT
+sleep "\${RL_HOLD:-3}"
+[ -n "\${RL_RELEASE:-}" ] && { remote_lock_release; echo released; }
+exit 0
+RLH
+rl_hold() { ( cd "$rl/$1" && PATH="$rl/bin:$PATH" RL_DIR="$rl" GITHUB_ACTIONS= GITHUB_RUN_ID= QUEUE_LOCK_BEAT=1 sh "$rl/hold.sh" >/dev/null 2>&1 ); }
+rl_first=""
+RL_HOLD=3 rl_hold a
+eq "a holder that lives renews its lock: each beat is a new commit naming the time" "yes" "$(n=$(grep -l ' beat ' "$rl"/commit-* 2>/dev/null | wc -l | tr -d ' '); [ "$n" -ge 2 ] && echo yes || echo "no: $n beats")"
+sleep 3
+rl_dead=$(cd "$rl/b" && PATH="$rl/bin:$PATH" RL_DIR="$rl" GITHUB_ACTIONS= QUEUE_LOCK_BEAT=0 QUEUE_LOCK_BEAT_STALE=2 sh "$rl/take.sh" 2>&1)
+eq "a holder that died is taken over at once, not after the drain's bound" "yes" "$(case "$rl_dead" in *"Taking over a queue lock on GitHub whose holder is gone"*"took the lock") echo yes ;; *) echo "no: $rl_dead" ;; esac)"
+eq "the takeover is said on the Queue tab" "1" "$(grep -c 'stopped without finishing; this one took its place' "$rl/b/q/notice.tsv")"
+eq "and on the Merge queue issue, once" "1" "$(grep -c '^comment A queue run (--drain' "$rl/said")"
+# A queue turned away is kept: it leaves its ask, and the holder starts the next drain as it lets go.
+rm -f "$rl/ref" "$rl/owed" "$rl/said"; rm -rf "$rl/a/q" "$rl/b/q"
+mkdir -p "$rl/a/.github/workflows" && : > "$rl/a/.github/workflows/queue-drain.yml"
+( RL_HOLD=4 RL_RELEASE=yes; export RL_HOLD RL_RELEASE; rl_hold a ) &
+rl_hp=$!
+sleep 2
+rl_kept=$(cd "$rl/b" && PATH="$rl/bin:$PATH" RL_DIR="$rl" GITHUB_ACTIONS= QUEUE_LOCK_BEAT=0 prs=48 sh "$rl/take.sh" 2>&1)
+eq "a queue turned away hears its request is kept" "1" "$(printf '%s\n' "$rl_kept" | grep -c 'Your request is kept: .*a drain starts the moment that queue ends')"
+eq "and leaves its ask on GitHub" "yes" "$([ -f "$rl/owed" ] && echo yes || echo no)"
+wait "$rl_hp" 2>/dev/null
+eq "the holder, letting go, starts the next drain and clears the ask" "1 no" "$(grep -c '^dispatch .*queue-drain.yml/dispatches' "$rl/said" 2>/dev/null) $([ -f "$rl/owed" ] && echo yes || echo no)"
+eq "a GitHub drain turned away by a queue in a terminal leaves its ask too" "1" "$(grep -c 'remote_lock_owe' "$root/templates/scripts/ci/queue/lock.sh" | awk '{ print ($1 >= 2) ? 1 : 0 }')"
+eq "a local queue turned away by a running drain on GitHub leaves its ask" "1" "$(grep -c 'remote_lock_owe; echo "Another queue is running' "$root/templates/scripts/ci/queue/state.sh")"
+# A --serial that others are ready to land with lands with them as one batch, said on the Queue tab.
+sb_out=$(. "$root/templates/scripts/ci/queue/serial.sh"; say() { printf 'say %s\n' "$*"; }; queue_notice() { printf 'notice %s\n' "$*"; }; sh() { printf 'run %s\n' "$*"; }; prs=48; base=main; log_file=/dev/null; serial_as_batch "2 other green pull request(s) are ready to land with it (#50 #51); merge them together with --drain (or --batch), or give the reason" "50 51 ")
+eq "a refused --serial lands with the others as one batch" "1" "$(printf '%s\n' "$sb_out" | grep -c '^run .* --batch --base main 48 50 51$')"
+eq "and says so in the log and on the Queue tab" "2" "$(printf '%s\n' "$sb_out" | grep -c 'Asked to land #48 alone, but 2 other green pull request(s) are ready to land with it (#50 #51); so they land together now, as one batch: #48 #50 #51.')"
+eq "the serial mode no longer ends with a refusal nobody sees" "0 1" "$(grep -c 'Refused --serial' "$root/templates/scripts/ci/queue/serial.sh") $(grep -c 'serial_as_batch "\$why" "\$s_ready"' "$root/templates/scripts/ci/queue/serial.sh")"
+eq "the Queue tab's sentence leads with the queue's notice" "1" "$(grep -c 'notice.tsv' "$root/templates/scripts/ci/publish-state.sh")"
 # A batch whose member landed meanwhile is closed, never merged a second time.
 bm_dir=$(mktemp -d); mkdir -p "$bm_dir/bin"
 cat > "$bm_dir/bin/gh" <<'GH'
