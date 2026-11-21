@@ -2076,7 +2076,7 @@ rl_check() (
   cd "$rl_dir" || exit 1
   pr_field() { echo headsha; }
   gh() { case "$*" in *"ref=headsha"*) printf '{\n  "version": "%s"\n}\n' "$RL_PR" ;; *"ref=main"*) printf '{\n  "version": "%s"\n}\n' "$RL_MAIN" ;; esac; }
-  gitb() { printf 'a1\trefs/tags/plugin-v0.43.9\nb2\trefs/tags/plugin-v%s\nb2\trefs/tags/plugin-v%s^{}\n' "$RL_TAG" "$RL_TAG"; }
+  gitb() { [ "$1" = ls-remote ] || { git "$@"; return; }; printf 'a1\trefs/tags/plugin-v0.43.9\nb2\trefs/tags/plugin-v%s\nb2\trefs/tags/plugin-v%s^{}\n' "$RL_TAG" "$RL_TAG"; }
   base=main; release_blocks 2046 ${1:-}
 )
 eq "the queue refuses a release below main, naming the number" "make it 0.43.46" "$(RL_PR=0.43.44 RL_MAIN=0.43.45 RL_TAG=0.43.45 rl_check | sed 's/.*; \(make it [0-9.]*\),.*/\1/')"

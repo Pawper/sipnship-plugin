@@ -61,7 +61,7 @@ release_blocks() {
   [ -f "$rb_file" ] && [ "$(release_tag_wanted "$(cat .github/workflows/*.yml 2>/dev/null)" "$rb_prefix")" = yes ] || return 0
   rb_head=$(pr_field "$1" 2)
   rb_pr=$(package_version "$(gh api "repos/{owner}/{repo}/contents/$rb_file?ref=$rb_head" --jq '.content | @base64d' 2>/dev/null)")
-  if [ -n "${2:-}" ]; then rb_main=$(package_version "$(git -C "$2" show "HEAD:$rb_file" 2>/dev/null)")
+  if [ -n "${2:-}" ]; then rb_main=$(package_version "$(gitb -C "$2" show "HEAD:$rb_file" 2>/dev/null)")
   else rb_main=$(package_version "$(gh api "repos/{owner}/{repo}/contents/$rb_file?ref=$base" --jq '.content | @base64d' 2>/dev/null)"); fi
   [ -n "$rb_pr" ] && [ -n "$rb_main" ] && [ "$rb_pr" != "$rb_main" ] || return 0
   rb_tag=$(version_max $(gitb ls-remote --tags origin "refs/tags/$rb_prefix*" 2>/dev/null | sed "s#.*refs/tags/$rb_prefix##; s#\^{}##"))
