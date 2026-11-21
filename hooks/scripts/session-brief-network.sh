@@ -194,6 +194,29 @@ s_deploy() {
   return 0
 }
 
+# Without a connected SipNShip project, the Drive and Merge queue issues
+# were opened under the builder's own gh sign-in, so GitHub emails them for
+# every comment an agent posts there (#2116). Setup says this once; the
+# brief repeats it every session while they are still subscribed, read
+# with the sign-in the plugin has, and falls silent once they are not.
+s_subscribed() {
+  has owner && [ "$have_gh" = yes ] && [ -n "$gh_repo" ] || return 0
+  sb_home="${SIPNSHIP_HOME:-$HOME/.sipnship}"
+  sb_tokens=""; [ -f "$sb_home/tokens.json" ] && sb_tokens=$(cat "$sb_home/tokens.json" 2>/dev/null)
+  [ "$(service_connected "$gh_repo" "$sb_tokens")" = no ] || return 0
+  sb_pairs=""
+  for sb_label in drive queue; do
+    sb_n=$(run_bounded 5 gh api "repos/{owner}/{repo}/issues?labels=$sb_label&state=open&per_page=1" --jq '.[0].number' 2>/dev/null)
+    [ -n "$sb_n" ] || continue
+    sb_word=$(run_bounded 5 gh api "repos/{owner}/{repo}/issues/$sb_n/subscription" --jq '.subscribed' 2>/dev/null)
+    sb_pairs="$sb_pairs$sb_n	$sb_word
+"
+  done
+  sw=$(subscribed_warn_line "$sb_pairs")
+  [ -n "$sw" ] && add "$sw"
+  return 0
+}
+
 s_workflows() {
   # A workflow that passed before its last change on main and has failed
   # every run since, which a template sync can cause. Slow (a REST call per

@@ -213,6 +213,13 @@ Create, in order:
 9. The session brief's config, `.claude/session-brief.json`: the merge queue's log glob, the agent's memory folder, and the line limit.
 10. The drive's config, `.claude/project-drive.json`, and one open issue titled "Drive" labeled `drive`.
 11. The queue's published state (spec 001): one open issue titled "Merge queue" labeled `queue` and `state:parked`, which the queue rewrites with what it is doing when it cannot sign in to SipNShip; the owner pins it from its page. `sh scripts/ci/publish-state.sh --print` shows the body before the first write. With the SipNShip dashboard, `npx sipnship connect --repo` on each machine (the token is kept in `~/.sipnship/tokens.json`, outside the repository); a drain in CI signs in with the run's own identity token, no secret. The queue sends its state there and writes the issue only when it cannot sign in or after an hour of failed sends, and each session's brief is sent there too. `connect` also registers its code on the dashboard and says, in plain words, whether the builder approved it, declined it, or has not yet.
+   The Drive and Merge queue issues above are filed under the builder's own `gh` sign-in, so until the project
+   is connected to SipNShip (step 11's `connect`), GitHub emails the builder for every comment an agent posts
+   on either (#2116; the service posts as the app's own account once connected, spec 005). Say so once, in the
+   final message (step 13), and how to stop it: open each issue and press Unsubscribe (the bell by its title,
+   or the button at the issue's foot), one press each. Not a decision with choices, since there is nothing to
+   weigh: `Instructions:` and the two issues' links. While the builder stays subscribed, the session brief says
+   so again each time, read with the sign-in the plugin has; once they unsubscribe on both it falls silent.
 12. Where builds run (spec 017), offered once and never assumed. Ask the builder, in one plain question, whether they want their builds to run somewhere else when their machine is off, and in what order ("my machines first, then Tenki, then GitHub"). Anything but a clear choice leaves the workflows as they are, and the question is not asked again by the bootstrap; the checklist on Health keeps the optional line. Nothing moves to Tenki, or to any provider that costs money, unless the builder chooses it. When they choose, add the first job named `place` to each workflow that builds, which decides each job's `runs-on` from the saved order, and open a pull request for the builder to read.
 
 The drive is the loop that moves the project between sessions, and it moves it only where a person said to.

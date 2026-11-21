@@ -25,6 +25,7 @@ root=${RUN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}
 . "$root/templates/scripts/ci/run-lib.sh"
 . "$root/hooks/scripts/session-brief-lib.sh"
 . "$root/hooks/scripts/session-brief-fast.sh"
+. "$root/hooks/scripts/subscribed-lib.sh"
 
 fail_fast=no
 part=
@@ -487,6 +488,7 @@ fi
 section 'session brief'
 . "$root/hooks/scripts/session-brief-lib.sh"
 . "$root/hooks/scripts/session-brief-fast.sh"
+. "$root/hooks/scripts/subscribed-lib.sh"
 fx="$root/tests/fixtures"
 eq "json_number reads a number" "40" "$(json_number '{"maxLines": 40, "x": "y"}' maxLines)"
 eq "json_number missing key" "" "$(json_number '{"x": 1}' maxLines)"
@@ -4873,6 +4875,17 @@ eq "the watch prints the machine line" "1" "$(grep -c 'echo "machine line: $mlin
 eq "the watch counts CI runs and agent sessions into the pool record" "1 1 1" "$(grep -c 'ci_runs_since "\$runs" "\$last_pool"' "$root/templates/scripts/ci/runner-watch.sh") $(grep -c 'agent_sessions_since "\$last_pool"' "$root/templates/scripts/ci/runner-watch.sh") $(grep -c 'pool_record "\$now" "\$meas" "\$ci_runs" "\$sessions"' "$root/templates/scripts/ci/runner-watch.sh")"
 eq "the brief reads the waits log and the machine file" "1 1" "$(grep -c 'waits_line "$(tail -n 500' "$root/hooks/scripts/session-brief-local.sh") $(grep -c 'machine_brief_line "$(head -n 1' "$root/hooks/scripts/session-brief-local.sh")"
 mv "$wl_dir" "$wl_dir.done" 2>/dev/null || true
+
+section 'the plugin-only email notice, while the project is not connected (#2116)'
+eq "connected when the tokens file names the repository" "yes" "$(service_connected 'maya/rooftop-garden' '{"version":1,"repos":{"1":{"fullName":"maya/rooftop-garden","token":"t"}}}')"
+eq "not connected with no match in the tokens file" "no" "$(service_connected 'maya/rooftop-garden' '{"version":1,"repos":{}}')"
+eq "not connected with no tokens file at all" "no" "$(service_connected 'maya/rooftop-garden' '')"
+eq "still subscribed on one of two is named" "1" "$(subscribed_warn_line "$(printf '48\ttrue\n52\tfalse')" | grep -c '^You are still subscribed to #48,')"
+eq "a read with no custom subscription counts as still subscribed (GitHub's default for the issue's own author)" "1" "$(subscribed_warn_line "$(printf '48\t')" | grep -c '#48')"
+eq "both already unsubscribed, no line" "" "$(subscribed_warn_line "$(printf '48\tfalse\n52\tfalse')")"
+eq "no issues could be read at all, no line" "" "$(subscribed_warn_line "")"
+eq "the brief wires the check up, gated on the owner section and the service connection" "1 1 1" "$(grep -c 'has owner && \[ "\$have_gh" = yes \]' "$root/hooks/scripts/session-brief-network.sh") $(grep -c 'service_connected "\$gh_repo"' "$root/hooks/scripts/session-brief-network.sh") $(grep -c 'slot s11 s_subscribed' "$root/hooks/scripts/session-brief.sh")"
+eq "bootstrap says the email behaviour once, and how to turn it off" "1 1" "$(grep -c '2116' "$root/skills/project-bootstrap/SKILL.md") $(grep -c 'Unsubscribe' "$root/skills/project-bootstrap/SKILL.md")"
 
 section 'a failing job says what failed, and a failed check cancels the run'
 . "$root/templates/scripts/ci/failure-lib.sh"

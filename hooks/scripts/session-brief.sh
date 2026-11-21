@@ -23,6 +23,7 @@ here=$(dirname "$0")
 . "$here/session-brief-lib.sh"
 . "$here/session-brief-fast.sh"
 . "$here/session-brief-versions.sh"
+. "$here/subscribed-lib.sh"
 
 input=$(cat)
 source=$(json_field "$input" source)
@@ -106,6 +107,7 @@ slot s06 s_runners
 slot s08 s_hosted
 slot s09 s_stuck
 slot s10 s_deploy
+slot s11 s_subscribed
 slot s15 s_workflows
 slot s03 s_main
 slot s05 s_queue
