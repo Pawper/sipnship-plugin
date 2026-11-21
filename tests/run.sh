@@ -2109,13 +2109,18 @@ printf 'on:\n  push:\n    tags: ["plugin-v*"]\n' > "$rl_dir/.github/workflows/re
 rl_check() (
   cd "$rl_dir" || exit 1
   pr_field() { echo headsha; }
-  gh() { case "$*" in *"ref=headsha"*) printf '{\n  "version": "%s"\n}\n' "$RL_PR" ;; *"ref=main"*) printf '{\n  "version": "%s"\n}\n' "$RL_MAIN" ;; esac; }
+  gh() { case "$*" in *"compare/main...headsha"*) [ -z "${RL_NOBASE:-}" ] && echo basesha ;; *"ref=basesha"*) printf '{\n  "version": "%s"\n}\n' "$RL_BASE" ;; *"ref=headsha"*) printf '{\n  "version": "%s"\n}\n' "$RL_PR" ;; *"ref=main"*) printf '{\n  "version": "%s"\n}\n' "$RL_MAIN" ;; esac; }
   gitb() { [ "$1" = ls-remote ] || { git "$@"; return; }; printf 'a1\trefs/tags/plugin-v0.43.9\nb2\trefs/tags/plugin-v%s\nb2\trefs/tags/plugin-v%s^{}\n' "$RL_TAG" "$RL_TAG"; }
   base=main; release_blocks 2046 ${1:-}
 )
-eq "the queue refuses a release below main, naming the number" "make it 0.43.46" "$(RL_PR=0.43.44 RL_MAIN=0.43.45 RL_TAG=0.43.45 rl_check | sed 's/.*; \(make it [0-9.]*\),.*/\1/')"
-eq "and lets a release above main and the newest tag land" "" "$(RL_PR=0.43.46 RL_MAIN=0.43.45 RL_TAG=0.43.45 rl_check)"
-eq "in a batch it is checked against the batch so far, so a second release in it is checked against the first" "make it 0.43.46" "$(RL_PR=0.43.44 RL_MAIN=0.43.43 RL_TAG=0.43.43 rl_check "$rl_dir" | sed 's/.*; \(make it [0-9.]*\),.*/\1/')"
+eq "the queue refuses a release below main, naming the number" "make it 0.43.46" "$(RL_PR=0.43.44 RL_BASE=0.43.43 RL_MAIN=0.43.45 RL_TAG=0.43.45 rl_check | sed 's/.*; \(make it [0-9.]*\),.*/\1/')"
+eq "and lets a release above main and the newest tag land" "" "$(RL_PR=0.43.46 RL_BASE=0.43.45 RL_MAIN=0.43.45 RL_TAG=0.43.45 rl_check)"
+eq "in a batch it is checked against the batch so far, so a second release in it is checked against the first" "make it 0.43.46" "$(RL_PR=0.43.44 RL_BASE=0.43.43 RL_MAIN=0.43.43 RL_TAG=0.43.43 rl_check "$rl_dir" | sed 's/.*; \(make it [0-9.]*\),.*/\1/')"
+# Two drains one night refused a test split, cut when main was at 0.43.56, as
+# "it releases 0.43.56": release 0.43.57 had landed since. It never moved the version.
+eq "a change cut before the last release that never moves the version is no release" "" "$(RL_PR=0.43.56 RL_BASE=0.43.56 RL_MAIN=0.43.57 RL_TAG=0.43.57 rl_check)"
+eq "nor in a batch, whatever the batch's version" "" "$(RL_PR=0.43.44 RL_BASE=0.43.44 RL_MAIN=0.43.43 RL_TAG=0.43.43 rl_check "$rl_dir")"
+eq "a merge base that cannot be read blocks nothing" "" "$(RL_NOBASE=1 RL_PR=0.43.44 RL_BASE=0.43.43 RL_MAIN=0.43.45 RL_TAG=0.43.45 rl_check)"
 eq "a project with no release on such tags is never checked" "" "$(rm -f "$rl_dir/.github/workflows/release.yml"; RL_PR=0.1.0 RL_MAIN=0.43.45 RL_TAG=0.43.45 rl_check)"
 eq "serial and batch landings both ask it, beside the migration gate" "1 1" "$(grep -c 'why=$(release_blocks "$pr")' "$root/templates/scripts/ci/queue/serial.sh") $(grep -c 'why=$(release_blocks "$pr" "$wt")' "$root/templates/scripts/ci/queue/batch.sh")"
 
