@@ -11,6 +11,7 @@
 .github/workflows/audit.yml 1cfd38f7fa71823e7a6926c7eaf4c89657c0bc06
 .github/workflows/audit.yml 21d0bede321376bb995d545971f98e855cf58224
 .github/workflows/audit.yml 2551bc06b57766e2e2b85b93b1215345cd8a3740
+.github/workflows/audit.yml 27a27ee5ba563f85ec6c04fd57e648880f2ec2a0
 .github/workflows/audit.yml 29bbf422c46fc27f185d4e90e69816dbb473bab8
 .github/workflows/audit.yml 2b720d2384322c5362b0e71421871d2e51449f41
 .github/workflows/audit.yml 2c2e4e8a17503de8d5d2938979bf096f1d18329b
@@ -336,6 +337,7 @@ scripts/ci/gate.sh 5e160d931ed3e95e7657f9629d10c84e02a407ba
 scripts/ci/gate.sh 90b3e3aad094d9a6a235f644b56013521c61f47a
 scripts/ci/gate.sh d923fb458576efe7c408d00513c65bc60cc9fcb4
 scripts/ci/git-bounded-lib.sh 7842085d0a1525942aa966716f2bd3c70dc6a752
+scripts/ci/held-change-audit.sh 80fb88b11a45844c26b7b4de74e839e3ebc9d7cf
 scripts/ci/hotspots-check.sh 22aa834cdfc90ad8525c5145629e3340dca547b9
 scripts/ci/hotspots-check.sh 2929ddea85c0eec715a6dabf3fbfc4baa5c06a4e
 scripts/ci/hotspots-lib.sh 2a6a2017b45fb37b20e2bda6829a69790691eb5c

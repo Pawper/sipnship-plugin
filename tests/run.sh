@@ -5957,6 +5957,30 @@ eq "only Closes, Fixes and Resolves finish an issue, in any case, with or withou
 9" "$(closed_refs 'Closes #4 and fixes #12; resolved: #9. Part of #20, see #21. Spec: specs/010-work')"
 eq "a pull request that says only Part of finishes nothing" "" "$(closed_refs 'Part of #1390. Not done: the rest of #1390 and #1388.')"
 eq "the audit reads closing lines, in the workflow and its template alike" "1 1" "$(grep -c 'closed_refs "\$line"' "$root/templates/.github/workflows/audit.yml") $(grep -c '^closed_refs()' "$root/templates/scripts/ci/lib.sh")"
+# A held change's question lives as a comment on the issue it closes (spec 024): the audit
+# names one with nowhere for its question to live, and two held changes sharing an issue.
+eq "the project's copy of the held-change audit is the template's" "same" "$(cmp -s "$root/templates/scripts/ci/held-change-audit.sh" "$root/../scripts/ci/held-change-audit.sh" && echo same || echo differ)"
+eq "the audit calls it, in the workflow and its template alike" "2 2" "$(grep -c 'held-change-audit.sh' "$root/../.github/workflows/audit.yml") $(grep -c 'held-change-audit.sh' "$root/templates/.github/workflows/audit.yml")"
+eq "the plugin owns the script" "1" "$(grep -c '^scripts/ci/held-change-audit.sh$' "$root/templates/OWNED.txt")"
+hc_dir=$(mktemp -d); mkdir -p "$hc_dir/bin"
+cat > "$hc_dir/bin/gh" <<'HCEOF'
+#!/bin/sh
+case "$*" in
+  *"/pulls?"*) printf '901\theld\tMake the chime snappier\n902\theld\tCloses #410 for the owner'"'"'s read\n903\theld\tCloses: #410\n904\tfree\tCloses #410\n' ;;
+esac
+HCEOF
+chmod +x "$hc_dir/bin/gh"
+eq "a held change that closes no issue has nowhere for its question to live" "#901: closes no issue, so its question has nowhere to live." "$(PATH="$hc_dir/bin:$PATH" sh "$root/templates/scripts/ci/held-change-audit.sh" | grep '^#901')"
+eq "two held changes closing the same issue are named, the free one left out" "#902 and #903: both close #410, so the second usually replaces the first." "$(PATH="$hc_dir/bin:$PATH" sh "$root/templates/scripts/ci/held-change-audit.sh" | grep '^#902')"
+hc_dir2=$(mktemp -d); mkdir -p "$hc_dir2/bin"
+cat > "$hc_dir2/bin/gh" <<'HCEOF2'
+#!/bin/sh
+case "$*" in
+  *"/pulls?"*) printf '905\theld\tCloses #411\n906\tfree\tCloses #412\n' ;;
+esac
+HCEOF2
+chmod +x "$hc_dir2/bin/gh"
+eq "a held change with its own issue, and a free one, name nothing" "" "$(PATH="$hc_dir2/bin:$PATH" sh "$root/templates/scripts/ci/held-change-audit.sh")"
 au_line='Issues still open and labeled ready after their PR merged: - #1273 (merged in #1385) - #1364 (merged in #1385) - #1340 (merged in #1385)'
 eq "an audit comment of only stale entries names the merged pull requests once" "1385" "$(audit_stale_prs "$au_line")"
 eq "any other audit comment names none" "" "$(audit_stale_prs 'Open issues with no State label: - #12 Issues still open and labeled ready after their PR merged: - #4 (merged in #30)')"

@@ -232,7 +232,17 @@ jobs:
             looks=$(sh scripts/ci/proposal-audit.sh | sed 's/^/- /')
           fi
 
+          # A held change's question lives as a comment on the issue it closes (spec 024): one
+          # that closes none has nowhere for its question to live, and two that close the same
+          # issue leave the second usually replacing the first.
+          heldissue=""
+          if [ -f scripts/ci/held-change-audit.sh ]; then
+            heldissue=$(sh scripts/ci/held-change-audit.sh | sed 's/^/- /')
+            [ -z "$heldissue" ] || heldissue=$(printf 'Held changes with nowhere for their question to live:\n%s' "$heldissue")
+          fi
+
           body=$(audit_comment "$missing" "$stale" "$red" "$branches")
+          if [ -n "$heldissue" ]; then body=$(printf '%s\n\n%s' "$body" "$heldissue" | sed '/./,$!d'); fi
           if [ -n "$idle" ]; then body=$(printf '%s\n\n%s' "$body" "$idle" | sed '/./,$!d'); fi
           if [ -n "$looks" ]; then body=$(printf '%s\n\n%s' "$body" "$looks" | sed '/./,$!d'); fi
           if [ -n "$asks" ]; then body=$(printf '%s\n\n%s' "$body" "$asks" | sed '/./,$!d'); fi
