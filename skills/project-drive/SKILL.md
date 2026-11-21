@@ -267,7 +267,14 @@ The goal lines and what each means:
   origin/main in your own worktree, regenerate any generated files, re-run the touched tests per file, and push
   again before you wait for anything. A wait for your first checks to start that has not ended within a few
   minutes ends too: say the reason in one comment on the pull request (what you waited for, and since when)
-  and end your turn, rather than waiting with no bound.
+  and end your turn, rather than waiting with no bound. Once they start, stay for them to end (up to thirty
+  minutes): a red change with nobody on it is the stall this project most wants not to happen (#1897). If they
+  end green, your turn ends there. If they end red from a mistake in your own change, fix it on your own
+  branch (the same way `fix-pr` below does), re-run the touched tests per file, and push once; wait for that
+  one push's checks to end too, then end your turn whichever way they end. Never a second fix attempt and
+  never a loop: a check still red after that one fix, or whose cause is outside your own change (shared code,
+  or already failing on main), gets one comment naming the cause, `state:blocked` when the cause is not yours
+  to fix, and your turn ends there; the drive's own `fix-pr` goal picks it up from the next tick.
   Dispatch every unit of the round at once. Set the issue to `state:in-progress` with `scripts/state.sh`.
   Keep the brief in a file and the prompt short: name the issue, the worktree and the pull request to open, and
   point at the brief file ("read your brief first and follow it"). The agent-model hook reads such a prompt as a
