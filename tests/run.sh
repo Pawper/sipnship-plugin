@@ -6220,6 +6220,12 @@ qc_push() {
   qc_out=$(printf '%s' "$qc_in" | CHECKS_LOCAL_OFFLINE=1 HOOK_LOG=0 sh "$root/hooks/scripts/require-local-checks.sh" 2>&1)
   printf 'rc=%s\n%s\n' "$?" "$qc_out"
 }
+# qc_ci full|lean: which ci.yml the fixture repository holds. The full one is
+# the template's own; the lean one keeps only its size and mock steps, so a run
+# that asks about one of those starts a few hundred processes, not thousands.
+# One full run (a clean push) and one with a body still read every step.
+(cd "$qc" && cp .github/workflows/ci.yml .scratch/ci.full && awk '/^  [a-z-]+:/ { flush(); injob = ($0 ~ /^  checks:/) } injob && /^      - / { flush(); step = 1 } function flush() { if (!step || buf ~ /hotspots-check[.]sh|mock-check[.]sh|id: classes/) printf "%s", buf; buf = ""; step = 0 } { buf = buf $0 "\n" } END { flush() }' .scratch/ci.full > .scratch/ci.lean) >/dev/null 2>&1
+qc_ci() { cp "$qc/.scratch/ci.$1" "$qc/.github/workflows/ci.yml"; }
 qc_size=$(qc_push size)
 eq "a file grown past its limit refuses the push" "rc=2" "$(printf '%s\n' "$qc_size" | head -n 1)"
 eq "the refusal carries the size check's own words" "1" "$(printf '%s\n' "$qc_size" | grep -c 'lib/watering.ts has 50 lines, over the limit of 40')"
@@ -6227,7 +6233,9 @@ eq "and names the CI step that would fail" "1" "$(printf '%s\n' "$qc_size" | gre
 qc_budget=$(cd "$qc" && git checkout -q size && CHECKS_LOCAL_SECONDS=0 CHECKS_LOCAL_OFFLINE=1 sh scripts/ci/checks-local.sh 2>&1)
 eq "the size check runs first and never under the time budget: it still refuses at a budget of 0" "Failed: Fail when a change grows" "$(printf '%s\n' "$qc_budget" | head -n 1 | cut -c1-32)"
 eq "and in its own words, with no timeout beside it" "1 0" "$(printf '%s\n' "$qc_budget" | grep -c 'lib/watering.ts has 50 lines, over the limit of 40') $(printf '%s\n' "$qc_budget" | grep -c 'still running after')"
+qc_ci lean
 qc_mock=$(qc_push mock)
+qc_ci full
 eq "a screen changed without its mock refuses the push" "rc=2" "$(printf '%s\n' "$qc_mock" | head -n 1)"
 eq "the refusal carries the mock check's own words" "1" "$(printf '%s\n' "$qc_mock" | grep -c 'These screens changed but their mocks did not: beds')"
 qc_fine=$(qc_push fine)
@@ -6246,19 +6254,20 @@ eq "and a failure no body line could allow does not mention the body" "0" "$(pri
 # A first push, before any body is written: a new screen file beside the
 # mocked one, with no line mapping it, is refused in the mock check's words.
 (cd "$qc" && git checkout -q main && git checkout -q -b paths && printf 'export const paths = 1\n' > src/paths.ts && git add -A && git commit -qm paths) >/dev/null 2>&1
+qc_ci lean
 qc_unmapped=$(qc_push paths)
 eq "with no body, a new unmapped screen file refuses the push" "rc=2" "$(printf '%s\n' "$qc_unmapped" | head -n 1)"
 eq "the refusal carries the mock check's own words" "1" "$(printf '%s\n' "$qc_unmapped" | grep -c 'no line in scripts/ci/mocks.txt names them: src/paths.ts')"
 eq "and says a body line might allow a check that reads it" "1" "$(printf '%s\n' "$qc_unmapped" | grep -c 'No pull request body was found')"
 # The steps come from ci.yml: a step taken out there is not run here.
-(cd "$qc" && grep -v 'hotspots-check.sh' .github/workflows/ci.yml > .scratch/ci.yml && cp .scratch/ci.yml .github/workflows/ci.yml)
+(cd "$qc" && grep -v 'hotspots-check.sh' .scratch/ci.lean > .scratch/ci.yml && cp .scratch/ci.yml .github/workflows/ci.yml)
 eq "a step taken out of ci.yml is not run" "0" "$(cd "$qc" && CHECKS_LOCAL_OFFLINE=1 sh scripts/ci/checks-local.sh 2>&1 | grep -c 'over the limit')"
 eq "the push check is registered through the Node program" "1 1" "$(grep -c 'hook-node.sh.* pre-bash' "$root/hooks/hooks.json") $(grep -c "'require-local-checks'" "$root/hooks/node/checks.js")"
 # A check that runs out of time is not a failure: named apart, and the push goes on.
 qc_slow=$(cd "$qc" && git checkout -q fine && CHECKS_LOCAL_SECONDS=0 CHECKS_LOCAL_OFFLINE=1 sh scripts/ci/checks-local.sh 2>&1; echo "rc=$?")
 eq "steps that ran out of time are named as not a failure, in their own lines" "yes" "$(printf '%s\n' "$qc_slow" | grep -q '^Did not finish in 0 s (not a failure): ' && echo yes)"
 eq "and are never listed as failed, but say the change was not checked (exit 3)" "0 1" "$(printf '%s\n' "$qc_slow" | grep -c '^Failed: ') $(printf '%s\n' "$qc_slow" | grep -c '^Not checked: ')"
-eq "the run exits 3 for a timeout" "3" "$(cd "$qc" && CHECKS_LOCAL_SECONDS=0 CHECKS_LOCAL_OFFLINE=1 sh scripts/ci/checks-local.sh >/dev/null 2>&1; echo $?)"
+eq "the run exits 3 for a timeout" "3" "$(printf '%s\n' "$qc_slow" | sed -n 's/^rc=//p')"
 qc_hold=$(CHECKS_LOCAL_SECONDS=0 qc_push fine)
 eq "the hook refuses a push whose checks ran out of time, saying it was not checked" "rc=2 1" "$(printf '%s\n' "$qc_hold" | head -n 1) $(printf '%s\n' "$qc_hold" | grep -c 'so this change was not checked')"
 eq "the old wording for a timeout is gone" "0" "$(printf '%s\n' "$qc_slow" | grep -c 'still running after')"
@@ -6580,6 +6589,22 @@ if [ -f "$wk_yml" ]; then
   eq "the wake is started by the four events" "4" "$(grep -cE '^  (workflow_dispatch|repository_dispatch|workflow_run|issue_comment):' "$wk_yml")"
   eq "the model step runs only when something is approved" "1" "$(grep -c "if: steps.check.outputs.start == 'yes'" "$wk_yml")"
 fi
+
+# specs/030-plugin-wake: the plugin's own connection. The cases run in console/test/wake.test.js
+# (node); each block runs its own cases by name, and checks the hook that starts the connection.
+section 'a press wakes the drive on the builder machine'
+. "$root/tests/node-cases-lib.sh"
+node_cases "a wake runs one look, a second waits behind it, nothing approved spends no model, a handled wake and another repository's are no-ops, a refused token is said once" "$root/console/test/wake.test.js" 'one message|one look|no model|headless|already handled|runner wake|lock|hears a wake|refused token|once per repository|growing|verdict'
+pw_hooks="$root/hooks/hooks.json"
+eq "the connection is started at a session's start and kept at each turn's end" "2" "$(grep -c 'wake-start.sh' "$pw_hooks")"
+pw_home=$(mktemp -d)
+eq "a machine with no token starts nothing and says nothing" "0:" "$(printf '{"hook_event_name":"SessionStart","cwd":"%s"}' "$root" | SIPNSHIP_HOME="$pw_home" CLAUDE_PROJECT_DIR= sh "$root/hooks/scripts/wake-start.sh"; printf '%s:' "$?")$(ls "$pw_home")"
+rm -rf "$pw_home"
+
+# The service's side, that its reading then falls back to the timed drive's words, is packages/core/test/work-wake.test.ts.
+section 'nothing connected'
+. "$root/tests/node-cases-lib.sh"
+node_cases "the plugin offline sends no heartbeat and ends once no session is seen" "$root/console/test/wake.test.js" 'nothing connected'
 section 'the plan reads areas like publish-round, and no second release (drive)'
 . "$root/scripts/drive/area-plan-lib.sh"
 da_list=$(cat "$fx/drive-areas/areas.txt")
