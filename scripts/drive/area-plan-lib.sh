@@ -131,6 +131,61 @@ area_units() {
     }'
 }
 
+# dispatch_area_holds ROUND UNITS LIST
+# ROUND is apply_units' lines: "dispatch NUMS<TAB>TITLES[<TAB>Why together:
+# ...][<TAB>First: ...]", "hold NUM<TAB>TITLE<TAB>REASON", "defer ...",
+# "stop: ...". UNITS are the same plan_units/area_units lines the round's
+# dispatches were built from ("unit<TAB>NUMS<TAB>TITLES<TAB>WHY<TAB>FILES").
+# LIST is the project's areas file's text (round_areas' LIST).
+#
+# apply_units ranks and fills the round's slots without reading the
+# project's named areas, so two dispatches it kept can still share one (an
+# asked-for unit and a priority unit, say, both in "queue"), which
+# publish-round.sh refuses outright (#2136). Walked in the round's own
+# order (a fix for main first, then what was asked for, then a priority,
+# then the rest), the first dispatch in an area keeps its place; a later
+# one in the same area becomes a hold behind it instead, naming it, so the
+# round the plan builds always publishes. With no areas list, or a dispatch
+# on no area, nothing changes: publish-round.sh then reads each unit's own
+# files as its area, and a unit on no area shares one with nothing.
+dispatch_area_holds() {
+  if [ -z "$3" ]; then printf '%s\n' "$1"; return 0; fi
+  da2_pairs=""
+  while IFS= read -r da2_nums; do
+    [ -n "$da2_nums" ] || continue
+    da2_files=$(printf '%s\n' "$2" | awk -F'\t' -v k="$da2_nums" '$1 == "unit" && $2 == k { print $5; exit }')
+    da2_pairs="${da2_pairs}${da2_nums}	$(unit_areas "$3" "$da2_files")
+"
+  done <<EOF_DA2
+$(printf '%s\n' "$1" | awk -F'\t' '$0 ~ /^dispatch [0-9]/ { n = $1; sub(/^dispatch /, "", n); print n }')
+EOF_DA2
+  { printf '%s\n' "$da2_pairs" | sed 's/^/A\t/'; printf '%s\n' "$1" | sed 's/^/R\t/'; } | tr -d '\r' | awk -F'\t' '
+    function meet(a, b,   x, y, i, j, nx, ny) {
+      nx = split(a, x, ","); ny = split(b, y, ",")
+      for (i = 1; i <= nx; i++) for (j = 1; j <= ny; j++) if (x[i] != "" && x[i] == y[j]) return x[i]
+      return ""
+    }
+    $1 == "A" && $2 != "" { na++; anum[na] = $2; aare[na] = $3 }
+    $1 != "R" { next }
+    {
+      line = $0; sub(/^R\t/, "", line)
+      if (line !~ /^dispatch [0-9]/) { print line; next }
+      split(line, f, "\t")
+      nums = f[1]; sub(/^dispatch /, "", nums)
+      area = ""
+      for (i = 1; i <= na; i++) if (anum[i] == nums) { area = aare[i]; break }
+      won = ""
+      if (area != "") for (g = 1; g <= ng; g++) if (meet(area, garea[g]) != "") { won = g; break }
+      if (won != "") {
+        m = split(nums, ns, " "); q = split(f[2], ts, " \\| ")
+        for (k = 1; k <= m; k++) printf "hold %s\t%s\tAfter: %s (after: %s)\n", ns[k], (q == m ? ts[k] : f[2]), gtitle[won], gnums[won]
+        next
+      }
+      ng++; garea[ng] = area; gtitle[ng] = f[2]; sub(/ \| .*/, "", gtitle[ng]); gnums[ng] = nums
+      print line
+    }'
+}
+
 # held_area_holds LIST UNITS HELD PUBLISHED TITLES
 # HELD are published_held_areas' lines ("ISSUES<TAB>WAITSON<TAB>AREAS"),
 # PUBLISHED published_holds' lines (the held issues still true). A unit in an

@@ -256,6 +256,13 @@ The goal lines and what each means:
   before pushing, never run the queue or re-run CI), the pull request it must open with `Closes #N`, and, when
   it must ask the owner, to write the ask for a builder who is not technical as "How to write an ask" below
   says (what happened, the question about their project, short-named choices, the reason as their benefit).
+  The brief also says: once the pull request is open, check that it can merge (its mergeable state, not the
+  checks); a push that lands on main while you worked can make yours conflict, and GitHub starts no checks on
+  a pull request that conflicts, so waiting for them would wait forever (#2096). When it conflicts, merge
+  origin/main in your own worktree, regenerate any generated files, re-run the touched tests per file, and push
+  again before you wait for anything. A wait for your first checks to start that has not ended within a few
+  minutes ends too: say the reason in one comment on the pull request (what you waited for, and since when)
+  and end your turn, rather than waiting with no bound.
   Dispatch every unit of the round at once. Set the issue to `state:in-progress` with `scripts/state.sh`.
   Keep the brief in a file and the prompt short: name the issue, the worktree and the pull request to open, and
   point at the brief file ("read your brief first and follow it"). The agent-model hook reads such a prompt as a
@@ -329,7 +336,11 @@ The goal lines and what each means:
   `asked: N WORDS` line for each, the plain words of its request (a part landed, what is left, still first); say
   those words on the drive issue as the request's line. Never close or drop the request yourself; it ends when the issue
   closes or the builder cancels it on its card, which leaves `Queue answer: start-next #N: cancelled` on the drive issue.
-- **`start-now N by LOGIN`, N above 0.** The press was on that one issue: start the published round's unit that
+- **`start-now N by LOGIN`, N above 0.** Read the issue's state now, not what it was when the press was made (a
+  press waits behind this tick's own board read, and another session, or this round's own dispatch, may have
+  started it meanwhile, #2096): if it already carries `state:in-progress`, has an open pull request, or is one of
+  the units this tick already dispatched, start nothing new for it and answer `Queue answer: start-now #N:
+  started-now` at once, since it already is. Otherwise, start the published round's unit that
   holds it (the plan has already led the round with it), at once, when it shares no area with a running unit or
   an open pull request. Never answer it with a new proposal. Answer `Queue answer: start-now #N: started-now`, or, when it waits, say what for (the running
   unit and area it shares) in that same answer.
@@ -339,7 +350,11 @@ The goal lines and what each means:
   issue, which prints as `start-now 0 by LOGIN`: it names no rush, so it means exactly this, for every unit,
   and its answer is `Queue answer: start-now #0: started-now` (or what it waits on).
 - **`start-round by LOGIN`.** Answer it once the round started: `Queue answer: start-round #0: started-round`.
-- **`start-next N by LOGIN`.** Start this issue now if nothing running touches its files: dispatch the published
+- **`start-next N by LOGIN`.** Read the issue's state now, not what it was when the press was made (another
+  session, or this round's own dispatch, may have started it meanwhile, #2096): if it already carries
+  `state:in-progress` or has an open pull request, start nothing new for it and answer `Queue answer: start-next
+  #N: started-next` at once, since it already is. Otherwise, start this issue now if nothing running touches its
+  files: dispatch the published
   round's unit that holds it (the plan led the round with it), set `state:in-progress` (from Parked or another set-aside State too, since the person
   asked for it by name), note `next` in `started-with.tsv`, and answer `Queue answer: start-next #N: started-next`.
   Otherwise make it the first unit of the next round you publish, and leave it unanswered: the dashboard says
@@ -597,7 +612,9 @@ before they can push anything. So in that tick, and only there:
 1. Do not end the turn while an agent you started is still working. Each agent's finish arrives as a notice;
    wait for them (no poll, no sleep loop) until every one has finished or the minute budget ends. The wake's
    job allows 100 minutes; `maxMinutes` stays the cap. A session that stays open (a person's, the desktop's
-   timed run) needs none of this.
+   timed run) needs none of this. This tick never waits an hour for one agent on its own: `dispatch N`'s brief
+   already bounds an agent's own wait for its pull request's checks (#2096), so a conflicting or stalled change
+   ends that agent's turn, its finish notice arrives, and this tick moves on; it never holds a later wake.
 2. A unit counts as started only once its agent has made its branch. Until then its dot says "starting", not
    "agent on it": report it as `starting`, never as being worked. Read each started unit with
    `wake_units_read` (`scripts/drive/wake-lib.sh`: the unit's dispatch time, its branch, its pull request, its

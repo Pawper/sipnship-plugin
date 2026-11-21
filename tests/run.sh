@@ -6570,6 +6570,21 @@ eq "files on no area at all name none" "" "$(unit_areas "$da_list" 'notes/loose.
 eq "two ready issues, one with a file on no area, beside a running unit: two holds, no start" "hold${da_t}402${da_t}Water the beds on a timer${da_t}After: Water the beds
 hold${da_t}404${da_t}Fix the schedule page${da_t}After: Water the beds" "$(area_units "$da_list" "$(printf 'unit\t402\tWater the beds on a timer\t\tnotes/loose.txt,src/water/timer.ts\nunit\t404\tFix the schedule page\t\tsrc/schedule.ts\n')" "$(printf '301\twatering\n')" "$da_titles")"
 eq "two ready issues in one area with none running are one bundle" "1" "$(area_units "$da_list" "$(printf 'unit\t402\tWater the beds on a timer\t\tnotes/loose.txt,src/water/timer.ts\nunit\t404\tFix the schedule page\t\tsrc/schedule.ts\n')" '' "$da_titles" | grep -c '^unit')"
+# apply_units can still fill a round with two dispatches that share one area (an asked-for unit and a
+# priority unit, say, both in "queue"), which publish-round.sh refuses outright; the plan holds the
+# later one behind the earlier instead, so its round always publishes (#2136).
+da_round=$(printf 'dispatch 402\tWater the beds on a timer\ndispatch 403\tTint the beds by sun\nstop: proposal ready for approval\n')
+da_units=$(printf 'unit\t402\tWater the beds on a timer\t\tsrc/water/timer.ts\nunit\t403\tTint the beds by sun\t\tsrc/water/other.ts\n')
+eq "two dispatches in one area: the later holds behind the earlier" "dispatch 402${da_t}Water the beds on a timer
+hold 403${da_t}Tint the beds by sun${da_t}After: Water the beds on a timer (after: 402)
+stop: proposal ready for approval" "$(dispatch_area_holds "$da_round" "$da_units" "$da_list")"
+da_units2=$(printf 'unit\t402\tWater the beds on a timer\t\tsrc/water/timer.ts\nunit\t403\tTint the beds by sun\t\tsrc/beds/tint.ts\n')
+eq "two dispatches in different areas both keep their place" "$da_round" "$(dispatch_area_holds "$da_round" "$da_units2" "$da_list")"
+eq "with no areas list the round passes unchanged" "$da_round" "$(dispatch_area_holds "$da_round" "$da_units" '')"
+. "$root/scripts/drive/propose-lib.sh"
+da_fixed=$(dispatch_area_holds "$da_round" "$da_units" "$da_list")
+da_rf=$(round_file "$da_fixed" "$da_units" "$da_list" "$(printf '402\n403\n')" "")
+eq "the fixed round's own hold names what it waits on, and publish-round's area check passes it" "" "$(area_problem "$(round_areas "$da_list" "$da_rf")" "")"
 # A green pull request held for the builder's read is not landing and never counts toward a drain (spec 010).
 . "$root/scripts/drive/plan-green-lib.sh"
 hl_snap=$(printf 'pr\t41\tWater the beds\tgreen\tmergeable\tapp\t0\tno\tno\tno\tnone\npr\t42\tTint the beds\tgreen\tmergeable\tapp\t0\tyes\tno\tno\tnone\n')
