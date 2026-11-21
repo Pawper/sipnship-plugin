@@ -52,7 +52,10 @@ tag_releases() {
 
 # release_blocks PR [DIR]: why a change that moves the release version in
 # QUEUE_RELEASE_TAG_FILE may not land (release_refusal, queue/rules-deploy.sh),
-# or nothing. Its version is read on its head; main's on main, or in DIR, the
+# or nothing. A change is a release only when it moves the version itself,
+# from its merge base with main: one merely behind the last release once read
+# as releasing the older number and was refused two drains running. Its
+# version is read on its head; main's on main, or in DIR, the
 # batch being built, so a second release in one batch is checked against the
 # first; the newest release tag from the remote. Only where a workflow runs on
 # QUEUE_RELEASE_TAG_PREFIX tags. A version that cannot be read blocks nothing.
@@ -61,6 +64,10 @@ release_blocks() {
   [ -f "$rb_file" ] && [ "$(release_tag_wanted "$(cat .github/workflows/*.yml 2>/dev/null)" "$rb_prefix")" = yes ] || return 0
   rb_head=$(pr_field "$1" 2)
   rb_pr=$(package_version "$(gh api "repos/{owner}/{repo}/contents/$rb_file?ref=$rb_head" --jq '.content | @base64d' 2>/dev/null)")
+  rb_mb=$(gh api "repos/{owner}/{repo}/compare/$base...$rb_head" --jq '.merge_base_commit.sha' 2>/dev/null | tr -d '\r')
+  [ -n "$rb_mb" ] || return 0
+  rb_was=$(package_version "$(gh api "repos/{owner}/{repo}/contents/$rb_file?ref=$rb_mb" --jq '.content | @base64d' 2>/dev/null)")
+  [ -n "$rb_pr" ] && [ "$rb_pr" != "$rb_was" ] || return 0
   if [ -n "${2:-}" ]; then rb_main=$(package_version "$(gitb -C "$2" show "HEAD:$rb_file" 2>/dev/null)")
   else rb_main=$(package_version "$(gh api "repos/{owner}/{repo}/contents/$rb_file?ref=$base" --jq '.content | @base64d' 2>/dev/null)"); fi
   [ -n "$rb_pr" ] && [ -n "$rb_main" ] && [ "$rb_pr" != "$rb_main" ] || return 0

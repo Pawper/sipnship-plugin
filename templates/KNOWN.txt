@@ -566,6 +566,7 @@ scripts/ci/queue/choose.sh 93cef437ee968d706ee00cc4d9a25388a0c11f0c
 scripts/ci/queue/choose.sh c82a56207abe7f3039a65f146168834c9ffb8fb9
 scripts/ci/queue/choose.sh ee4d8afffc5ad8edb609c94dd17a81b1e9ece95d
 scripts/ci/queue/choose.sh fc2f6acd63830bf715a048dbfb2e5f5353b751c3
+scripts/ci/queue/deploy.sh 0e30107daeb2ed1b4c59a09e532e58f878775ff5
 scripts/ci/queue/deploy.sh 2fba418eed08e229c70c6fd8f9890c09c1ce35c5
 scripts/ci/queue/deploy.sh 352f46c5fa76482713ce4bf65e419f6d8f1c3d9b
 scripts/ci/queue/deploy.sh 40c14f50653cdc086e826c67348148172b39d8b9
