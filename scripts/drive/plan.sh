@@ -230,7 +230,7 @@ hold	$num	"*) continue ;; esac
 " ;;
     in-progress)
       g=$(guess_files "$title $c" "$mocks_text" "$past") ; case " $held_only " in *" $num "*) g="" ;; esac  # its only pull request is held for the owner: no agent is at work, so no unit waits behind it (#2055)
-      [ -n "$g" ] && running="${running}${title}${tab}${g}
+      [ -n "$g" ] && running="${running}${title}${tab}${g}${tab}${num}
 " ;;
   esac
 done <<EOF_FACTS

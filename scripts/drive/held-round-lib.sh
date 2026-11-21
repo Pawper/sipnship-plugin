@@ -14,8 +14,11 @@
 # numbers one per line. One "hold<TAB>NUMBER<TAB>TITLE<TAB>WHY" line (the shape
 # of bundle-lib's hold_reasons) for each of its held issues that is still Ready
 # and whose reason is still true: the issues it waits on are still open and its
-# pull request, when it names one, is still open. A hold the plan works out
-# fresh each round (part of the issue landed) is never carried, and any hold
+# pull request, when it names one, is still open. Only a hold the drive wrote
+# itself on reading the issue, naming what it waits on (issues or a pull request,
+# or the running round), is carried: every hold the plan works out fresh each run
+# (part of it landed, an overlap with a running unit, an unknown area, a chain,
+# a pull request waiting for a read, a limit, no runner) is never carried (#2199), and any hold
 # whose issue changed after the proposal was published is read afresh (#2048). A deferral for want of a
 # runner is no hold and takes nothing here.
 published_holds() {
@@ -42,10 +45,12 @@ published_holds() {
         if (haverun == "yes" && why ~ /[Rr]unning round/) { cited = ""; if (match(why, /#[0-9]+/)) cited = substr(why, RSTART + 1, RLENGTH - 1); if (cited != "" ? !(cited in run) : !nrun) continue }  # a wait on the running round ends when that round has landed (#2104)
         if (why ~ /[Nn]o free runner|free runners? this round|^The limit of [0-9]+ agents? a round|^Your computer /) continue
         if (why ~ /^Part of it landed/) continue  # the plan reads this one fresh every round from the issue itself (left-lib.sh), so it is never carried
+        if (why ~ /^(Waits for |After: |Waits on your (answer|read) on |Its area is not known|Its pull request .*(held for your read|still open and its unit is running)|Its open question is not in the ask shape|The drive read this issue and declined|Held this round)/) continue  # every kind the plan works out fresh from the board in each run (overlap with a running unit, a held area, a chain, a pull request waiting for a read or running, an ask or a declined goal): carried, it outlives its cause (#2199)
         pr = ""; if (match(p, /"pr":[0-9]+/)) pr = substr(p, RSTART + 5, RLENGTH - 5)
         if (pr != "" && open != "" && !(pr in op)) continue
         wait = ""; if (match(p, /"waitsOn":\[[0-9,]*\]/)) { wait = substr(p, RSTART + 11, RLENGTH - 12); gsub(/,/, " ", wait) }
         if (wait != "") { m = split(wait, w, " "); live = 0; for (x = 1; x <= m; x++) if (w[x] in isopen) live = 1; if (!live) continue }
+        if (wait == "" && pr == "" && why !~ /[Rr]unning round/) continue  # a hold that names nothing it waits on has nothing a later run can test, so it is not carried (#2199)
         m = split(iss, is, " ")
         for (x = 1; x <= m; x++) if ((is[x] in ready) && !(is[x] in askd) && !(is[x] in seen) && !(upd[is[x]] ~ /^[0-9][0-9][0-9][0-9]-/ && upd[is[x]] > at)) {  # an issue touched since the proposal is read afresh
           seen[is[x]] = 1

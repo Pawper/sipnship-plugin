@@ -176,7 +176,7 @@ BEGIN { status = "proposed"; units = ""; held = ""; apart = ""; waits = ""; size
     issues = issues (issues == "" ? "" : ",") nums
     if (pr == "") open = open (open == "" ? "" : ",") nums
   } else {
-    why = substr(why, 1, 200)
+    why = substr(why, 1, 200); if (why ~ /^(Waits for |After: )/ && after == "" && pr == "") bad("a hold that says it waits for something names it: add after: with the issue numbers of what it waits on: " $0)
     j = "{\"issues\":[" nums "],\"waitsOn\":[" after "],\"areas\":[" files "]" (why != "" ? ",\"why\":\"" esc(why) "\"" : "") (pr != "" ? ",\"pr\":" pr : "") "}"
     held = held (held == "" ? "" : ",") j; nh++
     line = "- Waiting: "; for (i = 1; i <= ni; i++) line = line (i > 1 ? ", " : "") "#" ns[i]

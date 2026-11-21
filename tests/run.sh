@@ -6038,17 +6038,17 @@ eq "the defer line is unchanged when nothing was held" "$hr_plan" "$(defer_note 
 eq "plan.sh keeps the last round's holds out of the slots and says so" "1 1" "$(grep -c 'published_holds "$drive_comments"' "$root/scripts/drive/plan.sh") $(grep -c 'defer_note "$round"' "$root/scripts/drive/plan.sh")"
 # A landed round is no running round, and a reason is written and read back whole (#2104).
 . "$root/scripts/drive/round-state-lib.sh"; . "$root/scripts/drive/held-running-lib.sh"; . "$root/scripts/drive/areas-lib.sh"
-hl_run="2026-11-20T23:43:00Z${hr_t}sipnship[bot]${hr_t}"'<!-- sipnship-proposal {"status":"proposed","units":[],"held":[{"issues":[301],"waitsOn":[],"areas":[],"why":"Waits on the running round (#1434) to land"},{"issues":[303],"waitsOn":[],"areas":[],"why":"Its pull request (#9) is held for your read"}]} -->'
+hl_run="2026-11-20T23:43:00Z${hr_t}sipnship[bot]${hr_t}"'<!-- sipnship-proposal {"status":"proposed","units":[],"held":[{"issues":[301],"waitsOn":[],"areas":[],"why":"Waits on the running round (#1434) to land"},{"issues":[303],"waitsOn":[],"areas":[],"pr":9,"why":"Waits on the seed order"}]} -->'
 hl_facts="issue${hr_t}301${hr_t}Water the beds${hr_t}state:ready${hr_t}2026-11-01T00:00:00Z
 issue${hr_t}303${hr_t}Map the beds${hr_t}state:ready${hr_t}2026-11-01T00:00:00Z"
-eq "a hold that waits on a round that has landed is not carried" "hold${hr_t}303${hr_t}Map the beds${hr_t}Held in the last proposed round: Its pull request (#9) is held for your read; it takes no slot until that changes" "$(published_holds "$hl_run" "$hl_facts" '' '')"
+eq "a hold that waits on a round that has landed is not carried" "hold${hr_t}303${hr_t}Map the beds${hr_t}Held in the last proposed round: Waits on the seed order; it takes no slot until that changes" "$(published_holds "$hl_run" "$hl_facts" '' '')"
 eq "a hold that waits on a round still running is carried" "301 303" "$(published_holds "$hl_run" "$hl_facts" '' '1434' | cut -f2 | tr '\n' ' ' | sed 's/ $//')"
 eq "an asked-for issue is never kept back by a carried hold" "303" "$(published_holds "$hl_run" "$hl_facts" '' '1434' '301' | cut -f2)"
 hl_started="2026-11-20T20:00:00Z${hr_t}bot${hr_t}"'<!-- sipnship-proposal {"status":"started","units":[{"issues":[1434],"areas":["drive"],"pr":2100}],"held":[]} -->'
 eq "a landed round: no unit runs when its pull request has merged, whatever state the issue is left in" "" "$(plan_running "$hl_started" "issue${hr_t}1434${hr_t}Water the beds${hr_t}in-progress" "" "")"
 eq "a round with an open pull request that is not held is running" "1434" "$(plan_running "$hl_started" "issue${hr_t}1434${hr_t}Water the beds${hr_t}blocked" "2100" "2100${hr_t}no${hr_t}Closes #1434")"
 eq "a landed unit is no running unit for the areas either" "" "$(running_units "$hl_started" '1434' '' '')"
-hl_why="Waits for “Wake's \"tick\" \\ a|b: c” to land"
+hl_why="Waits on “Wake's \"tick\" \\ a|b: c” to land"
 . "$root/scripts/drive/propose-lib.sh"
 hl_dir=$(mktemp -d); echo "none none" > "$hl_dir/areas.txt"
 hl_round=$(round_file "hold 302${hr_t}Water${hr_t}${hl_why} (after: 5)" "" "" "$(printf '302\n')" "")
@@ -6056,7 +6056,7 @@ printf '%s\n' "$hl_round" > "$hl_dir/round.txt"
 hl_pub=$(sh "$root/scripts/drive/publish-round.sh" --dry-run --areas "$hl_dir/areas.txt" "$hl_dir/round.txt" | grep '^<!-- sipnship-proposal')
 hl_back=$(published_holds "2026-11-20T23:43:00Z${hr_t}bot${hr_t}${hl_pub}" "issue${hr_t}5${hr_t}Five${hr_t}state:in-progress${hr_t}x
 issue${hr_t}302${hr_t}Water${hr_t}state:ready${hr_t}2026-11-01T00:00:00Z" '' | cut -f4)
-eq "a reason holding a double quote, a backslash, an apostrophe, a colon and a pipe is published and read back whole" "Held in the last proposed round: Waits for “Wake's \"tick\" \\ a/b: c” to land; it takes no slot until that changes" "$hl_back"
+eq "a reason holding a double quote, a backslash, an apostrophe, a colon and a pipe is published and read back whole" "Held in the last proposed round: Waits on “Wake's \"tick\" \\ a/b: c” to land; it takes no slot until that changes" "$hl_back"
 eq "the drive's comments are read without @tsv, which doubled every backslash" "0" "$(grep -c 'page=\$rdc_page.*| @tsv' "$root/scripts/drive/plan-read-lib.sh")"
 # Asked-for issues lead, bundled, and join the running round (#2122).
 . "$root/scripts/drive/join-round-lib.sh"; . "$root/scripts/drive/bundle-lib.sh"; . "$root/scripts/drive/area-plan-lib.sh"; . "$root/scripts/drive/wake-lib.sh"
@@ -6778,7 +6778,7 @@ da_facts=$(cat "$fx/drive-areas/facts.tsv")
 da_t=$(printf '\t')
 da_titles=$(printf '301\tWater the beds\n402\tWater the beds on a timer\n403\tTint the beds by sun\n404\tFix the schedule page\n405\tTune the build\n')
 # A running unit owns the watering area; the ready ones in it wait behind it, as publish-round.sh would insist.
-eq "an issue in the area a running unit owns is a hold naming that unit, not a dispatch" "hold${da_t}402${da_t}Water the beds on a timer${da_t}After: Water the beds
+eq "an issue in the area a running unit owns is a hold naming that unit, not a dispatch" "hold${da_t}402${da_t}Water the beds on a timer${da_t}After: Water the beds (after: 301)
 unit${da_t}403${da_t}Tint the beds by sun${da_t}${da_t}src/beds/tint.ts" "$(area_units "$da_list" "$(printf 'unit\t402\tWater the beds on a timer\t\tsrc/water/timer.ts\nunit\t403\tTint the beds by sun\t\tsrc/beds/tint.ts\n')" "$(printf '301\twatering\n')" "$da_titles")"
 eq "the plan's output then passes publish-round's own area check" "" "$(area_problem "$(round_areas "$da_list" "$(printf 'unit: 403 | areas: src/beds/tint.ts\nhold: 402 | after: 301 | areas: src/water/timer.ts\n')")" "$(printf '301\twatering\n')")"
 eq "a unit that is part of the running unit is left alone" "unit${da_t}301${da_t}Water the beds${da_t}${da_t}src/water/a.ts" "$(area_units "$da_list" "$(printf 'unit\t301\tWater the beds\t\tsrc/water/a.ts\n')" "$(printf '301\twatering\n')" "$da_titles")"
@@ -6792,8 +6792,8 @@ eq "plan.sh reads the running units' areas and plans by area" "1 1" "$(grep -c '
 # A file on no area never hides the areas of the others, so a unit beside a running unit is a hold, not a start the publisher refuses (areas file: Maya's rooftop-garden app).
 eq "a file on no area is left out, the others still name their areas" "watering,beds" "$(unit_areas "$da_list" 'src/water/timer.ts,notes/loose.txt,src/beds/tint.ts')"
 eq "files on no area at all name none" "" "$(unit_areas "$da_list" 'notes/loose.txt')"
-eq "two ready issues, one with a file on no area, beside a running unit: two holds, no start" "hold${da_t}402${da_t}Water the beds on a timer${da_t}After: Water the beds
-hold${da_t}404${da_t}Fix the schedule page${da_t}After: Water the beds" "$(area_units "$da_list" "$(printf 'unit\t402\tWater the beds on a timer\t\tnotes/loose.txt,src/water/timer.ts\nunit\t404\tFix the schedule page\t\tsrc/schedule.ts\n')" "$(printf '301\twatering\n')" "$da_titles")"
+eq "two ready issues, one with a file on no area, beside a running unit: two holds, no start" "hold${da_t}402${da_t}Water the beds on a timer${da_t}After: Water the beds (after: 301)
+hold${da_t}404${da_t}Fix the schedule page${da_t}After: Water the beds (after: 301)" "$(area_units "$da_list" "$(printf 'unit\t402\tWater the beds on a timer\t\tnotes/loose.txt,src/water/timer.ts\nunit\t404\tFix the schedule page\t\tsrc/schedule.ts\n')" "$(printf '301\twatering\n')" "$da_titles")"
 eq "two ready issues in one area with none running are one bundle" "1" "$(area_units "$da_list" "$(printf 'unit\t402\tWater the beds on a timer\t\tnotes/loose.txt,src/water/timer.ts\nunit\t404\tFix the schedule page\t\tsrc/schedule.ts\n')" '' "$da_titles" | grep -c '^unit')"
 # apply_units can still fill a round with two dispatches that share one area (an asked-for unit and a
 # priority unit, say, both in "queue"), which publish-round.sh refuses outright; the plan holds the
@@ -6841,7 +6841,7 @@ eq "a title that says no area is not placed" "" "$(title_area_files 'Tidy up the
 eq "a word inside another word is not an area" "" "$(title_area_files 'Bedside manner' 'beds   src/beds/')"
 da_nopath=$(printf '501\tTidy up the readme\t\n')
 da_unit=$(plan_units "$da_nopath" "")
-eq "with a unit running, an issue whose area is unknown is a hold that says so, not a dispatch" "hold${da_t}501${da_t}Tidy up the readme${da_t}Its area is not known: it names no file, and “Water the beds” is running. Name its files or area to place it" "$(unplaced_holds "$da_unit" "$da_nopath" "$(printf '301\twatering\n')" "$da_titles")"
+eq "with a unit running, an issue whose area is unknown is a hold that says so, not a dispatch" "hold${da_t}501${da_t}Tidy up the readme${da_t}Its area is not known: it names no file, and “Water the beds” is running. Name its files or area to place it (after: 301)" "$(unplaced_holds "$da_unit" "$da_nopath" "$(printf '301\twatering\n')" "$da_titles")"
 eq "with nothing running it passes as it came" "$da_unit" "$(unplaced_holds "$da_unit" "$da_nopath" '' "$da_titles")"
 da_mixed=$(printf '501\tTidy up the readme\t\n402\tWater the beds on a timer\tsrc/water/timer.ts\n')
 eq "an issue with files is left alone beside it" "unit${da_t}402" "$(unplaced_holds "$(plan_units "$da_mixed" '')" "$da_mixed" "$(printf '301\twatering\n')" "$da_titles" | grep '^unit' | cut -f1,2)"
@@ -6852,7 +6852,7 @@ hh_titles=$(printf '301\tWater the beds\n410\tTint the beds by sun\n411\tTune th
 hh_hold=$(published_holds "$hh_c" "$(printf 'issue\t301\tWater the beds\tstate:in-progress\tx\nissue\t410\tTint the beds by sun\tstate:ready\tx\nissue\t411\tTune the build\tstate:ready\tx\n')" '')
 eq "the held entry's issues, waits and areas are read from the last round" "410${da_t}301${da_t}beds,tooling" "$(published_held_areas "$hh_c")"
 hh_out=$(held_area_holds "$da_list" "$(printf 'unit\t411\tTune the build\t\tci/a.sh\n')" "$(published_held_areas "$hh_c")" "$hh_hold" "$hh_titles")
-eq "a ready issue in an area a held issue names is a hold behind the held issue, never a dispatch" "hold${da_t}411${da_t}Tune the build${da_t}After: Tint the beds by sun" "$hh_out"
+eq "a ready issue in an area a held issue names is a hold behind the held issue, never a dispatch" "hold${da_t}411${da_t}Tune the build${da_t}After: Tint the beds by sun (after: 410)" "$hh_out"
 eq "the round built from those lines publishes without a refusal" "" "$(area_problem "$(round_areas "$da_list" "$(printf 'hold: 410 | after: 301 | areas: src/beds/tint.ts,ci/a.sh\nhold: 411 | after: 410 | areas: ci/a.sh\n')")" "$(printf '301\twatering\n')")"
 eq "a ready issue in another area still starts" "unit${da_t}412${da_t}Water${da_t}${da_t}src/water/t.ts" "$(held_area_holds "$da_list" "$(printf 'unit\t412\tWater\t\tsrc/water/t.ts\n')" "$(published_held_areas "$hh_c")" "$hh_hold" "$hh_titles")"
 eq "plan.sh reads the held round's areas" "1" "$(grep -c 'held_area_holds "$areas_text"' "$root/scripts/drive/plan.sh")"
@@ -7528,7 +7528,7 @@ hr_titles=$(printf '31\tRedesign the irrigation plan\n')
 hr_unit=$(printf 'unit\t41\tWater the roof beds on a timer\t\tsrc/water/timer.ts\n')
 eq "an issue overlapping a live unit's files waits behind it" "hold${hr_t}41${hr_t}Water the roof beds on a timer${hr_t}After: Redesign the irrigation plan" "$(plan_units "$hr_guess" "$hr_run")"
 eq "the same issue with the held-read unit left out of what is running starts" "unit${hr_t}41${hr_t}Water the roof beds on a timer${hr_t}${hr_t}src/water/timer.ts" "$(plan_units "$hr_guess" "")"
-eq "an issue in the area of a live unit waits behind it" "hold${hr_t}41${hr_t}Water the roof beds on a timer${hr_t}After: Redesign the irrigation plan" "$(area_units "$hr_list" "$hr_unit" "$(printf '31\twater\n')" "$hr_titles")"
+eq "an issue in the area of a live unit waits behind it" "hold${hr_t}41${hr_t}Water the roof beds on a timer${hr_t}After: Redesign the irrigation plan (after: 31)" "$(area_units "$hr_list" "$hr_unit" "$(printf '31\twater\n')" "$hr_titles")"
 eq "an issue in the area of a unit that is not running starts" "$hr_unit" "$(area_units "$hr_list" "$hr_unit" "" "$hr_titles")"
 eq "plan.sh leaves a held-only issue and a held pull request out of what is running" "4" "$(grep -c 'held_only\|held_pull_numbers' "$root/scripts/drive/plan.sh")"
 eq "approval.sh reads the running round through the plan's held-only rule" "2" "$(grep -c 'held_only_issues "$pull_lines"\|PULL_LINES_JQ' "$root/scripts/drive/approval.sh")"
@@ -7542,7 +7542,7 @@ eq "the approval's pull-line query keeps the number, the hold and what the body 
 hr_facts=$(printf 'issue\t31\tRedesign the irrigation plan\tstate: in-progress\t\t\n')
 eq "issue_titles_from_facts reads NUMBER and TITLE from an issue fact" "31${hr_t}Redesign the irrigation plan" "$(issue_titles_from_facts "$hr_facts")"
 eq "issue_titles_from_facts is never empty when a fact names an issue (#2066)" "no" "$([ -z "$(issue_titles_from_facts "$hr_facts")" ] && echo yes || echo no)"
-eq "an area hold built from issue_titles_from_facts still names the issue it waits behind, by title" "hold${hr_t}41${hr_t}Water the roof beds on a timer${hr_t}After: Redesign the irrigation plan" "$(area_units "$hr_list" "$hr_unit" "$(printf '31\twater\n')" "$(issue_titles_from_facts "$hr_facts")")"
+eq "an area hold built from issue_titles_from_facts still names the issue it waits behind, by title" "hold${hr_t}41${hr_t}Water the roof beds on a timer${hr_t}After: Redesign the irrigation plan (after: 31)" "$(area_units "$hr_list" "$hr_unit" "$(printf '31\twater\n')" "$(issue_titles_from_facts "$hr_facts")")"
 eq "plan.sh sets issue_titles on its own reachable statement, not inside a trailing comment" "1" "$(grep -c 'issue_titles=\$(issue_titles_from_facts "\$facts")' "$root/scripts/drive/plan.sh")"
 # The general pattern (#2066): a statement hidden after a trailing # comment,
 # of the shape "# ...; name=$(", never runs. A real trailing comment is
@@ -7636,7 +7636,7 @@ section 'the plan publishes its own proposal, and what starts is what it propose
 . "$root/scripts/drive/propose-lib.sh"
 pp_t=$(printf '\t')
 # The plan's lines for Maya's rooftop-garden app: a bundle, a loose issue, a drain, a held issue, a held pull request's own line, a hold behind running work, and one unit the limit left out.
-pp_round=$(printf '1. dispatch 212 214\tFrost alerts | Frost night reminder\tWhy together: both change the frost alerts area\n2. dispatch 217\tCompost bins show when they were last turned\n3. drain 41 42\nhold 233\tCompost reminders repeat until done\tWaits on your read of the bed photos (after: 240)\nhold 41\tSeed list\tIts pull request is held for your read; nothing is sent to it\nhold 236\tWatering log\tAfter: Water the beds\nhold 239\tBed labels\tHeld in the last proposed round: Waits on the label printer; it takes no slot until that changes\ndefer 1 unit(s): the limit of 2 agents a round is reached (#238)\nstop: proposal ready for approval\n')
+pp_round=$(printf '1. dispatch 212 214\tFrost alerts | Frost night reminder\tWhy together: both change the frost alerts area\n2. dispatch 217\tCompost bins show when they were last turned\n3. drain 41 42\nhold 233\tCompost reminders repeat until done\tWaits on your read of the bed photos (after: 240)\nhold 41\tSeed list\tIts pull request is held for your read; nothing is sent to it\nhold 236\tWatering log	After: Water the beds (after: 301)\nhold 239\tBed labels\tHeld in the last proposed round: Waits on the label printer; it takes no slot until that changes\ndefer 1 unit(s): the limit of 2 agents a round is reached (#238)\nstop: proposal ready for approval\n')
 pp_units=$(printf 'unit\t212 214\tFrost alerts | Frost night reminder\tboth change the frost alerts area\tsrc/frost/alerts.ts,src/frost/night.ts\nunit\t217\tCompost bins\t\tsrc/compost/bins.ts\nunit\t238\tSeed catalog\t\tdocs/readme.md\n')
 pp_areas=$(printf 'frost src/frost/\ncompost src/compost/\n')
 pp_issues=$(printf '212\n214\n217\n233\n236\n238\n239\n240\n')
@@ -7645,7 +7645,7 @@ eq "the round file names the plan's units, bundle first, each held issue with it
 unit: 212 214 | why: both change the frost alerts area | areas: frost
 unit: 217 | areas: compost
 hold: 233 | why: Waits on your read of the bed photos | after: 240 | areas: none
-hold: 236 | why: Waits for “Water the beds” to land first, since it changes the same files | areas: none
+hold: 236 | why: Waits for “Water the beds” to land first, since it changes the same files | after: 301 | areas: none
 hold: 239 | why: Waits on the label printer | areas: none
 sized: 4 ready units free of conflict, 2 started; the limit of 2 agents a round held 1
 hold: 238 | why: The limit of 2 agents a round is reached; it starts as soon as one finishes | areas: none" "$pp_file"
@@ -7653,14 +7653,18 @@ eq "a pull request's own hold line is never read as an issue's" "0" "$(printf '%
 eq "the plan's units and the round file's units are the same" "$(printf '%s\n' "$pp_round" | sed -n 's/^[0-9]*\. dispatch \([0-9 ]*\)\t.*/\1/p')" "$(printf '%s\n' "$pp_file" | sed -n 's/^unit: \([0-9 ]*\) |.*/\1/p')"
 eq "with no areas list a unit's own files stand for its areas, and a unit with none says none" "unit: 5 | areas: src/a.ts, src/b.ts
 unit: 6 | areas: none" "$(round_file "$(printf 'dispatch 5\tA\ndispatch 6\tB\n')" "$(printf 'unit\t5\tA\t\tsrc/a.ts,src/b.ts\nunit\t6\tB\t\t\n')" "" "$(printf '5\n6\n')" "" | grep '^unit')"
-eq "an issue is named once, in its unit before any hold" "unit: 7 | areas: none" "$(round_file "$(printf 'dispatch 7\tA\nhold 7\tA\tAfter: B\n')" "" "" 7 "" | grep -v '^status')"
+eq "an issue is named once, in its unit before any hold" "unit: 7 | areas: none" "$(round_file "$(printf 'dispatch 7\tA\nhold 7	A	After: B (after: 3)
+')" "" "" 7 "" | grep -v '^status')"
 eq "round_areas reads none as no area of the list" "unit: 7 | areas:" "$(round_areas "$pp_areas" 'unit: 7 | areas: none')"
 # A round that holds every ready issue with runners free carries the stall words to the Work tab (#2047).
 ps_say='stall: every ready issue is held (2), and nothing in it waits on you'
-eq "the round file carries the stall words, without the plan's own prefix" "stall: every ready issue is held (2), and nothing in it waits on you" "$(round_file "$(printf 'hold 7\tA\tAfter: B\n')" "" "" 7 "" "$ps_say" | grep '^stall:')"
-eq "a round with no stall carries no stall line" "0" "$(round_file "$(printf 'hold 7\tA\tAfter: B\n')" "" "" 7 "" "" | grep -c '^stall:')"
+eq "the round file carries the stall words, without the plan's own prefix" "stall: every ready issue is held (2), and nothing in it waits on you" "$(round_file "$(printf 'hold 7	A	After: B (after: 3)
+')" "" "" 7 "" "$ps_say" | grep '^stall:')"
+eq "a round with no stall carries no stall line" "0" "$(round_file "$(printf 'hold 7	A	After: B (after: 3)
+')" "" "" 7 "" "" | grep -c '^stall:')"
 ps_dir=$(mktemp -d); echo "none none" > "$ps_dir/areas.txt"
-round_file "$(printf 'hold 7\tA\tAfter: B\n')" "" "" 7 "" "$ps_say" > "$ps_dir/round.txt"
+round_file "$(printf 'hold 7	A	After: B (after: 3)
+')" "" "" 7 "" "$ps_say" > "$ps_dir/round.txt"
 eq "the published marker holds the stall, and the comment names it" "1 1" "$(sh "$root/scripts/drive/publish-round.sh" --dry-run --areas "$ps_dir/areas.txt" "$ps_dir/round.txt" | grep -c '"stall":"every ready issue is held (2), and nothing in it waits on you"') $(sh "$root/scripts/drive/publish-round.sh" --dry-run --areas "$ps_dir/areas.txt" "$ps_dir/round.txt" | grep -c 'Stalled: every ready issue is held')"
 eq "plan.sh hands the stall words to the published round" "1" "$(grep -c 'publish_proposal .*"\$stall_said"' "$root/scripts/drive/plan.sh")"
 pp_dir=$(mktemp -d); mkdir -p "$pp_dir/bin" "$pp_dir/work/.claude"
@@ -7814,6 +7818,42 @@ eq "a fresh look, or no ready work, says nothing" "|" "$(pq_run 4 '' $((17636721
 eq "the look's own time counts over the comment's" "" "$(pq_run 4 "$(date -u -d @$((1763672160 + 3 * 3600 - 600)) +%Y-%m-%dT%H:%M:%SZ)" $((1763672160 + 3 * 3600)))"
 eq "the audit workflow runs it and the plugin owns it" "1 1" "$(grep -c 'looks=$(sh scripts/ci/proposal-audit.sh' "$root/templates/.github/workflows/audit.yml") $(grep -c '^scripts/ci/proposal-audit.sh$' "$root/templates/OWNED.txt")"
 block_end
+section 'a hold the plan works out fresh is never carried from the last round (drive)'
+. "$root/scripts/drive/held-round-lib.sh"; . "$root/scripts/drive/area-plan-lib.sh"; . "$root/scripts/drive/bundle-lib.sh"; . "$root/scripts/drive/hold-reasons-lib.sh"; . "$root/scripts/drive/propose-lib.sh"
+fh_t=$(printf '\t')
+# The round published at 2026-11-21T12:23:01Z, in shape: holds that name nothing they wait on, in the words the plan writes fresh each run, naming units whose issues had closed.
+fh_c="2026-11-21T12:23:01Z${fh_t}sipnship[bot]${fh_t}"'<!-- sipnship-proposal {"status":"proposed","units":[],"looked":"2026-11-21T12:23:15Z","held":[{"issues":[257],"waitsOn":[],"areas":[],"why":"Its pull request (#2172) is held for your read; no agent is started on it"},{"issues":[2198],"waitsOn":[],"areas":[],"why":"Its area is not known: it names no file, and “Frost alerts show the night low” is running. Name its files or area to place it"},{"issues":[2189],"waitsOn":[],"areas":[],"why":"Waits for “Frost alerts show the night low” to land first, since it changes the same files"},{"issues":[2179],"waitsOn":[],"areas":[],"why":"Waits for “Frost alerts show the night low” to land first, since it changes the same files"},{"issues":[2163],"waitsOn":[],"areas":[],"why":"Waits for “Tint the beds by moisture” to land first, since it changes the same files"}]} -->'
+fh_facts="issue${fh_t}257${fh_t}Compost bins${fh_t}state:ready${fh_t}2026-11-01T00:00:00Z
+issue${fh_t}2198${fh_t}Water the roof${fh_t}state:ready${fh_t}2026-11-01T00:00:00Z
+issue${fh_t}2189${fh_t}Seed order${fh_t}state:ready${fh_t}2026-11-01T00:00:00Z
+issue${fh_t}2179${fh_t}Map the beds${fh_t}state:ready${fh_t}2026-11-01T00:00:00Z
+issue${fh_t}2163${fh_t}Plant list${fh_t}state:ready${fh_t}2026-11-01T00:00:00Z
+issue${fh_t}3000${fh_t}Pot shop${fh_t}state:ready${fh_t}2026-11-01T00:00:00Z"
+eq "a round of holds that name nothing and are worked out fresh carries none of them, so machines never sit idle behind a stale wait" "" "$(published_holds "$fh_c" "$fh_facts" "$(printf '2172\n')" '1 2' '')"
+fh_named='<!-- sipnship-proposal {"status":"proposed","units":[],"held":[{"issues":[3000],"waitsOn":[2179],"areas":[],"why":"Waits on the seed supplier to confirm"},{"issues":[2189],"waitsOn":[2179],"areas":[],"why":"Waits for “Frost alerts” to land first, since it changes the same files"}]} -->'
+fh_c2="2026-11-21T12:23:01Z${fh_t}sipnship[bot]${fh_t}${fh_named}"
+eq "a hold the drive wrote that names an open issue is carried; an overlap hold is not, even when it names one" "3000" "$(published_holds "$fh_c2" "$fh_facts" '' '1' '' | cut -f2)"
+eq "a hold that names an issue that has closed is not carried" "" "$(published_holds "$fh_c2" "$(printf '%s\n' "$fh_facts" | grep -v "^issue${fh_t}2179")" '' '1' '' | cut -f2)"
+# An overlap hold records the unit's issues, whichever way the plan finds it.
+fh_list='water src/water/'
+fh_units=$(printf 'unit\t41\tWater the roof beds on a timer\t\tsrc/water/timer.ts\n')
+fh_held=$(area_units "$fh_list" "$fh_units" "$(printf '31 32\twater\n')" "$(printf '31\tRedesign the irrigation plan\n')")
+eq "an issue in the area a running unit owns records that unit's issues" "hold${fh_t}41${fh_t}Water the roof beds on a timer${fh_t}After: Redesign the irrigation plan (after: 31 32)" "$fh_held"
+eq "an issue touching a running unit's files, with no areas list, records that unit's issue" "hold${fh_t}41${fh_t}Water the roof beds${fh_t}After: Hook fix (after: 31)" "$(plan_units "$(printf '41\tWater the roof beds\tplugin/hooks/a.sh\n')" "$(printf 'Hook fix\tplugin/hooks/a.sh\t31\n')")"
+eq "an issue with no known area beside a running unit records that unit's issues" "(after: 31 32)" "$(unplaced_holds "$(printf 'unit\t41\tWater the roof beds\t\tnotes/x.txt\n')" "$(printf '41\tWater the roof beds\t\n')" "$(printf '31 32\twater\n')" "$(printf '31\tRedesign\n')" | sed 's/.*it \((after:[^)]*)\)$/\1/')"
+fh_round=$(printf 'hold 41\tWater the roof beds\t%s\n' "$(printf '%s' "$fh_held" | cut -f4)")
+fh_file=$(round_file "$fh_round" "$(printf 'unit\t41\tWater the roof beds\t\tsrc/water/timer.ts\n')" "$fh_list" 41 "" "" | grep '^hold:')
+eq "the round file carries it as after:, so the published hold names what it waits on" "hold: 41 | why: Waits for “Redesign the irrigation plan” to land first, since it changes the same files | after: 31 32 | areas: none" "$fh_file"
+fh_dir=$(mktemp -d); echo "none none" > "$fh_dir/areas.txt"
+printf 'status: proposed\nhold: 41 | why: Waits for “Redesign” to land first, since it changes the same files | areas: none\n' > "$fh_dir/bare.txt"
+printf 'status: proposed\nhold: 41 | why: Waits for “Redesign” to land first | after: 31 32 | areas: none\n' > "$fh_dir/named.txt"
+eq "publish-round.sh refuses a hold that says it waits and names nothing" "The round was not published: a hold that says it waits for something names it" "$(sh "$root/scripts/drive/publish-round.sh" --dry-run --areas "$fh_dir/areas.txt" "$fh_dir/bare.txt" 2>&1 | cut -c1-77)"
+eq "and records the issues in waitsOn when it names them" "1" "$(sh "$root/scripts/drive/publish-round.sh" --dry-run --areas "$fh_dir/areas.txt" "$fh_dir/named.txt" 2>&1 | grep -c '"waitsOn":\[31,32\]')"
+# A round that holds every ready issue says so, naming the reason most of them share.
+fh_stall=$(printf 'hold 1\tA\tAfter: Frost alerts (after: 9)\nhold 2\tB\tWaits for “Frost alerts” to land first, since it changes the same files\nhold 3\tC\tIts area is not known: it names no file, and “Frost alerts” is running. Name its files or area to place it\n')
+eq "a stall names the unit most held issues wait for" "stall: every ready issue is held (3), and nothing in it waits on you; 2 of them wait for “Frost alerts” to land, the reason most share" "$(stall_note "$fh_stall" 4)"
+eq "a stall with no shared reason says nothing more" "stall: every ready issue is held (2), and nothing in it waits on you" "$(stall_note "$(printf 'hold 1\tA\tAfter: B (after: 1)\nhold 2\tC\tAfter: D (after: 2)\n')" 4)"
+eq "plan.sh hands the running unit's issue number to the plan" "1" "$(grep -c 'running="${running}${title}${tab}${g}${tab}${num}' "$root/scripts/drive/plan.sh")"
 # --- end of blocks: the summary, kept in every part.
 eq "no test wrote into the checkout's own queue state" "$queue_picture_before" "$([ "$queue_picture_before" = skipped ] && echo skipped || queue_picture)"
 eq "no process started by this suite is still running" "" "$(spawned_alive)"

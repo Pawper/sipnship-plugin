@@ -63,6 +63,10 @@ stall_note() {
     /^hold / {
       h++
       if ($3 ~ /^Part of it landed/) part++
+      if ($3 ~ /^(After: |Waits for “)/) {
+        w = $3; sub(/ \(after: [0-9 ,#]+\)$/, "", w); sub(/^(After: |Waits for “)/, "", w); sub(/” to land.*$/, "", w); wc[w]++
+        if (wc[w] > wtop) { wtop = wc[w]; wname = w }
+      }
       if (match($3, /^Waits on your (answer|read) on “[^”]*”/)) {
         c = substr($3, RSTART, RLENGTH); verb = (c ~ /^Waits on your read/) ? "reading" : "answering"
         sub(/^Waits on your (answer|read) on /, "", c); key = verb " " c; cnt[key]++
@@ -74,6 +78,7 @@ stall_note() {
       if (k == 0) {
         printf "stall: every ready issue is held (%d), and nothing in it waits on you", h
         if (part > 0) printf "; %d of them are partly built, and the drive is writing down what is left of each before it starts an agent", part
+        if (wtop * 2 > h) printf "; %d of them wait for “%s” to land, the reason most share", wtop, wname
         printf "\n"
         exit
       }

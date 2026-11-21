@@ -96,7 +96,8 @@ area_units() {
         held[i] = ""
         for (k = 1; k <= r; k++) if (!inrun(num[i], ri[k]) && meet(ar[i], ra[k]) != "") {
           first = ri[k]; sub(/[ ,].*/, "", first)
-          held[i] = "After: " (first in tt && tt[first] != "" ? tt[first] : "#" first)
+          wo = ri[k]; gsub(/[ ,]+/, " ", wo)  # the issues of the running unit, so a reader can tell when the wait ended
+          held[i] = "After: " (first in tt && tt[first] != "" ? tt[first] : "#" first) " (after: " wo ")"
           break
         }
       }
@@ -223,7 +224,7 @@ held_area_holds() {
         if (f[1] == "unit") for (k = 1; k <= h; k++) {
           first = hi[k]; sub(/,.*/, "", first)
           if (!(first in pub) || has(hw[k], nums) || !meet(f[6], ha[k])) continue
-          by = "After: " (first in tt && tt[first] != "" ? tt[first] : "#" first); break
+          by = "After: " (first in tt && tt[first] != "" ? tt[first] : "#" first) " (after: " first ")"; break
         }
         if (by == "") { printf "%s\t%s\t%s\t%s", f[1], f[2], f[3], f[4]; if (f[1] == "unit") printf "\t%s", f[5]; printf "\n"; continue }
         m = split(nums, ns, " "); q = split(f[3], ts, " \\| ")
@@ -256,7 +257,7 @@ unplaced_holds() {
   if [ -z "$3" ]; then printf '%s\n' "$1"; return 0; fi
   { printf '%s\n' "$2" | sed 's/^/G\t/'; printf '%s\n' "$3" | sed 's/^/R\t/'; printf '%s\n' "$4" | sed 's/^/T\t/'; printf '%s\n' "$1" | sed 's/^/U\t/'; } | tr -d '\r' | awk -F'\t' '
     $1 == "G" && $2 != "" && $4 == "" { none[$2] = 1 }
-    $1 == "R" && $2 != "" && first == "" { first = $2; sub(/[ ,].*/, "", first) }
+    $1 == "R" && $2 != "" && first == "" { first = $2; sub(/[ ,].*/, "", first); runall = $2; gsub(/[ ,]+/, " ", runall) }
     $1 == "T" && $2 != "" { tt[$2] = $3 }
     $1 == "U" && $2 != "" { u[++n] = $0 }
     END {
@@ -267,7 +268,7 @@ unplaced_holds() {
         if (all) for (k = 1; k <= m; k++) if (!(ns[k] in none)) all = 0
         if (!all) { print substr(u[i], 3); continue }
         q = split(f[4], ts, " \\| ")
-        for (k = 1; k <= m; k++) printf "hold\t%s\t%s\tIts area is not known: it names no file, and %s is running. Name its files or area to place it\n", ns[k], (q == m ? ts[k] : f[4]), run
+        for (k = 1; k <= m; k++) printf "hold\t%s\t%s\tIts area is not known: it names no file, and %s is running. Name its files or area to place it (after: %s)\n", ns[k], (q == m ? ts[k] : f[4]), run, runall
       }
     }'
 }
