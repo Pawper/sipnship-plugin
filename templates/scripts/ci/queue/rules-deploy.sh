@@ -51,6 +51,32 @@ release_tag_wanted() {
   if printf '%s\n' "$1" | grep -F -- "$2*" >/dev/null 2>&1; then echo yes; else echo no; fi
 }
 
+# Releases land in order. One evening two release changes were open at once,
+# for 0.43.44 and 0.43.45; the second landed first, then the first, and main's
+# version went back to 0.43.44 while the newest published tag was 0.43.45.
+
+# version_max VERSION...: the highest of dotted numeric versions ("0.43.45"),
+# a "v" or other prefix and any suffix after "-" ignored; nothing for none.
+version_max() {
+  printf '%s\n' "$@" | sed 's/^[^0-9]*//; s/-.*//' | awk -F. 'NF && $1 != "" { printf "%09d.%09d.%09d\t%s\n", $1, $2, $3, $0 }' | sort | tail -n 1 | cut -f2
+}
+
+# version_after VERSION: the next patch number ("0.43.46" after "0.43.45").
+version_after() { printf '%s\n' "$1" | awk -F. '{ printf "%d.%d.%d\n", $1, $2, $3 + 1 }'; }
+
+# release_refusal PR_VERSION MAIN_VERSION TAG_VERSION: why a change that sets
+# the release version to PR_VERSION may not land, naming the number to use, or
+# nothing when PR_VERSION is above both main's version and the newest release
+# tag (either may be empty), or PR_VERSION is main's own (no release here).
+release_refusal() {
+  [ -n "$1" ] && [ "$1" != "$2" ] || return 0
+  rr_top=$(version_max "$2" "$3")
+  [ -n "$rr_top" ] || return 0
+  [ "$rr_top" != "$1" ] && [ "$(version_max "$1" "$rr_top")" = "$1" ] && return 0
+  rr_said="main is already at ${2:-no version}"; [ -n "$3" ] && rr_said="$rr_said and the newest release tag is $3"
+  printf 'it releases %s, but %s; make it %s, one above the newer of the two, or close it if that release is already out\n' "$1" "$rr_said" "$(version_after "$rr_top")"
+}
+
 # queue_status LOCK_REASON LAST_LINE
 # One line for --status: "running: a --drain started 12 minute(s) ago is
 # still running (pid 4242); last line: ..." or "idle; last line: ...".

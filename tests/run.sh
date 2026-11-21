@@ -2054,6 +2054,37 @@ qd_live=$(grep -v '^ *#' "$root/templates/.github/workflows/queue-drain.yml")
 eq "a round-mate going red starts a drain, so the green ones are released at once" "2" "$(printf '%s\n' "$qd_live" | grep -c "github.event.workflow_run.conclusion == 'failure' || (startsWith")"
 eq "the frequent schedule asks whether a drain is owed, and the steps after it follow the answer" "1 1 4" "$(printf '%s\n' "$qd_live" | grep -c 'cron: "3,13,23,33,43,53 \* \* \* \*"') $(printf '%s\n' "$qd_live" | grep -c 'run: sh scripts/ci/queue/due.sh') $(printf '%s\n' "$qd_live" | grep -c "steps.due.outputs.skip != 'yes'")"
 
+section 'releases land in order (queue)'
+# One evening two release changes were open at once and landed out of order:
+# 0.43.45 first, then 0.43.44, and main went back to 0.43.44 while the newest
+# published tag was 0.43.45. The queue now lands a release only above both.
+. "$root/templates/scripts/ci/batch-lib.sh"; . "$root/templates/scripts/ci/queue/deploy.sh"
+eq "the highest of versions, numbers compared as numbers" "0.43.45" "$(version_max 0.43.9 0.43.45 0.43.44)"
+eq "a tag's prefix is no part of the version" "1.4.0" "$(version_max plugin-v1.4.0 v1.3.9)"
+eq "no versions, no highest" "" "$(version_max)"
+eq "the next number is one patch above" "0.43.46" "$(version_after 0.43.45)"
+eq "the release that landed second, below main, is refused with the number to use" "it releases 0.43.44, but main is already at 0.43.45 and the newest release tag is 0.43.45; make it 0.43.46, one above the newer of the two, or close it if that release is already out" "$(release_refusal 0.43.44 0.43.45 0.43.45)"
+eq "a main that went backwards still gets a number past the newest tag" "it releases 0.43.45, but main is already at 0.43.44 and the newest release tag is 0.43.45; make it 0.43.46, one above the newer of the two, or close it if that release is already out" "$(release_refusal 0.43.45 0.43.44 0.43.45)"
+eq "a release above both lands" "" "$(release_refusal 0.43.46 0.43.45 0.43.45)"
+eq "a release above main with no tag yet lands" "" "$(release_refusal 1.0.0 0.9.3 '')"
+eq "a change that does not move the version is no release" "" "$(release_refusal 0.43.45 0.43.45 0.43.46)"
+rl_dir=$SUITE_TMP_ROOT/release-order; mkdir -p "$rl_dir/plugin" "$rl_dir/.github/workflows"
+printf '{\n  "name": "garden-plugin",\n  "version": "0.43.45"\n}\n' > "$rl_dir/plugin/package.json"
+printf 'on:\n  push:\n    tags: ["plugin-v*"]\n' > "$rl_dir/.github/workflows/release.yml"
+( cd "$rl_dir" && git init -q . && git add plugin/package.json && git -c user.email=maya@example.com -c user.name=Maya commit -q -m "the garden plugin at 0.43.45" ) >/dev/null 2>&1
+rl_check() (
+  cd "$rl_dir" || exit 1
+  pr_field() { echo headsha; }
+  gh() { case "$*" in *"ref=headsha"*) printf '{\n  "version": "%s"\n}\n' "$RL_PR" ;; *"ref=main"*) printf '{\n  "version": "%s"\n}\n' "$RL_MAIN" ;; esac; }
+  gitb() { printf 'a1\trefs/tags/plugin-v0.43.9\nb2\trefs/tags/plugin-v%s\nb2\trefs/tags/plugin-v%s^{}\n' "$RL_TAG" "$RL_TAG"; }
+  base=main; release_blocks 2046 ${1:-}
+)
+eq "the queue refuses a release below main, naming the number" "make it 0.43.46" "$(RL_PR=0.43.44 RL_MAIN=0.43.45 RL_TAG=0.43.45 rl_check | sed 's/.*; \(make it [0-9.]*\),.*/\1/')"
+eq "and lets a release above main and the newest tag land" "" "$(RL_PR=0.43.46 RL_MAIN=0.43.45 RL_TAG=0.43.45 rl_check)"
+eq "in a batch it is checked against the batch so far, so a second release in it is checked against the first" "make it 0.43.46" "$(RL_PR=0.43.44 RL_MAIN=0.43.43 RL_TAG=0.43.43 rl_check "$rl_dir" | sed 's/.*; \(make it [0-9.]*\),.*/\1/')"
+eq "a project with no release on such tags is never checked" "" "$(rm -f "$rl_dir/.github/workflows/release.yml"; RL_PR=0.1.0 RL_MAIN=0.43.45 RL_TAG=0.43.45 rl_check)"
+eq "serial and batch landings both ask it, beside the migration gate" "1 1" "$(grep -c 'why=$(release_blocks "$pr")' "$root/templates/scripts/ci/queue/serial.sh") $(grep -c 'why=$(release_blocks "$pr" "$wt")' "$root/templates/scripts/ci/queue/batch.sh")"
+
 section 'held steps, recorded on the pull request'
 . "$root/templates/scripts/ci/batch-lib.sh"
 hs_fx="$root/tests/fixtures/queue-held-steps"

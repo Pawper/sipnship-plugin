@@ -50,6 +50,24 @@ tag_releases() {
   done
 }
 
+# release_blocks PR [DIR]: why a change that moves the release version in
+# QUEUE_RELEASE_TAG_FILE may not land (release_refusal, queue/rules-deploy.sh),
+# or nothing. Its version is read on its head; main's on main, or in DIR, the
+# batch being built, so a second release in one batch is checked against the
+# first; the newest release tag from the remote. Only where a workflow runs on
+# QUEUE_RELEASE_TAG_PREFIX tags. A version that cannot be read blocks nothing.
+release_blocks() {
+  rb_file=${QUEUE_RELEASE_TAG_FILE:-plugin/package.json}; rb_prefix=${QUEUE_RELEASE_TAG_PREFIX:-plugin-v}
+  [ -f "$rb_file" ] && [ "$(release_tag_wanted "$(cat .github/workflows/*.yml 2>/dev/null)" "$rb_prefix")" = yes ] || return 0
+  rb_head=$(pr_field "$1" 2)
+  rb_pr=$(package_version "$(gh api "repos/{owner}/{repo}/contents/$rb_file?ref=$rb_head" --jq '.content | @base64d' 2>/dev/null)")
+  if [ -n "${2:-}" ]; then rb_main=$(package_version "$(git -C "$2" show "HEAD:$rb_file" 2>/dev/null)")
+  else rb_main=$(package_version "$(gh api "repos/{owner}/{repo}/contents/$rb_file?ref=$base" --jq '.content | @base64d' 2>/dev/null)"); fi
+  [ -n "$rb_pr" ] && [ -n "$rb_main" ] && [ "$rb_pr" != "$rb_main" ] || return 0
+  rb_tag=$(version_max $(gitb ls-remote --tags origin "refs/tags/$rb_prefix*" 2>/dev/null | sed "s#.*refs/tags/$rb_prefix##; s#\^{}##"))
+  release_refusal "$rb_pr" "$rb_main" "$rb_tag"
+}
+
 # Defined before the drain, which calls it at its end: defined after it,
 # the drain ended "deploy_if_due: command not found" (exit 127) every time.
 # deploy_if_due BEGIN_SHA: after a landing, the same in every mode. When main
