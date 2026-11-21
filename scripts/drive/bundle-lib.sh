@@ -143,12 +143,12 @@ plan_units() {
     # any path under plugin/, scripts/ci/ or .github/ also carries "@tooling".
     function tooling(f) { return (("," f) ~ /,(plugin|scripts\/ci|\.github)\//) ? f ",@tooling" : f }
     $1 == "G" && $2 != "" { n++; num[n] = $2; title[n] = $3; files[n] = tooling($4); par[n] = n; sz[n] = 1 }
-    $1 == "R" && $2 != "" { r++; rtitle[r] = $2; rfiles[r] = tooling($3) }
+    $1 == "R" && $2 != "" { r++; rtitle[r] = $2; rfiles[r] = tooling($3); rnum[r] = $4 }
     END {
       cap = (ENVIRON["PLAN_BUNDLE_MAX"] + 0 > 0) ? ENVIRON["PLAN_BUNDLE_MAX"] + 0 : 4  # a bundle is a few issues; the rest stay loose units (#1891)
       for (i = 1; i <= n; i++) {
         held[i] = ""
-        for (k = 1; k <= r; k++) if (ov(files[i], rfiles[k]) != "") { held[i] = rtitle[k]; break }
+        for (k = 1; k <= r; k++) if (ov(files[i], rfiles[k]) != "") { held[i] = rtitle[k]; heldn[i] = rnum[k]; break }
       }
       for (i = 1; i <= n; i++) if (held[i] == "") for (j = i + 1; j <= n; j++) if (held[j] == "") {
         s = ov(files[i], files[j], 1)
@@ -179,7 +179,7 @@ plan_units() {
         for (q = 1; q <= m; q++) if (mf[q] != "" && mf[q] != "@tooling" && !(mf[q] in used)) { used[mf[q]] = 1; out = out (out == "" ? "" : ",") mf[q] }
         printf "unit\t%s\t%s\t%s\t%s\n", members[g], titles[g], w, out
       }
-      for (i = 1; i <= n; i++) if (held[i] != "") printf "hold\t%s\t%s\tAfter: %s\n", num[i], title[i], held[i]
+      for (i = 1; i <= n; i++) if (held[i] != "") printf "hold\t%s\t%s\tAfter: %s%s\n", num[i], title[i], held[i], (heldn[i] != "" ? " (after: " heldn[i] ")" : "")
     }'
 }
 
