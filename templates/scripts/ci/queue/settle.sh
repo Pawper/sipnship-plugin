@@ -89,6 +89,14 @@ settle_asked() {
   if gh api "repos/{owner}/{repo}/issues/$1/comments?per_page=100" --jq '.[].body' 2>/dev/null | grep -qF "$(held_ask_mark "$2")"; then echo yes; else echo no; fi
 }
 
+# settle_said_open PR ISSUE: yes when the pull request's own body names the issue on
+# a line that says it stays open or was not built here, so a note already on the
+# issue is still current and the generic comment would only restate it (#2246).
+settle_said_open() {
+  gh api "repos/{owner}/{repo}/pulls/$1" --jq '.body // ""' 2>/dev/null | tr -d '\r' \
+    | grep -iE "#$2([^0-9]|\$)" | grep -qiE 'stays? open|not built|left untouched|unchanged|nothing changed' && echo yes || echo no
+}
+
 # settle_merged PR: put back any issue the merge left In progress.
 settle_merged() {
   sm_named=$(settle_issues "$1")
@@ -98,7 +106,9 @@ settle_merged() {
     sleep "${SETTLE_WAIT:-3}" 2>/dev/null || true
     [ "$(settle_in_progress "$sm_n")" = yes ] || continue
     [ "$(settle_other_open "$sm_n" "$1")" = yes ] && continue
-    gh_write api -X POST "repos/{owner}/{repo}/issues/$sm_n/comments" -f body="Pull request #$1 merged without closing this issue, so it is back to Ready; nobody is on it now." >/dev/null 2>&1 || true
+    if [ "$(settle_said_open "$1" "$sm_n")" != yes ]; then
+      gh_write api -X POST "repos/{owner}/{repo}/issues/$sm_n/comments" -f body="Pull request #$1 merged without closing this issue, so it is back to Ready; nobody is on it now." >/dev/null 2>&1 || true
+    fi
     settle_set "$sm_n" ready && say "  #$sm_n: In progress with no pull request open any more; back to Ready." || true
   done
 }
