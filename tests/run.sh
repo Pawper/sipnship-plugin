@@ -6435,7 +6435,7 @@ eq "a push that deletes a branch is not checked" "rc=0" "$(qc_push size 'git pus
 eq "a command that does not push is not checked" "rc=0" "$(qc_push size 'git status' | head -n 1)"
 eq "git -C names the folder pushed from" "rc=2" "$(qc_push size "git -C $qc push" | head -n 1)"
 # The body: a Mock: line in it lets the screen through, as CI would.
-printf 'Spec: specs/001-garden-beds\nMock: unchanged, the count is not drawn\n' > "$qc/.scratch/body.md"
+printf 'Closes #12\nSpec: specs/001-garden-beds\nMock: unchanged, the count is not drawn\n' > "$qc/.scratch/body.md"
 eq "the body's Mock: line is read from .scratch/body.md" "rc=0" "$(qc_push mock | head -n 1)"
 mv "$qc/.scratch/body.md" "$qc/.scratch/body.off"
 qc_nobody=$(cd "$qc" && git checkout -q size && CHECKS_LOCAL_OFFLINE=1 sh scripts/ci/checks-local.sh 2>&1)
