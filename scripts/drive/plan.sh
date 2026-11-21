@@ -249,8 +249,8 @@ if [ -n "$guesses" ] || [ -n "$reasons" ]; then
   # The proposal is the next round: up to unitsPerRound units (within
   # maxAgents), planned against the running round's files. It starts only
   # once the running round lands (approval.sh holds its dispatches).
-  health_read; busy=$(computer_busy "$hv" "$(setting "$settings" healthAbove)"); slots=$(round_slots "$units_per_round" "$max_agents" "$busy")  # the limit and the computer's load, never free runners (#2084)
-  round=$(apply_units "$round" "$units" "$slots" "${busy:-no}" "$MAINFIX_ISSUES" "$(priority_issues "$priorities" "$guesses" "$facts" "$areas_text")" "$asked ${RUSH_ISSUES:-} $(asked_now "$drive_comments")")  # asked-for issues lead after a fix for main, then a project's priority areas (#2122)
+  slots=$(round_slots "$units_per_round" "$max_agents")  # the builder's limit alone: never free runners (#2084), never the health note (#2129)
+  round=$(apply_units "$round" "$units" "$slots" "$MAINFIX_ISSUES" "$(priority_issues "$priorities" "$guesses" "$facts" "$areas_text")" "$asked ${RUSH_ISSUES:-} $(asked_now "$drive_comments")")  # asked-for issues lead after a fix for main, then a project's priority areas (#2122)
   round=$(defer_note "$round" "$published_count")  # a small round says which holds kept their issues out of it
   round=$(lead_main_fixes "$round")  # the fix for a failure on main opens the proposal and the approval never holds it behind the round it blocks (rank-lib.sh)
 fi
@@ -287,7 +287,7 @@ model=$(setting "$settings" dispatchModel)
 if [ "$aside_after" -gt 0 ] 2>/dev/null; then aside_words="a pull request red $aside_after times is set aside"; else aside_words="a red pull request is never set aside"; fi
 round_model=$(setting "$settings" roundModel)
 [ -z "$asked_notes" ] || printf '%s' "$asked_notes"; [ -z "$answer_led_notes" ] || printf '%s' "$answer_led_notes"  # one line each: a kept request, or an answer, leading the round in plain words (asked-lib.sh, left-lib.sh, #2079)
-sized_said=$(sized_words "$(printf '%s\n' "$units" | grep -c '^unit')" "$(printf '%s\n' "$round" | grep -c '^dispatch ')" "${slots:-$max_agents}" "${busy:-no}" "$runners_online" "${unread_prs:-0}"); echo "sized: $sized_said"  # what bounded the round, for the Work band
+sized_said=$(sized_words "$(printf '%s\n' "$units" | grep -c '^unit')" "$(printf '%s\n' "$round" | grep -c '^dispatch ')" "${slots:-$max_agents}" "$runners_online" "${unread_prs:-0}"); echo "sized: $sized_said"  # what bounded the round, for the Work band
 echo "rounds: at most $units_per_round units a round, one round at a time; each unit's agent on ${model:-the model the agent-model hook allows}; the round itself on ${round_model:-the app's default model}; $aside_words"
 held_wait_note "${held_since:-}" "$(date +%s)"
 summary_note

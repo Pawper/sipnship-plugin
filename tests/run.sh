@@ -5496,17 +5496,16 @@ eq "no runner free means no agent" "0	1	0" "$(agent_runners "$(printf 'online\tt
 eq "a listing with no runners says nothing, so the config decides" "" "$(agent_runners '')"
 eq "the heading names the number and where it came from" "5 runners online, 4 free for agents" "$(agent_runners_say "$(agent_runners "$(printf 'online\tfalse\nonline\tfalse\nonline\tfalse\nonline\tfalse\nonline\tfalse\n')")")"
 rd_sixteen=$(i=1; while [ $i -le 16 ]; do printf 'unit\t%d\tTask %d\t\tsrc/f%d.ts\n' $i $i $i; i=$((i + 1)); done)
-rd_planned=$(apply_units "$(printf 'dispatch 1\tTask 1\nstop: proposal ready for approval')" "$rd_sixteen" 4 no)
+rd_planned=$(apply_units "$(printf 'dispatch 1\tTask 1\nstop: proposal ready for approval')" "$rd_sixteen" 4)
 eq "sixteen ready units with the limit at four propose four" "4" "$(printf '%s\n' "$rd_planned" | grep -c '^dispatch ')"
 eq "the rest are deferred, naming the limit" "defer 12 unit(s): the limit of 4 agents a round is reached (#5, #6, #7, #8, #9, #10, #11, #12, #13, #14, #15, #16)" "$(printf '%s\n' "$rd_planned" | grep '^defer ')"
 
 # The round the drive publishes says how it was sized and why a unit waits (#1257).
-eq "each deferred unit becomes a hold with the reason" "hold: 5 | why: The limit of 4 agents a round is reached; it starts in the next round
-hold: 6 7 | why: The limit of 4 agents a round is reached; it starts in the next round
-hold: 8 | why: The limit of 4 agents a round is reached; it starts in the next round" "$(deferred_holds "$(printf 'dispatch 1\tWater the beds\ndefer 3 unit(s): the limit of 4 agents a round is reached (#5, #6 #7, #8)\nstop: proposal ready\n')")"
+eq "each deferred unit becomes a hold with the reason" "hold: 5 | why: The limit of 4 agents a round is reached; it starts as soon as one finishes
+hold: 6 7 | why: The limit of 4 agents a round is reached; it starts as soon as one finishes
+hold: 8 | why: The limit of 4 agents a round is reached; it starts as soon as one finishes" "$(deferred_holds "$(printf 'dispatch 1\tWater the beds\ndefer 3 unit(s): the limit of 4 agents a round is reached (#5, #6 #7, #8)\nstop: proposal ready\n')")"
 eq "no deferral, no hold lines" "" "$(deferred_holds "$(printf 'dispatch 1\tWater the beds\nstop: proposal ready\n')")"
 eq "a deferral without its issues names none" "" "$(deferred_holds 'defer 2 ready issue(s): the limit on agents is reached this round')"
-eq "a busy computer's deferral says so in plain words" "hold: 9 | why: Your computer is busy; this starts when it has room" "$(deferred_holds 'defer 1 unit(s): your computer is busy; this starts when it has room (#9)')"
 eq "the sized line carries the plan's words" "sized: 5 runners online, 4 free for agents" "$(sized_line '5 runners online, 4 free for agents')"
 eq "no words, no sized line" "" "$(sized_line '')"
 eq "an ask with one recommended choice may be marked without approval" "yes no no no" "$(mark_waiting_ok one) $(mark_waiting_ok none) $(mark_waiting_ok question) $(mark_waiting_ok many)"
@@ -5884,9 +5883,9 @@ eq "the drive's comments are read without @tsv, which doubled every backslash" "
 ja_units="unit${hr_t}3 4${hr_t}Water | Tint${hr_t}both change the beds${hr_t}src/beds/
 unit${hr_t}5${hr_t}Map${hr_t}${hr_t}src/map/
 unit${hr_t}9${hr_t}Fix main${hr_t}${hr_t}src/ci/"
-eq "a loose asked-for issue goes ahead of a bundle nobody asked for" "dispatch 5${hr_t}Map" "$(apply_units "$(printf 'dispatch 1\ndispatch 2\nstop: x\n')" "$ja_units" 1 no '' '' '5' | sed -n 1p)"
-eq "a fix for a red main still goes ahead of an asked-for issue" "dispatch 9${hr_t}Fix main${hr_t}First: A fix for a failure on main" "$(apply_units "$(printf 'dispatch 1\ndispatch 2\nstop: x\n')" "$ja_units" 1 no 9 '' '5' | sed -n 1p)"
-eq "an unasked bundle leads when nothing was asked" "dispatch 3 4${hr_t}Water | Tint${hr_t}Why together: both change the beds" "$(apply_units "$(printf 'dispatch 1\ndispatch 2\nstop: x\n')" "$ja_units" 1 no '' '' '' | sed -n 1p)"
+eq "a loose asked-for issue goes ahead of a bundle nobody asked for" "dispatch 5${hr_t}Map" "$(apply_units "$(printf 'dispatch 1\ndispatch 2\nstop: x\n')" "$ja_units" 1 '' '' '5' | sed -n 1p)"
+eq "a fix for a red main still goes ahead of an asked-for issue" "dispatch 9${hr_t}Fix main${hr_t}First: A fix for a failure on main" "$(apply_units "$(printf 'dispatch 1\ndispatch 2\nstop: x\n')" "$ja_units" 1 9 '' '5' | sed -n 1p)"
+eq "an unasked bundle leads when nothing was asked" "dispatch 3 4${hr_t}Water | Tint${hr_t}Why together: both change the beds" "$(apply_units "$(printf 'dispatch 1\ndispatch 2\nstop: x\n')" "$ja_units" 1 '' '' '' | sed -n 1p)"
 ja_areas='work specs/023-drive-on-work/ plugin/scripts/drive/
 other packages/web/'
 ja_in="unit${hr_t}2096${hr_t}Wake${hr_t}${hr_t}specs/023-drive-on-work/
@@ -6563,7 +6562,7 @@ eq "the held line is information, not a numbered goal" "held 42: green, waiting 
 # A deferred issue in a running unit's area waits on that unit.
 da_round=$(printf 'dispatch 1\tWater the beds\ndefer 2 unit(s): the limit of 1 agent a round is reached (#402, #403 #404)\nstop: proposal ready\n')
 eq "a deferred unit in a running unit's area is held after that unit; the rest wait for a runner" "hold: 402 | after: 301 | why: Its area, watering, is owned by the running unit
-hold: 403 404 | why: The limit of 1 agent a round is reached; it starts in the next round" "$(deferred_holds "$da_round" "$(printf '301\twatering\n')" "$(printf '402\twatering\n403\tbeds\n')")"
+hold: 403 404 | why: The limit of 1 agent a round is reached; it starts as soon as one finishes" "$(deferred_holds "$da_round" "$(printf '301\twatering\n')" "$(printf '402\twatering\n403\tbeds\n')")"
 # An open release pull request means no second release.
 eq "an open pull request that bumps the plugin to that version carries the release" "410" "$(open_release_pr "$da_facts" "$(printf '410\tno\t401\n')" 0.7.3)"
 eq "so does one that only closes the release issue" "410" "$(open_release_pr "$(printf 'issue\t401\tPlugin 0.7.3\tstate:ready\tx\tbody\npr\t410\tCarry it\tSUCCESS\tMERGEABLE\tcarry\tsrc/a.ts\n')" "$(printf '410\tno\t401\n')" 0.7.3)"
@@ -6700,7 +6699,7 @@ eq "approval.sh counts a number-less Start now as the reply that starts the roun
 mf_facts=$(printf 'issue\t70\tWater schedule row\tstate:ready\t2026-11-14T10:00:00Z\tShows the next watering\nissue\t71\tTwo test files fail on main\tstate:ready\t2026-11-14T10:00:00Z\tThe seed list test and the bed map test fail on main.\n')
 eq "an issue saying tests fail on main is a fix for main" "71" "$(mainfix_numbers "$mf_facts")"
 mf_units=$(printf 'unit\t70\tWater schedule row\t\tsrc/water/row.ts\nunit\t71\tTwo test files fail on main\t\ttest/seed.test.ts\n')
-mf_round=$(apply_units "$(printf 'merge 41\ndispatch 70\tWater schedule row\ndispatch 71\tTwo test files fail on main\nstop: proposal ready for approval')" "$mf_units" 2 yes 71)
+mf_round=$(apply_units "$(printf 'merge 41\ndispatch 70\tWater schedule row\ndispatch 71\tTwo test files fail on main\nstop: proposal ready for approval')" "$mf_units" 2 71)
 eq "the plan puts the fix for main first, marked, then the rest" "dispatch 71${nb_t}Two test files fail on main${nb_t}First: A fix for a failure on main
 merge 41
 dispatch 70${nb_t}Water schedule row
@@ -6765,7 +6764,7 @@ eq "a failing check named in the Main card is not main failing" "no" "$(fixes_ma
 eq "the ready issues that fix main are found in the facts" "9 11" "$(mainfix_numbers "$(printf 'issue\t9\tFix the failing test on main\tstate:ready\tt\tx\nissue\t10\tAdd a row\tstate:ready\tt\tx\nissue\t11\tx\tstate:ready\tt\tThe build is red on main\nissue\t12\tFix main test\tstate:in-progress\tt\tx\n')")"
 eq "a ready fix for main leads, so it is the one that is not deferred" "dispatch 9${nb_t}Fix main test
 defer 1 ready issue(s): the limit on agents is reached this round" "$(MAINFIX_ISSUES=9 propose_round "$(printf 'issue\t8\tFeature\tready\tno\nissue\t9\tFix main test\tready\tno\n')" 1 4 2 | sed -n '1,2p')"
-eq "a bundle with a main fix outranks a larger bundle" "dispatch 9${nb_t}Fix main${nb_t}First: A fix for a failure on main" "$(apply_units "$(printf 'dispatch 1\ndispatch 9\nstop: proposal ready\n')" "$(printf 'unit\t3 4\tA | B\twhy\tx\nunit\t9\tFix main\t\ty\n')" 1 no 9 | sed -n 1p)"
+eq "a bundle with a main fix outranks a larger bundle" "dispatch 9${nb_t}Fix main${nb_t}First: A fix for a failure on main" "$(apply_units "$(printf 'dispatch 1\ndispatch 9\nstop: proposal ready\n')" "$(printf 'unit\t3 4\tA | B\twhy\tx\nunit\t9\tFix main\t\ty\n')" 1 9 | sed -n 1p)"
 nb_p=$(printf 'packages/web/src/work-rows.ts\nscripts/ci/hotspots.txt\nspecs/010-work/')
 eq "a screen issue that only mentions a CI file in passing is not plugin or CI work" "packages/web/src/work-rows.ts
 specs/010-work/" "$(changed_paths "$nb_p")"
@@ -7011,11 +7010,11 @@ pz_units=$(printf 'unit\t1\tTint the beds\t\tpackages/web/src/beds-card.ts\nunit
 pz_round=$(printf 'dispatch 1\tTint\nstop: proposal ready for approval\n')
 eq "with priorities the first slots go to the priority areas, the first entry first, each saying why" "dispatch 2${pz_t}Show the review drawer${pz_t}First: it unblocks your reviews
 dispatch 3${pz_t}Faster queue${pz_t}First: it makes your rounds faster
-defer 2 unit(s): the limit of 2 agents a round is reached (#1, #4)" "$(apply_units "$pz_round" "$pz_units" 2 no '' "$pz_pri" | grep -v '^stop:')"
+defer 2 unit(s): the limit of 2 agents a round is reached (#1, #4)" "$(apply_units "$pz_round" "$pz_units" 2 '' "$pz_pri" | grep -v '^stop:')"
 eq "without priorities the order is the plan's own" "dispatch 1${pz_t}Tint the beds
-dispatch 4${pz_t}Water schedule" "$(apply_units "$pz_round" "$pz_units" 2 yes '' '' | grep '^dispatch')"
+dispatch 4${pz_t}Water schedule" "$(apply_units "$pz_round" "$pz_units" 2 '' '' | grep '^dispatch')"
 eq "a fix for main still leads a priority" "dispatch 1${pz_t}Tint the beds${pz_t}First: A fix for a failure on main
-dispatch 2${pz_t}Show the review drawer${pz_t}First: it unblocks your reviews" "$(apply_units "$pz_round" "$pz_units" 2 yes ' 1 ' "$pz_pri" | grep '^dispatch')"
+dispatch 2${pz_t}Show the review drawer${pz_t}First: it unblocks your reviews" "$(apply_units "$pz_round" "$pz_units" 2 ' 1 ' "$pz_pri" | grep '^dispatch')"
 eq "an approved dispatch that went First is not held behind the running round" "dispatch 2${pz_t}Drawer${pz_t}First: it unblocks your reviews
 held: 1 dispatch goal(s) wait for the running round (#9) to land" "$(hold_dispatch "$(printf 'dispatch 2\tDrawer\tFirst: it unblocks your reviews\ndispatch 3\tBeds\n')" 9)"
 eq "plan.sh reads the config's priorities and hands them to the units" "1 1" "$(grep -c 'drive_priorities "$cfg"' "$root/scripts/drive/plan.sh") $(grep -c 'priority_issues "$priorities"' "$root/scripts/drive/plan.sh")"
@@ -7304,22 +7303,25 @@ rb_t=$(printf '\t')
 rb_units=$(printf 'unit\t1\tTint the beds\t\ta.ts\nunit\t2\tWater schedule\t\tb.ts\nunit\t3\tFaster frost alerts\t\tc.ts\nunit\t4\tSeed list\t\td.ts\nunit\t5\tPhoto upload\t\te.ts\nunit\t6\tBed labels\t\tf.ts\n')
 rb_round=$(printf 'dispatch 1\tTint\nstop: proposal ready for approval\n')
 # Six ready units with no conflict and no runner free: all start, up to the limit.
-eq "six conflict-free units start together when the limit allows, whatever the runners" "6" "$(apply_units "$rb_round" "$rb_units" "$(round_slots 6 6 no)" no | grep -c '^dispatch ')"
-eq "the limit holds the rest, and says it is the limit" "defer 2 unit(s): the limit of 4 agents a round is reached (#5, #6)" "$(apply_units "$rb_round" "$rb_units" "$(round_slots 6 4 no)" no | grep '^defer')"
-# A slow computer holds some back, with the plain reason.
-eq "a busy computer halves the round, never below one" "3 1 1" "$(round_slots 6 6 yes) $(round_slots 1 4 yes) $(round_slots 2 4 yes)"
-eq "a busy computer's hold says so in plain words" "defer 3 unit(s): your computer is busy; this starts when it has room (#4, #5, #6)" "$(apply_units "$rb_round" "$rb_units" "$(round_slots 6 6 yes)" yes | grep '^defer')"
-eq "the figure over the builder's limit is a busy computer; a missing figure or limit is not" "yes no no no" "$(computer_busy 900 500) $(computer_busy 400 500) $(computer_busy '' 500) $(computer_busy 900 '')"
+eq "six conflict-free units start together when the limit allows, whatever the runners" "6" "$(apply_units "$rb_round" "$rb_units" "$(round_slots 6 6)" | grep -c '^dispatch ')"
+eq "the limit holds the rest, and says it is the limit" "defer 2 unit(s): the limit of 4 agents a round is reached (#5, #6)" "$(apply_units "$rb_round" "$rb_units" "$(round_slots 6 4)" | grep '^defer')"
+# The health note is a recommendation: it never changes the round (#2129).
+eq "the round is the limit alone, never below one" "6 4 1" "$(round_slots 6 6) $(round_slots 9 4) $(round_slots 0 4)"
+eq "no part of the drive can say the computer is busy or halve a round" "0" "$(grep -rlE 'computer is busy|computer_busy' "$root/scripts" "$root/skills" | grep -c .)"
+rb_eight=$(printf 'unit\t1\tA\t\ta.ts\nunit\t2\tB\t\tb.ts\nunit\t3\tC\t\tc.ts\nunit\t4\tD\t\td.ts\nunit\t5\tE\t\te.ts\nunit\t6\tF\t\tf.ts\nunit\t7\tG\t\tg.ts\nunit\t8\tH\t\th.ts\n')
+eq "with eight units and a limit of five, the two asked-for ones start first, in the order asked" "dispatch 7 dispatch 6 dispatch 1 dispatch 2 dispatch 3" "$(apply_units "$rb_round" "$rb_eight" 5 "" "" "7 6" | awk -F'\t' '/^dispatch / { printf "%s%s", (n++ ? " " : ""), $1 }')"
+eq "the units the limit leaves out say the limit and that they start as one finishes" "hold: 4 | why: The limit of 5 agents a round is reached; it starts as soon as one finishes
+hold: 5 | why: The limit of 5 agents a round is reached; it starts as soon as one finishes
+hold: 8 | why: The limit of 5 agents a round is reached; it starts as soon as one finishes" "$(deferred_holds "$(apply_units "$rb_round" "$rb_eight" 5 "" "" "7 6" | grep '^defer')" | sort)"
 # Two issues on one file are one unit.
 eq "two issues on one file are one unit" "unit	12 14	Water the beds | Remind me before a frost night	both change src/schedule.ts	src/schedule.ts" "$(plan_units "$(printf '12\tWater the beds\tsrc/schedule.ts\n14\tRemind me before a frost night\tsrc/schedule.ts\n')" "" | sed -n 1p)"
 # The sized line says what bounded the round.
-eq "the sized words name the ready, the started and what held the rest" "6 ready units free of conflict, 4 started; the limit of 4 agents a round held 2" "$(sized_words 6 4 4 no 5 0)"
-eq "the sized words name a busy computer" "6 ready units free of conflict, 3 started; your computer is busy, so 3 start when it has room" "$(sized_words 6 3 6 yes 5 0)"
-eq "no runner online: checks wait and the round still starts" "2 ready units free of conflict, 2 started; no build machine is online, so checks wait until one is" "$(sized_words 2 2 4 no 0 0)"
-eq "a runner count that could not be read says nothing about runners" "1 ready unit free of conflict, 1 started" "$(sized_words 1 1 4 no '' 0)"
-eq "pull requests GitHub returned half read are said in the sized words" "1 ready unit free of conflict, 1 started; GitHub could not be read for 2 pull requests, left out this round" "$(sized_words 1 1 4 no 5 2)"
-eq "the words never name a free runner" "0" "$(sized_words 6 4 4 no 5 0 | grep -c 'free runner')"
-eq "a deferred unit's hold carries the limit" "hold: 5 6 | why: The limit of 4 agents a round is reached; it starts in the next round" "$(deferred_holds "$(printf 'defer 1 unit(s): the limit of 4 agents a round is reached (#5 6)\n')")"
+eq "the sized words name the ready, the started and what held the rest" "6 ready units free of conflict, 4 started; the limit of 4 agents a round held 2" "$(sized_words 6 4 4 5 0)"
+eq "no runner online: checks wait and the round still starts" "2 ready units free of conflict, 2 started; no build machine is online, so checks wait until one is" "$(sized_words 2 2 4 0 0)"
+eq "a runner count that could not be read says nothing about runners" "1 ready unit free of conflict, 1 started" "$(sized_words 1 1 4 '' 0)"
+eq "pull requests GitHub returned half read are said in the sized words" "1 ready unit free of conflict, 1 started; GitHub could not be read for 2 pull requests, left out this round" "$(sized_words 1 1 4 5 2)"
+eq "the words never name a free runner" "0" "$(sized_words 6 4 4 5 0 | grep -c 'free runner')"
+eq "a deferred unit's hold carries the limit" "hold: 5 6 | why: The limit of 4 agents a round is reached; it starts as soon as one finishes" "$(deferred_holds "$(printf 'defer 1 unit(s): the limit of 4 agents a round is reached (#5 6)\n')")"
 
 # A pull request GitHub returned half read: an empty head commit is left out, with no shell error.
 . "$root/scripts/drive/stale-lib.sh"
@@ -7373,7 +7375,7 @@ hold: 233 | why: Waits on your read of the bed photos | after: 240 | areas: none
 hold: 236 | why: Waits for “Water the beds” to land first, since it changes the same files | areas: none
 hold: 239 | why: Waits on the label printer | areas: none
 sized: 4 ready units free of conflict, 2 started; the limit of 2 agents a round held 1
-hold: 238 | why: The limit of 2 agents a round is reached; it starts in the next round | areas: none" "$pp_file"
+hold: 238 | why: The limit of 2 agents a round is reached; it starts as soon as one finishes | areas: none" "$pp_file"
 eq "a pull request's own hold line is never read as an issue's" "0" "$(printf '%s\n' "$pp_file" | grep -c '^hold: 41 ')"
 eq "the plan's units and the round file's units are the same" "$(printf '%s\n' "$pp_round" | sed -n 's/^[0-9]*\. dispatch \([0-9 ]*\)\t.*/\1/p')" "$(printf '%s\n' "$pp_file" | sed -n 's/^unit: \([0-9 ]*\) |.*/\1/p')"
 eq "with no areas list a unit's own files stand for its areas, and a unit with none says none" "unit: 5 | areas: src/a.ts, src/b.ts

@@ -40,7 +40,7 @@ published_holds() {
         p = parts[k]; iss = p; sub(/\].*/, "", iss); gsub(/,/, " ", iss)
         why = ""; if (match(p, /"why":"([^"\\]|\\.)*"/)) { why = unescape(substr(p, RSTART + 7, RLENGTH - 8)) }
         if (haverun == "yes" && why ~ /[Rr]unning round/) { cited = ""; if (match(why, /#[0-9]+/)) cited = substr(why, RSTART + 1, RLENGTH - 1); if (cited != "" ? !(cited in run) : !nrun) continue }  # a wait on the running round ends when that round has landed (#2104)
-        if (why ~ /[Nn]o free runner|free runners? this round|^The limit of [0-9]+ agents? a round|^Your computer is busy/) continue
+        if (why ~ /[Nn]o free runner|free runners? this round|^The limit of [0-9]+ agents? a round|^Your computer /) continue
         if (why ~ /^Part of it landed/) continue  # the plan reads this one fresh every round from the issue itself (left-lib.sh), so it is never carried
         pr = ""; if (match(p, /"pr":[0-9]+/)) pr = substr(p, RSTART + 5, RLENGTH - 5)
         if (pr != "" && open != "" && !(pr in op)) continue

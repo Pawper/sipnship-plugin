@@ -216,8 +216,8 @@ units_disjoint() {
     }'
 }
 
-# apply_units ROUND UNITS SLOTS [WHY [MAINFIX [PRIORITY]]]
-# WHY is "yes" when a busy computer cut SLOTS short, else the limit did.
+# apply_units ROUND UNITS SLOTS [MAINFIX [PRIORITY [ASKED]]]
+# SLOTS is the builder's limit; ASKED is the issues the builder asked for, in the order asked.
 # Swap the "dispatch N TITLE" goals of a propose_round result for the
 # units: one goal per unit, bundles ranked before loose issues (more issues
 # first), at most SLOTS of them (the rest deferred, named by their issues),
@@ -227,23 +227,24 @@ units_disjoint() {
 # When everything is held the stop line says so: work in flight when only
 # running work holds it, else what each hold line names.
 apply_units() {
-  printf '%s\n' "$1" | awk -v slots="${3:-2}" -v units="$2" -v machines="${4:-}" -v first=" ${5:-} " -v prio="${6:-}" -v askd=" ${7:-} " '
+  printf '%s\n' "$1" | awk -v slots="${3:-2}" -v units="$2" -v first=" ${4:-} " -v prio="${5:-}" -v askd=" ${6:-} " '
     # The place in the project priorities of the best-placed issue of NUMS (0 when none is in one).
     function best(nums,   x, k, i, b) { k = split(nums, x, " "); b = 0; for (i = 1; i <= k; i++) if ((x[i] in pr) && (b == 0 || pr[x[i]] < b)) b = pr[x[i]]; return b }
     function bestwhy(nums,   x, k, i, b) { k = split(nums, x, " "); b = best(nums); for (i = 1; i <= k; i++) if ((x[i] in pr) && pr[x[i]] == b) return pw[x[i]]; return "" }
-    # A unit carrying an issue that fixes a failure on main (the fifth argument) never waits behind the running round.
+    # A unit carrying an issue that fixes a failure on main (the fourth argument) never waits behind the running round.
     function isfix(nums,   x, k, i) { k = split(nums, x, " "); for (i = 1; i <= k; i++) if (index(first, " " x[i] " ")) return 1; return 0 }
     BEGIN {
       np = split(prio, pl, "\n"); for (i = 1; i <= np; i++) { split(pl[i], pf, "\t"); if (pf[1] != "") { pr[pf[1]] = pf[2] + 0; pw[pf[1]] = pf[3] } }
+      na = split(askd, al, " "); for (i = 1; i <= na; i++) if (al[i] != "" && !(al[i] in ap)) ap[al[i]] = i  # the order asked
       n = split(units, raw, "\n")
       # Bundles first: units carrying more issues rank ahead, in plan order
       # among equals, so a round fills with bundles before loose issues.
       for (i = 1; i <= n; i++) { ul[i] = raw[i]; split(raw[i], f, "\t"); w[i] = (f[1] == "unit") ? split(f[2], tmp, " ") : 0 }
-      # A unit with an issue that fixes a failure on main (the fifth argument) outranks every bundle.
+      # A unit with an issue that fixes a failure on main (the fourth argument) outranks every bundle.
       for (i = 1; i <= n; i++) if (w[i] > 0) { split(raw[i], ff, "\t"); m = split(ff[2], tm, " "); for (j = 1; j <= m; j++) if (index(first, " " tm[j] " ")) w[i] += 9000 }
-      # A unit carrying an issue the builder asked for by name (the seventh argument) comes next: nothing goes ahead of it but a fix for main (#2122).
-      for (i = 1; i <= n; i++) if (w[i] > 0) { split(raw[i], ff, "	"); m = split(ff[2], tm, " "); for (j = 1; j <= m; j++) if (index(askd, " " tm[j] " ")) { w[i] += 3000; break } }
-      # A unit in a project priority (the sixth argument) comes next, the first entry first: after a fix for main, before any bundle.
+      # A unit carrying an issue the builder asked for by name (the sixth argument) comes next: nothing goes ahead of it but a fix for main (#2122).
+      for (i = 1; i <= n; i++) if (w[i] > 0) { split(raw[i], ff, "	"); m = split(ff[2], tm, " "); bp = 0; for (j = 1; j <= m; j++) { p = ap[tm[j]]; if (p > 0 && (bp == 0 || p < bp)) bp = p }; if (bp > 0) w[i] += 3000 + 900 - bp }
+      # A unit in a project priority (the fifth argument) comes next, the first entry first: after a fix for main, before any bundle.
       for (i = 1; i <= n; i++) if (w[i] > 0) { split(raw[i], ff, "\t"); b = best(ff[2]); if (b > 0) w[i] += 500 - b }
       for (i = 2; i <= n; i++) { v = ul[i]; c = w[i]; j = i - 1; while (j > 0 && w[j] < c) { ul[j + 1] = ul[j]; w[j + 1] = w[j]; j-- } ul[j + 1] = v; w[j + 1] = c }
       for (i = 1; i <= n; i++) {
@@ -264,7 +265,7 @@ apply_units() {
     /^stop:/ {
       if (!done) { for (i = 1; i <= g; i++) print goals[i]; done = 1 }
       for (i = 1; i <= h; i++) print holds[i]
-      if (deferred > 0) print "defer " deferred " unit(s): " (machines == "yes" ? "your computer is busy; this starts when it has room" : "the limit of " slots " agent" (slots == 1 ? "" : "s") " a round is reached") " (" dn ")"
+      if (deferred > 0) print "defer " deferred " unit(s): " "the limit of " slots " agent" (slots == 1 ? "" : "s") " a round is reached" " (" dn ")"
       if (g == 0 && other == 0 && h > 0 && reasoned) { print "stop: everything left waits on what its hold line names; publish the round with each hold and its reason"; next }
       if (g == 0 && other == 0 && h > 0) { print "stop: work is in flight; nothing to propose until it lands"; next }
     }
