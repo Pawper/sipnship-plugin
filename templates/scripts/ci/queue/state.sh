@@ -222,7 +222,13 @@ EOF_RUN
     queue_busy_exit
   fi
   # The lock every queue sees, on GitHub (queue/lock.sh), before this checkout's own.
+  # How long that took is kept for Cost (spec 005, "Cost shows where a landing's
+  # time went"): every pull request this pass lands shares the one number,
+  # read by publish-state.sh and sent with each landing. Best-effort: never
+  # read back here, so it cannot change what the queue does.
+  tl_lock_begin=$(date +%s)
   remote_lock_take
+  printf '%s\n' "$(( $(date +%s) - tl_lock_begin ))" > "$flaky_dir/lock-wait.seconds" 2>/dev/null || true
   printf '%s\t%s\t%s\n' "$$" "$(date +%s)" "--$mode" > "$lock_file"
   have_lock=yes
   printf '%s %s\n' "$(date '+%H:%M')" "lock taken by --$mode (pid $$)" >> "$log_file" 2>/dev/null || true

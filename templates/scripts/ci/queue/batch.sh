@@ -424,16 +424,15 @@ echo "batch PR #$batch_pr opened; waiting for the one full CI run"; ci_dispatch 
 batch_note pr "$batch_pr"; batch_moment testing
 batch_sha=$(git -C "$wt" rev-parse HEAD)
 batch_ok=no
+bt_run_begin=$(date +%s)  # the batch's run, timed for Cost (spec 005); read by publish-state.sh
 # The members, so a request read during the run knows which classes it runs.
 printf '%s\n' "$carried" | cut -f1 > "$flaky_dir/batch.members" 2>/dev/null || true
 if [ "$have_lock" = yes ]; then trap ': > "$flaky_dir/batch.members" 2>/dev/null; queue_exit' EXIT; else trap ': > "$flaky_dir/batch.members" 2>/dev/null' EXIT; fi
 if wait_for_run "$batch_pr" "$branch" && wait_required "$batch_sha"; then batch_ok=yes
 else
-  # A job cancelled before a runner took it fails the required check
-  # without anything being wrong: re-run the failed and cancelled jobs once
-  # and wait again, rather than close a good batch.
-  # A cancelled job whose own step failed reads as failed (check_lines), so
-  # a real failure that cancelled its siblings is never re-run here.
+  # A job cancelled before a runner took it fails the required check without anything being wrong: re-run the
+  # failed and cancelled jobs once and wait again, rather than close a good batch. A cancelled job whose own step
+  # failed reads as failed (check_lines), so a real failure that cancelled its siblings is never re-run here.
   checks=$(check_lines "$batch_sha" 2>/dev/null)
   if [ "$(rest_rollup_named "$checks" "${QUEUE_SUMMARY_CHECK:-CI passed}")" = cancelled ]; then
     run=$(latest_run "$branch"); run_id=${run%%	*}
@@ -444,6 +443,7 @@ else
     fi
   fi
 fi
+printf '%s\n' "$(( $(date +%s) - bt_run_begin ))" > "$flaky_dir/batch-run.seconds" 2>/dev/null || true
 if [ "$batch_ok" != yes ]; then
   close_pr "$batch_pr" "The batch's CI was not green, so nothing merged; closed so the next batch starts clean. The member pull requests are untouched."
   batch_red "$branch" "$carried" "$dropped"

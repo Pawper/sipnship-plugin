@@ -163,8 +163,18 @@ landed_tsv=$(printf '%s\n' "$landed_src" | awk -F'\t' '{ if (match($1, /\(#[0-9]
 # commit against its first parent: a deploy card lists one that ships nothing
 # apart (spec 005). Each commit is asked once, and kept in ships.tsv; one
 # not at hand here is left unsaid.
+# How long this pass waited for the queue's own lock (queue/state.sh,
+# take_lock), and, for a landing that went through a batch, how long the
+# batch's one shared run took (queue/batch.sh): best-effort facts for Cost
+# (spec 005, "Cost shows where a landing's time went"), 0 when not tracked.
+# The same lock wait applies to every row this pass published; the batch
+# wait only to rows this pass itself marked "batch" above, never to an older
+# batch landing read back from a commit message.
+lock_wait_seconds=$(tr -d '\r' < "$flaky_dir/lock-wait.seconds" 2>/dev/null); case "$lock_wait_seconds" in ''|*[!0-9]*) lock_wait_seconds=0 ;; esac
+batch_run_seconds=$(tr -d '\r' < "$flaky_dir/batch-run.seconds" 2>/dev/null); case "$batch_run_seconds" in ''|*[!0-9]*) batch_run_seconds=0 ;; esac
 landed_tsv=$(printf '%s\n' "$landed_tsv" | sed '/^$/d' | while IFS= read -r l; do
   ls_sha=$(printf '%s' "$l" | cut -f5); ls_ships=""
+  ls_how=$(printf '%s' "$l" | cut -f3)
   if [ -n "$ls_sha" ] && [ -f .claude/deploy.json ] && [ -f "$here/deploy-gate.sh" ]; then
     ls_ships=$(awk -F'\t' -v s="$ls_sha" '$1 == s { print $2; exit }' "$flaky_dir/ships.tsv" 2>/dev/null)
     if [ -z "$ls_ships" ] && git cat-file -e "$ls_sha^{commit}" 2>/dev/null; then
@@ -172,7 +182,8 @@ landed_tsv=$(printf '%s\n' "$landed_tsv" | sed '/^$/d' | while IFS= read -r l; d
       [ -z "$ls_ships" ] || printf '%s\t%s\n' "$ls_sha" "$ls_ships" >> "$flaky_dir/ships.tsv" 2>/dev/null || true
     fi
   fi
-  printf '%s\t%s\n' "$(printf '%s' "$l" | cut -f1-4)" "$ls_ships"
+  ls_batch=0; [ "$ls_how" = batch ] && ls_batch=$batch_run_seconds
+  printf '%s\t%s\t%s\t%s\n' "$(printf '%s' "$l" | cut -f1-4)" "$ls_ships" "$lock_wait_seconds" "$ls_batch"
 done)
 # The steps agents held until another pull request lands, as the drain's end last read them.
 waits_tsv=$(awk -F'\t' 'NF >= 3' "$flaky_dir/after.tsv" 2>/dev/null)

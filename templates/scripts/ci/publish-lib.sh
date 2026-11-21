@@ -18,7 +18,7 @@
 #             the queue's machine; empty otherwise
 #   CLASHES   leftOut, with, with's title, files (space separated), why
 #             (the queue's own words), told (yes/no)
-#   LANDED    number, title, how (serial/batch), at (ISO)
+#   LANDED    number, title, how (serial/batch), at (ISO), ships, lockSeconds, batchSeconds (the queue's own timing, spec 005)
 #   RUNNERS   online, busy, queued, longest wait in minutes; empty if unread
 #   ATTENTION number, what, why, first error line
 #   MAIN      sha, state (green red pending unknown)
@@ -193,8 +193,8 @@ publish_json() {
     rounds=$(printf '%s' "$l" | cut -s -f7); since=$(printf '%s' "$l" | cut -s -f8)
     fn=$(printf '%s\n' $f | sed '/^$/d' | wc -l | tr -d ' ')
     printf '{"leftOut":%s,"with":%s,"withTitle":%s,"files":[%s],"file":%s,"fileCount":%s,"why":%s,"told":%s,"rounds":%s,"since":%s},' "$(json_num "$a")" "$( [ "$b" = main ] && json_str main || json_num "$b")" "$( [ -n "$bt" ] && json_str "$bt" || printf null)" "$(for x in $f; do json_str "$x"; printf ','; done | sed 's/,$//')" "$( [ "$fn" -gt 0 ] && json_str "$(printf '%s\n' $f | head -n 1)" || printf null)" "$fn" "$( [ -n "$why" ] && json_str "$why" || printf null)" "$( [ "$told" = yes ] && printf true || printf false)" "$(json_num "$rounds")" "$( [ -n "$since" ] && json_str "$since" || printf null)"; done | sed 's/,$//')"
-  # A landing's fifth field, when known: yes when something in it ships, no when the deploy gate's rule finds nothing that does.
-  printf '"landed":[%s],' "$(printf '%s\n' "$pj_landed" | sed '/^$/d' | while IFS="$(printf '\t')" read -r n t how at ships; do printf '{"number":%s,"title":%s,"how":%s,"at":%s%s},' "$(json_num "$n")" "$(json_str "$t")" "$(json_str "$how")" "$(json_str "$at")" "$(case "$ships" in yes) printf ',"ships":true' ;; no) printf ',"ships":false' ;; esac)"; done | sed 's/,$//')"
+  # A landing's fields past "at": ships, when known; lockSeconds and batchSeconds, the queue's own timing (spec 005), 0 when not tracked.
+  printf '"landed":[%s],' "$(printf '%s\n' "$pj_landed" | sed '/^$/d' | while IFS="$(printf '\t')" read -r n t how at ships lock batch; do printf '{"number":%s,"title":%s,"how":%s,"at":%s%s,"lockSeconds":%s,"batchSeconds":%s},' "$(json_num "$n")" "$(json_str "$t")" "$(json_str "$how")" "$(json_str "$at")" "$(case "$ships" in yes) printf ',"ships":true' ;; no) printf ',"ships":false' ;; esac)" "$(json_num "${lock:-0}")" "$(json_num "${batch:-0}")"; done | sed 's/,$//')"
   # Steps held until another pull request lands: "pr<TAB>after<TAB>step<TAB>session<TAB>words" (held_steps' after.tsv).
   printf '"waits":[%s],' "$(printf '%s\n' "$pj_waits" | sed '/^$/d' | while IFS= read -r l; do
     w_n=$(printf '%s' "$l" | cut -f1); w_a=$(printf '%s' "$l" | cut -f2); w_s=$(printf '%s' "$l" | cut -f3); w_ses=$(printf '%s' "$l" | cut -f4); w_w=$(printf '%s' "$l" | cut -f5)
