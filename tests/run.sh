@@ -6839,7 +6839,7 @@ eq "a title that says no area is not placed" "" "$(title_area_files 'Tidy up the
 eq "a word inside another word is not an area" "" "$(title_area_files 'Bedside manner' 'beds   src/beds/')"
 da_nopath=$(printf '501\tTidy up the readme\t\n')
 da_unit=$(plan_units "$da_nopath" "")
-eq "with a unit running, an issue whose area is unknown is a hold that says so, not a dispatch" "hold${da_t}501${da_t}Tidy up the readme${da_t}Its area is not known: it names no file, and “Water the beds” is running. Name its files or area to place it" "$(unplaced_holds "$da_unit" "$da_nopath" "$(printf '301\twatering\n')" "$da_titles")"
+eq "with a unit running, an issue whose area is unknown is a hold that says so, not a dispatch" "hold${da_t}501${da_t}Tidy up the readme${da_t}Its area is not known: it names no file, and “Water the beds” is running. Name its files or area to place it (after: 301)" "$(unplaced_holds "$da_unit" "$da_nopath" "$(printf '301\twatering\n')" "$da_titles")"
 eq "with nothing running it passes as it came" "$da_unit" "$(unplaced_holds "$da_unit" "$da_nopath" '' "$da_titles")"
 da_mixed=$(printf '501\tTidy up the readme\t\n402\tWater the beds on a timer\tsrc/water/timer.ts\n')
 eq "an issue with files is left alone beside it" "unit${da_t}402" "$(unplaced_holds "$(plan_units "$da_mixed" '')" "$da_mixed" "$(printf '301\twatering\n')" "$da_titles" | grep '^unit' | cut -f1,2)"
@@ -6850,7 +6850,7 @@ hh_titles=$(printf '301\tWater the beds\n410\tTint the beds by sun\n411\tTune th
 hh_hold=$(published_holds "$hh_c" "$(printf 'issue\t301\tWater the beds\tstate:in-progress\tx\nissue\t410\tTint the beds by sun\tstate:ready\tx\nissue\t411\tTune the build\tstate:ready\tx\n')" '')
 eq "the held entry's issues, waits and areas are read from the last round" "410${da_t}301${da_t}beds,tooling" "$(published_held_areas "$hh_c")"
 hh_out=$(held_area_holds "$da_list" "$(printf 'unit\t411\tTune the build\t\tci/a.sh\n')" "$(published_held_areas "$hh_c")" "$hh_hold" "$hh_titles")
-eq "a ready issue in an area a held issue names is a hold behind the held issue, never a dispatch" "hold${da_t}411${da_t}Tune the build${da_t}After: Tint the beds by sun" "$hh_out"
+eq "a ready issue in an area a held issue names is a hold behind the held issue, never a dispatch" "hold${da_t}411${da_t}Tune the build${da_t}After: Tint the beds by sun (after: 410)" "$hh_out"
 eq "the round built from those lines publishes without a refusal" "" "$(area_problem "$(round_areas "$da_list" "$(printf 'hold: 410 | after: 301 | areas: src/beds/tint.ts,ci/a.sh\nhold: 411 | after: 410 | areas: ci/a.sh\n')")" "$(printf '301\twatering\n')")"
 eq "a ready issue in another area still starts" "unit${da_t}412${da_t}Water${da_t}${da_t}src/water/t.ts" "$(held_area_holds "$da_list" "$(printf 'unit\t412\tWater\t\tsrc/water/t.ts\n')" "$(published_held_areas "$hh_c")" "$hh_hold" "$hh_titles")"
 eq "plan.sh reads the held round's areas" "1" "$(grep -c 'held_area_holds "$areas_text"' "$root/scripts/drive/plan.sh")"
