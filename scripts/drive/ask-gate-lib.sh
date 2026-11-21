@@ -4,26 +4,49 @@
 # scripts/ci/ask-lib.sh (ask_verdict, ask_fix, the one reader of an ask).
 
 # mark_waiting_goals EXTRA VERDICTS
-# EXTRA is digest_goals' lines; VERDICTS is "NUMBER<TAB>WORD" per issue, the
-# word ask_verdict gave its latest ask. A "mark-waiting N" line stays only for
-# an ask in the shape (mark_waiting_ok), and so runs without approval; any
-# other becomes an "ask-fix N" line saying what to fix, so the state-label
-# hook is never the first to refuse it. Other goals pass through.
+# EXTRA is digest_goals' lines; VERDICTS is "NUMBER<TAB>WORD<TAB>SIGNATURE"
+# per issue (ask_verdicts_for): the word ask_verdict gave its latest ask, and
+# its ask_signature. A "mark-waiting N" line stays only for an ask in the
+# shape (mark_waiting_ok) whose signature also matches no other issue's
+# (duplicate_ask_issues): one change that wrote the same ask text once and
+# posted it on more than one issue names what to look at for neither, so
+# both become "ask-fix N" lines too, whatever their own shape read as. Any
+# other non-matching shape becomes an "ask-fix N" line saying what to fix,
+# so the state-label hook is never the first to refuse it. Other goals pass
+# through.
 mark_waiting_goals() {
+  mw_dups=" $(duplicate_ask_issues "$2") "
   printf '%s\n' "$1" | tr -d '\r' | while IFS= read -r mw_l; do
     case "$mw_l" in
       "mark-waiting "*)
         mw_n=$(printf '%s' "$mw_l" | sed 's/^mark-waiting \([0-9]*\).*/\1/')
         mw_t=$(printf '%s' "$mw_l" | cut -f2 | sed 's/ (a question to the owner is open)$//')
         mw_v=$(printf '%s\n' "$2" | awk -F'\t' -v n="$mw_n" '$1 == n { print $2; exit }')
-        if [ "$(mark_waiting_ok "$mw_v")" = yes ]; then printf '%s\n' "$mw_l"; continue; fi
-        mw_f=$(ask_fix "$mw_v")
-        [ -n "$mw_f" ] || mw_f='no ask in the shape (a question, numbered choices, one "Recommended.") is on it yet; the agent that wrote the question puts it in the shape'
+        case "$mw_dups" in *" $mw_n "*) mw_dup=yes ;; *) mw_dup=no ;; esac
+        if [ "$mw_dup" = no ] && [ "$(mark_waiting_ok "$mw_v")" = yes ]; then printf '%s\n' "$mw_l"; continue; fi
+        if [ "$mw_dup" = yes ]; then
+          mw_f="the same words were written once as the ask and posted on more than one issue, so none of them says what to look at for issue #$mw_n on its own. Write this issue its own question, naming only its own work, with its own choices and one recommendation; the other issue keeps its own"
+        else
+          mw_f=$(ask_fix "$mw_v")
+          [ -n "$mw_f" ] || mw_f='no ask in the shape (a question, numbered choices, one "Recommended.") is on it yet; the agent that wrote the question puts it in the shape'
+        fi
         printf 'ask-fix %s\t%s (not marked waiting: %s)\n' "$mw_n" "$mw_t" "$mw_f" ;;
       '') ;;
       *) printf '%s\n' "$mw_l" ;;
     esac
   done
+}
+
+# duplicate_ask_issues VERDICTS
+# VERDICTS is "NUMBER<TAB>WORD<TAB>SIGNATURE" per issue (ask_verdicts_for).
+# The issue numbers, space separated, whose newest ask's signature
+# (ask_signature) is not empty ("none") and matches another issue's: the
+# same text, written once, was posted as the ask on both. Nothing when every
+# signature stands alone.
+duplicate_ask_issues() {
+  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' '
+    $3 != "" && $3 != "none" { n++; num[n] = $1; sig[n] = $3; cnt[$3]++ }
+    END { for (i = 1; i <= n; i++) if (cnt[sig[i]] > 1) printf "%s ", num[i] }'
 }
 
 # ask_answered KINDS: "yes" when the question is no longer open: the
@@ -119,13 +142,15 @@ unit_issues() {
   printf '%s\n' "$1" | awk -F'\t' 'NF >= 2 { n = split($2, a, " "); for (i = 1; i <= n; i++) print a[i] }'
 }
 
-# ask_verdicts_for EXTRA: "NUMBER<TAB>WORD" for each mark-waiting issue in
-# EXTRA, from its comments (newest first, parted as ask_verdict reads them);
-# REST, one call per such issue, and none when there are none.
+# ask_verdicts_for EXTRA: "NUMBER<TAB>WORD<TAB>SIGNATURE" for each mark-waiting
+# issue in EXTRA, from its comments (newest first, parted as ask_verdict
+# reads them); REST, one call per such issue, and none when there are none.
+# SIGNATURE (ask_signature, from the same comments: no second call) is what
+# duplicate_ask_issues compares across issues.
 ask_verdicts_for() {
   for av_n in $(printf '%s\n' "$1" | sed -n 's/^mark-waiting \([0-9]*\).*/\1/p'); do
     av_c=$(gh api "repos/{owner}/{repo}/issues/$av_n/comments?per_page=100" --jq "[.[].body] | reverse | join(\"\\n$ASK_NEXT\\n\")" 2>/dev/null | tr -d '\r')
-    printf '%s\t%s\n' "$av_n" "$(printf '%s\n' "$av_c" | ask_check)"
+    printf '%s\t%s\t%s\n' "$av_n" "$(printf '%s\n' "$av_c" | ask_check)" "$(printf '%s\n' "$av_c" | ask_signature)"
   done
 }
 

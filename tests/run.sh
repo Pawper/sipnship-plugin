@@ -5690,6 +5690,14 @@ eq "an ask in the shape is still proposed as mark-waiting" "mark-waiting 21	Plan
 eq "an ask with no recommended choice is proposed as ask-fix, with what to change" "ask-fix 22	Watering plan (not marked waiting: its ask gives choices and none is recommended. End the one you would pick with \"Recommended.\" and a short reason why, in the same comment)" "$(printf '%s\n' "$mw_out" | sed -n 2p)"
 eq "other goals pass through" "set-ready 23	Shade cloth (the owner answered)" "$(printf '%s\n' "$mw_out" | sed -n 3p)"
 eq "an issue with no verdict is not marked waiting" "ask-fix 24" "$(mark_waiting_goals "$(printf 'mark-waiting 24\tRoof drains (a question to the owner is open)\n')" '' | cut -c1-10)"
+# The same words, written once, posted as the ask on two issues: neither is proposed as mark-waiting, whatever its own shape read as (#1752).
+dp_verdicts=$(printf '25\tone\tis the mote done|done, close both|keep it open\n26\tone\tis the mote done|done, close both|keep it open\n27\tone\tsomething else entirely|yes|no\n')
+eq "two issues whose ask signed the same are both named" "25 26" "$(duplicate_ask_issues "$dp_verdicts" | sed 's/ $//')"
+eq "an issue with no match, or none to compare, names none" "" "$(duplicate_ask_issues "$(printf '28\tone\tnone\n29\tone\t\n')")"
+dp_extra=$(printf 'mark-waiting 25\tRoof drains (a question to the owner is open)\nmark-waiting 27\tShade cloth (a question to the owner is open)\n')
+dp_out=$(mark_waiting_goals "$dp_extra" "$dp_verdicts")
+eq "the duplicated issue is ask-fix, naming its own number, though its shape alone read as one" "ask-fix 25	Roof drains (not marked waiting: the same words were written once as the ask and posted on more than one issue, so none of them says what to look at for issue #25 on its own. Write this issue its own question, naming only its own work, with its own choices and one recommendation; the other issue keeps its own)" "$(printf '%s\n' "$dp_out" | sed -n 1p)"
+eq "an issue whose ask signed apart from the others is unaffected by the duplicate check" "mark-waiting 27	Shade cloth (a question to the owner is open)" "$(printf '%s\n' "$dp_out" | sed -n 2p)"
 # An issue put to the owner is not also offered to an agent.
 ow_round=$(printf 'dispatch 31\tWatering plan\ndispatch 32 33\tSeed list\nstop: proposal ready for approval\n')
 ow_extra=$(printf 'ask-fix 31\tWatering plan (not marked waiting: no ask)\nmark-waiting 33\tSeed list (a question to the owner is open)\n')
@@ -6512,6 +6520,13 @@ eq "ask_verdict reads only the shape: the bad ask is still one" "one" "$(ask_ver
 eq "each plain-words fault says how to fix it, with an example" "yes yes yes" "$(ask_fix longname | grep -q 'Start every choice with a name of a few words' && echo yes) $(ask_fix pointer | grep -q 'Give it as their benefit' && echo yes) $(ask_fix jargon | grep -q 'Say it as a decision about their project' && echo yes)"
 eq "the skill carries the bad ask and its rewrite, and both read as the check says" "2 longname one" "$(grep -c -e 'Should the watering job close both gaps at once?' -e 'Should every change to the watering schedule be tested before it is added?' "$root/skills/project-drive/SKILL.md") $(ask_check < "$ap_fx/bad-technical.md") $(ask_check < "$ap_fx/rewritten.md")"
 eq "the hook refuses a put-off the same way as a missing recommendation" "yes" "$([ -n "$(ask_fix putoff)" ] && echo yes)"
+# The same words, written once, posted as the ask on two issues: caught by comparing signatures, not by reading them again (#1752).
+sg_a="$(printf "Is the Mote's notice and pinning work done?\n\n1. Done, close both: nothing more is built for it. Recommended.\n2. Keep it open: say what is missing.\n" | ask_signature)"
+sg_b="$(printf "Is the Mote's notice and pinning work done?\n\n1. Done, close both: nothing more is built for it. Recommended.\n2. Keep it open: say what is missing.\n" | ask_signature)"
+eq "the same ask, written twice, signs the same" "yes" "$([ "$sg_a" = "$sg_b" ] && [ -n "$sg_a" ] && echo yes)"
+eq "a differently worded ask signs apart" "no" "$([ "$sg_a" = "$(ask_signature < "$ap_fx/one-issue-own-question.md")" ] && echo yes || echo no)"
+eq "Instructions, a bare question or nothing has no signature to compare" "none none none" "$(printf 'Instructions: Set up the hub\n\n1. Add the secret.\n' | ask_signature) $(printf 'Should the beds be watered?\n' | ask_signature) $(printf '' | ask_signature)"
+eq "the signature leaves ask_check and ask_verdict reading what they always did" "one one" "$(ask_check < "$ap_fx/one-issue-own-question.md") $(ask_verdict < "$ap_fx/one-issue-own-question.md")"
 
 # Which command sets an issue to waiting on the owner.
 eq "gh issue edit adding the label" "207" "$(waiting_on_owner_issue 'gh issue edit 207 --add-label state:waiting-on-owner --remove-label state:in-progress')"

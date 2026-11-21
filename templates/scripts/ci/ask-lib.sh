@@ -57,6 +57,15 @@ ask_verdict() { ask_read 0; }
 #   folded     one question stands for several decisions (it names a count of them, or asks to approve them all)
 ask_check() { ask_read 1; }
 
+# ask_signature < COMMENTS
+# The newest ask's question and choice names, normalized (Markdown stripped,
+# lowercased, joined by "|"), so one issue's ask can be compared against
+# another's: the same text written once and posted on two issues is caught
+# by matching signatures, never by reading the words again (an ask is about
+# the one issue it is posted on). "none" when the newest comment with an ask
+# has no choices to read (Instructions, a bare question, nothing).
+ask_signature() { ask_read 2; }
+
 # The one reader behind both; CHECK is 1 for ask_check.
 ask_read() {
   awk -v next_line="$ASK_NEXT" -v check="$1" '
@@ -193,7 +202,7 @@ ask_read() {
         L[++n] = R[k]
       }
       for (k = 1; k <= n; k++) if (L[k] != "") break
-      if (k <= n && tolower(L[k]) ~ /^(\*\*)?[ \t]*instructions[ \t]*(\*\*)?[ \t]*:/) return check == 1 ? instr_check(orig) : "instructions"
+      if (k <= n && tolower(L[k]) ~ /^(\*\*)?[ \t]*instructions[ \t]*(\*\*)?[ \t]*:/) return check == 1 ? instr_check(orig) : (check == 2 ? "none" : "instructions")
       for (at = 1; at <= n; at++) {
         if (!is_choice(L[at])) continue
         num = L[at]; sub(/[.)].*/, "", num)
@@ -212,6 +221,11 @@ ask_read() {
           if (is_putoff(L[k])) offs++
         }
         if (items < 2) continue
+        if (check == 2) {
+          sg = tolower(trim(plain(L[before])))
+          for (k = at; k <= n; k++) { if (L[k] == "") continue; if (!is_choice(L[k])) break; sg = sg "|" cname(L[k]) }
+          return sg
+        }
         if (items == 2) {
           c1 = cname(L[at]); c2 = ""
           for (k = at + 1; k <= n; k++) if (is_choice(L[k])) { c2 = cname(L[k]); break }
@@ -221,7 +235,7 @@ ask_read() {
         if (recs == 1 && check == 1 && (w = wording(L, L[before], at, n)) != "") return w
         return recs == 1 ? "one" : recs == 0 ? "unrecommended" : "several"
       }
-      for (k = n; k >= 1; k--) if (asks(L[k])) return "question"
+      for (k = n; k >= 1; k--) if (asks(L[k])) return (check == 2 ? "none" : "question")
       return "none"
     }
     {
