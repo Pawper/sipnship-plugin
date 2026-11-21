@@ -275,6 +275,9 @@ The goal lines and what each means:
   before pushing, never run the queue or re-run CI), the pull request it must open with `Closes #N`, and, when
   it must ask the owner, to write the ask for a builder who is not technical as "How to write an ask" below
   says (what happened, the question about their project, short-named choices, the reason as their benefit).
+  The brief also says: your first step, before a worktree or any work, is `sh "${CLAUDE_PLUGIN_ROOT}/scripts/drive/claim.sh" N check TOKEN`
+  for each issue: when it prints `taken:` for an open pull request, a branch or another starter's claim, stop with one
+  line saying so and build nothing; your own token is not a reason to stop.
   The brief also says: once the pull request is open, check that it can merge (its mergeable state, not the
   checks); a push that lands on main while you worked can make yours conflict, and GitHub starts no checks on
   a pull request that conflicts, so waiting for them would wait forever (#2096). When it conflicts, merge
@@ -289,7 +292,12 @@ The goal lines and what each means:
   never a loop: a check still red after that one fix, or whose cause is outside your own change (shared code,
   or already failing on main), gets one comment naming the cause, `state:blocked` when the cause is not yours
   to fix, and your turn ends there; the drive's own `fix-pr` goal picks it up from the next tick.
-  Dispatch every unit of the round at once. Set the issue to `state:in-progress` with `scripts/state.sh`.
+  Dispatch every unit of the round at once. **Claim every issue of the unit first, before any agent starts**: run
+  `sh "${CLAUDE_PLUGIN_ROOT}/scripts/drive/claim.sh" N claim` (the scheduled drive, the wake and a Start now press all
+  claim through this one script, so the second starter sees the first, #2238). `taken: WHY` means another starter, a
+  branch or an open pull request already has the issue: start no agent for it, say the why in one line and go on. Only
+  when it prints `claimed TOKEN`, set the issue to `state:in-progress` with `scripts/state.sh` and start the agent. Put
+  the token in the brief, so the agent releases it at its end (`claim.sh N release TOKEN`).
   Keep the brief in a file and the prompt short: name the issue, the worktree and the pull request to open, and
   point at the brief file ("read your brief first and follow it"). The agent-model hook reads such a prompt as a
   unit of work, never a lookup, so `dispatchModel` is allowed for it whatever its length.
@@ -358,7 +366,7 @@ The goal lines and what each means:
   closes or the builder cancels it on its card, which leaves `Queue answer: start-next #N: cancelled` on the drive issue.
 - **`start-now N by LOGIN`, N above 0.** Read the issue's state now, not what it was when the press was made (a
   press waits behind this tick's own board read, and another session, or this round's own dispatch, may have
-  started it meanwhile, #2096): if it already carries `state:in-progress`, has an open pull request, or is one of
+  started it meanwhile, #2096; claim it with `claim.sh N claim` before starting, as for any dispatch, #2238): if it already carries `state:in-progress`, has an open pull request, or is one of
   the units this tick already dispatched, start nothing new for it and answer `Queue answer: start-now #N:
   started-now` at once, since it already is. Otherwise, start the published round's unit that
   holds it (the plan has already led the round with it), at once, when it shares no area with a running unit or

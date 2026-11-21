@@ -90,3 +90,31 @@ slow_say() {
       printf "%s was slow: it took %ds, %ds over its limit of %ds. Nothing fails on time; the cause is the failed step.\n", name, took, took - lim, lim
     }'
 }
+
+# failed_others JOBS SELF
+# The names of the jobs that failed (a failed job, or a cancelled one with a
+# step of its own that failed), SELF left out, comma-separated, in the order
+# they ended (the report sorts JOBS by end time). Read from the same tab lines.
+failed_others() {
+  printf '%s\n' "$1" | awk -F '\t' -v me="$2" '
+    ($4 == "failure" || ($4 == "cancelled" && $6 != "")) && $2 != me { out = out (out == "" ? "" : ", ") $2 }
+    END { print out }'
+}
+
+# stopped_say PART SECONDS LIMIT OTHERS
+# What a test part says when the run stops it: SECONDS is how long it had run,
+# LIMIT its time limit in minutes, OTHERS the jobs that failed (failed_others).
+# Only a part that reached its limit says it ran out of time; one stopped
+# sooner was stopped from outside, because another part failed when OTHERS
+# names one (the matrix cancels its siblings), and says how long it ran.
+stopped_say() {
+  if [ "${2:-0}" -ge $(( ${3:-180} * 60 )) ]; then
+    printf 'The %s part ran out of its %s minutes.' "$1" "$3"; return 0
+  fi
+  if [ "${2:-0}" -lt 60 ]; then ss_ran="${2:-0} seconds"; else ss_ran="$(( $2 / 60 )) minutes"; fi
+  if [ -n "$4" ]; then
+    printf 'The %s part was stopped because another part failed (%s), after %s. It did not fail and did not run out of time.' "$1" "$4" "$ss_ran"
+  else
+    printf 'The %s part was stopped from outside after %s. It did not run out of time.' "$1" "$ss_ran"
+  fi
+}

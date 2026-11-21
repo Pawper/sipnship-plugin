@@ -1778,6 +1778,7 @@ case "$*" in
   *"pulls/501"*) printf 'issue-230\nMakes the shed list sortable.\n\nCloses #230\n' ;;
   *"pulls?state=open"*) cat "$ST_DIR/open-pulls" 2>/dev/null ;;
   *"pulls/503"*) printf 'bed-photos\nMakes the shed list sortable.\n\nPart of #240\nPart of #241\n' ;;
+  *"pulls/504"*) printf 'bed-photos\nMakes the shed list sortable.\n\nNot built here: #226 stays open with its Left note.\nPart of #226\n' ;;
   *"pulls/502"*) printf 'bed-photos\nNo issue is named here.\n' ;;
   *"/issues/"*"/labels"*) n=$(num "$@"); cut -f2 "$ST_DIR/issue-$n" | tr '|' '\n' ;;
   *"/issues/"*) n=$(num "$@"); cat "$ST_DIR/issue-$n" ;;
@@ -1791,6 +1792,9 @@ printf 'open\tstate:in-progress|task\n' > "$st/issue-226"; : > "$st/log"
 st_run settle_merged 500
 eq "a merged pull request that did not close its issue leaves no In progress issue behind" ". 1" "$(st_in_progress 226) $(grep -c '^PUT 226 {"labels":\["task","state:ready"\]}' "$st/log")"
 eq "and says so on the issue" "1" "$(grep -c '^POST 226 Pull request #500 merged without closing this issue' "$st/log")"
+printf 'open\tstate:in-progress|task\n' > "$st/issue-226"; : > "$st/log"
+st_run settle_merged 504
+eq "a pull request whose body says the issue stays open still returns it to Ready, with no second comment" "1 0" "$(grep -c '^PUT 226 .*state:ready' "$st/log") $(grep -c '^POST 226' "$st/log")"
 printf 'closed\tstate:in-progress|task\n' > "$st/issue-226"; : > "$st/log"
 st_run settle_merged 500
 eq "an issue GitHub closed is left alone" "0" "$(grep -c '^PUT' "$st/log")"
@@ -2062,6 +2066,16 @@ eq "the summary names the slow block beside the failed step" "1 1" "$(failure_su
 eq "the annotation carries it too" "1" "$(failure_annotation tests 'Run the shell-1 part' 'FAIL  the planter count' "$(slow_say "$fl_log")" | grep -c 'Also slow, and not the cause')"
 eq "no slow block, no extra words" "0" "$(failure_summary 'tests' 'Run the shell-1 part' 'FAIL  the planter count' '' | grep -c 'Also slow')"
 eq "the report reads the whole log, not its last lines" "1" "$(grep -c 'slow=$(slow_say "$(cat "$2")")' "$root/templates/scripts/ci/failure-report.sh")"
+# A part the run stops says why, never that it ran out of minutes it did not use.
+sp_jobs=$(printf '9\ttests (shell-1-4)\tcompleted\tfailure\tr1\tRun the shell-1-4 part\t2026-11-21T20:07:44Z\t2026-11-21T20:07:00Z\n10\ttests (shell-2-4)\tin_progress\t\tr2\t\t\t2026-11-21T20:07:01Z\n')
+eq "the part that failed is named for the stopped one" "tests (shell-1-4)" "$(failed_others "$sp_jobs" 'tests (shell-2-4)')"
+eq "a part stopped after two minutes is not out of time" "The shell-2-4 part was stopped because another part failed (tests (shell-1-4)), after 1 minutes. It did not fail and did not run out of time." "$(stopped_say shell-2-4 100 180 'tests (shell-1-4)')"
+eq "stopped with no failed part says from outside, with how long" "The queue-console part was stopped from outside after 45 seconds. It did not run out of time." "$(stopped_say queue-console 45 180 '')"
+eq "only a part at its limit says it ran out of time" "The shell-1-4 part ran out of its 180 minutes." "$(stopped_say shell-1-4 10800 180 '')"
+eq "a stopped part never says it ran out of minutes" "0" "$(stopped_say shell-1-4 109 180 'tests (shell-2-4)' | grep -c 'ran out of its')"
+eq "the cancelled step asks the report for the reason" "1" "$(grep -c 'failure-report.sh stopped "${{ matrix.part }}" 180' "$root/templates/.github/workflows/ci.yml")"
+eq "the old fixed words are gone from the workflow" "0" "$(grep -c 'ran out of its 180 minutes' "$root/templates/.github/workflows/ci.yml")"
+eq "the run's report lists failed jobs by end time" "1" "$(grep -c 'sort -t .* -k7,7)" "$lines"' "$root/templates/scripts/ci/failure-report.sh")"
 eq "every check step of the checks job keeps its output" "yes" "$(for n in line-endings numbering-check spec-check setup-check shared-check hotspots-check delete-check client-env-check design-check mock-check; do grep -q "check-log.sh sh scripts/ci/$n.sh" "$root/templates/.github/workflows/ci.yml" || echo no; done | grep -q no && echo no || echo yes)"
 eq "the failing job's annotation is fed the check log" "1" "$(grep -c 'failure-report.sh job "\$RUNNER_TEMP/check.log"' "$root/templates/.github/workflows/ci.yml")"
 eq "red outside the code, up to date: CI again" "rerun" "$(unstick_action "$(us_row MERGEABLE red fff999 0 yes 'an install error (EPERM)' done)" "" no)"
@@ -7632,6 +7646,58 @@ eq "no stall when an issue is dispatched" "" "$(stall_note "$(printf 'dispatch 9
 hr_part=$(printf 'hold 1469\tFrost alerts\tPart of it landed; the drive has a reader working out what is left of it this round\nhold 1752\tSeed list\tPart of it landed; the drive has a reader working out what is left of it this round\n')
 eq "a round holding every issue says so as a stall" "stall: every ready issue is held (2), and nothing in it waits on you" "$(stall_note "$hr_part" 6)"
 eq "no runner online is a different cause, so no stall line here" "" "$(stall_note "$hr_part" 0)"
+block_end
+section 'one issue has one agent: a claim before the start, and a check as the agent'"'"'s first step (drive)'
+. "$root/scripts/drive/claim-lib.sh"
+cl_t=$(printf '\t')
+cl_now=1000000
+# Pure reading: an open pull request or a branch already works the issue; a free one says nothing.
+cl_pulls=$(printf '55\t212,214\n56\t\n')
+eq "an open pull request that closes the issue makes it busy, naming the pull request" "an open pull request (#55) already carries it" "$(claim_busy_reason 214 "$cl_pulls" "")"
+eq "a branch named for the issue makes it busy" "a branch (issue-217-compost) already works it" "$(claim_busy_reason 217 "$cl_pulls" "$(printf 'main\nissue-217-compost\n')")"
+eq "an issue with neither is free, and issue-21 is not issue-217" "" "$(claim_busy_reason 21 "$cl_pulls" "$(printf 'issue-217-compost\n')")"
+# Two starters, one issue: the older claim wins and the later one stands down.
+cl_two=$(printf '901\t%s\tClaim: drive-1\n902\t%s\tClaim: wake-2\n' "$((cl_now - 60))" "$((cl_now - 59))")
+eq "of two live claims the lower comment number holds the issue" "drive-1" "$(claim_winner "$cl_two" "$cl_now" 14400)"
+eq "the later starter finds it is not the winner" "no" "$([ "$(claim_winner "$cl_two" "$cl_now" 14400)" = wake-2 ] && echo yes || echo no)"
+cl_rel=$(printf '901\t%s\tClaim: drive-1\n902\t%s\tClaim: wake-2\n903\t%s\tClaim released: drive-1\n' "$((cl_now - 60))" "$((cl_now - 59))" "$((cl_now - 10))")
+eq "a released claim no longer holds it, so the next one does" "wake-2" "$(claim_winner "$cl_rel" "$cl_now" 14400)"
+eq "a claim older than its time limit holds nothing" "" "$(claim_winner "$cl_two" "$((cl_now + 20000))" 14400)"
+eq "a reply that only mentions a claim is no claim" "" "$(claim_winner "$(printf '904\t%s\tThe Claim: of the agent was released\n' "$cl_now")" "$cl_now" 14400)"
+# claim.sh against a stand-in for GitHub: two starters, one issue, one agent.
+cl_dir=$(mktemp -d); mkdir -p "$cl_dir/bin"
+cat > "$cl_dir/bin/gh" <<'GHEOF'
+#!/bin/sh
+# A stand-in for gh api: comments live in $FAKE/comments (ID, epoch, first line), open pull requests in $FAKE/pulls.
+[ "$1" = auth ] && exit 0
+shift; method=GET; body=; url=
+while [ $# -gt 0 ]; do case "$1" in -X) method=$2; shift ;; -f) body=${2#body=}; shift ;; repos/*) url=$1 ;; esac; shift; done
+case "$method $url" in
+  "GET repos/{owner}/{repo}/issues/"[0-9]*"/comments"*) cat "$FAKE/comments" ;;
+  "GET repos/{owner}/{repo}/issues/"[0-9]*) echo open ;;
+  "GET repos/{owner}/{repo}/pulls"*) cat "$FAKE/pulls" ;;
+  "POST repos/{owner}/{repo}/issues/"[0-9]*"/comments") n=$(( $(wc -l < "$FAKE/comments") + 901 )); printf '%s\t%s\t%s\n' "$n" "$(date +%s)" "$(printf '%s' "$body" | head -n 1)" >> "$FAKE/comments"; echo "$n" ;;
+  "PATCH repos/{owner}/{repo}/issues/comments/"*) id=${url##*/}; awk -F'\t' -v OFS='\t' -v id="$id" -v b="$(printf '%s' "$body" | head -n 1)" '$1 == id { $3 = b } { print }' "$FAKE/comments" > "$FAKE/c.new"; mv "$FAKE/c.new" "$FAKE/comments" ;;
+esac
+GHEOF
+chmod +x "$cl_dir/bin/gh"; : > "$cl_dir/comments"; : > "$cl_dir/pulls"
+cl_run() { (cd "$cl_dir" && FAKE="$cl_dir" PATH="$cl_dir/bin:$PATH" sh "$root/scripts/drive/claim.sh" "$@" 2>&1); }
+eq "the first starter claims a free issue" "claimed drive-1" "$(cl_run 217 claim drive-1)"
+eq "the second starter, one tick later, is turned away" "taken: another starter claimed it (drive-1)" "$(cl_run 217 claim wake-2)"
+eq "the agent's own check, with its token, is free to go on" "free" "$(cl_run 217 check drive-1)"
+eq "a check by anyone else sees the claim" "taken: another starter claimed it (drive-1)" "$(cl_run 217 check)"
+printf '56\t217\n' > "$cl_dir/pulls"
+eq "an open pull request that closes the issue turns every starter and the agent away" "taken: an open pull request (#56) already carries it" "$(cl_run 217 check drive-1)"
+: > "$cl_dir/pulls"
+eq "releasing ends the claim, so a later round may claim again" "claimed drive-9" "$(cl_run 217 release drive-1 >/dev/null; cl_run 217 claim drive-9)"
+eq "a bad issue number is refused" "2" "$(cl_run abc claim >/dev/null; echo $?)"
+. "$root/scripts/drive/stale-lib.sh"
+# The plan reads a Ready issue with an open pull request that closes it as running: it is held, never dispatched again.
+cl_facts=$(printf 'issue	214	Frost night reminder	state: ready		
+')
+eq "a Ready issue an open pull request closes is held, not dispatched" "hold${cl_t}214${cl_t}Frost night reminder${cl_t}Its pull request (#55) is already open and carries it; no agent is started on it" "$(carried_holds "$cl_facts" "$(printf '55	no	214
+')")"
+eq "the skill claims before every dispatch and the agent checks first" "1 1" "$(grep -c 'claim.sh\" N claim' "$root/skills/project-drive/SKILL.md") $(grep -c 'claim.sh\" N check TOKEN' "$root/skills/project-drive/SKILL.md")"
 block_end
 section 'a round is sized by its work, never by free runners (drive)'
 . "$root/scripts/drive/drive-lib.sh"; . "$root/scripts/drive/round-lib.sh"; . "$root/scripts/drive/bundle-lib.sh"; . "$root/scripts/drive/round-sizing-lib.sh"; . "$root/scripts/drive/hold-reasons-lib.sh"; . "$root/scripts/drive/held-round-lib.sh"
