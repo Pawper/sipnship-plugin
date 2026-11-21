@@ -10,6 +10,7 @@
 # another live claim (under four hours old; CLAIM_TTL seconds) is older than this one. REST only.
 here=$(dirname "$0")
 . "$here/claim-lib.sh"
+type gitb >/dev/null 2>&1 || gitb() { if command -v timeout >/dev/null 2>&1; then timeout -k 5 "${GIT_BOUND_SECONDS:-120}" git "$@"; else git "$@"; fi; }
 usage() { echo "usage: claim.sh ISSUE claim [TOKEN] | check | release TOKEN" >&2; exit 2; }
 case "${1:-}" in ''|*[!0-9]*) usage ;; esac
 issue=$1; mode=${2:-}
@@ -25,7 +26,7 @@ claim_busy() {
   state=$(gh api "repos/{owner}/{repo}/issues/$issue" --jq .state 2>/dev/null) || { echo "the issue could not be read"; return 0; }
   [ "$state" = open ] || { echo "the issue is not open"; return 0; }
   pulls=$(gh api "repos/{owner}/{repo}/pulls?state=open&per_page=100" --jq '.[] | [.number, ((.body // "") | [scan("(?i)(?:closes|fixes|resolves) #([0-9]+)") | .[0]] | join(","))] | @tsv' 2>/dev/null)
-  branches=$( { git ls-remote --heads origin "issue-$issue" "issue-$issue-*" "fix-$issue" 2>/dev/null | sed 's#.*refs/heads/##'; git branch --list "issue-$issue" "issue-$issue-*" "fix-$issue" 2>/dev/null | sed 's/^[*+ ]*//'; } )
+  branches=$( { gitb ls-remote --heads origin "issue-$issue" "issue-$issue-*" "fix-$issue" 2>/dev/null | sed 's#.*refs/heads/##'; git branch --list "issue-$issue" "issue-$issue-*" "fix-$issue" 2>/dev/null | sed 's/^[*+ ]*//'; } )
   claim_busy_reason "$issue" "$pulls" "$branches"
 }
 
