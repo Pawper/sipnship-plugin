@@ -15,13 +15,11 @@
 # scripts/ci/service-auth.sh (for service_sign_in), curl and node; prints
 # nothing without any of them.
 #
-# Today this always prints nothing in practice: service_sign_in makes a
-# repo-scoped bearer token, good on /v1/ calls; this route is read only
-# with a browser's own signed-in cookie (packages/web/src/app.ts's `read`,
-# the only thing it calls out through, forwards the cookie header and
-# never the bearer). There is not yet a way for this script to get that
-# cookie, so every call here reaches the route signed out and returns
-# nothing, same as if the service were unreachable.
+# The machine signs in with its repository token as a bearer and names its
+# repository's GitHub id in x-sipnship-repo; the web worker asks the service
+# whose token it is (GET /v1/repos/ID/who) and lets in only that repository.
+# A workflow's identity token is not a machine token, so a call from one
+# still gets no verdict and the ask is posted as it always was.
 ask_plain_verdict() {
   [ -f scripts/ci/service-auth.sh ] || return 0
   command -v curl >/dev/null 2>&1 || return 0
@@ -34,7 +32,7 @@ ask_plain_verdict() {
   [ -n "$apv_full" ] || return 0
   apv_body=$(printf '%s' "$1" | node -e 'process.stdout.write(JSON.stringify({ text: require("fs").readFileSync(0, "utf8") }))' 2>/dev/null)
   [ -n "$apv_body" ] || return 0
-  apv_reply=$(printf 'Authorization: Bearer %s\n' "$sv_token" | curl -s --max-time 10 -X POST -H @- -H 'content-type: application/json' --data "$apv_body" "${SIPNSHIP_URL:-https://sipnship.dev}/app/$apv_full/asks/plain" 2>/dev/null)
+  apv_reply=$(printf 'Authorization: Bearer %s\nx-sipnship-repo: %s\n' "$sv_token" "$sv_id" | curl -s --max-time 10 -X POST -H @- -H 'content-type: application/json' --data "$apv_body" "${SIPNSHIP_URL:-https://sipnship.dev}/app/$apv_full/asks/plain" 2>/dev/null)
   [ -n "$apv_reply" ] || return 0
   printf '%s' "$apv_reply" | node -e '
     let raw = "";

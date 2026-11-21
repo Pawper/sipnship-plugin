@@ -6,7 +6,7 @@
 # looked. Sourced by plan.sh after round-sizing-lib.sh and area-plan-lib.sh;
 # round_file is pure and tests/run.sh covers it.
 
-# round_file ROUND UNITS AREAS ISSUES SIZED
+# round_file ROUND UNITS AREAS ISSUES SIZED [STALL]
 # ROUND is the plan's goal lines, UNITS the plan_units/area_units lines
 # ("unit<TAB>NUMS<TAB>TITLES<TAB>WHY<TAB>FILES"), AREAS the project's areas
 # list (empty: each unit's own files stand for its areas), ISSUES the open
@@ -16,11 +16,12 @@
 #   unit: 12 14 | why: both change ... | areas: watering   one per dispatch goal
 #   hold: 16 | why: ... | after: 12                         one per issue held
 #   sized: ...
+#   stall: ...                                              when every ready issue is held, the plan's stall words
 # An issue is named once: a unit first, then the first hold that names it. A
 # unit on no area of the list says `areas: none`; a hold says none too, since
 # it starts nothing and is planned again next run.
 round_file() {
-  { printf '%s\n' "$2" | sed 's/^/U\t/'; printf '%s\n' "$4" | sed 's/^/I\t/'; printf '%s\n' "$1" | sed 's/^/R\t/'; } | tr -d '\r' | RF_AREAS=$3 awk -F'\t' -v sized="$5" '
+  { printf '%s\n' "$2" | sed 's/^/U\t/'; printf '%s\n' "$4" | sed 's/^/I\t/'; printf '%s\n' "$1" | sed 's/^/R\t/'; } | tr -d '\r' | RF_AREAS=$3 awk -F'\t' -v sized="$5" -v stall="${6:-}" '
     function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s); return s }
     function clean(s) { gsub(/\|/, "/", s); gsub(/[ \t]+/, " ", s); return trim(s) }
     function cap1(s) { return toupper(substr(s, 1, 1)) substr(s, 2) }
@@ -78,13 +79,14 @@ round_file() {
       for (i = 1; i <= nu; i++) print units[i]
       for (i = 1; i <= nh; i++) { num = horder[i]; if (fresh(num) != "") print held[num] }
       if (sized != "") print "sized: " substr(clean(sized), 1, 160)
+      sub(/^stall: /, "", stall); if (stall != "") print "stall: " substr(clean(stall), 1, 200)
     }'
   # A unit the limit left out is a hold saying so (round-sizing-lib.sh); its issues are in no unit.
   rf_defer=$(printf '%s\n' "$1" | sed 's/^[0-9]*\. //' | grep '^defer [0-9]* unit(s):')
   [ -z "$rf_defer" ] || deferred_holds "$rf_defer" | sed 's/$/ | areas: none/'
 }
 
-# publish_proposal ROUND UNITS AREAS FACTS SIZED
+# publish_proposal ROUND UNITS AREAS FACTS SIZED [STALL]
 # Writes the round file to .scratch/drive/round.txt and publishes it with
 # publish-round.sh, then prints one line the round's report carries:
 #   published: <publish-round's own line>
@@ -100,7 +102,7 @@ publish_proposal() {
     { echo "# Guessed by the plan from each unit's files: this project keeps no list of areas."; echo "unplaced .scratch/drive/unplaced"
       printf '%s\n' "$2" | awk -F'\t' '$1 == "unit" { n = split($5, f, ","); for (i = 1; i <= n; i++) if (f[i] != "" && f[i] != "@tooling" && !(f[i] in s)) { s[f[i]] = 1; print f[i] " " f[i] } }'; } > "$pp_areas"
   fi
-  round_file "$1" "$2" "$pp_list" "$(printf '%s\n' "$4" | awk -F'\t' '$1 == "issue" { print $2 }')" "$5" > .scratch/drive/round.txt
+  round_file "$1" "$2" "$pp_list" "$(printf '%s\n' "$4" | awk -F'\t' '$1 == "issue" { print $2 }')" "$5" "${6:-}" > .scratch/drive/round.txt
   if [ "${PLAN_PUBLISH:-yes}" = no ]; then echo "not published: this run was told not to publish (a dry run); the round is in .scratch/drive/round.txt"; return 0; fi
   pp_out=$(sh "$here/publish-round.sh" --areas "$pp_areas" .scratch/drive/round.txt 2>&1); pp_rc=$?
   pp_first=$(printf '%s\n' "$pp_out" | sed -n 1p)

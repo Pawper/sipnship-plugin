@@ -46,6 +46,10 @@
 #                             how the plan sized the round, in its words (the
 #                             plan prints it as its "sized:" line); the Work
 #                             band's "Why this many" tip says it
+#   stall: every ready issue is held (2), and nothing in it waits on you
+#                             the plan's words when it holds every ready issue
+#                             with runners free; the Work tab says it in place
+#                             of "nothing proposed", never as a quiet round
 # No two units may share an issue, and no two may share an area of the list
 # the project keeps (.claude/areas.txt, or --areas FILE; scripts/drive/
 # areas-lib.sh gives its form) unless an apart line says why: the script says
@@ -64,6 +68,7 @@ here=$(dirname "$0")
 . "$here/round-lib.sh"
 . "$here/areas-lib.sh"
 . "$here/join-round-lib.sh"
+. "$here/publish-round-lib.sh"
 
 issue=""; dry=no; labels=yes; file=""; areas_file=.claude/areas.txt
 while [ $# -gt 0 ]; do
@@ -128,7 +133,7 @@ function arealist(s,   n, a, i, out) {
   return out
 }
 function bad(msg) { print "error\t" msg; failed = 1; exit }
-BEGIN { status = "proposed"; units = ""; held = ""; apart = ""; waits = ""; sized = ""; looked = ""; nu = 0; nh = 0 }
+BEGIN { status = "proposed"; units = ""; held = ""; apart = ""; waits = ""; sized = ""; stall = ""; looked = ""; nu = 0; nh = 0 }
 /^[ \t]*(#|$)/ { next }
 /^looked:/ {
   looked = trim(substr($0, 8))
@@ -136,6 +141,7 @@ BEGIN { status = "proposed"; units = ""; held = ""; apart = ""; waits = ""; size
   next
 }
 /^waits:/ { waits = substr(trim(substr($0, 7)), 1, 200); next }
+/^stall:/ { stall = substr(trim(substr($0, 7)), 1, 200); next }
 /^sized:/ { sized = substr(trim(substr($0, 7)), 1, 160); next }
 /^status:/ { v = trim(substr($0, 8)); if (v != "proposed" && v != "started") bad("status is proposed or started, not " v); status = v; next }
 /^(unit|hold|apart):/ {
@@ -186,8 +192,9 @@ END {
   # A proposed round may start nothing and still say why (holds only), or say only that the drive looked and found nothing (#2101). A started round has a unit.
   if (nu == 0 && status == "started") { print "error\tthe round has no unit line"; exit }
   if (waits != "") lines = lines "- Waits on: " waits "\n"
+  if (stall != "") lines = lines "- Stalled: " stall "\n"
   if (looked == "") looked = now
-  print "json\t{\"status\":\"" status "\",\"units\":[" units "]" (status == "proposed" ? ",\"looked\":\"" esc(looked) "\"" : "") ",\"held\":[" held "]" (apart != "" ? ",\"apart\":[" apart "]" : "") (waits != "" ? ",\"waits\":\"" esc(waits) "\"" : "") (sized != "" ? ",\"sized\":\"" esc(sized) "\"" : "") "}"
+  print "json\t{\"status\":\"" status "\",\"units\":[" units "]" (status == "proposed" ? ",\"looked\":\"" esc(looked) "\"" : "") ",\"held\":[" held "]" (apart != "" ? ",\"apart\":[" apart "]" : "") (waits != "" ? ",\"waits\":\"" esc(waits) "\"" : "") (sized != "" ? ",\"sized\":\"" esc(sized) "\"" : "") (stall != "" ? ",\"stall\":\"" esc(stall) "\"" : "") "}"
   print "open\t" open
   print "status\t" status
   print "count\t" nu
@@ -286,15 +293,5 @@ echo "Published the round on #$issue: $agents, $status."
 if [ "$update" = yes ]; then
   echo "The same round as the one already started: updated, no issue's State touched."
 elif [ "$status" = started ] && [ "$labels" = yes ] && [ -n "$open" ]; then
-  for n in $(printf '%s' "$open" | tr ',' ' '); do
-    have=$(gh api "repos/{owner}/{repo}/issues/$n/labels" --jq '.[].name' 2>/dev/null)
-    form="state:in-progress"
-    printf '%s\n' "$have" | grep -q '^state: ' && form="state: in-progress"
-    printf '%s\n' "$have" | grep -qxF "$form" && { echo "#$n: already In progress."; continue; }
-    printf '%s\n' "$have" | grep -E '^state: ?' | while IFS= read -r l; do
-      enc=$(printf '%s' "$l" | sed 's/:/%3A/g;s/ /%20/g')
-      gh api -X DELETE "repos/{owner}/{repo}/issues/$n/labels/$enc" >/dev/null 2>&1
-    done
-    if gh api -X POST "repos/{owner}/{repo}/issues/$n/labels" -f "labels[]=$form" >/dev/null 2>&1; then echo "#$n: set to In progress."; else echo "#$n: could not set In progress; set it with scripts/state.sh."; fi
-  done
+  set_in_progress "$open"
 fi

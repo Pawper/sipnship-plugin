@@ -6520,6 +6520,19 @@ eq "ask_verdict reads only the shape: the bad ask is still one" "one" "$(ask_ver
 eq "each plain-words fault says how to fix it, with an example" "yes yes yes" "$(ask_fix longname | grep -q 'Start every choice with a name of a few words' && echo yes) $(ask_fix pointer | grep -q 'Give it as their benefit' && echo yes) $(ask_fix jargon | grep -q 'Say it as a decision about their project' && echo yes)"
 eq "the skill carries the bad ask and its rewrite, and both read as the check says" "2 longname one" "$(grep -c -e 'Should the watering job close both gaps at once?' -e 'Should every change to the watering schedule be tested before it is added?' "$root/skills/project-drive/SKILL.md") $(ask_check < "$ap_fx/bad-technical.md") $(ask_check < "$ap_fx/rewritten.md")"
 eq "the hook refuses a put-off the same way as a missing recommendation" "yes" "$([ -n "$(ask_fix putoff)" ] && echo yes)"
+# One ask is about one issue (Maya's rooftop-garden app): never two issues' work in a question, never the same question on two issues.
+as_ask=$(printf 'The rain sensor is built.\n\nIs the rain sensor finished?\n\n1. Yes, finished: nothing more is built. Recommended, so you can move on.\n2. Keep it open: say what is missing.\n')
+eq "ask_question reads the line before the first choice" "Is the rain sensor finished?" "$(printf '%s\n' "$as_ask" | ask_question)"
+eq "ask_question reads the newest comment that has choices" "Is the rain sensor finished?" "$({ printf 'Thinking it over.\n%s\n' "$ASK_NEXT"; printf '%s\n' "$as_ask"; } | ask_question)"
+as_home=$(mktemp -d "${TMPDIR:-/tmp}/asks-seen.XXXXXX")
+as_run() { SIPNSHIP_HOME="$as_home" ask_scope "$1" "$2"; }
+eq "a question naming another issue is refused as two pieces of work" "other" "$(as_run 5 'Is the rain sensor (#6) finished?')"
+eq "a question naming its own issue is fine" "one" "$(as_run 5 'Is the rain sensor (#5) finished?')"
+eq "the first posting of a question is its own" "one" "$(as_run 7 'Is the Mote notice and pinning work done?')"
+eq "the same question on the same issue again is fine" "one" "$(as_run 7 'Is the Mote notice and pinning work done?')"
+eq "the same question on a second issue is refused" "twice" "$(as_run 8 'Is the Mote notice and pinning work done?')"
+eq "a different question on that issue is fine" "one" "$(as_run 8 'Does the pinning read well on a phone?')"
+eq "each of the two says how to fix it, for this issue alone" "yes yes" "$(ask_fix other | grep -q 'say only what to look at for this one' && echo yes) $(ask_fix twice | grep -q 'Each issue gets its own ask' && echo yes)"
 # The same words, written once, posted as the ask on two issues: caught by comparing signatures, not by reading them again (#1752).
 sg_a="$(printf "Is the Mote's notice and pinning work done?\n\n1. Done, close both: nothing more is built for it. Recommended.\n2. Keep it open: say what is missing.\n" | ask_signature)"
 sg_b="$(printf "Is the Mote's notice and pinning work done?\n\n1. Done, close both: nothing more is built for it. Recommended.\n2. Keep it open: say what is missing.\n" | ask_signature)"
@@ -7640,6 +7653,14 @@ eq "with no areas list a unit's own files stand for its areas, and a unit with n
 unit: 6 | areas: none" "$(round_file "$(printf 'dispatch 5\tA\ndispatch 6\tB\n')" "$(printf 'unit\t5\tA\t\tsrc/a.ts,src/b.ts\nunit\t6\tB\t\t\n')" "" "$(printf '5\n6\n')" "" | grep '^unit')"
 eq "an issue is named once, in its unit before any hold" "unit: 7 | areas: none" "$(round_file "$(printf 'dispatch 7\tA\nhold 7\tA\tAfter: B\n')" "" "" 7 "" | grep -v '^status')"
 eq "round_areas reads none as no area of the list" "unit: 7 | areas:" "$(round_areas "$pp_areas" 'unit: 7 | areas: none')"
+# A round that holds every ready issue with runners free carries the stall words to the Work tab (#2047).
+ps_say='stall: every ready issue is held (2), and nothing in it waits on you'
+eq "the round file carries the stall words, without the plan's own prefix" "stall: every ready issue is held (2), and nothing in it waits on you" "$(round_file "$(printf 'hold 7\tA\tAfter: B\n')" "" "" 7 "" "$ps_say" | grep '^stall:')"
+eq "a round with no stall carries no stall line" "0" "$(round_file "$(printf 'hold 7\tA\tAfter: B\n')" "" "" 7 "" "" | grep -c '^stall:')"
+ps_dir=$(mktemp -d); echo "none none" > "$ps_dir/areas.txt"
+round_file "$(printf 'hold 7\tA\tAfter: B\n')" "" "" 7 "" "$ps_say" > "$ps_dir/round.txt"
+eq "the published marker holds the stall, and the comment names it" "1 1" "$(sh "$root/scripts/drive/publish-round.sh" --dry-run --areas "$ps_dir/areas.txt" "$ps_dir/round.txt" | grep -c '"stall":"every ready issue is held (2), and nothing in it waits on you"') $(sh "$root/scripts/drive/publish-round.sh" --dry-run --areas "$ps_dir/areas.txt" "$ps_dir/round.txt" | grep -c 'Stalled: every ready issue is held')"
+eq "plan.sh hands the stall words to the published round" "1" "$(grep -c 'publish_proposal .*"\$stall_said"' "$root/scripts/drive/plan.sh")"
 pp_dir=$(mktemp -d); mkdir -p "$pp_dir/bin" "$pp_dir/work/.claude"
 printf '%s\n' "$pp_areas" > "$pp_dir/work/.claude/areas.txt"
 cat > "$pp_dir/bin/gh" <<'FAKE'

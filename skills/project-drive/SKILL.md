@@ -491,6 +491,10 @@ is not yet technical, who knows their project and not our machinery. Write it fo
    ("Recommended, so a broken schedule never reaches your beds"), never where something is written ("since
    the issue's Done when line asks for it").
 
+An ask is about the one issue it is posted on. Never name a second issue's work in the question, and never post
+the same question on two issues: when one change built two, each issue gets its own question saying what to look
+at for that issue alone (the hook refuses both, in the words of `ask-fix`).
+
 A term such as CI, spec or pull request is allowed, never forbidden: make it easier where it stands ("a pull
 request, the proposed change with what it does") and link it when it names something they can open. Never leave
 it bare, and never put a script name, file name, label name or path in the question or a choice's name.

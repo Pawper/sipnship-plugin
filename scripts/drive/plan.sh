@@ -279,7 +279,7 @@ round=$(quiet_declined_goals "$round" "$facts" .scratch/drive/declined.tsv); ext
 round=$(say_every_pr "$round" "$snapshot")  # every open pull request has a line, whatever its checks say
 plan_stage "landing, release and deploy read"
 round=$(lead_red_main "$round")  # a red main's goal is the first numbered line (rank-lib.sh)
-number_proposal "$round"; stall_note "$round" "$runners_online"  # every ready issue held: said as a stall naming what frees the most (#2055)
+number_proposal "$round"; stall_said=$(stall_note "$round" "$runners_online"); [ -z "$stall_said" ] || printf '%s\n' "$stall_said"  # every ready issue held: said as a stall naming what frees the most (#2055)
 # Auto Drive, from the drive issue's label drive:auto: one REST call. On is a
 # standing approval; off, the proposal is posted and waits for a reply.
 auto=$(auto_drive_state "$drive_line")
@@ -295,4 +295,4 @@ summary_note
 health_note
 wake_note
 # The proposal is published by this run itself, never left to the round's model (propose-lib.sh, #2101): the report carries this line.
-publish_proposal "$round" "$units" "$areas_text" "$facts" "$sized_said"
+publish_proposal "$round" "$units" "$areas_text" "$facts" "$sized_said" "$stall_said"
