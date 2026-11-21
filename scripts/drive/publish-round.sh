@@ -111,10 +111,7 @@ $(gh api "repos/{owner}/{repo}/issues?state=open&labels=state:%20in-progress&per
 fi
 err=$(area_problem "$round" "$running")
 if [ -n "$err" ]; then echo "The round was not published: $err." >&2; exit 1; fi
-# A round published as started while another runs adds its units to that round: the units still at work stay in the marker beside the new ones, so the round lands as one batch and the new units are not a second round (#2122).
-if [ -n "${running_pr:-}" ] && printf '%s\n' "$round" | grep -qE '^[ 	]*status:[ 	]*started'; then
-  round=$(keep_running_units "$round" "$running_pr")
-fi
+[ -z "${running_pr:-}" ] || ! printf '%s\n' "$round" | grep -qE '^[ 	]*status:[ 	]*started' || round=$(keep_running_units "$round" "$running_pr")  # a started round added while another runs keeps the running units beside the new ones: one round, one batch (#2122)
 
 # The round as JSON and as a plain comment, or the first thing wrong with it.
 out=$(printf '%s\n' "$round" | awk -v now="$(date -u +%Y-%m-%dT%H:%M:%SZ)" '
