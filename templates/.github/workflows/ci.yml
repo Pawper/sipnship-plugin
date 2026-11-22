@@ -563,7 +563,16 @@ jobs:
     needs: [full, tests]
     if: always() && github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && needs.full.result == 'success' && needs.tests.result == 'success'
     runs-on: RUNS_ON
+    permissions:
+      contents: read
+      issues: write
     steps:
+      - uses: actions/checkout@v4
+      - name: Record a flake, when the very next run cleared the red with no fix
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: sh scripts/ci/report-flake.sh "${{ github.run_id }}" || true
       - name: Close the red-main issue now that main is green
         env:
           GH_TOKEN: ${{ github.token }}

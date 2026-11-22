@@ -117,26 +117,53 @@ cat "$root"/templates/scripts/ci/batch-lib.sh "$root"/templates/scripts/ci/queue
 
 # bounded SECONDS COMMAND...: run a command the suite starts (a nested suite
 # above all) with a time bound, wait for it, and end it and its children when
-# the bound passes. Its process is written down so the end of the run can
-# fail when anything the suite started is still running.
+# the bound passes. Its process is written down, with the start time and the
+# command, so the end of the run can fail when anything the suite started is
+# still running, and name it.
 bounded() {
   b_secs=$1; shift
   timeout -k 5 "$b_secs" "$@" &
   b_pid=$!
-  printf '%s\n' "$b_pid" >> "$SUITE_TMP_ROOT/.spawned"
+  spawn_note "$b_pid" "$*"
   wait "$b_pid"
 }
 
-# spawned_alive: the processes this suite started that are still running,
-# one pid per line; each is ended as it is named.
+# spawn_id PID: the start time and command of a running process as ps names
+# them, one line, or nothing when it is gone. A process number alone does not
+# say whose process it is: the machine hands a number out again once its
+# process ends, and the runners on one machine share them.
+spawn_id() {
+  si_row=$(ps -p "$1" -o lstart= -o comm= 2>/dev/null) || si_row=
+  [ -n "$si_row" ] || si_row=$(ps -p "$1" 2>/dev/null | awk 'NR > 1 { print $7, $8 }')
+  printf '%s\n' "$si_row" | tr -s ' \t' ' ' | sed 's/^ //; s/ $//'
+}
+
+# spawn_note PID COMMAND: write a process this suite started down as
+# "pid TAB start-and-name TAB the command it was started with".
+spawn_note() {
+  printf '%s\t%s\t%s\n' "$1" "$(spawn_id "$1")" "$2" >> "$SUITE_TMP_ROOT/.spawned"
+}
+
+# spawned_alive: the processes this suite started that are still running, one
+# line each: the pid, the process as ps names it, and what started it. Only a
+# process still the one written down is named, and ended as it is named: a
+# number that now belongs to another process (another job on the machine, the
+# shell running this check, the shell that started it) is never ours, and is
+# never ended. One on its way out is given a bounded moment (three seconds)
+# before it is called left behind.
 spawned_alive() {
   [ -f "$SUITE_TMP_ROOT/.spawned" ] || return 0
-  while IFS= read -r sa_pid; do
+  while IFS="$(printf '\t')" read -r sa_pid sa_id sa_cmd; do
     [ -n "$sa_pid" ] || continue
-    if kill -0 "$sa_pid" 2>/dev/null; then
-      printf '%s\n' "$sa_pid"
-      kill -9 "$sa_pid" 2>/dev/null
-    fi
+    case "$sa_pid" in "$$"|"$PPID") continue ;; esac
+    kill -0 "$sa_pid" 2>/dev/null || continue
+    sa_now=$(spawn_id "$sa_pid")
+    if [ -n "$sa_id" ] && [ "$sa_now" != "$sa_id" ]; then continue; fi
+    sa_n=0
+    while [ "$sa_n" -lt 6 ] && kill -0 "$sa_pid" 2>/dev/null; do sleep 0.5; sa_n=$((sa_n + 1)); done
+    kill -0 "$sa_pid" 2>/dev/null || continue
+    printf '%s %s (started as: %s)\n' "$sa_pid" "${sa_now:-unknown}" "${sa_cmd:-unknown}"
+    kill -9 "$sa_pid" 2>/dev/null
   done < "$SUITE_TMP_ROOT/.spawned"
 }
 if [ -n "$touching" ] && [ -z "$RUN_PART" ]; then
@@ -3597,7 +3624,7 @@ full
 report-red
 report-green" "$(workflow_jobs "$ciy")"
 eq "CI passed waits on checks, classify, app, tests and screens" "1" "$(printf '%s\n' "$ciy" | grep -c 'needs: \[checks, classify, app, tests, screens]')"
-eq "one checkout in gate, checks, classify, app, tests, screens, CI passed, full and report-red" "9" "$(printf '%s\n' "$ciy" | grep -c 'uses: actions/checkout@v4')"
+eq "one checkout in gate, checks, classify, app, tests, screens, CI passed, full and report-red and report-green" "10" "$(printf '%s\n' "$ciy" | grep -c 'uses: actions/checkout@v4')"
 eq "a newer push cancels an older pull request run, never a gate" "1" "$(printf '%s\n' "$ciy" | grep -c "cancel-in-progress: \${{ github.event_name == 'pull_request' }}")"
 eq "gate runs share one group" "1" "$(printf '%s\n' "$ciy" | grep -c "pull_request.number || 'gate'")"
 eq "every rule script still runs" "8" "$(for f in classify.sh line-endings.sh status/check.sh numbering-check.sh spec-check.sh setup-check.sh shared-check.sh delete-check.sh; do printf '%s\n' "$ciy" | grep -q "$f" && echo x; done | grep -c x)"
@@ -6249,9 +6276,22 @@ eq "a hung command is ended at its time bound" "124" "$tt_rc"
 eq "and it was not left waiting for the full minute" "yes" "$([ $(( $(date +%s) - tt_start )) -lt 30 ] && echo yes)"
 eq "nothing the suite started is still running after that" "" "$(spawned_alive)"
 tt_pid=$(sleep 120 >/dev/null 2>&1 & echo $!)
-printf '%s\n' "$tt_pid" >> "$SUITE_TMP_ROOT/.spawned"
-eq "a process the suite started and left running is named" "$tt_pid" "$(spawned_alive)"
-sed -i "/^$tt_pid$/d" "$SUITE_TMP_ROOT/.spawned"
+spawn_note "$tt_pid" "sleep 120"
+eq "a process the suite started and left running is named" "$tt_pid" "$(spawned_alive | awk '{ print $1 }' | head -n 1)"
+tt_pid=$(sleep 120 >/dev/null 2>&1 & echo $!)
+spawn_note "$tt_pid" "sleep 120"
+eq "and it is named with the command that started it, so a failure is plain to read" "1" "$(spawned_alive | grep -c 'started as: sleep 120')"
+tt_pid=$(sleep 3 >/dev/null 2>&1 & echo $!)
+spawn_note "$tt_pid" "sleep 3"
+eq "a process on its way out is waited for a bounded moment before it is called left behind" "" "$(spawned_alive)"
+tt_pid=$(sleep 120 >/dev/null 2>&1 & echo $!)
+printf '%s\t%s\t%s\n' "$tt_pid" "Thu Jan  1 00:00:00 1970 not-this-one" "a process that ended long ago" >> "$SUITE_TMP_ROOT/.spawned"
+eq "a number that now belongs to another process is not ours to name" "" "$(spawned_alive)"
+eq "and the other process is left running, never ended" "yes" "$(kill -0 "$tt_pid" 2>/dev/null && echo yes)"
+kill -9 "$tt_pid" 2>/dev/null
+printf '%s\t%s\t%s\n' "$$" "" "this shell" >> "$SUITE_TMP_ROOT/.spawned"
+printf '%s\t%s\t%s\n' "$PPID" "" "the shell that started this one" >> "$SUITE_TMP_ROOT/.spawned"
+eq "the shell running the check and the one that started it are never named or ended" "" "$(spawned_alive)"
 eq "a Temp folder over the limit is named with its count" "1" "$(temp_entries_warning 31000 5000 | grep -c "holds 31000 entries (more than 5000)")"
 eq "a Temp folder under the limit says nothing" "" "$(temp_entries_warning 40 5000)"
 eq "an unreadable count says nothing" "" "$(temp_entries_warning '' 5000)"
@@ -8096,6 +8136,65 @@ eq "one still waiting is left alone, and says what for" "1 0" "$(printf '%s
 ' "$fs_out" | grep -c 'waits for #2400 to land') $(grep -c 'head=fixside/pr-320' "$fs_dir/log")"
 eq "fix-owed.sh leaves a change with a waiting side branch to fix-side.sh" "1" "$(grep -c 'fix_side_branch' "$root/scripts/drive/fix-owed.sh")"
 eq "the wake check frees side branches before it looks for red changes" "1" "$(grep -c 'fix-side.sh' "$root/scripts/drive/wake-check.sh")"
+block_end
+section 'a part red with no failing test says why, and a red the next run clears is recorded as a flake'
+. "$root/templates/scripts/ci/run-lib.sh"
+. "$root/templates/scripts/ci/failure-lib.sh"
+. "$root/templates/scripts/ci/gate-lib.sh"
+. "$root/templates/scripts/ci/flake-lib.sh"
+# The case from Maya's rooftop-garden app's own checks: a suite that finished green and was then ended from outside.
+nf_killed=$(printf 'ok    the beds are watered\nok    no process started by this suite is still running\n\n1049 passed, 0 failed\n')
+eq "a part whose tests all passed and was then stopped from outside says so in one line" "1" "$(failure_lines "$nf_killed" "$(printf '%s\n' "$nf_killed" | tail -n 3)" | grep -c '^No test failed: all 1049 passed, and the part.s shell was then stopped from outside')"
+eq "that line leads the last lines" "No test failed" "$(failure_lines "$nf_killed" "x" | head -n 1 | cut -c1-14)"
+nf_code=$(printf 'Part shell-5: x\nPart shell-5 ended with exit code 137: it was killed from outside (exit 137).\n')
+eq "a part that names its exit code is read by it" "No test failed: the part ended because it was killed from outside (exit 137)." "$(no_failing_test_say "$nf_code")"
+eq "an exit code is said in words" "it ran out of its time bound (exit 124)|the shell crashed (exit 139)|it ended with exit 5" "$(exit_words 124)|$(exit_words 139)|$(exit_words 5)"
+eq "a part with a failing test names the test and no other cause" "0" "$(failure_lines "$(printf 'FAIL  watering.test.ts > waters the north bed\n1 passed, 1 failed\n')" "x" | grep -c 'No test failed')"
+eq "a part that ended with a test failure (exit 1) and names no test says nothing of the kind" "" "$(no_failing_test_say "$(printf 'Part shell-5 ended with exit code 1: a test failed (exit 1).\n')")"
+nf_dir=$(mktemp -d)
+cp "$root/templates/scripts/ci/test-parts.sh" "$root/templates/scripts/ci/lib.sh" "$root/templates/scripts/ci/failure-lib.sh" "$root/templates/scripts/ci/run-lib.sh" "$nf_dir/"
+printf '!parts all water=exit 137\n' > "$nf_dir/classes.txt"
+nf_run=$(sh "$nf_dir/test-parts.sh" run water 2>&1); nf_rc=$?
+eq "test-parts.sh run ends with the part's own exit code" "137" "$nf_rc"
+eq "and says why in one line" "1" "$(printf '%s\n' "$nf_run" | grep -c '^Part water ended with exit code 137: it was killed from outside (exit 137)\.$')"
+# The flake: the very next run on main cleared the red with no fix.
+fk_red=$(red_note test abc1234 https://github.com/maya/rooftop-garden/actions/runs/101 no "watering.test.ts > waters the north bed")
+eq "a red note names each failed test on a line of its own" "Failed test: watering.test.ts > waters the north bed" "$(printf '%s\n' "$fk_red" | grep '^Failed test:')"
+eq "a red note with no test names is as it was" "1" "$(red_note test abc1234 https://x/actions/runs/1 no "" | grep -c 'Fix it before merging')"
+eq "one red run and a green one after it is a flake" "yes" "$(flake_decision "$fk_red")"
+eq "two red runs are not (a fix was tried or it stayed red)" "no" "$(flake_decision "$(printf '%s\n%s\n' "$fk_red" "$(red_note test def5678 https://github.com/maya/rooftop-garden/actions/runs/102 no x)")")"
+fk_note=$(flake_note "$fk_red" https://github.com/maya/rooftop-garden/actions/runs/103)
+eq "the flake note says the very next run cleared it, and names the test" "1 1" "$(printf '%s\n' "$fk_note" | grep -c '^Flake: main went green on the very next run') $(printf '%s\n' "$fk_note" | grep -c '^Flaky test: watering.test.ts > waters the north bed$')"
+eq "an issue already holding a flake note is not noted twice" "no" "$(flake_decision "$(printf '%s\n%s\n' "$fk_red" "$fk_note")")"
+eq "a flake whose run kept no test name says so" "1" "$(flake_note "x" https://x/actions/runs/1 | grep -c '^Flaky test: not named')"
+eq "the audit lists a test that flaked more than once in a week, and not one that flaked once" "watering.test.ts > waters the north bed flaked 2 times in the last week" "$(flaky_report "$(printf '%s\n%s\n%s\n' "$fk_note" "$fk_note" "Flaky test: harvest.test.ts > logs a harvest")")"
+eq "report-green records the flake before it closes the issue" "1 1" "$(grep -c 'report-flake.sh' "$root/templates/.github/workflows/ci.yml") $(awk '/report-flake.sh/ { a = NR } /gh issue close/ { b = NR } END { print (a > 0 && a < b) ? 1 : 0 }' "$root/templates/.github/workflows/ci.yml")"
+eq "the nightly audit runs the flaky-test check" "2" "$(grep -c 'flaky-audit.sh' "$root/templates/.github/workflows/audit.yml")"
+eq "the red report reads the failed tests from the run's annotations" "2" "$(grep -c "annotations" "$root/templates/scripts/ci/report-red.sh")"
+block_end
+section 'a draft held for the builder'"'"'s read is never bundled with fixes that need no read (drive)'
+. "$root/scripts/drive/bundle-lib.sh"
+. "$root/scripts/drive/reads-held-lib.sh"
+# The round that bundled four issues into one held change, as Maya's rooftop-garden app would meet it: two fixes to the planning, a fix to a screen, and a draft of her stories.
+dh_t=$(printf '\t')
+dh_ready=$(printf '1\tTell a stalled plan from a quiet one\tplugin/scripts/drive/plan.sh\n2\tName what waits behind a held change\tplugin/scripts/drive/plan.sh,plugin/scripts/drive/bundle-lib.sh\n3\tShow the screens when no story is written\tpackages/web/src/tabs/design-flow-own.ts,specs/020-design-flow/\n4\tWrite the stories of the planting calendar\tspecs/020-design-flow/,specs/021-beds/\n')
+dh_before=$(plan_units "$dh_ready" "")
+eq "before: the screen fix and the draft share a spec folder, so they were one unit" "1" "$(printf '%s\n' "$dh_before" | grep -c "^unit${dh_t}3 4${dh_t}")"
+dh_after=$(READ_ISSUES=" 4" plan_units "$dh_ready" "")
+eq "a draft for the read and a fix beside it are two units" "yes" "$(printf '%s\n' "$dh_after" | awk -F'\t' '$1 == "unit" && $2 == "4" { d = 1 } $1 == "unit" && $2 == "3" { f = 1 } END { print (d && f) ? "yes" : "no" }')"
+eq "the draft is never in a unit with a fix" "0" "$(printf '%s\n' "$dh_after" | awk -F'\t' '$1 == "unit" && $2 ~ /(^| )4( |$)/ && $2 != "4"' | wc -l | tr -d ' ')"
+eq "the two fixes to the planning are still one unit, and land without waiting for the draft" "yes" "$(printf '%s\n' "$dh_after" | awk -F'\t' '$1 == "unit" && $2 == "1 2" { print "yes" }')"
+eq "the units share no file, so the draft starts beside the rest" "yes" "$(units_disjoint "$dh_after")"
+eq "the draft keeps the specs only it touches" "specs/021-beds/" "$(printf '%s\n' "$dh_after" | awk -F'\t' '$1 == "unit" && $2 == "4" { print $5 }')"
+# Telling a draft from a fix, from the issue's own words and its files.
+eq "a change under the specs folder alone will be held for a read" "yes" "$(reads_held "Write the stories" "specs/020-design-flow/,specs/021-beds/")"
+eq "a change under the mocks folder alone will be held for a read" "yes" "$(reads_held "Redraw the bed board" "design/mocks/dashboard/Beds.html,design/mocks/dashboard/gen_beds.mjs")"
+eq "an issue that says it is a draft for the owner's read, naming no code, will be held" "yes" "$(reads_held "A draft of the watering rules for the owner's read" "")"
+eq "an issue that talks about drafts but touches code is code work" "no" "$(reads_held "A draft held for the owner's read is never bundled with fixes" "plugin/scripts/drive/bundle-lib.sh")"
+eq "a fix to a screen is not held for a read" "no" "$(reads_held "Show the screens when no story is written" "packages/web/src/tabs/design-flow-own.ts,specs/020-design-flow/")"
+eq "an issue with no files and no such words is not held for a read" "no" "$(reads_held "Water the north bed on time" "")"
+eq "the plan tells them apart before it bundles" "1 1" "$(grep -c 'reads_held "$title $c $d" "$g"' "$root/scripts/drive/plan.sh") $(grep -c 'READ_ISSUES="$read_issues" plan_units' "$root/scripts/drive/plan.sh")"
+eq "the drive skill says a draft for the read is its own unit" "1" "$(grep -c 'never bundled with work that needs no read' "$root/skills/project-drive/SKILL.md")"
 block_end
 # --- end of blocks: the summary, kept in every part.
 eq "no test wrote into the checkout's own queue state" "$queue_picture_before" "$([ "$queue_picture_before" = skipped ] && echo skipped || queue_picture)"

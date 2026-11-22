@@ -24,6 +24,9 @@ scripts/ci/failure-lib.sh
 scripts/ci/gate.sh
 scripts/ci/gate-lib.sh
 scripts/ci/report-red.sh
+scripts/ci/report-flake.sh
+scripts/ci/flake-lib.sh
+scripts/ci/flaky-audit.sh
 scripts/ci/line-endings.sh
 scripts/ci/spec-check.sh
 scripts/ci/setup-check.sh

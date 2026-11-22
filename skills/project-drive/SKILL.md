@@ -54,6 +54,13 @@ The drive works the ready list in rounds, so many issues land in little time wit
 - **A project's plugin or CI work goes in one bundle.** Issues touching `plugin/`, `scripts/ci/` or
   `.github/` share one test suite, so they always clash; the plan puts every such issue into one bundle and
   holds plugin work while a plugin unit is running.
+- **A draft for the builder's read is its own unit.** Work that will be held for the builder's read when it
+  opens (a change under the specs or mocks folders alone, or an issue that says it is a draft for their read and
+  touches no code) is never bundled with work that needs no read: `reads_held` in `bundle-lib.sh` tells them
+  apart from the issue's words and its files, and the draft goes in a unit of its own, started beside the rest
+  and keeping only the files no other unit has. If a change in progress turns out to need a hold, split it
+  before opening the pull request: the part to read is its own pull request with `Queue: hold`, the rest lands.
+  The Work tab says on a held change how many other changes wait behind its read.
 - **One round, and it takes new units.** A round lands as one batch, but it is not closed to new work: a
   proposed unit that shares no area with any unit running in it (asked for by name or not) starts at once, as
   a unit of that round. `approval.sh` lets such a `dispatch` through and holds one that shares an area with a

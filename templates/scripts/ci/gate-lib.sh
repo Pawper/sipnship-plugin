@@ -127,14 +127,19 @@ red_words() {
   esac
 }
 
-# red_note KIND SHA URL SECOND: the comment on the red-main issue for one red
-# run. A run that is not a failed test is the machines' turn and says so;
-# SECOND is "yes" when the run before it was red the same way, which the
-# runner watch is told by this line.
+# red_note KIND SHA URL SECOND [TESTS]: the comment on the red-main issue for
+# one red run. A run that is not a failed test is the machines' turn and says
+# so; SECOND is "yes" when the run before it was red the same way, which the
+# runner watch is told by this line. TESTS are the names of the tests that
+# failed, one per line: each is written as its own "Failed test:" line, so a
+# later green run can say which test flaked.
 red_note() {
   rn_head="Main's check on ${2} was red: $(red_words "$1"). Run: $3."
   case "$1" in
-    test) printf '%s Fix it before merging anything else.\n' "$rn_head" ;;
+    test)
+      printf '%s Fix it before merging anything else.\n' "$rn_head"
+      printf '%s\n' "$5" | while IFS= read -r rn_t; do if [ -n "$rn_t" ]; then printf 'Failed test: %s\n' "$rn_t"; fi; done
+      return 0 ;;
     *)
       printf '%s No test failed, and nothing is asked of the owner.' "$rn_head"
       if [ "$4" = yes ]; then printf ' This is the second run in a row that was red this way, so the runner watch is told: the machines need a look.\n'

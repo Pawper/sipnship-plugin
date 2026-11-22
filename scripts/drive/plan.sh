@@ -37,7 +37,7 @@ fi
 . "$here/drive-lib.sh"
 . "$here/labels-lib.sh"
 . "$here/auto-lib.sh"
-. "$here/bundle-lib.sh"; . "$here/hold-reasons-lib.sh"
+. "$here/bundle-lib.sh"; . "$here/reads-held-lib.sh"; . "$here/hold-reasons-lib.sh"
 . "$here/round-lib.sh"
 . "$here/round-notes-lib.sh"
 . "$here/round-words-lib.sh"
@@ -225,7 +225,9 @@ hold	$num	"*) continue ;; esac
       case " $asked " in *" $num "*) asked_notes="${asked_notes}asked: ${num} $(asked_line "$left_say")
 " ;; esac; answer_lead_apply "$num" "$asked"
       guesses="${guesses}${num}${tab}${title}${tab}${g}
-" ;;
+"
+      # A change that will be held for the builder's read is its own unit, never bundled with work that needs no read.
+      [ "$(reads_held "$title $c $d" "$g")" != yes ] || read_issues="${read_issues} ${num}" ;;
     in-progress)
       g=$(guess_files "$title $c $d" "$mocks_text" "$past") ; case " $held_only $idle " in *" $num "*) g="" ;; esac  # its only pull request is held for the owner, or nobody is on it at all (no agent, pull request or commit, #2267): no agent is at work, so no unit waits behind it (#2055)
       [ -n "$g" ] && running="${running}${title}${tab}${g}${tab}${num}
@@ -235,7 +237,7 @@ done <<EOF_FACTS
 $(printf '%s\n' "$facts" | tr '\t' '\037')
 EOF_FACTS
 if [ -n "$guesses" ] || [ -n "$reasons" ]; then
-  units=$(plan_units "$guesses" "$running")
+  units=$(READ_ISSUES="$read_issues" plan_units "$guesses" "$running")
   # The running round's areas, read as publish-round.sh reads them: an issue in an area a running unit owns is a hold behind it, and units sharing an area are one unit, so the proposal publishes as it stands.
   if [ -n "$areas_text" ]; then
     run_units=$(running_units "$(printf '%s\n' "$drive_comments" | cut -f3-)" "$(without_issues "$(printf '%s\n' "$snapshot" | awk -F'\t' '$1 == "issue" && $4 == "in-progress" { print $2 }')" "$held_only $idle")" "$(without_issues "$(printf '%s\n' "$pr_list" | cut -d"$us" -f1)" "$(held_pull_numbers "$pull_links")")" "$(printf '%s\n' "$pr_list" | cut -d"$us" -f1)")  # a unit whose pull request is held for the owner is not running (#2055)

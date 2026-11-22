@@ -11,6 +11,7 @@
 #       set so a runner that stops at its first red runs everything
 here=$(dirname "$0")
 . "$here/lib.sh"
+. "$here/failure-lib.sh"
 rules=$(cat "$here/classes.txt")
 # machine_probe: how long 40 starts of sh and 40 starts of git take, in milliseconds each; "unknown" when it cannot be timed.
 machine_probe() {
@@ -41,7 +42,10 @@ case "$1" in
     echo "Part $2: $cmd"
     # A fixed small probe, so a slow machine is told from a slow test (time is never gated): 40 starts of sh and of git.
     echo "Machine probe: $(machine_probe)"
-    sh -c "$cmd" ;;
+    # A part that ends failed says why in one line, so one with no failing test is never a mystery.
+    sh -c "$cmd"; rc=$?
+    [ "$rc" -eq 0 ] || echo "Part $2 ended with exit code $rc: $(exit_words "$rc")."
+    exit "$rc" ;;
   all)
     export CI_FULL_RUN=yes
     failed=

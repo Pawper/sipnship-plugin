@@ -20,10 +20,19 @@ here=$(dirname "$0")
 repo=${GH_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)}
 server=${GITHUB_SERVER_URL:-https://github.com}
 
+# red_tests RUN_ID: the names of the tests a run's failed jobs reported, one per line (the annotations a failing job writes), so the red-main issue names the test.
+red_tests() {
+  for rt_job in $(gh api "repos/$repo/actions/runs/$1/jobs" --paginate --jq '.jobs[] | select(.conclusion == "failure") | .id' 2>/dev/null | tr -d '\r'); do
+    gh api "repos/$repo/check-runs/$rt_job/annotations" --jq '.[].message' 2>/dev/null | tr -d '\r' | sed -n 's/^FAIL  //p'
+  done | sort -u | head -n 5
+}
+
 # say KIND RUN_ID SHA SECOND: open the issue or comment, once for a run.
 say() {
   url="$server/$repo/actions/runs/$2"
-  note=$(red_note "$1" "$3" "$url" "$4")
+  tests=
+  [ "$1" != test ] || tests=$(red_tests "$2")
+  note=$(red_note "$1" "$3" "$url" "$4" "$tests")
   open=$(gh api "repos/$repo/issues?labels=ci-red&state=open&per_page=1" --jq '.[0].number // ""' 2>/dev/null | tr -d '\r')
   if [ -z "$open" ]; then
     gh issue create --title "main is red" --label "ci-red,state:ready" --body "$note"

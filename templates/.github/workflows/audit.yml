@@ -241,7 +241,15 @@ jobs:
             [ -z "$heldissue" ] || heldissue=$(printf 'Held changes with nowhere for their question to live:\n%s' "$heldissue")
           fi
 
+          # Tests that flaked more than once in the last week: a red main the very next run cleared with no fix.
+          flaky=""
+          if [ -f scripts/ci/flaky-audit.sh ]; then
+            flaky=$(sh scripts/ci/flaky-audit.sh | sed 's/^/- /')
+            [ -z "$flaky" ] || flaky=$(printf 'Tests that flaked more than once in the last week:\n%s' "$flaky")
+          fi
+
           body=$(audit_comment "$missing" "$stale" "$red" "$branches")
+          if [ -n "$flaky" ]; then body=$(printf '%s\n\n%s' "$body" "$flaky" | sed '/./,$!d'); fi
           if [ -n "$heldissue" ]; then body=$(printf '%s\n\n%s' "$body" "$heldissue" | sed '/./,$!d'); fi
           # The installed plugin copy more than an hour behind the published one, which each round's first step should have updated.
           installed=""

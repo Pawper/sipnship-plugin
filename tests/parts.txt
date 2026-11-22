@@ -140,3 +140,5 @@ shell-5 one issue has one agent: a claim before the start, and a check as the ag
 shell-5 the plan publishes its own proposal, and what starts is what it proposed (drive)
 shell-5 a hold the plan works out fresh is never carried from the last round (drive)
 shell-5 a change with no closes line, a closed issue, an idle issue and a refused fix push are all read as they are (drive)
+shell-2 a part red with no failing test says why, and a red the next run clears is recorded as a flake
+shell-5 a draft held for the builder's read is never bundled with fixes that need no read (drive)

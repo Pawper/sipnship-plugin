@@ -30,7 +30,44 @@ failure_lines() {
     [ -n "$fl_t" ] || continue
     printf '%s\n' "$2" | grep -qF -e "$fl_t" || printf 'FAIL  %s\n' "$fl_t"
   done)
-  if [ -n "$fl_lead" ]; then printf '%s\n%s\n' "$fl_lead" "$2"; else printf '%s\n' "$2"; fi
+  if [ -n "$fl_lead" ]; then printf '%s\n%s\n' "$fl_lead" "$2"; return; fi
+  # No failing test is named: say why the part is red anyway, in one line, ahead of the last lines.
+  fl_why=$(no_failing_test_say "$1")
+  if [ -n "$fl_why" ]; then printf '%s\n%s\n' "$fl_why" "$2"; else printf '%s\n' "$2"; fi
+}
+
+# exit_words CODE: what a shell's exit code means, in a few plain words.
+exit_words() {
+  case "$1" in
+    1) echo "a test failed (exit 1)" ;;
+    124) echo "it ran out of its time bound (exit 124)" ;;
+    130) echo "it was interrupted (exit 130)" ;;
+    137) echo "it was killed from outside (exit 137)" ;;
+    139) echo "the shell crashed (exit 139)" ;;
+    143) echo "it was stopped with a terminate signal (exit 143)" ;;
+    *) echo "it ended with exit $1" ;;
+  esac
+}
+
+# no_failing_test_say LOG
+# One line saying why a test part ended failed when no test in LOG failed, or
+# nothing when a test did (or LOG says nothing of the kind). The part's own
+# line "Part NAME ended with exit code N: ..." (test-parts.sh) is the first
+# answer; a suite that printed "N passed, 0 failed" and was then ended is the
+# second: its shell was stopped from outside after the last test, which is the
+# machine's doing and not a test's. Time is never the cause named here.
+no_failing_test_say() {
+  nf_log=$(printf '%s\n' "$1" | tr -d '\r' | sed 's/\x1b\[[0-9;]*m//g')
+  [ -z "$(failed_tests_from_log "$nf_log")" ] || return 0
+  nf_end=$(printf '%s\n' "$nf_log" | sed -n 's/^Part [^ ]* ended with exit code \([0-9]*\): .*/\1/p' | tail -n 1)
+  if [ -n "$nf_end" ] && [ "$nf_end" != 1 ]; then
+    printf 'No test failed: the part ended because %s.\n' "$(exit_words "$nf_end")"
+    return 0
+  fi
+  nf_pass=$(printf '%s\n' "$nf_log" | sed -n 's/^\([0-9][0-9]*\) passed, 0 failed$/\1/p' | tail -n 1)
+  if [ -n "$nf_pass" ]; then
+    printf 'No test failed: all %s passed, and the part'"'"'s shell was then stopped from outside before it reported, so the part is marked failed with nothing wrong in the tests.\n' "$nf_pass"
+  fi
 }
 
 # The annotation a failing job writes, as a workflow command: the title

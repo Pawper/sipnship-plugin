@@ -141,6 +141,8 @@ plan_units() {
     }
     function find(i) { while (par[i] != i) i = par[i]; return i }
     function asked(n) { return index(" " ENVIRON["ASKED_ISSUES"] " ", " " n " ") > 0 }
+    # An issue whose change will be held for the builder read (READ_ISSUES, from reads_held) is never bundled with one that is not.
+    function reads(i) { return index(" " ENVIRON["READ_ISSUES"] " ", " " num[i] " ") > 0 }
     # Plugin and CI work shares one test suite, so it always goes together:
     # any path under plugin/, scripts/ci/ or .github/ also carries "@tooling".
     function tooling(f) { return (("," f) ~ /,(plugin|scripts\/ci|\.github)\//) ? f ",@tooling" : f }
@@ -152,7 +154,7 @@ plan_units() {
         held[i] = ""
         for (k = 1; k <= r; k++) if (ov(files[i], rfiles[k]) != "") { held[i] = rtitle[k]; heldn[i] = rnum[k]; break }
       }
-      for (i = 1; i <= n; i++) if (held[i] == "") for (j = i + 1; j <= n; j++) if (held[j] == "") {
+      for (i = 1; i <= n; i++) if (held[i] == "") for (j = i + 1; j <= n; j++) if (held[j] == "" && reads(i) == reads(j)) {
         s = ov(files[i], files[j], 1)
         if (s != "") {
           a = find(i); b = find(j)
@@ -168,6 +170,7 @@ plan_units() {
         cnt[g]++
         merged[g] = merged[g] (merged[g] == "" ? "" : ",") files[i]
       }
+      for (x = 1; x <= u; x++) { g = order[x]; draft[g] = reads(g) }
       for (x = 1; x <= u; x++) {
         g = order[x]
         w = ""
@@ -178,7 +181,12 @@ plan_units() {
         }
         m = split(merged[g], mf, ","); out = ""
         delete used
-        for (q = 1; q <= m; q++) if (mf[q] != "" && mf[q] != "@tooling" && !(mf[q] in used)) { used[mf[q]] = 1; out = out (out == "" ? "" : ",") mf[q] }
+        for (q = 1; q <= m; q++) if (mf[q] != "" && mf[q] != "@tooling" && !(mf[q] in used)) {
+          used[mf[q]] = 1
+          # A draft for the builder read starts beside the work that needs no read: a file the two share belongs to that work, so the units stay apart.
+          if (draft[g]) { shared = 0; for (y = 1; y <= u; y++) if (!draft[order[y]] && ov(mf[q], merged[order[y]]) != "") shared = 1; if (shared) continue }
+          out = out (out == "" ? "" : ",") mf[q]
+        }
         printf "unit\t%s\t%s\t%s\t%s\n", members[g], titles[g], w, out
       }
       for (i = 1; i <= n; i++) if (held[i] != "") printf "hold\t%s\t%s\tAfter: %s%s\n", num[i], title[i], held[i], (heldn[i] != "" ? " (after: " heldn[i] ")" : "")
