@@ -48,6 +48,12 @@ read_open_pull_requests() {
     if [ "$p_state" = dirty ] || [ "$p_ci" = red ]; then
       p_head=$(gh api "repos/{owner}/{repo}/commits/$p_sha" --jq '.commit.committer.date | fromdateiso8601' 2>/dev/null | tr -d '\r')
       p_busy=$(recently_touched "$p_head" "" "$(date +%s)" "$p_wait")
+      # An agent that ended (every claim on the issue the change closes released, the last one after the push) is nobody: no wait at all.
+      p_issue=${p_closes%%,*}
+      if [ "$p_busy" = yes ] && [ -n "$p_issue" ] && [ -n "$p_head" ]; then
+        p_cl=$(gh api "repos/{owner}/{repo}/issues/$p_issue/comments?per_page=100&sort=created&direction=desc" --jq '[.[] | select(.body | test("^Claim(: | released: )"))] | reverse | .[] | [.id, (.created_at | fromdateiso8601), (.body | split("\n")[0])] | @tsv' 2>/dev/null | tr -d '\r')
+        [ "$(claim_ended "$p_cl" "$p_head")" = yes ] && p_busy=no
+      fi
     fi
     p_pend=no; [ "$p_ci" = red ] && p_pend=$(head_checks_pending "$p_sha")  # a red from an older commit is not the newest commit failing
     # A red the round waits on (its newest commit's checks still running, or its reds from main) is timed from that commit.

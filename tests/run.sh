@@ -7679,6 +7679,12 @@ cl_rel=$(printf '901\t%s\tClaim: drive-1\n902\t%s\tClaim: wake-2\n903\t%s\tClaim
 eq "a released claim no longer holds it, so the next one does" "wake-2" "$(claim_winner "$cl_rel" "$cl_now" 14400)"
 eq "a claim older than its time limit holds nothing" "" "$(claim_winner "$cl_two" "$((cl_now + 20000))" 14400)"
 eq "a reply that only mentions a claim is no claim" "" "$(claim_winner "$(printf '904\t%s\tThe Claim: of the agent was released\n' "$cl_now")" "$cl_now" 14400)"
+# An agent that released every claim after its last push has ended: its red change needs no wait (#1645).
+cl_end=$(printf '901\t%s\tClaim: drive-1\n903\t%s\tClaim released: drive-1\n' "$((cl_now - 600))" "$((cl_now - 60))")
+eq "every claim released after the push means the agent ended" "yes" "$(claim_ended "$cl_end" "$((cl_now - 120))")"
+eq "a release before the last push is not the end" "no" "$(claim_ended "$cl_end" "$((cl_now - 30))")"
+eq "a claim still held means the agent is on it" "no" "$(claim_ended "$cl_rel" "$((cl_now - 120))")"
+eq "no claim at all is not an ended agent" "no" "$(claim_ended "" "$((cl_now - 120))")"
 # claim.sh against a stand-in for GitHub: two starters, one issue, one agent.
 cl_dir=$(mktemp -d); mkdir -p "$cl_dir/bin"
 cat > "$cl_dir/bin/gh" <<'GHEOF'

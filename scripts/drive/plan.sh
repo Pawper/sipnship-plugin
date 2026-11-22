@@ -58,7 +58,7 @@ fi
 . "$here/deploy-goal-lib.sh"
 . "$here/rank-lib.sh"
 . "$here/red-batch-lib.sh"
-. "$here/closed-lib.sh"; . "$here/closes-lib.sh"; . "$here/idle-lib.sh"; . "$here/pr-read-lib.sh"; . "$here/owner-lib.sh"; . "$here/left-lib.sh"; . "$here/asked-lib.sh"; . "$here/set-aside-lib.sh"; . "$here/round-bound-lib.sh"; . "$here/propose-lib.sh"
+. "$here/claim-lib.sh"; . "$here/closed-lib.sh"; . "$here/closes-lib.sh"; . "$here/idle-lib.sh"; . "$here/pr-read-lib.sh"; . "$here/owner-lib.sh"; . "$here/left-lib.sh"; . "$here/asked-lib.sh"; . "$here/set-aside-lib.sh"; . "$here/round-bound-lib.sh"; . "$here/propose-lib.sh"
 
 # No GitHub call waits for ever (#1794): a call that has not answered in PLAN_GH_SECONDS (120) is stopped, the plan
 # names it on its error stream, and reads what that call would have told as not known, as for any failed call.

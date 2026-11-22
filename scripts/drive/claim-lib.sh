@@ -35,3 +35,20 @@ claim_live() {
 claim_winner() {
   claim_live "$1" "$2" "$3" | sort -n | head -n 1 | cut -f2
 }
+
+# claim_ended COMMENTS PUSH_EPOCH
+# "yes" when the agent that held an issue has ended: it made at least one claim, every claim was released, and the
+# last release came at or after PUSH_EPOCH (the change's last push), so nobody is on the change any more and it
+# needs no half hour of waiting. "no" otherwise, and for a claim still held or no claim at all. COMMENTS are
+# claim_live's lines, "ID<TAB>EPOCH<TAB>BODY".
+claim_ended() {
+  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v push="$2" '
+    { b = $3 }
+    b ~ /^Claim released: / { t = b; sub(/^Claim released: /, "", t); sub(/[ \t].*/, "", t); rel[t] = 1; if ($2 + 0 > last) last = $2 + 0; next }
+    b ~ /^Claim: / { t = b; sub(/^Claim: /, "", t); sub(/[ \t].*/, "", t); tok[++n] = t }
+    END {
+      if (n == 0 || push !~ /^[0-9]+$/ || last < push + 0) { print "no"; exit }
+      for (i = 1; i <= n; i++) if (!(tok[i] in rel)) { print "no"; exit }
+      print "yes"
+    }'
+}
