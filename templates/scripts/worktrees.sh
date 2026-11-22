@@ -128,6 +128,14 @@ is_clean() { [ -z "$(dirty_non_scratch "$(git -C "$1" status --porcelain 2>/dev/
 # closed one is tagged first so its commits stay reachable.
 drop_branch() {
   [ -n "$1" ] && [ "$1" != "$default_local" ] || return 0
+  # The remote branch is nobody's once its only pull requests ended (closed or merged): every ending
+  # removes it everywhere, in the same step, so it never outlives the worktree and claim.sh never reads
+  # it as a live claim by its name alone (#2259). Tried whether or not a local branch is also here: the
+  # queue and CI runners often hold no local ref for a branch they only ever saw on the remote.
+  if git ls-remote --exit-code --heads origin "$1" >/dev/null 2>&1; then
+    if git push origin --delete "$1" >/dev/null 2>&1; then echo "removed remote branch $1"
+    else echo "could not remove remote branch $1 (no write access, or it is protected); it is still ended locally"; fi
+  fi
   git show-ref --verify --quiet "refs/heads/$1" || return 0
   if [ "$2" = closed ]; then
     if git tag -f "closed/$1" "refs/heads/$1" >/dev/null 2>&1; then echo "kept the commits of $1 as tag closed/$1"

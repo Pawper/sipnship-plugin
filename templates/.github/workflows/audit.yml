@@ -241,6 +241,23 @@ jobs:
             [ -z "$heldissue" ] || heldissue=$(printf 'Held changes with nowhere for their question to live:\n%s' "$heldissue")
           fi
 
+          # A closed issue that still carries a State: closing takes the label off in the
+          # same step, so one left with it is a close that missed, and the drive reads it
+          # as work outstanding.
+          closedstate=""
+          if [ -f scripts/ci/closed-state-audit.sh ]; then
+            closedstate=$(sh scripts/ci/closed-state-audit.sh | sed 's/^/- /')
+            [ -z "$closedstate" ] || closedstate=$(printf 'Closed issues that still carry a State label:\n%s' "$closedstate")
+          fi
+
+          # An open change the closes check would fail: it fails the moment someone
+          # approves it, and looks approved and stuck. Named a night early instead.
+          closescheck=""
+          if [ -f scripts/ci/closes-check-audit.sh ]; then
+            closescheck=$(sh scripts/ci/closes-check-audit.sh | sed 's/^/- /')
+            [ -z "$closescheck" ] || closescheck=$(printf 'Open pull requests the closes check would fail:\n%s' "$closescheck")
+          fi
+
           # Tests that flaked more than once in the last week: a red main the very next run cleared with no fix.
           flaky=""
           if [ -f scripts/ci/flaky-audit.sh ]; then
@@ -250,6 +267,8 @@ jobs:
 
           body=$(audit_comment "$missing" "$stale" "$red" "$branches")
           if [ -n "$flaky" ]; then body=$(printf '%s\n\n%s' "$body" "$flaky" | sed '/./,$!d'); fi
+          if [ -n "$closedstate" ]; then body=$(printf '%s\n\n%s' "$body" "$closedstate" | sed '/./,$!d'); fi
+          if [ -n "$closescheck" ]; then body=$(printf '%s\n\n%s' "$body" "$closescheck" | sed '/./,$!d'); fi
           if [ -n "$heldissue" ]; then body=$(printf '%s\n\n%s' "$body" "$heldissue" | sed '/./,$!d'); fi
           # The installed plugin copy more than an hour behind the published one, which each round's first step should have updated.
           installed=""

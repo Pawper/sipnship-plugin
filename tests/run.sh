@@ -1411,6 +1411,10 @@ eq "a branch with a commit made on it has" "yes" "$r"
 eq "worktrees.sh leaves locked and own worktrees out and reads a branch's own commits" "1 1 1" "$(grep -c 'locked_worktrees "\$porcelain"' "$root/templates/scripts/worktrees.sh") $(grep -c 'has_own_commit' "$root/templates/scripts/worktrees.sh") $(grep -c 'show-toplevel' "$root/templates/scripts/worktrees.sh")"
 eq "a branch git will not delete is said, not a stop for the whole prune; git's reason is kept" "1 1" "$(grep -c 'could not remove local branch \$1; run prune later' "$root/templates/scripts/worktrees.sh") $(grep -c 'remove_why=' "$root/templates/scripts/worktrees.sh")"
 eq "an installed node_modules is cleared by cmd before git removes the worktree, since git stopped on it" "1" "$(grep -c 'rmdir /s /q' "$root/templates/scripts/worktrees.sh")"
+# Ending a change ends its branch everywhere, not only locally: the remote branch is tried whether or
+# not a local ref exists, so a queue or CI runner with no local checkout of it still clears it (#2259).
+eq "drop_branch deletes the remote branch before it touches the local one, for a merge and a close alike" "1 1" "$(grep -c 'git push origin --delete' "$root/templates/scripts/worktrees.sh") $(awk '/^drop_branch\(\) \{/,/^\}/' "$root/templates/scripts/worktrees.sh" | grep -c 'ls-remote --exit-code --heads origin')"
+eq "the queue's copy and the template agree, so a change to one is a change to the other" "same" "$(cmp -s "$root/templates/scripts/worktrees.sh" "$root/../scripts/worktrees.sh" 2>/dev/null && echo same || { [ -f "$root/../scripts/worktrees.sh" ] || echo same; })"
 eq "places counted" "2 2" "$(worktree_places "$pairs" | cut -f1 | tr '\n' ' ' | sed 's/ $//')"
 
 section 'project drive'
@@ -2881,6 +2885,8 @@ state:ready
 task' 'state:in-progress')"
 eq "no labels yet" '{"labels":["state:ready"]}' "$(state_labels_json '' 'state:ready')"
 eq "a quote in a label survives" '{"labels":["say \"hi\"","state:ready"]}' "$(state_labels_json 'say "hi"' 'state:ready')"
+eq "no new label takes every state label off and adds none, which is a closed issue's labels" '{"labels":["bug"]}' "$(state_labels_json 'bug
+state:ready' '')"
 eq "all queued is waiting on a machine" "yes" "$(checks_queued_only 'queued
 queued
 completed')"
@@ -5382,6 +5388,37 @@ specs/030-watering/
 src/beds/card.ts" "$(body_paths "$(cat "$db/body-watering.txt")")"
 db_past=$(past_spec_files "$(cat "$db/history.txt")")
 eq "past work on a spec names the files it touched" "specs/030-watering	src/sun.ts" "$db_past"
+# A spec worked on for weeks has touched most of the repository; one running issue naming it must not
+# be read as touching everything its history ever touched, or it holds every other ready issue (#2274).
+# Only a file most of that spec's past changes shared is carried forward; one of five, each touching a
+# different one-off file (and never together), reaches no majority and is dropped.
+mb_hist=$(printf '@@ Mote bubble sits off the screen on a phone (#1)
+specs/007-mote/spec.md
+packages/web/src/mote/bubble.ts
+
+@@ Mote bubble keeps its place while scrolling (#2)
+specs/007-mote/spec.md
+packages/core/src/mote-anim.ts
+
+@@ Mote bubble reads the memory card right (#3)
+specs/007-mote/spec.md
+plugin/scripts/drive/plan.sh
+
+@@ Mote bubble: a smaller target on phones (#4)
+specs/007-mote/spec.md
+scripts/ci/hotspots.txt
+
+@@ Mote bubble: one more polish pass (#5)
+specs/007-mote/spec.md
+docs/notes.md
+')
+mb_past=$(past_spec_files "$mb_hist")
+eq "a file only one of five past changes under a spec touched is not carried forward" "" "$mb_past"
+mb_running_guess=$(guess_files 'Mote bubble sits right on a phone. Spec: specs/007-mote/' '' "$mb_past")
+mb_running=$(printf 'Mote bubble placement on a phone\t%s\n' "$mb_running_guess")
+mb_drive_issue=$(printf '1\tThe plan reads areas the drive script names\t%s\n' "$(guess_files 'Where: plugin/scripts/drive/plan.sh' '' '')")
+mb_units=$(plan_units "$mb_drive_issue" "$mb_running")
+eq "the Mote-bubble-placement scenario: a running change and an unrelated drive-script issue dispatch, never a hold" "1 0" "$(printf '%s\n' "$mb_units" | grep -c '^unit	') $(printf '%s\n' "$mb_units" | grep -c '^hold	')"
 eq "the mocks map adds the whole screen" "src/beds/*.ts
 design/mocks/Beds.html
 design/mocks/BedsDark.html" "$(mocks_files 'src/beds/card.ts' "$(cat "$db/mocks.txt")")"
@@ -7711,6 +7748,14 @@ cl_pulls=$(printf '55\t212,214\n56\t\n')
 eq "an open pull request that closes the issue makes it busy, naming the pull request" "an open pull request (#55) already carries it" "$(claim_busy_reason 214 "$cl_pulls" "")"
 eq "a branch named for the issue makes it busy" "a branch (issue-217-compost) already works it" "$(claim_busy_reason 217 "$cl_pulls" "$(printf 'main\nissue-217-compost\n')")"
 eq "an issue with neither is free, and issue-21 is not issue-217" "" "$(claim_busy_reason 21 "$cl_pulls" "$(printf 'issue-217-compost\n')")"
+# A branch left by a landed change makes its issue read as taken, even once its pull request ended (#2259): a branch is
+# a real claim only when no pull request exists for it, or one is still open; a branch whose only pull request has
+# merged or closed is free, whatever its name.
+eq "a branch whose only pull request merged is free" "" "$(claim_busy_reason 217 "$cl_pulls" "$(printf 'issue-217-compost\n')" "$(printf 'issue-217-compost\tclosed\n')")"
+eq "a branch whose only pull request closed (never merged) is free too" "" "$(claim_busy_reason 217 "$cl_pulls" "$(printf 'issue-217-compost\n')" "$(printf 'issue-217-compost\tclosed\n')")"
+eq "a branch with an open pull request is still busy" "a branch (issue-217-compost) already works it" "$(claim_busy_reason 217 "$cl_pulls" "$(printf 'issue-217-compost\n')" "$(printf 'issue-217-compost\topen\n')")"
+eq "a branch with no pull request at all is still busy, as before" "a branch (issue-217-compost) already works it" "$(claim_busy_reason 217 "$cl_pulls" "$(printf 'issue-217-compost\n')" "")"
+eq "one of two pull requests for the branch still open keeps it busy" "a branch (issue-217-compost) already works it" "$(claim_busy_reason 217 "$cl_pulls" "$(printf 'issue-217-compost\n')" "$(printf 'issue-217-compost\tclosed\nissue-217-compost\topen\n')")"
 # Two starters, one issue: the older claim wins and the later one stands down.
 cl_two=$(printf '901\t%s\tClaim: drive-1\n902\t%s\tClaim: wake-2\n' "$((cl_now - 60))" "$((cl_now - 59))")
 eq "of two live claims the lower comment number holds the issue" "drive-1" "$(claim_winner "$cl_two" "$cl_now" 14400)"
@@ -7729,19 +7774,21 @@ eq "no claim at all is not an ended agent" "no" "$(claim_ended "" "$((cl_now - 1
 cl_dir=$(mktemp -d); mkdir -p "$cl_dir/bin"
 cat > "$cl_dir/bin/gh" <<'GHEOF'
 #!/bin/sh
-# A stand-in for gh api: comments live in $FAKE/comments (ID, epoch, first line), open pull requests in $FAKE/pulls.
+# A stand-in for gh api: comments live in $FAKE/comments (ID, epoch, first line), open pull requests
+# in $FAKE/pulls, every pull request's branch and state (any state) in $FAKE/pr-branches (#2259).
 [ "$1" = auth ] && exit 0
 shift; method=GET; body=; url=
 while [ $# -gt 0 ]; do case "$1" in -X) method=$2; shift ;; -f) body=${2#body=}; shift ;; repos/*) url=$1 ;; esac; shift; done
 case "$method $url" in
   "GET repos/{owner}/{repo}/issues/"[0-9]*"/comments"*) cat "$FAKE/comments" ;;
   "GET repos/{owner}/{repo}/issues/"[0-9]*) echo open ;;
+  "GET repos/{owner}/{repo}/pulls?state=all"*) cat "$FAKE/pr-branches" ;;
   "GET repos/{owner}/{repo}/pulls"*) cat "$FAKE/pulls" ;;
   "POST repos/{owner}/{repo}/issues/"[0-9]*"/comments") n=$(( $(wc -l < "$FAKE/comments") + 901 )); printf '%s\t%s\t%s\n' "$n" "$(date +%s)" "$(printf '%s' "$body" | head -n 1)" >> "$FAKE/comments"; echo "$n" ;;
   "PATCH repos/{owner}/{repo}/issues/comments/"*) id=${url##*/}; awk -F'\t' -v OFS='\t' -v id="$id" -v b="$(printf '%s' "$body" | head -n 1)" '$1 == id { $3 = b } { print }' "$FAKE/comments" > "$FAKE/c.new"; mv "$FAKE/c.new" "$FAKE/comments" ;;
 esac
 GHEOF
-chmod +x "$cl_dir/bin/gh"; : > "$cl_dir/comments"; : > "$cl_dir/pulls"
+chmod +x "$cl_dir/bin/gh"; : > "$cl_dir/comments"; : > "$cl_dir/pulls"; : > "$cl_dir/pr-branches"
 cl_run() { (cd "$cl_dir" && FAKE="$cl_dir" PATH="$cl_dir/bin:$PATH" sh "$root/scripts/drive/claim.sh" "$@" 2>&1); }
 eq "the first starter claims a free issue" "claimed drive-1" "$(cl_run 217 claim drive-1)"
 eq "the second starter, one tick later, is turned away" "taken: another starter claimed it (drive-1)" "$(cl_run 217 claim wake-2)"
@@ -8081,6 +8128,54 @@ eq "a round whose issues closed a minute ago is running nothing" "" "$(running_r
 eq "a closed issue with a stale label is not counted as in progress" "32" "$(without_issues "$(printf '31\n32\n')" "$(closed_among "$(printf '31\n32\n')")")"
 eq "a closed issue's labels lose every State label and keep the rest" '{"labels":["design","drive"]}' "$(closed_labels_json "$(printf 'state:in-progress\ndesign\nstate: ready\ndrive\n')")"
 unset ISSUE_STATE_CMD
+# Closing an issue takes its State label off in the same step that closes it: the board library makes the one
+# label write, so the state script and the nightly board sync both clear it rather than setting a new State.
+cl_bl="$root/templates/scripts/board-lib.sh"
+eq "an open issue gets the label for its state" "state:in-progress" "$(sh -c '. "$0"; state_label_to_set "In progress" false' "$cl_bl")"
+eq "a closed one gets none, however the state was said" "" "$(sh -c '. "$0"; state_label_to_set Ready true; state_label_to_set Ready closed; state_label_to_set Ready CLOSED' "$cl_bl")"
+eq "one nothing is known about keeps its label" "state:ready" "$(sh -c '. "$0"; state_label_to_set Ready ""' "$cl_bl")"
+cl_dir=$(mktemp -d)
+mkdir -p "$cl_dir/bin"
+cat > "$cl_dir/bin/gh" <<'GH'
+#!/bin/sh
+case "$*" in
+  *"-X PUT"*labels*) cat > "$CL_PUT" ;;
+  *"issues/31/labels"*) printf 'bug\nstate:in-progress\n' ;;
+  *"issues/31"*) echo https://github.com/maya/rooftop-garden/issues/31 ;;
+  *"project view"*) echo PVT_1 ;;
+  *'name == "State"'*) echo FIELD_STATE ;;
+  *'name == "Status"'*) echo FIELD_STATUS ;;
+  *'id == "FIELD_STATE"'*) echo OPT_STATE ;;
+  *'id == "FIELD_STATUS"'*) echo OPT_STATUS ;;
+  *item-list*) echo ITEM_1 ;;
+esac
+exit 0
+GH
+chmod +x "$cl_dir/bin/gh"
+cl_apply() { CL_PUT="$cl_dir/put.json" PATH="$cl_dir/bin:$PATH" sh -c '. "$0"; board_load 1 maya >/dev/null; board_apply 31 "In progress" "$1"' "$cl_bl" "$1"; }
+eq "an open issue's label write adds its state label and keeps the rest" "issue 31: state:in-progress set, State = In progress, Status = In Progress {\"labels\":[\"bug\",\"state:in-progress\"]}" "$(cl_apply false) $(cat "$cl_dir/put.json")"
+eq "a closed one's takes every state label off instead, and the board still records it Done" "issue 31: its State label taken off (it is closed), State = In progress, Status = Done {\"labels\":[\"bug\"]}" "$(cl_apply true) $(cat "$cl_dir/put.json")"
+eq "the state script and the board sync both go through it" "1 1" "$(grep -c 'state_label_to_set "\$state" "\$closed"' "$root/templates/scripts/state.sh") $(grep -c 'state_label_to_set "\$want" "\$closed"' "$root/templates/scripts/board-sync.sh")"
+# The nightly audit names a closed issue a close left a State on, and an open change the closes check would fail.
+cl_adir=$(mktemp -d)
+mkdir -p "$cl_adir/bin"
+cat > "$cl_adir/bin/gh" <<'GH'
+#!/bin/sh
+case "$*" in
+  *"labels=state:in-progress"*) echo 41 ;;
+  *"labels=state: ready"*) echo 42 ;;
+  *"pulls?state=open"*) printf '201\tShow the bed map\tspec-bed-map\tSpec: specs/bed-map\037Part of #5\n202\tWater the roof beds\tissue-5\tCloses #5\n203\tLand two changes together\tbatch-2026-11-21\t\n' ;;
+esac
+exit 0
+GH
+chmod +x "$cl_adir/bin/gh"
+cl_audit() { PATH="$cl_adir/bin:$PATH" GH_REPO=maya/rooftop-garden sh "$root/templates/scripts/ci/$1"; }
+eq "a closed issue left In progress or Ready is named, in whichever form the project names its labels" "#41 still carries state:in-progress though it is closed.
+#42 still carries state: ready though it is closed." "$(cl_audit closed-state-audit.sh)"
+eq "a change naming no issue it closes is named, and neither the one that does nor the queue's own batch" "#201 “Show the bed map” names no issue it closes, so the closes check would fail it." "$(cl_audit closes-check-audit.sh)"
+eq "with no repository named neither says anything" "" "$(GH_REPO= sh "$root/templates/scripts/ci/closed-state-audit.sh")$(GH_REPO= sh "$root/templates/scripts/ci/closes-check-audit.sh")"
+eq "the audit workflow runs both and adds their lines" "1 1 1 1" "$(grep -c 'closedstate=\$(sh scripts/ci/closed-state-audit.sh' "$root/templates/.github/workflows/audit.yml") $(grep -c 'if \[ -n "\$closedstate" \]' "$root/templates/.github/workflows/audit.yml") $(grep -c 'closescheck=\$(sh scripts/ci/closes-check-audit.sh' "$root/templates/.github/workflows/audit.yml") $(grep -c 'if \[ -n "\$closescheck" \]' "$root/templates/.github/workflows/audit.yml")"
+eq "the plugin owns both scripts" "2" "$(grep -cE '^scripts/ci/close(d-state|s-check)-audit\.sh$' "$root/templates/OWNED.txt")"
 # An In progress issue nobody is on is free to pick up again.
 cl_now=$(date -u -d 2026-11-21T10:00:00Z +%s)
 cl_idle=$(printf 'issue\t51\tAdd a rain sensor\tstate:in-progress\t2026-11-21T00:00:00Z\t\n')

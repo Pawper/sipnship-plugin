@@ -19,6 +19,7 @@
 .github/workflows/audit.yml 300b58351bf7de6d72c5b6fee89c91165b96fad4
 .github/workflows/audit.yml 356d601fbccdab03761b084c2a3a46d57e75b7ea
 .github/workflows/audit.yml 3e3c809ecec3acdfaa7cd3e8dfac7383fc62c861
+.github/workflows/audit.yml 595d80ba4c7c7765ea93dc423aa3f4fdb2751343
 .github/workflows/audit.yml 5a6c61afda718116c66cfa3ebd85320e69d9255d
 .github/workflows/audit.yml 618090d028383645c7cd2e6e81ff6fef15160641
 .github/workflows/audit.yml 6735d19e0f0baa83a05f0506bb15626dcfab3830
@@ -110,6 +111,7 @@
 .github/workflows/state-label.yml a32103c9a5eb98f59894130ce2554460244beeb8
 .github/workflows/state-label.yml b1e6ed75603468d15b359ef1a61cc5d946c09835
 .github/workflows/state-label.yml b82d09eabed01f8f98b4277d10797c1579f91ecd
+scripts/board-lib.sh 3193182fe1fca2634663143cde76e99cca08846a
 scripts/board-lib.sh 365f6b41bb8c179bb2afc60b82543cfb595d50cc
 scripts/board-lib.sh 4ae9a93b899d7f9168df903d4f7b75c3e03e1e86
 scripts/board-lib.sh 9f2c5209a59f45c56b6ce7f4f2aae95ffa3f83bd
@@ -117,6 +119,7 @@ scripts/board-lib.sh a25bbb511b28ddacc126a9bb34645c4dd83c6507
 scripts/board-lib.sh b21fdae9dbcc33f8536e74d81d5e7a480bb317c9
 scripts/board-lib.sh e3bf00886896c688504ff9ff73855eb547fbbc1c
 scripts/board-lib.sh fe39f0cb0aff6362ea756545ced9430d38920f2f
+scripts/board-sync.sh 9f9becf736ba477dc1cb7a50758de0bce1e9fd6d
 scripts/board-sync.sh ace03b7cee3e324bcdf7ee235c470a85fa27ae06
 scripts/board-sync.sh fe0ca4facc76d2f97cb2874d1d615b11063248ca
 scripts/board.sh 2adfb49de5ebd9ad8b6b6829ce26f1bb53e0678d
@@ -280,6 +283,8 @@ scripts/ci/checks-local.sh f987bc04330f81f5ca96fac710e237c60d29a174
 scripts/ci/classify.sh ffce692eabc9f10dae99261c194270f388824ca3
 scripts/ci/client-env-check.sh 0c054b2adbe91f3418b4e3027bfa5edc6ac6684e
 scripts/ci/client-env-check.sh cd03fc4c7be5190255753e229f35272b7e05d0c6
+scripts/ci/closed-state-audit.sh b6329c61c018a3a25dfc100c156b55d7e187f34d
+scripts/ci/closes-check-audit.sh 830f22e6d2d7b38f561aaab29293bcd336016a2b
 scripts/ci/closes-check.sh a779503411e34e106cd42434b7c095c3d641926d
 scripts/ci/delete-check.sh 1c178aca4caf68a99969bc7da7c9a84ddf7e0cad
 scripts/ci/delete-check.sh de832e14b50d2c16ca2639ba95b67d54fec6ad7c
@@ -856,6 +861,7 @@ scripts/protect-main.sh df091fbb0c5b4d9ff6346cd62e759acd8caf7dda
 scripts/rules.sh 4ef5c8d9888c692cdd7c711d8d8df0f01cf9fa76
 scripts/rules.sh 933c74aadb7690dc8b4d93d08b3228ab831cd8d5
 scripts/state.sh 492c15f4c4b648ddb9e00939cedebda9977a55ba
+scripts/state.sh 8398fee006d0b4f2fbc7b6832cd3787e4898461e
 scripts/state.sh 83aa2bb9ddac54bdfaaee27d198595f1fa72d08b
 scripts/state.sh a1e4fcd7135592e78798accf1c3dee1b3fedf74f
 scripts/state.sh f3231f3a8121ffd2c3d7a1da8dd306867da9fd36
@@ -873,6 +879,7 @@ scripts/worktrees-lib.sh ef6542de5b0cc077e3fddd575dd65e0fd95e3356
 scripts/worktrees.sh 580b813c94d8c8914ffb89235370e9648f1d2b86
 scripts/worktrees.sh 5ec1b4ff6229b725c89527f67f2295abcf22d47f
 scripts/worktrees.sh 758c87808a012bd36e9ff90223e97f19d975193a
+scripts/worktrees.sh 7b7a3beb2a4205897b96ad57bdf51a70d545ec42
 scripts/worktrees.sh 854b3609fd7201a7784e3a354b0e7b6604b53174
 scripts/worktrees.sh 9767ccb35bb2afe95eb0864020b60a60ab4082d9
 scripts/worktrees.sh c090643a8382f65e8190640e77c645b317fa51b9

@@ -67,7 +67,19 @@ board_set_field() {
   gh_project item-edit --project-id "$BOARD_ID" --id "$1" --field-id "$2" --single-select-option-id "$3" >/dev/null
 }
 
-# issue_set_state_label ISSUE LABEL: add this state label, remove the others
+# state_label_to_set STATE_NAME CLOSED [FORM]
+# The state label an issue should carry: the label for STATE, or nothing at
+# all when the issue is closed. Closed is what says an issue is done, so a
+# State label beside it is a second answer that goes stale; a closed issue
+# still marked In progress had the drive reading it as running work. Pure.
+state_label_to_set() {
+  case $2 in true|closed|CLOSED) return 0 ;; esac
+  label_from_state_name "$1" "$3"
+}
+
+# issue_set_state_label ISSUE LABEL: add this state label, remove the others.
+# An empty LABEL takes every state label off and adds none, which is what a
+# closed issue carries.
 issue_set_state_label() {
   isl_cur=$(gh api "repos/{owner}/{repo}/issues/$1/labels" --jq '.[].name' 2>/dev/null || true)
   state_labels_json "$isl_cur" "$2" | gh api -X PUT "repos/{owner}/{repo}/issues/$1/labels" --input - >/dev/null
@@ -79,7 +91,12 @@ board_apply() {
   ba_issue=$1
   ba_state=$2
   ba_closed=$3
-  ba_label=$(label_from_state_name "$ba_state")
+  # A closed issue carries no State label, so closing one clears it in the
+  # same step: state_label_to_set gives nothing, and the labels call drops
+  # every state label the issue has. The board's own State is still set, so
+  # a closed issue keeps its place on the board with Status Done.
+  ba_label=$(state_label_to_set "$ba_state" "$ba_closed")
+  if [ -n "$ba_label" ]; then ba_said="$ba_label set"; else ba_said="its State label taken off (it is closed)"; fi
   ba_status=$(status_for "$ba_state" "$ba_closed")
   ba_state_opt=$(board_option "$BOARD_STATE_FIELD" "$ba_state")
   [ -n "$ba_state_opt" ] || { echo "The State field has no value \"$ba_state\"." >&2; return 1; }
@@ -90,12 +107,12 @@ board_apply() {
   ba_url=$(gh api "repos/{owner}/{repo}/issues/$ba_issue" --jq .html_url)
   ba_item=$(board_item_for "$ba_url")
   if [ -z "$ba_item" ] || ! board_set_field "$ba_item" "$BOARD_STATE_FIELD" "$ba_state_opt"; then
-    echo "issue $ba_issue: $ba_label set; the board's State is pending (GitHub refused the board call). The nightly board sync sets it; nothing else to do."
+    echo "issue $ba_issue: $ba_said; the board's State is pending (GitHub refused the board call). The nightly board sync sets it; nothing else to do."
     return 0
   fi
   if [ -n "$BOARD_STATUS_FIELD" ]; then
     ba_status_opt=$(board_option "$BOARD_STATUS_FIELD" "$ba_status")
     [ -n "$ba_status_opt" ] && board_set_field "$ba_item" "$BOARD_STATUS_FIELD" "$ba_status_opt"
   fi
-  echo "issue $ba_issue: $ba_label, State = $ba_state, Status = $ba_status"
+  echo "issue $ba_issue: $ba_said, State = $ba_state, Status = $ba_status"
 }

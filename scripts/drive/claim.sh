@@ -27,7 +27,10 @@ claim_busy() {
   [ "$state" = open ] || { echo "the issue is not open"; return 0; }
   pulls=$(gh api "repos/{owner}/{repo}/pulls?state=open&per_page=100" --jq '.[] | [.number, ((.body // "") | [scan("(?i)(?:closes|fixes|resolves) #([0-9]+)") | .[0]] | join(","))] | @tsv' 2>/dev/null)
   branches=$( { gitb ls-remote --heads origin "issue-$issue" "issue-$issue-*" "fix-$issue" 2>/dev/null | sed 's#.*refs/heads/##'; git branch --list "issue-$issue" "issue-$issue-*" "fix-$issue" 2>/dev/null | sed 's/^[*+ ]*//'; } )
-  claim_busy_reason "$issue" "$pulls" "$branches"
+  # Every pull request of this branch, any state (a squash merge leaves no commit of the branch's own that main lacks,
+  # so a branch whose only pull requests ended is free of its claim, whatever it is named, #2259).
+  pr_branches=$(gh api "repos/{owner}/{repo}/pulls?state=all&per_page=100" --jq '.[] | [.head.ref, .state] | @tsv' 2>/dev/null)
+  claim_busy_reason "$issue" "$pulls" "$branches" "$pr_branches"
 }
 
 case "$mode" in

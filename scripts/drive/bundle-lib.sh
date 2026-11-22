@@ -61,15 +61,18 @@ mocks_files() {
 
 # past_spec_files LOG
 # LOG is git history as "@@ SUBJECT" lines each followed by the files that
-# commit changed (git log --name-only --format='@@ %s'). For every commit
-# that changed something under a spec folder, print "SPEC<TAB>FILE" for its
-# other files, so a new issue on the same spec guesses the files the last
-# work on it touched.
+# commit changed (git log --name-only --format='@@ %s'). A spec worked on for
+# weeks has touched most of the repository, so its whole history is never
+# printed (#2274): only a file most of that spec's past commits shared, so a
+# new issue on the same spec guesses the files that go with it, not every
+# file any one change there ever happened to touch. Prints "SPEC<TAB>FILE".
 past_spec_files() {
   printf '%s\n' "$1" | tr -d '\r' | awk '
-    function flush(   i, j) {
-      for (i = 1; i <= nspec; i++) for (j = 1; j <= nf; j++)
-        if (files[j] !~ /^specs\//) print specs[i] "\t" files[j]
+    function flush(   i, j, s) {
+      for (i = 1; i <= nspec; i++) {
+        s = specs[i]; sc[s]++
+        for (j = 1; j <= nf; j++) if (files[j] !~ /^specs\//) pc[s SUBSEP files[j]]++
+      }
       nspec = 0; nf = 0; delete specs; delete files; delete sp
     }
     /^@@/ { flush(); next }
@@ -81,7 +84,13 @@ past_spec_files() {
         if (!(s in sp)) { sp[s] = 1; specs[++nspec] = s }
       }
     }
-    END { flush() }' | sort -u
+    END {
+      flush()
+      for (key in pc) {
+        split(key, parts, SUBSEP)
+        if (pc[key] * 2 > sc[parts[1]]) print parts[1] "\t" parts[2]
+      }
+    }' | sort -u
 }
 
 # changed_paths PATHS

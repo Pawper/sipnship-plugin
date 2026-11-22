@@ -42,12 +42,14 @@ printf '%s\n' "$issues" | while IFS="$(printf '\t')" read -r number ghstate labe
     continue
   fi
   want_status=$(status_for "$want" "$closed")
-  want_label=$(label_from_state_name "$want")
+  # A closed issue carries no State label: closing takes it off, and the sync
+  # takes off any a closed issue was left with.
+  want_label=$(state_label_to_set "$want" "$closed")
   if [ "$label" = "$want_label" ] && [ "$(printf '%s' "$board_state" | tr 'A-Z' 'a-z')" = "$(printf '%s' "$want" | tr 'A-Z' 'a-z')" ] && [ "$board_status" = "$want_status" ]; then
     continue
   fi
   if [ "$dry" = "--dry-run" ]; then
-    echo "issue $number: would set $want_label, State = $want, Status = $want_status"
+    echo "issue $number: would set ${want_label:-no State label (it is closed)}, State = $want, Status = $want_status"
   else
     board_apply "$number" "$want" "$closed"
   fi

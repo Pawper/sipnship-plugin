@@ -24,7 +24,8 @@ closed=$(gh api "repos/{owner}/{repo}/issues/$issue" --jq '.state == "closed"')
 if board_load "$project" "$owner" 2>"${TMPDIR:-/tmp}/state.$$.err"; then
   board_apply "$issue" "$state" "$closed" || echo "issue $issue: the label is set; the board's State is pending. The nightly board sync sets it."
 else
-  issue_set_state_label "$issue" "$(label_from_state_name "$state")"
+  # A closed issue carries no State label: the call takes every one off and adds none.
+  issue_set_state_label "$issue" "$(state_label_to_set "$state" "$closed")"
   if [ "$(board_refusal "$(cat "${TMPDIR:-/tmp}/state.$$.err" 2>/dev/null)")" = yes ]; then
     echo "Set the label on #$issue. The board's State was not set: GitHub refused the board call for its rate limit. The nightly board sync will set it; nothing else to do."
   else

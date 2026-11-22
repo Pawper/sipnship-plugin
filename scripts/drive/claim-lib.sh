@@ -8,15 +8,26 @@
 # that finds its own claim is not the lowest stands down. Every starter (the scheduled drive, the
 # wake, a Start now press) claims through claim.sh, so they all read the same line.
 
-# claim_busy_reason ISSUE PULLS BRANCHES
-# Why an issue already has work: an open pull request that closes it, or a branch named for it.
-# PULLS are "NUMBER<TAB>CLOSES" lines (issue numbers comma separated), BRANCHES branch names one a
-# line. Prints one plain line, or nothing when the issue is free.
+# claim_busy_reason ISSUE PULLS BRANCHES [PR_BRANCHES]
+# Why an issue already has work: an open pull request that closes it, or a branch named for it whose
+# work has not ended. PULLS are "NUMBER<TAB>CLOSES" lines (issue numbers comma separated), BRANCHES
+# branch names one a line. PR_BRANCHES are "HEAD<TAB>STATE" lines, one per pull request of any state
+# (open or closed, a squash merge included), for every branch git lists; with none given (or a
+# branch no pull request of PR_BRANCHES names), a branch is read as busy, as before (#2259). A branch
+# named for the issue is a real claim only while a pull request on it is still open: once its only
+# pull requests have all ended (merged or closed with no squash commit main lacks), the branch is
+# free, whatever it is named, since a squash merge leaves main with every commit the branch had.
+# Prints one plain line, or nothing when the issue is free.
 claim_busy_reason() {
   cb_pr=$(printf '%s\n' "$2" | tr -d '\r' | awk -F'\t' -v n="$1" '{ k = split($2, a, ","); for (i = 1; i <= k; i++) if (a[i] == n) { print $1; exit } }')
   [ -z "$cb_pr" ] || { printf 'an open pull request (#%s) already carries it\n' "$cb_pr"; return 0; }
   cb_br=$(printf '%s\n' "$3" | tr -d '\r' | sed 's#^refs/heads/##; s#^origin/##' | awk -v n="$1" '$0 == "issue-" n || index($0, "issue-" n "-") == 1 || $0 == "fix-" n { print; exit }')
-  [ -z "$cb_br" ] || printf 'a branch (%s) already works it\n' "$cb_br"
+  [ -z "$cb_br" ] || {
+    cb_ended=$(printf '%s\n' "${4:-}" | tr -d '\r' | awk -F'\t' -v b="$cb_br" '
+      $1 == b { seen = 1; if ($2 == "open") live = 1 }
+      END { print (seen && !live) ? "yes" : "no" }')
+    [ "$cb_ended" = yes ] || printf 'a branch (%s) already works it\n' "$cb_br"
+  }
 }
 
 # claim_live COMMENTS NOW TTL
