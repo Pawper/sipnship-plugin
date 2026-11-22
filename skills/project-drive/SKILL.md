@@ -682,6 +682,11 @@ before they can push anything. So in that tick, and only there:
    timed run) needs none of this. This tick never waits an hour for one agent on its own: `dispatch N`'s brief
    already bounds an agent's own wait for its pull request's checks (#2096), so a conflicting or stalled change
    ends that agent's turn, its finish notice arrives, and this tick moves on; it never holds a later wake.
+   **"Still waiting on it, nothing to report yet" is never a line to end the turn on (#2328).** An agent
+   running its own tests in the background, installing something, or simply taking a while, is normal and is
+   not a reason to summarize and stop: the turn is not done until every dispatched agent's finish notice has
+   arrived. If you find yourself about to write a sentence like that one, that is exactly the moment to go
+   back to waiting instead.
 2. A unit counts as started only once its agent has made its branch. Until then its dot says "starting", not
    "agent on it": report it as `starting`, never as being worked. Read each started unit with
    `wake_units_read` (`scripts/drive/wake-lib.sh`: the unit's dispatch time, its branch, its pull request, its
@@ -691,6 +696,17 @@ before they can push anything. So in that tick, and only there:
    says, not after two hours; its dot is never blue meanwhile.
 4. The report's last line is `wake_agents_left COUNT`, how many agents the tick left running when it ended
    (none, when it waited).
+5. **A backstop for when it happens anyway.** `claim.sh` leaves the run's own id on a claim it makes here
+   (`GITHUB_RUN_ID`), and `drive-wake.yml`'s last step, `if: always()`, runs
+   `claim-stale.sh --apply` with `CLAIM_STALE_OWN_RUN` naming this run: an issue this very tick claimed and
+   left with no branch and no open pull request is freed at once, the same job, rather than sitting claimed
+   for up to its four-hour TTL. This is the net under rule 1, never a reason to treat ending early as fine.
+6. **A later tick never waits out another's dead claim either.** Before the plan, `wake-check.sh` also runs
+   `claim-stale.sh --apply` (plain scripts, no model): any open issue In progress whose claim names a run
+   that has since completed, with no open pull request on it, is released and set back to Ready, with one
+   line saying so, carried into this tick's report rather than said as "nothing to do" (#2328). A claim made
+   outside GitHub Actions (a person's session, the desktop app) names no run and is never touched by this; its
+   four-hour TTL still governs, as before.
 
 ## f. Report
 

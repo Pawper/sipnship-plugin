@@ -7849,6 +7849,15 @@ cl_rel=$(printf '901\t%s\tClaim: drive-1\n902\t%s\tClaim: wake-2\n903\t%s\tClaim
 eq "a released claim no longer holds it, so the next one does" "wake-2" "$(claim_winner "$cl_rel" "$cl_now" 14400)"
 eq "a claim older than its time limit holds nothing" "" "$(claim_winner "$cl_two" "$((cl_now + 20000))" 14400)"
 eq "a reply that only mentions a claim is no claim" "" "$(claim_winner "$(printf '904\t%s\tThe Claim: of the agent was released\n' "$cl_now")" "$cl_now" 14400)"
+# #2328: a claim names the run that made it (its fourth field); the issue is free of it once that run has
+# ended, without waiting out the four-hour TTL, since nobody is really on it.
+cl_withrun=$(printf '901\t%s\tClaim: drive-1\t555\n' "$((cl_now - 60))")
+eq "every run a comment list names, so the caller asks GitHub once each" "555" "$(claim_run_ids "$cl_withrun")"
+eq "no runs named is no runs to ask about" "" "$(claim_run_ids "$cl_two")"
+eq "duplicates collapse to one" "555" "$(claim_run_ids "$(printf '%s\n902\t%s\tClaim released: drive-1\t555\n' "$cl_withrun" "$((cl_now - 50))")")"
+eq "while its run is still going (not in ENDED), the claim still holds the issue" "drive-1" "$(claim_winner "$cl_withrun" "$cl_now" 14400 "")"
+eq "once its run is read as ended, the claim is no longer live" "" "$(claim_winner "$cl_withrun" "$cl_now" 14400 555)"
+eq "a claim naming no run is unaffected by any ENDED list" "drive-1" "$(claim_winner "$cl_two" "$cl_now" 14400 555)"
 # An agent that released every claim after its last push has ended: its red change needs no wait (#1645).
 cl_end=$(printf '901\t%s\tClaim: drive-1\n903\t%s\tClaim released: drive-1\n' "$((cl_now - 600))" "$((cl_now - 60))")
 eq "every claim released after the push means the agent ended" "yes" "$(claim_ended "$cl_end" "$((cl_now - 120))")"
@@ -7869,11 +7878,12 @@ case "$method $url" in
   "GET repos/{owner}/{repo}/issues/"[0-9]*) echo open ;;
   "GET repos/{owner}/{repo}/pulls?state=all"*) cat "$FAKE/pr-branches" ;;
   "GET repos/{owner}/{repo}/pulls"*) cat "$FAKE/pulls" ;;
-  "POST repos/{owner}/{repo}/issues/"[0-9]*"/comments") n=$(( $(wc -l < "$FAKE/comments") + 901 )); printf '%s\t%s\t%s\n' "$n" "$(date +%s)" "$(printf '%s' "$body" | head -n 1)" >> "$FAKE/comments"; echo "$n" ;;
-  "PATCH repos/{owner}/{repo}/issues/comments/"*) id=${url##*/}; awk -F'\t' -v OFS='\t' -v id="$id" -v b="$(printf '%s' "$body" | head -n 1)" '$1 == id { $3 = b } { print }' "$FAKE/comments" > "$FAKE/c.new"; mv "$FAKE/c.new" "$FAKE/comments" ;;
+  "GET repos/{owner}/{repo}/actions/runs/"*) rid=${url##*/}; awk -F'\t' -v r="$rid" '$1 == r { print $2 }' "$FAKE/runs" 2>/dev/null ;;
+  "POST repos/{owner}/{repo}/issues/"[0-9]*"/comments") n=$(( $(wc -l < "$FAKE/comments") + 901 )); fl=$(printf '%s' "$body" | head -n 1); rn=$(printf '%s\n' "$body" | sed -n 's/^Run: //p' | head -n 1); printf '%s\t%s\t%s\t%s\n' "$n" "$(date +%s)" "$fl" "$rn" >> "$FAKE/comments"; echo "$n" ;;
+  "PATCH repos/{owner}/{repo}/issues/comments/"*) id=${url##*/}; fl=$(printf '%s' "$body" | head -n 1); awk -F'\t' -v OFS='\t' -v id="$id" -v b="$fl" '$1 == id { $3 = b } { print }' "$FAKE/comments" > "$FAKE/c.new"; mv "$FAKE/c.new" "$FAKE/comments" ;;
 esac
 GHEOF
-chmod +x "$cl_dir/bin/gh"; : > "$cl_dir/comments"; : > "$cl_dir/pulls"; : > "$cl_dir/pr-branches"
+chmod +x "$cl_dir/bin/gh"; : > "$cl_dir/comments"; : > "$cl_dir/pulls"; : > "$cl_dir/pr-branches"; : > "$cl_dir/runs"
 cl_run() { (cd "$cl_dir" && FAKE="$cl_dir" PATH="$cl_dir/bin:$PATH" sh "$root/scripts/drive/claim.sh" "$@" 2>&1); }
 eq "the first starter claims a free issue" "claimed drive-1" "$(cl_run 217 claim drive-1)"
 eq "the second starter, one tick later, is turned away" "taken: another starter claimed it (drive-1)" "$(cl_run 217 claim wake-2)"
@@ -7884,6 +7894,22 @@ eq "an open pull request that closes the issue turns every starter and the agent
 : > "$cl_dir/pulls"
 eq "releasing ends the claim, so a later round may claim again" "claimed drive-9" "$(cl_run 217 release drive-1 >/dev/null; cl_run 217 claim drive-9)"
 eq "a bad issue number is refused" "2" "$(cl_run abc claim >/dev/null; echo $?)"
+# #2328: a claim names the run that made it (when started on a runner, GITHUB_RUN_ID set), and a reader frees
+# it once that run has ended, rather than waiting out its four-hour TTL for an agent already gone.
+: > "$cl_dir/comments"
+cl_runas() { (cd "$cl_dir" && FAKE="$cl_dir" GITHUB_RUN_ID="$cl_rid" PATH="$cl_dir/bin:$PATH" sh "$root/scripts/drive/claim.sh" "$@" 2>&1); }
+cl_rid=555
+eq "the claim names its run" "claimed drive-5" "$(cl_runas 317 claim drive-5)"
+eq "the run id lands in the claim's own field" "1" "$(awk -F'\t' '$3 ~ /^Claim: drive-5/ && $4 == 555' "$cl_dir/comments" | wc -l | tr -d ' ')"
+eq "while its run is still going, the claim still holds the issue" "taken: another starter claimed it (drive-5)" "$(cl_run 317 check)"
+printf '555\tcompleted\n' >> "$cl_dir/runs"
+eq "once its run has completed, the claim is read as released" "free" "$(cl_run 317 check)"
+eq "and a second starter may claim it, no four-hour wait" "claimed wake-6" "$(cl_run 317 claim wake-6)"
+: > "$cl_dir/runs"; : > "$cl_dir/comments"
+cl_rid=
+cl_runas 318 claim drive-7 >/dev/null
+eq "outside GitHub Actions, no run is named, and the four-hour TTL alone governs" "" "$(awk -F'\t' '$3 ~ /^Claim: drive-7/ { print $4 }' "$cl_dir/comments")"
+: > "$cl_dir/comments"
 . "$root/scripts/drive/stale-lib.sh"
 # The plan reads a Ready issue with an open pull request that closes it as running: it is held, never dispatched again.
 cl_facts=$(printf 'issue	214	Frost night reminder	state: ready		
@@ -8178,6 +8204,12 @@ eq "a change that says Part of and no Closes is one the check would fail" "201" 
 eq "a body with a Closes line has one" "yes" "$(closes_has_line "$(printf 'Spec: specs/bed-map\nCloses #5\n')")"
 eq "a body that says Part of has none" "no" "$(closes_has_line "$(printf 'Part of #5\n')")"
 eq "the issue a change says it is part of is read" "5" "$(closes_part_of "$(printf 'Spec: specs/bed-map\nPart of #5\n')")"
+eq "every Part of line is read, in the body's own order" "5
+7" "$(closes_part_of_all "$(printf 'Spec: specs/bed-map\nPart of #5\nPart of #7\n')")"
+eq "of several builds, the one still open is picked, not the first" "7" "$(closes_pick_open_build "$(printf '5\n7\n')" "$(printf '5\tclosed\n7\topen\n')")"
+eq "with none open, the first is picked anyway" "5" "$(closes_pick_open_build "$(printf '5\n7\n')" "$(printf '5\tclosed\n7\tclosed\n')")"
+eq "with one candidate and no state read, the candidate itself is picked" "5" "$(closes_pick_open_build "$(printf '5\n')" "")"
+eq "with no candidate at all, nothing is picked" "" "$(closes_pick_open_build "" "")"
 eq "a change of only specs and mocks is the spec and mocks of a build" "yes" "$(closes_spec_only "$(printf 'specs/bed-map/spec.md\ndesign/mocks/bed-map.html\n')")"
 eq "a change that also touches code is not" "no" "$(closes_spec_only "$(printf 'specs/bed-map/spec.md\nsrc/beds.ts\n')")"
 eq "the small issue is named for the spec and mocks" "The spec and mocks of Show the bed map" "$(closes_spec_title 'Show the bed map')"
@@ -8428,6 +8460,59 @@ eq "the service refuses: the line is not lost, it is posted as the builder" "htt
 eq "the service refuses: it says so in one line" "The service did not take the log line, so it is posted with your own sign-in instead." "$(cat "$lp_d/err")"
 eq "no answer at all from the service is a refusal too" "yes" "$(LP_SIGNED_IN=yes LP_REPLY='' lp_run >/dev/null; [ "$(wc -l < "$lp_d/err" | tr -d ' ')" = 1 ] && echo yes)"
 eq "the handoff and the round's publisher post through the helper" "1 1" "$(grep -c 'log_post drive' "$root/scripts/drive/handoff.sh") $(grep -c 'log_post drive' "$root/scripts/drive/publish-round.sh")"
+section 'an issue In progress with no live agent and a claim from an ended run is freed, not reported as nothing to do (#2328)'
+. "$root/scripts/drive/claim-lib.sh"
+cs_dir=$(mktemp -d); mkdir -p "$cs_dir/bin"
+cat > "$cs_dir/bin/gh" <<'CSGHEOF'
+#!/bin/sh
+[ "$1" = auth ] && exit 0
+shift; method=GET; url=; args=
+while [ $# -gt 0 ]; do case "$1" in -X) method=$2; shift ;; -f) args="$args
+$2"; shift ;; repos/*) url=$1 ;; esac; shift; done
+case "$method $url" in
+  "GET repos/{owner}/{repo}/issues?state=open"*) cat "$FAKE/inprog" ;;
+  "GET repos/{owner}/{repo}/pulls?state=open"*) cat "$FAKE/closes" ;;
+  "GET repos/{owner}/{repo}/issues/"[0-9]*"/comments"*) n=${url#*issues/}; n=${n%%/*}; cat "$FAKE/comments-$n" 2>/dev/null ;;
+  "GET repos/{owner}/{repo}/actions/runs/"*) rid=${url##*/}; awk -F'\t' -v r="$rid" '$1 == r { print $2 }' "$FAKE/runs" 2>/dev/null ;;
+  "GET repos/{owner}/{repo}/issues/"[0-9]*"/labels") n=${url#*issues/}; n=${n%%/*}; cat "$FAKE/labels-$n" 2>/dev/null ;;
+  "POST repos/{owner}/{repo}/issues/"[0-9]*"/comments") n=${url#*issues/}; n=${n%%/*}; printf '%s\t%s\n' "$n" "$(printf '%s' "$args" | sed -n 's/^body=//p' | head -n 1)" >> "$FAKE/posted" ;;
+  "DELETE repos/{owner}/{repo}/issues/"[0-9]*"/labels/"*) echo "delete $url" >> "$FAKE/posted" ;;
+  "POST repos/{owner}/{repo}/issues/"[0-9]*"/labels") n=${url#*issues/}; n=${n%%/*}; printf '%s\tlabel\t%s\n' "$n" "$(printf '%s' "$args" | sed -n 's/^labels\[\]=//p')" >> "$FAKE/posted" ;;
+esac
+CSGHEOF
+chmod +x "$cs_dir/bin/gh"
+cs_run() { ( cd "$cs_dir" && FAKE="$cs_dir" PATH="$cs_dir/bin:$PATH" sh "$root/scripts/drive/claim-stale.sh" "$@" 2>&1 ); }
+cs_now=$(date +%s)
+printf '317\n' > "$cs_dir/inprog"; : > "$cs_dir/closes"; : > "$cs_dir/runs"; : > "$cs_dir/posted"
+printf '901\t%s\tClaim: drive-5\t555\n' "$((cs_now - 60))" > "$cs_dir/comments-317"
+echo "state:in-progress" > "$cs_dir/labels-317"
+eq "its run still going: not reported, and nothing is written" "claim-stale: every In progress issue either has an open pull request, a live claim, or no claim naming a run." "$(cs_run)"
+eq "nothing posted while the run has not ended" "" "$(cat "$cs_dir/posted")"
+printf '555\tcompleted\n' > "$cs_dir/runs"
+eq "its run has ended: the dry run says it would be freed" "claim-stale: issue #317 is In progress under a claim (drive-5) whose run has ended, with no open pull request; it would be freed, back to Ready." "$(cs_run)"
+eq "a dry run writes nothing" "" "$(cat "$cs_dir/posted")"
+eq "--apply frees it: the claim released, the label set to Ready, and one line said why" "claim-stale: freed issue #317 (claim drive-5, its run ended, no open pull request); set back to Ready." "$(cs_run --apply)"
+eq "a release comment, the old label removed, Ready set, and the reason left for the next round" "4" "$(wc -l < "$cs_dir/posted" | tr -d ' ')"
+eq "the claim is released by name" "1" "$(grep -c '^317	Claim released: drive-5$' "$cs_dir/posted")"
+eq "In progress is taken off and Ready put on" "1 1" "$(grep -c 'delete.*state' "$cs_dir/posted") $(grep -c '^317	label	state:ready$' "$cs_dir/posted")"
+printf '317\n318\n' > "$cs_dir/inprog"; : > "$cs_dir/posted"
+printf '902\t%s\tClaim: wake-1\t556\n' "$((cs_now - 60))" > "$cs_dir/comments-318"
+echo "state:in-progress" > "$cs_dir/labels-318"
+printf '555\tcompleted\n556\tin_progress\n' > "$cs_dir/runs"
+eq "an issue whose claim's run is still going is left alone" "0" "$(cs_run --apply >/dev/null; grep -c '^318' "$cs_dir/posted")"
+printf '317\n' > "$cs_dir/inprog"; : > "$cs_dir/posted"
+printf '55,317\n' > "$cs_dir/closes"
+eq "an issue an open pull request already closes is left alone, whatever its claim" "claim-stale: every In progress issue either has an open pull request, a live claim, or no claim naming a run." "$(cs_run)"
+: > "$cs_dir/closes"
+printf '903\t%s\tClaim: maya\n' "$((cs_now - 60))" > "$cs_dir/comments-317"
+eq "a claim naming no run (a person's or the desktop app's own) is never called stale here" "claim-stale: every In progress issue either has an open pull request, a live claim, or no claim naming a run." "$(cs_run)"
+# The same job, right after the step that dispatched the agent (drive-wake.yml, "Free any agent this tick
+# left running"): its own run has not completed yet, so nothing asks GitHub about it; CLAIM_STALE_OWN_RUN
+# names it directly.
+printf '317\n' > "$cs_dir/inprog"; : > "$cs_dir/posted"; : > "$cs_dir/runs"
+printf '904\t%s\tClaim: drive-9\t777\n' "$cs_now" > "$cs_dir/comments-317"
+eq "its own run, named directly, needs no gh api call to confirm" "claim-stale: freed issue #317 (claim drive-9, its run ended, no open pull request); set back to Ready." "$(cd "$cs_dir" && FAKE="$cs_dir" CLAIM_STALE_OWN_RUN=777 PATH="$cs_dir/bin:$PATH" sh "$root/scripts/drive/claim-stale.sh" --apply)"
+eq "a run that is not this one still needs the real read" "claim-stale: every In progress issue either has an open pull request, a live claim, or no claim naming a run." "$(cs_dir2=$cs_dir; printf '317\n' > "$cs_dir2/inprog"; : > "$cs_dir2/posted"; printf '905\t%s\tClaim: drive-9\t778\n' "$cs_now" > "$cs_dir2/comments-317"; cd "$cs_dir2" && FAKE="$cs_dir2" CLAIM_STALE_OWN_RUN=777 PATH="$cs_dir2/bin:$PATH" sh "$root/scripts/drive/claim-stale.sh" --apply)"
 block_end
 # --- end of blocks: the summary, kept in every part.
 eq "no test wrote into the checkout's own queue state" "$queue_picture_before" "$([ "$queue_picture_before" = skipped ] && echo skipped || queue_picture)"

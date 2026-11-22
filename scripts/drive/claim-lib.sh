@@ -30,21 +30,33 @@ claim_busy_reason() {
   }
 }
 
-# claim_live COMMENTS NOW TTL
-# COMMENTS are "ID<TAB>EPOCH<TAB>BODY" lines (BODY's first line only), oldest first. Prints the
-# live claims, "ID<TAB>TOKEN" one a line: made within TTL seconds of NOW and not released.
+# claim_live COMMENTS NOW TTL [ENDED]
+# COMMENTS are "ID<TAB>EPOCH<TAB>BODY<TAB>RUN" lines (BODY's first line only, RUN the run id a "Run:" second
+# line named, or empty for a starter outside GitHub Actions), oldest first. ENDED, when given, are run ids
+# already read as completed, one a line (the caller's own gh calls, one per distinct run): a live claim naming
+# one is read as released too, without waiting out the four-hour TTL, since its starter has ended and nobody
+# is really on the issue (#2328). Prints the live claims, "ID<TAB>TOKEN" one a line: made within TTL seconds of
+# NOW, not released, and not naming an ended run.
 claim_live() {
-  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v now="$2" -v ttl="$3" '
+  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v now="$2" -v ttl="$3" -v ended="$(printf '%s\n' "${4:-}" | tr -d '\r' | tr '\n' ' ')" '
+    BEGIN { m = split(ended, ea, " "); for (i = 1; i <= m; i++) if (ea[i] != "") end[ea[i]] = 1 }
     { b = $3 }
     b ~ /^Claim released: / { t = b; sub(/^Claim released: /, "", t); sub(/[ \t].*/, "", t); rel[t] = 1; next }
-    b ~ /^Claim: / { t = b; sub(/^Claim: /, "", t); sub(/[ \t].*/, "", t); id[++n] = $1; tok[n] = t; at[n] = $2 }
-    END { for (i = 1; i <= n; i++) if (!(tok[i] in rel) && now - at[i] <= ttl) print id[i] "\t" tok[i] }'
+    b ~ /^Claim: / { t = b; sub(/^Claim: /, "", t); sub(/[ \t].*/, "", t); id[++n] = $1; tok[n] = t; at[n] = $2; run[n] = $4 }
+    END { for (i = 1; i <= n; i++) if (!(tok[i] in rel) && now - at[i] <= ttl && !(run[i] != "" && (run[i] in end))) print id[i] "\t" tok[i] }'
 }
 
-# claim_winner COMMENTS NOW TTL
+# claim_winner COMMENTS NOW TTL [ENDED]
 # The token that holds the issue: the live claim with the lowest comment number. Nothing when none.
 claim_winner() {
-  claim_live "$1" "$2" "$3" | sort -n | head -n 1 | cut -f2
+  claim_live "$1" "$2" "$3" "${4:-}" | sort -n | head -n 1 | cut -f2
+}
+
+# claim_run_ids COMMENTS
+# COMMENTS are claim_comments' lines ("ID<TAB>EPOCH<TAB>BODY<TAB>RUN"). Every distinct non-empty RUN a live or
+# released claim names, one a line, so the caller asks GitHub once per run instead of once per claim (#2328).
+claim_run_ids() {
+  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' '$4 != "" && !seen[$4]++ { print $4 }'
 }
 
 # claim_ended COMMENTS PUSH_EPOCH

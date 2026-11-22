@@ -22,7 +22,16 @@ for n in $missing; do
   body=$(gh api "repos/{owner}/{repo}/pulls/$n" --jq '.body // ""' 2>/dev/null | tr -d '\r')
   title=$(gh api "repos/{owner}/{repo}/pulls/$n" --jq '.title' 2>/dev/null | tr -d '\r')
   [ "$(closes_has_line "$body")" = no ] || continue
-  build=$(closes_part_of "$body")
+  candidates=$(closes_part_of_all "$body")
+  states=""
+  for c in $candidates; do
+    cs=$(gh api "repos/{owner}/{repo}/issues/$c" --jq .state 2>/dev/null)
+    [ -n "$cs" ] && states="${states}${c}${tab}${cs}
+"
+  done
+  # A change part of more than one build (several "Part of" lines) names the one still open, never one already
+  # done, so the new issue's own title does not quote a build that finished (#2324).
+  build=$(closes_pick_open_build "$candidates" "$states")
   files=$(gh api "repos/{owner}/{repo}/pulls/$n/files?per_page=100" --jq '.[].filename' 2>/dev/null | tr -d '\r')
   if [ "$(closes_spec_only "$files")" != yes ]; then
     echo "closes: pull request #$n “$title” changes more than a spec and mocks${build:+, and says it is part of #$build}; a person says which issue it closes."

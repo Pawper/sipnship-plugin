@@ -19,7 +19,29 @@ closes_missing() {
 
 # closes_part_of BODY: the first issue number a Part of, Refs or Spec for line names, or nothing.
 closes_part_of() {
-  printf '%s\n' "$1" | tr -d '\r' | tr 'A-Z' 'a-z' | sed -n 's/^[[:space:]]*\(part of\|refs\?\|spec for\|relates to\):\{0,1\} *#\([0-9][0-9]*\).*/\2/p' | head -n 1
+  closes_part_of_all "$1" | head -n 1
+}
+
+# closes_part_of_all BODY: every issue number a Part of, Refs or Spec for line names, in the body's own order, one a
+# line. A change naming several (a part of more than one still-open build) needs more than the first to find which one
+# is still open (closes_pick_open_build).
+closes_part_of_all() {
+  printf '%s\n' "$1" | tr -d '\r' | tr 'A-Z' 'a-z' | sed -n 's/^[[:space:]]*\(part of\|refs\?\|spec for\|relates to\):\{0,1\} *#\([0-9][0-9]*\).*/\2/p'
+}
+
+# closes_pick_open_build CANDIDATES STATES: CANDIDATES are issue numbers, one a line, in the body's own order
+# (closes_part_of_all); STATES are "NUMBER<TAB>STATE" lines, the state ("open" or "closed") of each. The first
+# candidate whose state is "open", so a change part of several builds names the one still going, not one already
+# done; with none open, the first candidate (nothing is more right to name); nothing when there are no candidates.
+closes_pick_open_build() {
+  { printf '%s\n' "$1" | tr -d '\r'; echo '---'; printf '%s\n' "${2:-}" | tr -d '\r'; } | awk '
+    /^---$/ { sep = 1; next }
+    !sep { if ($0 != "") cand[++nc] = $0; next }
+    { st[$1] = $2 }
+    END {
+      for (i = 1; i <= nc; i++) { if (first == "") first = cand[i]; if (st[cand[i]] == "open") { print cand[i]; exit } }
+      if (first != "") print first
+    }'
 }
 
 # closes_spec_only FILES: yes when every file (one a line) is a spec or a mock (under specs/ or design/), so the change is

@@ -22,6 +22,11 @@ sh "${WAKE_UPDATE:-$here/../release/update-if-behind.sh}" 2>/dev/null | tail -n 
 sh "${WAKE_PREPARE:-$here/../release/prepare.sh}" 2>/dev/null | tail -n 1 | grep -v '^release: nothing to release' || true
 # A red change with nobody on it is looked for first, by script, before the slow plan: its fix agent is owed within minutes (#1897).
 sh "${WAKE_FIX_SIDE:-$here/fix-side.sh}" --apply 2>/dev/null | tail -n 3  # fixes a fix agent could not push are merged when what they wait on lands, with no model (#2260)
+# An issue In progress whose claim's starter run has already ended, with no open pull request on it, is freed
+# here too, by script, so a tick never reports "nothing to do" for one simply stuck behind its four-hour claim
+# (#2328): this was a prior wake's agent, killed with its job, that pushed nothing. Only the lines that say
+# something happened are carried into the report; "nothing to free" is not a line worth repeating every tick.
+sh "${WAKE_CLAIM_STALE:-$here/claim-stale.sh}" --apply 2>/dev/null | grep '^claim-stale: freed\|^claim-stale: released the claim' || true
 fix=$(sh "${WAKE_FIX_OWED:-$here/fix-owed.sh}" 2>/dev/null)
 # The ten-minute look (WAKE_QUICK=yes) is only this: with no fix agent owed it ends here, with no plan and no model.
 if [ "${WAKE_QUICK:-}" = yes ] && [ -z "$fix" ]; then
