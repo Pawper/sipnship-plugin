@@ -9,6 +9,13 @@ if has screens && [ -f scripts/ci/parity.txt ] && [ -f "$here/../../templates/sc
   [ -z "$due" ] || add "Screens not compared across platforms in 14 days: $due. After comparing: sh scripts/design/screens.sh compare NAME"
 fi
 
+# A reminder, not a staleness check: after a change to the Design tab, the specs' stories or the mocks
+# list lands, read the map yourself rather than taking a pull request's word for it (sipnship#2354, after
+# a coordinator session told the owner the tab was fixed without having read it).
+if has screens; then
+  add "After a change to the Design tab, the specs' stories or scripts/ci/mocks.txt lands: npx sipnship design flow [--repo owner/name] reads the map in the same words as the app."
+fi
+
 # Built screens due a look beside their mock: only the screens with an
 # @/route in scripts/ci/mocks.txt, which the screens job renders.
 if has screens && [ -f scripts/ci/mocks.txt ] && [ -f "$here/../../templates/scripts/design/design-lib.sh" ] && [ -f "$here/../../templates/scripts/ci/mock-lib.sh" ]; then

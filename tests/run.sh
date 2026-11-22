@@ -4192,6 +4192,7 @@ eq "the CI template's screens job waits on classify, not on checks" "1" "$(awk '
 eq "it uploads the images, writes the summary, and edits one comment" "1 1 1 1" "$(grep -c 'actions/upload-artifact@v4' "$ciy_s") $(grep -c 'GITHUB_STEP_SUMMARY' "$ciy_s") $(grep -c "marker='<!-- screens: side by side -->'" "$ciy_s") $(grep -c 'gh api -X PATCH' "$ciy_s")"
 eq "CI passed waits on the screens job" "1" "$(grep -c 'needs: \[checks, classify, app, tests, screens\]' "$ciy_s")"
 eq "the brief names screens not compared with their mock" "1" "$(grep -c 'compare --mock NAME' "$root/hooks/scripts/session-brief-screens.sh")"
+eq "the brief tells the agent to read the design flow map after a Design tab, stories or mocks change (sipnship#2354)" "1" "$(grep -c 'npx sipnship design flow' "$root/hooks/scripts/session-brief-screens.sh")"
 
 section 'runner watch'
 runs=$(printf '11\tCI\tfeature\tqueued\t1000\n12\tCI\tmain\tqueued\t1500\n13\tCI\tother\tin_progress\t100\n14\tCI\tx\tqueued\t1900\n')
