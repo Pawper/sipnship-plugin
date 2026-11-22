@@ -46,6 +46,8 @@ mocks_files() {
     for mf_p in "$@"; do
       case "$mf_p" in @*) continue ;; esac
       for mf_n in $mf_named; do
+        # A bare top-level folder (packages/web/, plugin/) is a whole package, not one screen: it matches nothing by itself (#2285).
+        case "$mf_n" in packages/*/*/) ;; packages/*/) continue ;; */*/) ;; */) continue ;; esac
         # shellcheck disable=SC2254
         case "$mf_n" in $mf_p) mf_hit=yes ;; esac
         case "$mf_n" in */) case "$mf_p" in "$mf_n"*) mf_hit=yes ;; esac ;; esac

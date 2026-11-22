@@ -23,6 +23,12 @@ body:
         - Blocked
     validations:
       required: true
+  - type: input
+    id: touches
+    attributes:
+      label: Files or area
+      description: Which files or area of the project this work touches, written as paths. The drive places the task beside the others by these, so a task that names none waits behind whatever is running.
+      placeholder: "Touches: src/beds/ specs/030-watering/"
   - type: textarea
     id: outcome
     attributes:

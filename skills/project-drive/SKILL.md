@@ -32,6 +32,10 @@ The drive works the ready list in rounds, so many issues land in little time wit
 - **File to fit one change.** An issue is written to fit one pull request: when a request has more than a few
   unrelated points, split it into issues at filing (`scripts/issue-open.sh`), one per change, so none is built in
   pieces and left open. A leftover is filed the same way, before the pull request that leaves it opens.
+- **Name the files in the first line.** An issue opens with a line naming the files or area it touches
+  (`Touches: src/beds/ specs/030-watering/`). The plan places an issue by the paths in its whole text, and by
+  its spec line or its title when they say an area; an issue that names none is held behind running work,
+  and the Work tab tells the builder it is the agent's turn to name its files.
 - **Feedback during a round joins the plan, not a new agent.** When a person brings up a change while a round
   runs, the coordinator files it as a ready issue (`scripts/issue-open.sh`, State ready) and leaves the
   planning to the drive. An issue in an area a running unit owns goes to that unit: the same agent, in the

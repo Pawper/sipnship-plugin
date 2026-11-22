@@ -255,8 +255,9 @@ title_area_files() {
 # "NUMBER<TAB>TITLE" lines.
 unplaced_holds() {
   if [ -z "$3" ]; then printf '%s\n' "$1"; return 0; fi
-  { printf '%s\n' "$2" | sed 's/^/G\t/'; printf '%s\n' "$3" | sed 's/^/R\t/'; printf '%s\n' "$4" | sed 's/^/T\t/'; printf '%s\n' "$1" | sed 's/^/U\t/'; } | tr -d '\r' | awk -F'\t' '
+  { printf '%s\n' "$2" | sed 's/^/G\t/'; printf '%s\n' "$3" | sed 's/^/R\t/'; printf '%s\n' "$4" | sed 's/^/T\t/'; printf '%s\n' "${5:-}" | sed 's/^/H\t/'; printf '%s\n' "$1" | sed 's/^/U\t/'; } | tr -d '\r' | awk -F'\t' '
     $1 == "G" && $2 != "" && $4 == "" { none[$2] = 1 }
+    $1 == "H" && $2 != "" { hp[$2] = $3 }
     $1 == "R" && $2 != "" && first == "" { first = $2; sub(/[ ,].*/, "", first); runall = $2; gsub(/[ ,]+/, " ", runall) }
     $1 == "T" && $2 != "" { tt[$2] = $3 }
     $1 == "U" && $2 != "" { u[++n] = $0 }
@@ -268,7 +269,10 @@ unplaced_holds() {
         if (all) for (k = 1; k <= m; k++) if (!(ns[k] in none)) all = 0
         if (!all) { print substr(u[i], 3); continue }
         q = split(f[4], ts, " \\| ")
-        for (k = 1; k <= m; k++) printf "hold\t%s\t%s\tIts area is not known: it names no file, and %s is running. Name its files or area to place it (after: %s)\n", ns[k], (q == m ? ts[k] : f[4]), run, runall
+        for (k = 1; k <= m; k++) {
+          if (ns[k] in hp) printf "hold\t%s\t%s\tIts pull request (#%s) is held for your read; no agent is started on it\n", ns[k], (q == m ? ts[k] : f[4]), hp[ns[k]]
+          else printf "hold\t%s\t%s\tIts area is not known: it names no file or area, and %s is running. The agent'"'"'s turn: name its files on its first line to place it (after: %s)\n", ns[k], (q == m ? ts[k] : f[4]), run, runall
+        }
       }
     }'
 }

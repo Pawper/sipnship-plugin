@@ -5360,6 +5360,12 @@ design/mocks/Beds.html
 design/mocks/BedsDark.html" "$(mocks_files 'src/beds/card.ts' "$(cat "$db/mocks.txt")")"
 eq "a guess joins the body's paths, the screen's mocks and the spec's past files" "design/mocks/Beds.html,design/mocks/BedsDark.html,specs/030-watering/,src/beds/*.ts,src/beds/card.ts,src/sun.ts" "$(guess_files "$(cat "$db/body-watering.txt")" "$(cat "$db/mocks.txt")" "$db_past")"
 eq "a body naming no path guesses nothing" "" "$(guess_files 'Make the tomatoes happier' "" "")"
+# A bare package folder is not a screen (#2285): it pulls in no mock it never named.
+db_wide_mocks=$(printf 'rows packages/web/src/work-rows.ts design/mocks/dashboard/RowsInCardsX.html\nguide packages/web/src/review-guide.ts design/mocks/dashboard/ReviewGuideX.html\n')
+eq "naming only bare package folders guesses those folders and no mock" "packages/core/,packages/service/,packages/web/" "$(guess_files 'Touches: packages/service/ packages/core/ packages/web/' "$db_wide_mocks" "")"
+eq "a bare top-level folder matches no mocks line" "" "$(mocks_files 'packages/web/ plugin/' "$db_wide_mocks")"
+eq "a path inside the screen's folder still adds its mock" "packages/web/src/work-rows.ts
+design/mocks/dashboard/RowsInCardsX.html" "$(mocks_files 'packages/web/src/work-rows.ts' "$db_wide_mocks")"
 db_round=$(printf 'dispatch 12\tWater\ndispatch 15\tPhotos\nstop: proposal ready for approval')
 eq "units replace dispatches: a bundle is one goal with its why" "dispatch 12 14 17	Water the beds on a schedule | Remind me before a frost night | Name the reminder screen	Why together: all 3 change src/schedule.ts
 dispatch 15	Add a plant photo to each bed
@@ -6920,10 +6926,19 @@ eq "a title that says no area is not placed" "" "$(title_area_files 'Tidy up the
 eq "a word inside another word is not an area" "" "$(title_area_files 'Bedside manner' 'beds   src/beds/')"
 da_nopath=$(printf '501\tTidy up the readme\t\n')
 da_unit=$(plan_units "$da_nopath" "")
-eq "with a unit running, an issue whose area is unknown is a hold that says so, not a dispatch" "hold${da_t}501${da_t}Tidy up the readme${da_t}Its area is not known: it names no file, and “Water the beds” is running. Name its files or area to place it (after: 301)" "$(unplaced_holds "$da_unit" "$da_nopath" "$(printf '301\twatering\n')" "$da_titles")"
+eq "with a unit running, an issue whose area is unknown is a hold that says so, not a dispatch" "hold${da_t}501${da_t}Tidy up the readme${da_t}Its area is not known: it names no file or area, and “Water the beds” is running. The agent's turn: name its files on its first line to place it (after: 301)" "$(unplaced_holds "$da_unit" "$da_nopath" "$(printf '301\twatering\n')" "$da_titles")"
 eq "with nothing running it passes as it came" "$da_unit" "$(unplaced_holds "$da_unit" "$da_nopath" '' "$da_titles")"
 da_mixed=$(printf '501\tTidy up the readme\t\n402\tWater the beds on a timer\tsrc/water/timer.ts\n')
 eq "an issue with files is left alone beside it" "unit${da_t}402" "$(unplaced_holds "$(plan_units "$da_mixed" '')" "$da_mixed" "$(printf '301\twatering\n')" "$da_titles" | grep '^unit' | cut -f1,2)"
+eq "an unplaced issue's hold says whose turn it is, in plain words" "1" "$(unplaced_holds "$da_unit" "$da_nopath" "$(printf '301\twatering\n')" "$da_titles" | grep -c "The agent's turn: name its files on its first line")"
+eq "an issue whose only change waits for the builder's read says so, never that it names no file" "hold${da_t}501${da_t}Tidy up the readme${da_t}Its pull request (#77) is held for your read; no agent is started on it" "$(unplaced_holds "$da_unit" "$da_nopath" "$(printf '301\twatering\n')" "$da_titles" "$(held_pull_of_issues "$(printf '77\tyes\t501\n78\tno\t502\n')")")"
+eq "only an issue of a held pull request is mapped to it" "501	77" "$(held_pull_of_issues "$(printf '77\tyes\t501\n78\tno\t502\n')")"
+# A path past the 300th character places the issue (#2273): the board carries the paths of the whole text beside the short text.
+pp_body="$(printf 'What happened %.0s' 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25) and nothing here names a place."
+pp_paths="plugin/scripts/drive/,specs/023-drive-on-work"
+eq "the short text alone names no path" "" "$(guess_files "Fix the plan $(printf '%s' "$pp_body" | cut -c1-300)" '' '')"
+eq "the paths field places it by a path past the 300th character" "plugin/scripts/drive/,specs/023-drive-on-work/" "$(guess_files "Fix the plan $(printf '%s' "$pp_body" | cut -c1-300) $pp_paths" '' '')"
+eq "the board reading carries the paths field from the whole text, and the plan reads it" "1 2 1" "$(grep -c 'PATHS(comma separated)' "$root/hooks/scripts/board-now.sh") $(grep -c 'guess_files "$title $c $d"' "$root/scripts/drive/plan.sh" "$root/scripts/drive/left-lib.sh" | awk -F: '{ s += $2 } END { print s }') $(grep -c 'held_pull_of_issues' "$root/scripts/drive/plan.sh")"
 eq "plan.sh places by title and holds the unplaced" "1 1" "$(grep -c 'title_area_files "$title $c"' "$root/scripts/drive/left-lib.sh") $(grep -c 'unplaced_holds "$units"' "$root/scripts/drive/plan.sh")"
 # A held issue in two areas, and a ready issue in the second: the plan holds the newcomer behind the held one, and the round built from the plan's own lines publishes (#1894).
 hh_c="2026-11-17T10:00:00Z${da_t}maya-drive${da_t}<!-- sipnship-proposal {\"status\":\"started\",\"units\":[{\"issues\":[301],\"areas\":[\"watering\"]}],\"held\":[{\"issues\":[410],\"waitsOn\":[301],\"areas\":[\"beds\",\"tooling\"],\"why\":\"Waits on the watering change\"}]} -->"

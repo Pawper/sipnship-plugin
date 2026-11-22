@@ -113,7 +113,7 @@ plan_ready_guess() {
   g=""
   case "$left_say" in
     left*) g=$(left_areas_files "$left_say" "$areas_text"); [ -n "$g" ] || g=$(guess_files "$(left_title "$title" "$left_say")" "$mocks_text" "$past") ;;
-    *) g=$(guess_files "$title $c" "$mocks_text" "$past"); [ -n "$g" ] || g=$(title_area_files "$title $c" "$areas_text") ;;
+    *) g=$(guess_files "$title $c $d" "$mocks_text" "$past"); [ -n "$g" ] || g=$(title_area_files "$title $c" "$areas_text") ;;
   esac
   title=$(left_title "$title" "$left_say")
 }

@@ -19,6 +19,12 @@ held_only_issues() {
     END { for (k in held) if (!(k in live)) print k }' | sort -n
 }
 
+# held_pull_of_issues PULLS
+# "ISSUE<TAB>PULL" for every issue (a Closes line alone) of a pull request held for the owner, one a line. The hold on an issue whose guess is empty because its only change waits for a read says so, never "names no file" (#2273).
+held_pull_of_issues() {
+  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' '$1 != "" && $2 == "yes" { n = split($3, a, ","); for (i = 1; i <= n; i++) if (a[i] != "" && !(a[i] in seen)) { seen[a[i]] = 1; print a[i] "\t" $1 } }'
+}
+
 # without_issues LIST OMIT: the numbers of LIST (one a line) that are not in OMIT (one a line).
 without_issues() {
   printf '%s\n' "$1" | tr -d '\r' | awk -v omit="$(printf '%s\n' "$2" | tr -d '\r' | tr '\n' ' ')" '

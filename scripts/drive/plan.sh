@@ -227,7 +227,7 @@ hold	$num	"*) continue ;; esac
       guesses="${guesses}${num}${tab}${title}${tab}${g}
 " ;;
     in-progress)
-      g=$(guess_files "$title $c" "$mocks_text" "$past") ; case " $held_only $idle " in *" $num "*) g="" ;; esac  # its only pull request is held for the owner, or nobody is on it at all (no agent, pull request or commit, #2267): no agent is at work, so no unit waits behind it (#2055)
+      g=$(guess_files "$title $c $d" "$mocks_text" "$past") ; case " $held_only $idle " in *" $num "*) g="" ;; esac  # its only pull request is held for the owner, or nobody is on it at all (no agent, pull request or commit, #2267): no agent is at work, so no unit waits behind it (#2055)
       [ -n "$g" ] && running="${running}${title}${tab}${g}${tab}${num}
 " ;;
   esac
@@ -239,7 +239,7 @@ if [ -n "$guesses" ] || [ -n "$reasons" ]; then
   # The running round's areas, read as publish-round.sh reads them: an issue in an area a running unit owns is a hold behind it, and units sharing an area are one unit, so the proposal publishes as it stands.
   if [ -n "$areas_text" ]; then
     run_units=$(running_units "$(printf '%s\n' "$drive_comments" | cut -f3-)" "$(without_issues "$(printf '%s\n' "$snapshot" | awk -F'\t' '$1 == "issue" && $4 == "in-progress" { print $2 }')" "$held_only $idle")" "$(without_issues "$(printf '%s\n' "$pr_list" | cut -d"$us" -f1)" "$(held_pull_numbers "$pull_links")")" "$(printf '%s\n' "$pr_list" | cut -d"$us" -f1)")  # a unit whose pull request is held for the owner is not running (#2055)
-    issue_titles=$(issue_titles_from_facts "$facts"); units=$(area_units "$areas_text" "$units" "$run_units" "$issue_titles"); units=$(held_area_holds "$areas_text" "$units" "$(published_held_areas "$(printf '%s\n' "$drive_comments" | cut -f3-)")" "$published" "$issue_titles"); units=$(unplaced_holds "$units" "$guesses" "$run_units" "$issue_titles")
+    issue_titles=$(issue_titles_from_facts "$facts"); units=$(area_units "$areas_text" "$units" "$run_units" "$issue_titles"); units=$(held_area_holds "$areas_text" "$units" "$(published_held_areas "$(printf '%s\n' "$drive_comments" | cut -f3-)")" "$published" "$issue_titles"); units=$(unplaced_holds "$units" "$guesses" "$run_units" "$issue_titles" "$(held_pull_of_issues "$pull_links")")
   fi
   # Issues a builder rushed (RUSH_ISSUES, space separated, read from work-requests.sh): their bundle leads.
   units=$(rush_first "$units" "${RUSH_ISSUES:-} $(asked_now "$drive_comments") $(printf '%s' "$asked_notes" | awk '$1 == "asked:" { printf "%s ", $2 }')${answer_led}")  # asked issues, a Start now still owed and ones the owner just answered lead, as a rush does (#2079, #2101)
