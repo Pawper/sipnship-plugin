@@ -164,3 +164,70 @@ dead_round_issues() {
 dead_round_comment() {
   echo "Restarted: the round that took this made no branch, commit or pull request in twenty minutes, so nothing was lost. It is back in Ready and starts first in the next round."
 }
+
+# wake_round_key ROUND_FILE
+# ROUND_FILE is the round the plan wrote this tick (.scratch/drive/round.txt,
+# propose-lib.sh's round_file): its "unit: N M | ..." lines name the round's
+# issues. Prints every one of them, ascending and space separated, so two
+# ticks that propose the same round print the same key whatever order their
+# unit lines named the issues in (a bundle is the same goal in any order,
+# #2341); empty when the round named no unit (held work only, or nothing).
+wake_round_key() {
+  printf '%s\n' "$1" | tr -d '\r' | awk '
+    /^[ \t]*unit:/ {
+      body = $0; sub(/^[ \t]*unit:[ \t]*/, "", body); sub(/\|.*/, "", body)
+      n = split(body, a, /[ ,]+/)
+      for (i = 1; i <= n; i++) if (a[i] ~ /^[0-9]+$/) seen[a[i]] = 1
+    }
+    END { for (k in seen) print k }' | sort -n | tr '\n' ' ' | sed 's/ *$//'
+}
+
+# wake_repeat_count PREV_KEY PREV_COUNT ROUND_KEY STARTED
+# How many wakes running have now proposed ROUND_KEY (as wake_round_key
+# prints it) and started nothing (specs/023-drive-on-work, "A round proposed
+# again and again without starting shows as a stall"): PREV_COUNT + 1 when
+# ROUND_KEY is the same round PREV_KEY/PREV_COUNT already tracked (the drive
+# issue's own tracking comment, between separate runs) and STARTED is "no";
+# 1 for a different round (empty counts as a round of its own, so two empty
+# looks in a row still count); 0 once STARTED is "yes", clearing the count at
+# once the way a start always does.
+wake_repeat_count() {
+  wrc_pc=$2
+  case "$wrc_pc" in ''|*[!0-9]*) wrc_pc=0 ;; esac
+  if [ "$4" = yes ]; then echo 0; return 0; fi
+  if [ "$3" = "$1" ]; then echo $((wrc_pc + 1)); else echo 1; fi
+}
+
+# wake_repeat_note COUNT REASON
+# The line named once a round has been proposed three times running with
+# nothing started: the wake's own reason (its "nothing: " line, or "held: "),
+# carried into the drive's log and, as a "stall:" line added to the round
+# file, into the Work tab the way any other stall is shown. Nothing before
+# three, so two repeats still read as an ordinary proposed round.
+wake_repeat_note() {
+  case "${1:-}" in ''|*[!0-9]*) return 0 ;; esac
+  [ "$1" -ge 3 ] || return 0
+  echo "proposed $1 times running with nothing started: ${2:-nothing approved}"
+}
+
+# wake_repeat_comment ROUND_KEY COUNT
+# The one line kept on the drive issue between ticks, read back by the next
+# look with wake_repeat_read: the house pattern wake_fix_asked_comment already
+# uses to keep a pull request's own state between runs, here carrying the
+# round's key and how many times running it was proposed with nothing started.
+wake_repeat_comment() {
+  printf '<!-- sipnship-wake-repeat {"key":"%s","count":%s} -->\n' "$1" "${2:-0}"
+}
+
+# wake_repeat_read COMMENTS
+# COMMENTS, one per line ("id<TAB>body", bodies with newlines flattened, as
+# publish-round.sh already reads the drive issue's comments). Prints
+# "KEY<TAB>COUNT" from the newest wake_repeat_comment line found, or an empty
+# key with count 0 when there is none yet.
+wake_repeat_read() {
+  wrr_line=$(printf '%s\n' "$1" | tr -d '\r' | grep -o 'sipnship-wake-repeat {[^}]*}' | tail -n 1)
+  if [ -z "$wrr_line" ]; then printf '\t0\n'; return 0; fi
+  wrr_k=$(printf '%s' "$wrr_line" | sed 's/.*"key":"//; s/".*//')
+  wrr_c=$(printf '%s' "$wrr_line" | sed 's/.*"count"://; s/}.*//')
+  printf '%s\t%s\n' "$wrr_k" "$wrr_c"
+}

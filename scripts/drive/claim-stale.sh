@@ -18,9 +18,30 @@
 # Usage, from the project root: sh "$CLAUDE_PLUGIN_ROOT/scripts/drive/claim-stale.sh" [--apply]
 here=$(dirname "$0")
 . "$here/claim-lib.sh"
+. "$here/agent-side-lib.sh"
 apply=no; [ "${1:-}" = --apply ] && apply=yes
 command -v gh >/dev/null 2>&1 || { echo "claim-stale: gh is not available; nothing to check."; exit 0; }
 ttl=${CLAIM_TTL:-14400}
+
+# Before an issue is freed, real work its agent already made (a worktree with commits not yet on GitHub) is
+# rescued to a side branch, so it is not lost once the workspace is cleaned up (#2336, left over from #2328).
+# Nothing when git cannot list worktrees, none matches the issue, or it has nothing unpushed. Prints the
+# branch and how many commits on success; nothing, and changes nothing, when there is no work to rescue.
+type gitb >/dev/null 2>&1 || gitb() { if command -v timeout >/dev/null 2>&1; then timeout -k 5 "${GIT_BOUND_SECONDS:-120}" git "$@"; else git "$@"; fi; }
+rescue_agent_side() {
+  command -v git >/dev/null 2>&1 || return 0
+  wt=$(gitb worktree list --porcelain 2>/dev/null); wt=$(agentside_worktree_path "$1" "$wt")
+  [ -n "$wt" ] && [ -d "$wt" ] || return 0
+  branch=$(git -C "$wt" branch --show-current 2>/dev/null)
+  [ -n "$branch" ] || return 0
+  gitb -C "$wt" fetch origin --quiet 2>/dev/null
+  unpushed=$(gitb -C "$wt" rev-list "$branch" --not --remotes=origin 2>/dev/null)
+  [ -n "$unpushed" ] || return 0
+  count=$(printf '%s\n' "$unpushed" | grep -c .)
+  side=$(agentside_branch "$1")
+  gitb -C "$wt" push origin "$branch:refs/heads/$side" >/dev/null 2>&1 || return 0
+  printf '%s\t%s\n' "$side" "$count"
+}
 
 # Every open issue carrying either label form of state:in-progress, issues only (never a pull request).
 inprog=$(gh api "repos/{owner}/{repo}/issues?state=open&per_page=100" --jq '.[] | select(.pull_request == null) | select([.labels[].name] | any(. == "state:in-progress" or . == "state: in-progress")) | .number' 2>/dev/null)
@@ -50,8 +71,18 @@ $r"; fi
     echo "claim-stale: issue #$n is In progress under a claim ($rawwin) whose run has ended, with no open pull request; it would be freed, back to Ready."
     continue
   fi
+  rescued=$(rescue_agent_side "$n")
+  rescue_said=""; freed_said=" Nothing is on it now; back to Ready for the next round."
+  released_words="The run that made this claim has ended, with nothing pushed; freed by the next tick instead of waiting out its four-hour claim (#2328)."
+  if [ -n "$rescued" ]; then
+    rb=$(printf '%s' "$rescued" | cut -f1); rc=$(printf '%s' "$rescued" | cut -f2)
+    rescue_said="
+$(agentside_rescue_note "$n" "$rb" "$rc")"
+    released_words="The run that made this claim has ended; freed by the next tick instead of waiting out its four-hour claim (#2328)."
+    freed_said=" Its real work was not lost, pushed to $rb; back to Ready for the next round, which can start from it."
+  fi
   gh api -X POST "repos/{owner}/{repo}/issues/$n/comments" -f "body=Claim released: $rawwin
-The run that made this claim has ended, with nothing pushed; freed by the next tick instead of waiting out its four-hour claim (#2328)." >/dev/null 2>&1
+${released_words}${rescue_said}" >/dev/null 2>&1
   have=$(gh api "repos/{owner}/{repo}/issues/$n/labels" --jq '.[].name' 2>/dev/null)
   form="state:ready"
   printf '%s\n' "$have" | grep -q '^state: ' && form="state: ready"
@@ -60,8 +91,12 @@ The run that made this claim has ended, with nothing pushed; freed by the next t
     gh api -X DELETE "repos/{owner}/{repo}/issues/$n/labels/$enc" >/dev/null 2>&1
   done
   if gh api -X POST "repos/{owner}/{repo}/issues/$n/labels" -f "labels[]=$form" >/dev/null 2>&1; then
-    gh api -X POST "repos/{owner}/{repo}/issues/$n/comments" -f "body=Freed: the wake that claimed this issue ended with its agent still working, and that run has since finished with nothing pushed. Nothing is on it now; back to Ready for the next round." >/dev/null 2>&1
-    echo "claim-stale: freed issue #$n (claim $rawwin, its run ended, no open pull request); set back to Ready."
+    gh api -X POST "repos/{owner}/{repo}/issues/$n/comments" -f "body=Freed: the wake that claimed this issue ended with its agent still working, and that run has since finished.${freed_said}" >/dev/null 2>&1
+    if [ -n "$rescued" ]; then
+      echo "claim-stale: freed issue #$n (claim $rawwin, its run ended); rescued $rc commit(s) to $rb; set back to Ready."
+    else
+      echo "claim-stale: freed issue #$n (claim $rawwin, its run ended, no open pull request); set back to Ready."
+    fi
   else
     echo "claim-stale: released the claim on #$n, but could not set it back to Ready; set it with scripts/state.sh."
   fi

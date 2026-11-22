@@ -6982,6 +6982,24 @@ if [ -f "$wk_yml" ]; then
   eq "the model step runs only when something is approved" "1" "$(grep -c "if: steps.check.outputs.start == 'yes'" "$wk_yml")"
 fi
 
+# #2342: a round proposed again and again without starting shows as a stall, on the Work tab and in the
+# drive's log, carrying the wake's own reason each time; a start, or a different round, clears it.
+eq "a round's key is its units' issues, ascending, however the lines wrote them" "12 14" "$(wake_round_key "$(printf 'status: proposed\nunit: 14 12 | why: both | areas: watering\n')")"
+eq "two unit lines are one key, each issue once" "12 14 16" "$(wake_round_key "$(printf 'unit: 12 14 | areas: none\nunit: 16 | areas: none\n')")"
+eq "held work with no unit line is an empty key" "" "$(wake_round_key "$(printf 'status: proposed\nhold: 16 | why: waits | areas: none\n')")"
+eq "nothing started is a count of 1 for a round never tracked before" "1" "$(wake_repeat_count '' '' '12 14' no)"
+eq "the same round, still nothing started, counts on" "3" "$(wake_repeat_count '12 14' 2 '12 14' no)"
+eq "a different round, even an empty one, starts its own count at 1" "1" "$(wake_repeat_count '12 14' 5 '16' no)"
+eq "a start clears the count at once, whatever it was" "0" "$(wake_repeat_count '12 14' 5 '12 14' yes)"
+eq "a non-numeric previous count reads as zero, not a parse error" "1" "$(wake_repeat_count '12 14' bogus '12 14' no)"
+eq "fewer than three repeats says nothing" "" "$(wake_repeat_note 1 'nothing approved')$(wake_repeat_note 2 'nothing approved')"
+eq "three repeats names the wake's own reason" "proposed 3 times running with nothing started: nothing approved" "$(wake_repeat_note 3 'nothing approved')"
+eq "more than three still names it, with the growing count" "proposed 5 times running with nothing started: no reply yet" "$(wake_repeat_note 5 'no reply yet')"
+eq "the tracking comment carries the round's key and its count, read back the same way" "12 14${wk_tab}3" "$(wake_repeat_read "$(printf '1\tsomething else\n2\t%s\n' "$(wake_repeat_comment '12 14' 3)")")"
+eq "the newest tracking comment wins over an older one" "16${wk_tab}1" "$(wake_repeat_read "$(printf '1\t%s\n2\t%s\n' "$(wake_repeat_comment '12 14' 2)" "$(wake_repeat_comment 16 1)")")"
+eq "no tracking comment yet reads as an empty key with a count of zero" "${wk_tab}0" "$(wake_repeat_read '')"
+eq "the wake check tracks the round proposed and the start decided, on the drive issue, and says the stall in its own log" "1 1 1" "$(grep -c 'wake_round_key' "$root/scripts/drive/wake-check.sh") $(grep -c 'wake_repeat_count' "$root/scripts/drive/wake-check.sh") $(grep -c 'wake_repeat_note' "$root/scripts/drive/wake-check.sh")"
+
 # specs/030-plugin-wake: the plugin's own connection. The cases run in console/test/wake.test.js
 # (node); each block runs its own cases by name, and checks the hook that starts the connection.
 section 'a press wakes the drive on the builder machine'
@@ -8518,6 +8536,64 @@ printf '317\n' > "$cs_dir/inprog"; : > "$cs_dir/posted"; : > "$cs_dir/runs"
 printf '904\t%s\tClaim: drive-9\t777\n' "$cs_now" > "$cs_dir/comments-317"
 eq "its own run, named directly, needs no gh api call to confirm" "claim-stale: freed issue #317 (claim drive-9, its run ended, no open pull request); set back to Ready." "$(cd "$cs_dir" && FAKE="$cs_dir" CLAIM_STALE_OWN_RUN=777 PATH="$cs_dir/bin:$PATH" sh "$root/scripts/drive/claim-stale.sh" --apply)"
 eq "a run that is not this one still needs the real read" "claim-stale: every In progress issue either has an open pull request, a live claim, or no claim naming a run." "$(cs_dir2=$cs_dir; printf '317\n' > "$cs_dir2/inprog"; : > "$cs_dir2/posted"; printf '905\t%s\tClaim: drive-9\t778\n' "$cs_now" > "$cs_dir2/comments-317"; cd "$cs_dir2" && FAKE="$cs_dir2" CLAIM_STALE_OWN_RUN=777 PATH="$cs_dir2/bin:$PATH" sh "$root/scripts/drive/claim-stale.sh" --apply)"
+
+# #2336, left over from #2328: real work a freed issue's agent already made is rescued to a side branch
+# before it is lost, named in the claim's release comment.
+. "$root/scripts/drive/agent-side-lib.sh"
+eq "the side branch is named for the issue, matching the fixside/pr-N convention" "agentside/issue-317" "$(agentside_branch 317)"
+as_wts=$(printf 'worktree /work/sipnship\nHEAD abc\nbranch refs/heads/main\n\nworktree /work/wt/issue-317-watering\nHEAD def\nbranch refs/heads/issue-317-watering\n\nworktree /work/wt/other\nHEAD ghi\ndetached\n')
+eq "the worktree whose branch is named for the issue is found, a bundle's shared branch too" "/work/wt/issue-317-watering" "$(agentside_worktree_path 317 "$as_wts")"
+eq "issue-31 is not issue-317, and a detached worktree matches nothing" "" "$(agentside_worktree_path 31 "$as_wts")$(agentside_worktree_path 999 "$as_wts")"
+eq "one commit is singular, more than one is plural" "Side branch: agentside/issue-317 | 1 commit rescued|Side branch: agentside/issue-317 | 3 commits rescued" "$(agentside_rescue_note 317 agentside/issue-317 1 | sed -n 1p)|$(agentside_rescue_note 317 agentside/issue-317 3 | sed -n 1p)"
+eq "the note names the side branch so the next agent starts from it" "1" "$(agentside_rescue_note 317 agentside/issue-317 2 | sed -n 2p | grep -c 'starts from it instead of from scratch')"
+# A real worktree, with a commit never pushed to its remote: claim-stale.sh pushes it to the side branch
+# before the issue is freed, over real git (no fake), and names it in the release comment.
+as_dir=$(mktemp -d)
+git init -q --bare "$as_dir/origin.git"
+git init -q -b main "$as_dir/main"
+(
+  cd "$as_dir/main" && git config user.email t@t && git config user.name t && git config core.autocrlf false
+  git commit -q --allow-empty -m "the garden app begins" && git remote add origin "$as_dir/origin.git" && git push -q origin main
+  git worktree add -q -b issue-317-watering "$as_dir/wt" main
+  cd "$as_dir/wt" && git config user.email t@t && git config user.name t && echo water > watering.txt && git add watering.txt && git commit -q -m "water the beds daily"
+) >/dev/null 2>&1
+as_sha=$(git -C "$as_dir/wt" rev-parse HEAD)
+mkdir -p "$as_dir/bin"
+cat > "$as_dir/bin/gh" <<'ASGHEOF'
+#!/bin/sh
+[ "$1" = auth ] && exit 0
+shift; method=GET; url=; args=
+while [ $# -gt 0 ]; do case "$1" in -X) method=$2; shift ;; -f) args="$args
+$2"; shift ;; repos/*) url=$1 ;; esac; shift; done
+case "$method $url" in
+  "GET repos/{owner}/{repo}/issues?state=open"*) cat "$FAKE/inprog" ;;
+  "GET repos/{owner}/{repo}/pulls?state=open"*) cat "$FAKE/closes" ;;
+  "GET repos/{owner}/{repo}/issues/"[0-9]*"/comments"*) n=${url#*issues/}; n=${n%%/*}; cat "$FAKE/comments-$n" 2>/dev/null ;;
+  "GET repos/{owner}/{repo}/actions/runs/"*) rid=${url##*/}; awk -F'\t' -v r="$rid" '$1 == r { print $2 }' "$FAKE/runs" 2>/dev/null ;;
+  "GET repos/{owner}/{repo}/issues/"[0-9]*"/labels") n=${url#*issues/}; n=${n%%/*}; cat "$FAKE/labels-$n" 2>/dev/null ;;
+  # The full, multi-line comment body (never just its first line), so a test can look for a marker on any
+  # of its lines, separated from the next posted comment by a line of its own.
+  "POST repos/{owner}/{repo}/issues/"[0-9]*"/comments") printf '%s\n---\n' "$(printf '%s' "$args" | sed -n '/^body=/,$p' | sed '1s/^body=//')" >> "$FAKE/posted" ;;
+  "DELETE repos/{owner}/{repo}/issues/"[0-9]*"/labels/"*) echo "delete $url" >> "$FAKE/posted" ;;
+  "POST repos/{owner}/{repo}/issues/"[0-9]*"/labels") echo "label $(printf '%s' "$args" | sed -n 's/^labels\[\]=//p')" >> "$FAKE/posted" ;;
+esac
+ASGHEOF
+chmod +x "$as_dir/bin/gh"
+: > "$as_dir/posted"
+printf '317\n' > "$as_dir/inprog"; : > "$as_dir/closes"; printf '555\tcompleted\n' > "$as_dir/runs"
+printf '906\t%s\tClaim: drive-5\t555\n' "$((cs_now - 60))" > "$as_dir/comments-317"
+echo "state:in-progress" > "$as_dir/labels-317"
+as_run() { ( cd "$as_dir/main" && FAKE="$as_dir" PATH="$as_dir/bin:$PATH" sh "$root/scripts/drive/claim-stale.sh" --apply 2>&1 ); }
+eq "the tick's own log names the rescued branch and how many commits" "claim-stale: freed issue #317 (claim drive-5, its run ended); rescued 1 commit(s) to agentside/issue-317; set back to Ready." "$(as_run)"
+eq "the side branch on the remote carries exactly the worktree's own unpushed commit" "$as_sha" "$(git -C "$as_dir/origin.git" rev-parse refs/heads/agentside/issue-317 2>/dev/null)"
+eq "main itself never gained that commit" "" "$(git -C "$as_dir/origin.git" branch --contains "$as_sha" main 2>/dev/null)"
+eq "the release comment names the side branch, so the next agent starts from it" "1" "$(grep -c 'Side branch: agentside/issue-317' "$as_dir/posted")"
+( cd "$as_dir/wt" && git push -q origin issue-317-watering:refs/heads/issue-317-watering ) >/dev/null 2>&1
+: > "$as_dir/posted"; printf '317\n' > "$as_dir/inprog"
+printf '907\t%s\tClaim: drive-6\t556\n' "$((cs_now - 60))" > "$as_dir/comments-317"
+printf '556\tcompleted\n' > "$as_dir/runs"
+as_run >/dev/null
+eq "a worktree with nothing unpushed is left alone: no side branch, no mention of one" "0" "$(grep -c 'Side branch' "$as_dir/posted")"
 block_end
 # --- end of blocks: the summary, kept in every part.
 eq "no test wrote into the checkout's own queue state" "$queue_picture_before" "$([ "$queue_picture_before" = skipped ] && echo skipped || queue_picture)"

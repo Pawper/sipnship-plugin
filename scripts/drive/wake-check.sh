@@ -15,6 +15,7 @@
 # Usage, from the project root: sh "$CLAUDE_PLUGIN_ROOT/scripts/drive/wake-check.sh"
 here=$(dirname "$0")
 . "$here/wake-lib.sh"
+. "$here/round-lib.sh"
 mkdir -p .scratch/drive 2>/dev/null
 # First thing, by script: a copy behind the published version is brought up, whoever started this run.
 sh "${WAKE_UPDATE:-$here/../release/update-if-behind.sh}" 2>/dev/null | tail -n 1
@@ -52,6 +53,37 @@ d=$(wake_decision "$out" "$req")
 kind=$(printf '%s' "$d" | cut -f1)
 why=$(printf '%s' "$d" | cut -f2)
 if [ "$kind" = start ]; then echo "start: $why"; else echo "nothing: $why"; fi
+# A round proposed again and again without starting is named as a stall, carrying the wake's own reason, once
+# three wakes running have found the same round and started nothing (specs/023-drive-on-work, "A round
+# proposed again and again without starting shows as a stall", #2342). The count lives on the drive issue
+# itself, the way wake_fix_asked_comment already keeps a pull request's own state between separate runs.
+rk=$(wake_round_key "$(cat .scratch/drive/round.txt 2>/dev/null)")
+drive_issue=$(gh api "repos/{owner}/{repo}/issues?labels=drive&state=open&per_page=1" --jq '.[0] // empty | [(.number|tostring), (.comments|tostring)] | @tsv' 2>/dev/null | tr -d '\r')
+wc_issue=$(printf '%s' "$drive_issue" | cut -f1)
+if [ -n "$wc_issue" ]; then
+  wc_count=$(printf '%s' "$drive_issue" | cut -f2)
+  wc_rows=""
+  for wc_page in $(comment_pages "${wc_count:-0}"); do
+    wc_rows="${wc_rows}$(gh api "repos/{owner}/{repo}/issues/$wc_issue/comments?per_page=100&page=$wc_page" --jq '.[] | "\(.id)\t" + (.body | gsub("[\r\n]+"; " "))' 2>/dev/null)
+"
+  done
+  prev=$(wake_repeat_read "$wc_rows")
+  pk=$(printf '%s' "$prev" | cut -f1); pc=$(printf '%s' "$prev" | cut -f2)
+  started=no; [ "$kind" = start ] && started=yes
+  newcount=$(wake_repeat_count "$pk" "$pc" "$rk" "$started")
+  if [ "$newcount" != "$pc" ] || [ "$rk" != "$pk" ]; then
+    gh api -X POST "repos/{owner}/{repo}/issues/$wc_issue/comments" -f "body=$(wake_repeat_comment "$rk" "$newcount")" >/dev/null 2>&1
+  fi
+  note=$(wake_repeat_note "$newcount" "$why")
+  if [ -n "$note" ]; then
+    echo "stall: $note"
+    if [ -f .scratch/drive/round.txt ] && ! grep -q '^stall:' .scratch/drive/round.txt 2>/dev/null; then
+      printf 'stall: %s\n' "$note" >> .scratch/drive/round.txt
+      wc_areas=.claude/areas.txt; [ -f "$wc_areas" ] || wc_areas=.scratch/drive/areas-guessed.txt
+      sh "$here/publish-round.sh" --issue "$wc_issue" --areas "$wc_areas" .scratch/drive/round.txt >/dev/null 2>&1
+    fi
+  fi
+fi
 if [ -n "${GITHUB_OUTPUT:-}" ]; then
   if [ "$kind" = start ]; then echo "start=yes" >> "$GITHUB_OUTPUT"; else echo "start=no" >> "$GITHUB_OUTPUT"; fi
   echo "why=$why" >> "$GITHUB_OUTPUT"
