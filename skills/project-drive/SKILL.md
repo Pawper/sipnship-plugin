@@ -322,7 +322,9 @@ The goal lines and what each means:
   The brief also says: an agent whose pull request does not do everything its issue asked files a new issue for
   what is left before the pull request opens (`sh scripts/issue-open.sh`, with the original's State), names it on a
   body line `Leftover: #M`, and still closes its own issue with `Closes #N`; open then means not started or being
-  worked, closed means landed. The leftover carries the original's "Start this next" mark and its place in the
+  worked, closed means landed. A leftover is filed Ready, always: `issue-open.sh` refuses In progress for a new issue
+  unless the caller passes the claim it holds (`ISSUE_OPEN_CLAIM=TOKEN`), and an issue In progress with no claim, no
+  branch and no open pull request is set back to Ready by the plan after a short grace and planned that run (#2365). The leftover carries the original's "Start this next" mark and its place in the
   round. An agent that finds its part already landed or in another area says so on the issue and leaves one comment,
   with a line of its own, `Left: <what is still to build> | areas: <area names>`;
   the plan plans the issue from that line (the areas file names the areas) instead of from its whole body, and

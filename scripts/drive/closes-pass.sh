@@ -44,7 +44,7 @@ for n in $missing; do
     continue
   fi
   printf 'The spec and mocks drawn in pull request #%s, filed so the change has an issue to close.\n' "$n" > "$scratch/issue-$n.md"
-  filed=$(sh scripts/issue-open.sh "$newtitle" "$scratch/issue-$n.md" state:in-progress 2>&1) || { echo "closes: could not file the issue for pull request #$n: $filed"; continue; }
+  filed=$(ISSUE_OPEN_CLAIM="pull-request-$n" sh scripts/issue-open.sh "$newtitle" "$scratch/issue-$n.md" state:in-progress 2>&1) || { echo "closes: could not file the issue for pull request #$n: $filed"; continue; }
   num=$(printf '%s' "$filed" | sed -n 's/^Filed issue #\([0-9][0-9]*\).*/\1/p')
   [ -n "$num" ] || { echo "closes: could not read the new issue's number for pull request #$n"; continue; }
   closes_add_line "$body" "$num" "$build" "$btitle" > "$scratch/body-$n.md"

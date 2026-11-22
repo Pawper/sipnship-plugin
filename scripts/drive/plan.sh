@@ -174,6 +174,8 @@ runners_online=$(gh api 'repos/{owner}/{repo}/actions/runners?per_page=100' --jq
 echo "proposal for $(date '+%A %Y-%m-%d'), the owner's local day (at most $max_agents agents, at most $max_minutes minutes; $note):"
 # In progress is not taken on faith: an issue nobody works, or whose pull request is held for the owner, is set right first (./stale-lib.sh).
 stale=$(stale_lines "$facts" "$pull_links" "$(gitb for-each-ref --format='%(committerdate:unix)%09%(refname:short)' refs/heads refs/remotes 2>/dev/null | grep -v 'fixside/')" "$(date +%s)" 2 "$(started_units "$drive_comments")" "$(started_at "$drive_comments")")
+# An issue In progress with no claim, no branch, no open pull request and no unit of the round, past a short grace, has nobody on it: it is set to Ready and planned as ready work in this same run, so the drive never says "no ready work" with it waiting (#2365).
+stale=$(idle_freed "$facts" "$pull_links" "$(gitb for-each-ref --format='%(committerdate:unix)%09%(refname:short)' refs/heads refs/remotes 2>/dev/null)" "$(started_units "$drive_comments")" "$stale")
 if [ -n "$stale" ]; then
   stale_say "$stale" 2
   stale_apply "$stale" "$facts"

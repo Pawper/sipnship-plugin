@@ -105,6 +105,7 @@ stale_say() {
   printf '%s\n' "$1" | awk -F'\t' -v h="${2:-2}" '
     $1 != "stale" { next }
     $3 == "waiting" { printf "stale: #%s \"%s\" was In progress, but its pull request #%s is held for you; it is moved to Waiting on you, with the question on it.\n", $2, $5, $4; next }
+    $6 == "idle" { printf "stale: #%s \"%s\" was In progress with no claim, no branch and no pull request, so nobody is on it; it is back to Ready and planned as ready work.\n", $2, $5; next }
     $6 == "landed" { printf "stale: #%s \"%s\" was In progress, but its unit'"'"'s pull request has merged or closed and did not name it, so nobody is on it; it is back to Ready.\n", $2, $5; next }
     { printf "stale: #%s \"%s\" was In progress with no open pull request and nothing touched in %s hours, so nobody is on it; it is back to Ready.\n", $2, $5, h }'
 }

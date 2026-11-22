@@ -26,3 +26,31 @@ idle_in_progress() {
       print num
     }'
 }
+
+# idle_stale_lines FACTS IDLE [CLAIMED]: a `stale` line for each issue of IDLE (idle_in_progress' numbers, spaced or one
+# a line) that nobody holds a claim on, so the plan sets it back to Ready and plays it as ready work in the same run (#2365):
+#   stale<TAB>ISSUE<TAB>ready<TAB><TAB>TITLE<TAB>idle
+# CLAIMED are the numbers (spaced) that hold a live claim, read by the caller; those stay as they are.
+idle_stale_lines() {
+  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v OFS='\t' -v idle="$2" -v claimed="${3:-}" '
+    BEGIN { n = split(idle, a, /[ \n]+/); for (i = 1; i <= n; i++) if (a[i] != "") d[a[i]] = 1; n = split(claimed, c, /[ \n]+/); for (i = 1; i <= n; i++) if (c[i] != "") cl[c[i]] = 1 }
+    $1 == "issue" && ($2 in d) && !($2 in cl) { print "stale", $2, "ready", "", $3, "idle" }'
+}
+
+# idle_freed FACTS PULLS BRANCHES UNITS STALE: STALE with a line added for each idle issue holding no claim (and not
+# already a line of it), so the plan sets it right. Reads the clock and one REST call per idle issue.
+idle_freed() {
+  if_now=$(idle_in_progress "$1" "$2" "$3" "$(date +%s)" "$4" "${IDLE_GRACE:-300}" | tr "\n" " ")
+  [ -n "$if_now" ] || { printf '%s\n' "$5"; return 0; }
+  if_new=$(idle_stale_lines "$1" "$if_now" "$(idle_claimed "$if_now")" | awk -F'\t' -v s="$5" 'BEGIN { n = split(s, a, "\n"); for (i = 1; i <= n; i++) { split(a[i], f, "\t"); seen[f[2]] = 1 } } !($2 in seen)')
+  printf '%s\n%s\n' "$5" "$if_new" | sed '/^$/d'
+}
+
+# idle_claimed NUMBERS: the numbers (spaced) among NUMBERS that hold a live claim comment, one REST call each, only for
+# the few issues already read as idle. A claim is a "Claim: TOKEN" comment under four hours old, never released.
+idle_claimed() {
+  for ic_n in $1; do
+    ic_c=$(gh api "repos/{owner}/{repo}/issues/$ic_n/comments?per_page=100&sort=created&direction=desc" --jq '[.[] | select(.body | test("^Claim(: | released: )"))] | reverse | .[] | [.id, (.created_at | fromdateiso8601), (.body | split("\n")[0]), ""] | @tsv' 2>/dev/null)
+    [ -z "$ic_c" ] || [ -z "$(claim_live "$ic_c" "$(date +%s)" "${CLAIM_TTL:-14400}" "")" ] || printf '%s ' "$ic_n"
+  done
+}

@@ -628,7 +628,9 @@ chmod +x "$io_dir/bin/gh"
 printf 'body\n' > "$io_dir/body.md"
 io_out=$(PATH="$io_dir/bin:$PATH" sh "$root/templates/scripts/issue-open.sh" "A title" "$io_dir/body.md" "state: ready" bug 2>&1)
 eq "a label with a space is filed as one label" "Filed issue #7: https://example/7 | [labels[]=state: ready] [labels[]=bug]" "$io_out | $(grep '^\[labels' "$io_dir/args" | tr '\n' ' ' | sed 's/ $//')"
-io_out=$(PATH="$io_dir/bin:$PATH" sh "$root/templates/scripts/issue-open.sh" "A title" "$io_dir/body.md" state:in-progress 2>&1)
+io_out=$(ISSUE_OPEN_CLAIM=tok PATH="$io_dir/bin:$PATH" sh "$root/templates/scripts/issue-open.sh" "A title" "$io_dir/body.md" state:in-progress 2>&1)
+io_ref=$(PATH="$io_dir/bin:$PATH" sh "$root/templates/scripts/issue-open.sh" "A title" "$io_dir/body.md" state:in-progress 2>&1); io_rc=$?
+eq "a new issue is not filed In progress without a claim" "2 yes" "$io_rc $(printf %s "$io_ref" | grep -q "filed Ready" && echo yes)"
 eq "a state label typed compact is filed in the project's spaced form" "[labels[]=state: in progress]" "$(grep '^\[labels' "$io_dir/args" | tr '\n' ' ' | sed 's/ $//')"
 eq "a low budget says what to do" "GraphQL 312 of 5,000 left, resets 09:19Z (in 23 min); REST 3,469 of 5,000 left. Low: use the REST forms (scripts/issue-open.sh, pr-open.sh, pr-checks.sh, gh api) and wait for the reset; never retry before it." "$(budget_line "312	5000	1760001540	3469	5000	1760001540" 1760000200)"
 eq "an escaped backtick in a body does not cut the command before its labels" "" "$(state_label_reason 'gh api repos/o/r/issues -f title="x" -f body="run \`node a.mjs\` (once)" -f "labels[]=state:in-progress" --jq .number; W=C:/w; git worktree add -q -b b $W origin/main')"
@@ -5473,6 +5475,12 @@ specs/007-mote/spec.md
 docs/notes.md
 ')
 mb_past=$(past_spec_files "$mb_hist")
+# One batch-merged commit that touched two specs and the areas list is most of each sparse spec's history; the shared config file never joins two issues (#2366).
+ca_past=$(past_spec_files "$(printf '@@ Never shelve a screen (#9)\nspecs/020-flow/spec.md\nspecs/023-drive/spec.md\n.claude/areas.txt\n')")
+eq "a config file every spec's commits touch is never carried forward" "" "$ca_past"
+ca_a=$(guess_files 'Touches: packages/web/src/graph/client.ts. Spec: specs/020-flow' '' "$ca_past")
+ca_b=$(guess_files 'Touches: plugin/scripts/drive/plan.sh. Spec: specs/023-drive' '' "$ca_past")
+eq "two issues on different specs whose history shares only the areas list stay separate units" "2 0" "$(plan_units "$(printf '1\tA\t%s\n2\tB\t%s\n' "$ca_a" "$ca_b")" "" | grep -c '^unit	[12]	') 0"
 eq "a file only one of five past changes under a spec touched is not carried forward" "" "$mb_past"
 mb_running_guess=$(guess_files 'Mote bubble sits right on a phone. Spec: specs/007-mote/' '' "$mb_past")
 mb_running=$(printf 'Mote bubble placement on a phone\t%s\n' "$mb_running_guess")
@@ -7377,7 +7385,7 @@ eq "a pull request that only says Part of no longer keeps it from going stale" "
 eq "the unit's own pull request, named by the started round, keeps all its issues" "0" "$(stale_lines "$gs_facts" "$(printf '71\tno\t9\n')" '' "$gs_now" 2 "$(printf '71\t1 2 3\n')" | grep -c '^stale')"
 eq "an issue of a unit whose pull request has merged goes back to Ready at once, though a closing note touched it a minute ago" "stale: #1 \"One\" was In progress, but its unit's pull request has merged or closed and did not name it, so nobody is on it; it is back to Ready." "$(stale_say "$(stale_lines "$(printf 'issue\t1\tOne\tstate:in-progress\t%s\tb\n' "$(date -u -d "@$(( gs_now - 60 ))" +%Y-%m-%dT%H:%M:%SZ)")" '' '' "$gs_now" 2 "$(printf '71\t1 2\n')" "$(( gs_now - 600 ))")" 2)"
 eq "a unit pull request that is no longer open does not" "3" "$(stale_lines "$gs_facts" "$(printf '72\tno\t9\n')" '' "$gs_now" 2 "$(printf '71\t1 2 3\n')" | grep -c '^stale')"
-eq "plan.sh hands the started round's units to the stale reading and to the unit filter" "3" "$(grep -c 'started_units "$drive_comments")' "$root/scripts/drive/plan.sh")"
+eq "plan.sh hands the started round's units to the stale reading and to the unit filter" "4" "$(grep -c 'started_units "$drive_comments")' "$root/scripts/drive/plan.sh")"
 # A running unit gets no ask about a held pull request that only mentions its issues; one held pull request gets one ask.
 eq "a held pull request that only mentions the issue does not move it to waiting" "0" "$(stale_lines "$gs_facts" "$(printf '80\tyes\t\t1 2 3\n')" '' "$gs_now" 2 '' | grep -c 'waiting')"
 eq "a held pull request that closes two issues asks once, on the first" "1" "$(stale_lines "$(printf 'issue\t1\tOne\tstate:in-progress\t%s\tb\nissue\t2\tTwo\tstate:in-progress\t%s\tb\n' "$gs_old" "$gs_old")" "$(printf '80\tyes\t1,2\n')" '' "$gs_now" 2 '' | grep -c 'waiting')"
@@ -8325,6 +8333,13 @@ eq "one with an open pull request is not" "" "$(idle_in_progress "$cl_idle" "$(p
 eq "one with a commit on its branch is not" "" "$(idle_in_progress "$cl_idle" "" "$(printf '1780000000\torigin/issue-51\n')" "$cl_now" "")"
 eq "one an agent was sent to this round is not" "" "$(idle_in_progress "$cl_idle" "" "" "$cl_now" "$(printf '\t51\n')")"
 eq "one touched a minute ago is still starting" "" "$(idle_in_progress "$(printf 'issue\t51\tAdd a rain sensor\tstate:in-progress\t2026-11-21T09:59:00Z\t\n')" "" "" "$cl_now" "")"
+# A leftover filed In progress with nobody on it (no claim, branch or pull request), ten minutes old, is planned as ready (#2365).
+cl_ten=$(printf 'issue\t52\tCheck the rain sensor wiring\tstate:in-progress\t2026-11-21T09:50:00Z\t\n')
+eq "one ten minutes old with nobody on it is idle after the short grace" "52" "$(idle_in_progress "$cl_ten" "" "" "$cl_now" "" 300)"
+eq "the plan sets an idle issue with no claim right, with a line naming it" "stale	52	ready		Check the rain sensor wiring	idle" "$(idle_stale_lines "$cl_ten" "52 " "")"
+eq "an idle issue that holds a claim is left alone" "" "$(idle_stale_lines "$cl_ten" "52 " "52 ")"
+eq "the stale line says so in plain words" "stale: #52 \"Check the rain sensor wiring\" was In progress with no claim, no branch and no pull request, so nobody is on it; it is back to Ready and planned as ready work." "$(stale_say "$(idle_stale_lines "$cl_ten" "52 " "")")"
+eq "the plan reads idle issues as stale before it plans" "1" "$(grep -c 'idle_freed' "$root/scripts/drive/plan.sh")"
 eq "a side branch named for a change is no commit on an issue's branch" "51" "$(idle_in_progress "$cl_idle" "" "$(printf '1780000000\torigin/fixside/pr-51\n')" "$cl_now" "")"
 eq "plan.sh keeps an idle issue out of what is running" "2" "$(grep -c 'held_only \$idle' "$root/scripts/drive/plan.sh")"
 # The settle step speaks only for an issue the pull request's body names.

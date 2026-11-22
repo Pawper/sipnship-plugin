@@ -17,6 +17,13 @@ case " $* " in *" state:"*) ;; *) echo "Every issue carries its State at filing:
 # filed in the project's own form, whichever way it was typed.
 . "$(dirname "$0")/ci/lib.sh"
 LABEL_FORM=$(project_label_form)
+# A new issue is filed Ready. In progress says an agent is on it, and a leftover filed that way with nobody on it
+# sat unseen for 47 minutes while the drive said it had no ready work (#2365): it is refused unless the caller names
+# the claim it holds on the issue (ISSUE_OPEN_CLAIM=TOKEN), so someone really is on it.
+for l in "$@"; do
+  [ "$(state_slug "$l")" = in-progress ] || continue
+  [ -n "${ISSUE_OPEN_CLAIM:-}" ] || { echo "A new issue is filed Ready (state:ready), a leftover too: In progress says an agent is on it, and nobody is on a new issue. File it Ready, or pass the claim you hold with ISSUE_OPEN_CLAIM=TOKEN." >&2; exit 2; }
+done
 n=$#
 for l in "$@"; do
   slug=$(state_slug "$l"); [ -z "$slug" ] || l=$(state_label "$slug" "$LABEL_FORM")
