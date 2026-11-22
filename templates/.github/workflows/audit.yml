@@ -22,6 +22,9 @@ permissions:
   issues: write
   pull-requests: read
   actions: read
+  # The audit's own log line goes to the service with the run's identity
+  # token (#2319), no secret, the same road queue-drain.yml uses.
+  id-token: write
 
 jobs:
   audit:
@@ -258,6 +261,15 @@ jobs:
             [ -z "$closescheck" ] || closescheck=$(printf 'Open pull requests the closes check would fail:\n%s' "$closescheck")
           fi
 
+          # A landing in the last day whose files called for a test part
+          # (own_run_decide or full_run_decide) that did not pass on its
+          # head commit: "green" with a needed part skipped is not green.
+          skipped=""
+          if [ -f scripts/ci/skipped-parts-audit.sh ]; then
+            skipped=$(sh scripts/ci/skipped-parts-audit.sh "$since" | sed 's/^/- /')
+            [ -z "$skipped" ] || skipped=$(printf 'Pull requests landed in the last day that skipped a test part their files called for:\n%s' "$skipped")
+          fi
+
           # Tests that flaked more than once in the last week: a red main the very next run cleared with no fix.
           flaky=""
           if [ -f scripts/ci/flaky-audit.sh ]; then
@@ -267,6 +279,7 @@ jobs:
 
           body=$(audit_comment "$missing" "$stale" "$red" "$branches")
           if [ -n "$flaky" ]; then body=$(printf '%s\n\n%s' "$body" "$flaky" | sed '/./,$!d'); fi
+          if [ -n "$skipped" ]; then body=$(printf '%s\n\n%s' "$body" "$skipped" | sed '/./,$!d'); fi
           if [ -n "$closedstate" ]; then body=$(printf '%s\n\n%s' "$body" "$closedstate" | sed '/./,$!d'); fi
           if [ -n "$closescheck" ]; then body=$(printf '%s\n\n%s' "$body" "$closescheck" | sed '/./,$!d'); fi
           if [ -n "$heldissue" ]; then body=$(printf '%s\n\n%s' "$body" "$heldissue" | sed '/./,$!d'); fi
@@ -294,7 +307,14 @@ jobs:
             tracking=$(gh issue create --title "Audit" --label "audit,$(state_label parked "$(project_label_form)")" \
               --body "The nightly audit comments here when something is wrong. It says nothing when all is clean." | sed 's#.*/##')
           fi
-          gh issue comment "$tracking" --body "$body"
+          # Through the service as the app where this project is connected,
+          # so the builder is not the audit's standing issue's own author
+          # (#2319); the one gh call as before when it is not, or the
+          # service does not take it.
+          audit_file=$(mktemp 2>/dev/null || echo "$RUNNER_TEMP/audit-comment.md")
+          printf '%s\n' "$body" > "$audit_file"
+          if [ -f scripts/ci/log-post-lib.sh ]; then . scripts/ci/log-post-lib.sh && log_post audit "$tracking" "$audit_file" >/dev/null; else gh issue comment "$tracking" --body "$body"; fi
+          rm -f "$audit_file" 2>/dev/null || true
           echo "Commented on issue $tracking."
 
       # A failed audit must reach someone: the audit is what reports drift,
@@ -315,4 +335,7 @@ jobs:
             tracking=$(gh issue create --title "Audit" --label "audit,$(state_label parked "$(project_label_form)")" \
               --body "The nightly audit comments here when something is wrong. It says nothing when all is clean." | sed 's#.*/##')
           fi
-          gh issue comment "$tracking" --body "$note"
+          note_file=$(mktemp 2>/dev/null || echo "$RUNNER_TEMP/audit-failed.md")
+          printf '%s\n' "$note" > "$note_file"
+          if [ -f scripts/ci/log-post-lib.sh ]; then . scripts/ci/log-post-lib.sh && log_post audit "$tracking" "$note_file" >/dev/null; else gh issue comment "$tracking" --body "$note"; fi
+          rm -f "$note_file" 2>/dev/null || true

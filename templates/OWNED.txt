@@ -23,6 +23,7 @@ scripts/ci/pr-text.sh
 scripts/ci/failure-lib.sh
 scripts/ci/gate.sh
 scripts/ci/gate-lib.sh
+scripts/ci/required-parts-lib.sh
 scripts/ci/report-red.sh
 scripts/ci/report-flake.sh
 scripts/ci/flake-lib.sh
@@ -64,8 +65,10 @@ scripts/ci/batch-lib.sh
 # scripts/ci/queue/ is an owned folder: one library a step of the queue, and
 # the pure rules batch-lib.sh loads. A file added there is listed here.
 scripts/ci/queue/state.sh
+scripts/ci/queue/log-post.sh
 scripts/ci/queue-app-token.sh
 scripts/ci/service-auth.sh
+scripts/ci/log-post-lib.sh
 scripts/ci/queue/requests.sh
 scripts/ci/queue/rule-issues.sh
 scripts/ci/queue/settle.sh
@@ -136,6 +139,7 @@ scripts/ci/held-change-audit.sh
 scripts/ci/installed-copy-audit.sh
 scripts/ci/closed-state-audit.sh
 scripts/ci/closes-check-audit.sh
+scripts/ci/skipped-parts-audit.sh
 feature status
 status/build.sh
 status/check.sh

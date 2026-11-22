@@ -2,6 +2,10 @@
 # Serial mode: one pull request at a time. Sourced by
 # scripts/ci/merge-queue.sh; functions only.
 
+# required_parts_say (#2318): guarded, never fatal, so a test that sources
+# this file alone, with no $here, is not testing it and must not fail.
+[ -z "${here:-}" ] || [ ! -f "$here/required-parts-lib.sh" ] || . "$here/required-parts-lib.sh"
+
 # sync_worktree BRANCH: never move a branch from outside its worktree. When
 # the queue advances a branch on the remote, bring the worktree's files
 # along, so the folder does not look full of edits it never made.
@@ -29,6 +33,13 @@ serial_one() {
   merge_base=$(gitb merge-base "origin/$base" "$head")
   pr_classes=$(classify_paths "$(gitb diff --name-only "$merge_base" "$head")" "$rules")
   main_classes=$(classify_paths "$(gitb diff --name-only "$merge_base" "origin/$base")" "$rules")
+  # Whether this pull request's own run must prove its test parts, read
+  # fresh from its current files and labels rather than trusted from any
+  # one CI run's own say-so (#2318): a later run for the same commit, after
+  # the pull request's labels changed, must not let a part the files still
+  # call for stand skipped.
+  pr_own=$(own_run_decide "$pr_classes" "$rules")
+  pr_full=$(full_run_decide "$hb" "$(pr_field "$pr" 8)" "$pr_classes")
   # A conflict with main is said as one, with its files, instead of
   # "updated" round after round while nothing can merge.
   if [ "$(mergeable_word "$(pr_field "$pr" 5)")" = CONFLICTING ] || ! gitb merge-tree --write-tree origin/"$base" "$head" >/dev/null 2>&1; then
@@ -130,6 +141,19 @@ serial_one() {
   if [ "$rq" != passed ]; then
     batch_line "$pr" "waiting" "the required check \"${QUEUE_SUMMARY_CHECK:-CI passed}\" is $rq on its head commit; GitHub refuses the merge until it passes"
     return 0
+  fi
+  # "Green" is not enough when a part its own files call for was skipped
+  # (#2318): the required check can pass with fewer parts than the current
+  # diff calls for, when an earlier push ran them and a later one (after
+  # the labels changed) did not. Checked only for the classes whose own run
+  # must prove its parts here; every other pull request runs its parts in
+  # the batch, current with main, which proves them on its own.
+  if [ "$pr_own" = yes ] || [ "$pr_full" = yes ]; then
+    rp_miss=$(required_parts_say "$pr_classes" "$rules" "$(check_lines "$head")")
+    if [ -n "$rp_miss" ]; then
+      batch_line "$pr" "not merged" "$(printf '%s\n' "$rp_miss" | head -n 1). Green with a needed part skipped is not green."
+      return 0
+    fi
   fi
   record_flaky "$pr" "" passed
   wait_quiet_main

@@ -8,6 +8,12 @@
 # workflows), else GH_TOKEN. Reads keep GH_TOKEN.
 gh_write() { GH_TOKEN="${QUEUE_MERGE_TOKEN:-${GH_TOKEN:-}}" gh "$@"; }
 
+# queue_log_post (the merge queue's own standing-log writes, #2319): its own
+# file, queue/log-post.sh, so this one stays under its line limit. Guarded,
+# never fatal: a test that sources this file alone, with no $here, is not
+# testing queue_log_post and must not fail on it.
+[ -z "${here:-}" ] || [ ! -f "$here/queue/log-post.sh" ] || . "$here/queue/log-post.sh"
+
 # set_repo_var NAME VALUE: a repository variable, which the scheduled
 # drain workflow reads as vars.NAME. Needs a token that can administer the
 # repository (the owner's own gh sign-in can).
@@ -60,14 +66,16 @@ rate_ok() { rm -f "$flaky_dir/rate.hits" 2>/dev/null || true; }
 
 # Pull request facts through REST, one call per pull request, cached for
 # sixty seconds. pr_field N COL: 1 head ref, 2 head sha, 3 title, 4 draft,
-# 5 mergeable_state, 6 base ref, 7 state. pr_rollup SHA: the check-runs of
-# a commit as one word, none, red, pending or green.
+# 5 mergeable_state, 6 base ref, 7 state, 8 labels (comma separated, for
+# full_run_decide: no extra call, the one pull request read already carries
+# them). pr_rollup SHA: the check-runs of a commit as one word, none, red,
+# pending or green.
 pr_tsv() {
   pt_f="$flaky_dir/pr-$1.tsv"
   # One find tells whether the cache is under a minute old; a date and
   # two stats made three starts for every field of every pull request.
   if [ ! -s "$pt_f" ] || [ -z "$(find "$pt_f" -mmin -1 2>/dev/null)" ]; then
-    if gh api "repos/{owner}/{repo}/pulls/$1" --jq '[.head.ref, .head.sha, .title, (.draft | tostring), (.mergeable_state // ""), .base.ref, .state] | @tsv' > "$pt_f.tmp" 2>"$gh_err"; then
+    if gh api "repos/{owner}/{repo}/pulls/$1" --jq '[.head.ref, .head.sha, .title, (.draft | tostring), (.mergeable_state // ""), .base.ref, .state, ([.labels[].name] | join(","))] | @tsv' > "$pt_f.tmp" 2>"$gh_err"; then
       mv "$pt_f.tmp" "$pt_f"
     else
       rm -f "$pt_f.tmp" 2>/dev/null; rate_stop

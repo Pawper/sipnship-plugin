@@ -463,6 +463,48 @@ packages/service/src/b.ts
 packages/service/test/b.test.ts' "$od_repo") $(own_run_decide 'service core' "$od_repo")"
   eq "a plugin skill or template is not an own run" "plugin no" "$(classify_paths plugin/skills/project-drive/SKILL.md "$od_repo") $(own_run_decide "$(classify_paths plugin/skills/project-drive/SKILL.md "$od_repo")" "$od_repo")"
 fi
+# The queue lands a change only when the test parts its files call for have
+# run and passed on its head commit, and says which rule decided a part was
+# not needed (#2318): "green" with a needed part skipped is not green.
+. "$root/templates/scripts/ci/required-parts-lib.sh"
+rp_rules=$(printf '!parts service,core packages=sh test.sh\n!parts app web=echo ok\n')
+eq "a required part that has not run on this commit is named, with the rule that called for it" \
+  "packages: its class (service, core) calls for this test part, on its \"!parts\" line of classes.txt, but \"tests (packages)\" has not run on this commit" \
+  "$(required_parts_say service "$rp_rules" '')"
+eq "a required part whose check is red, not passed, is named too" \
+  "packages: its class (service, core) calls for this test part, on its \"!parts\" line of classes.txt, but \"tests (packages)\" is failure on this commit, not passed" \
+  "$(required_parts_say service "$rp_rules" "$(printf 'tests (packages)\tfailure\n')")"
+eq "a required part whose check passed says nothing: green is enough once it is true green" "" \
+  "$(required_parts_say service "$rp_rules" "$(printf 'tests (packages)\tsuccess\n')")"
+eq "a class with no required part says nothing" "" "$(required_parts_say docs "$rp_rules" '')"
+# A later run for the same commit (after the pull request's title, body or
+# labels changed) must not let a part skip silently: the check still must
+# be named success, on this exact commit, for the parts the current files
+# call for, not whatever an earlier or later run happened to report.
+eq "a check for another part on the same commit does not stand in for the one named" \
+  "packages: its class (service, core) calls for this test part, on its \"!parts\" line of classes.txt, but \"tests (packages)\" has not run on this commit" \
+  "$(required_parts_say service "$rp_rules" "$(printf 'tests (web)\tsuccess\n')")"
+# The nightly audit lists any landing in the last day whose pull request
+# skipped a part its files called for (#2318), end to end against a project
+# of its own ("service" is an own-run class with one test part).
+sp_dir=$(mktemp -d)
+mkdir -p "$sp_dir/scripts/ci" "$sp_dir/bin"
+cp "$root/templates/scripts/ci/lib.sh" "$root/templates/scripts/ci/gate-lib.sh" "$root/templates/scripts/ci/required-parts-lib.sh" "$root/templates/scripts/ci/skipped-parts-audit.sh" "$sp_dir/scripts/ci/"
+printf '!own-run service\n!parts service packages=sh test.sh\nservice packages/service/*\n' > "$sp_dir/scripts/ci/classes.txt"
+cat > "$sp_dir/bin/gh" <<'SPGH'
+#!/bin/sh
+case "$*" in
+  *"pr list"*) printf '501\tabc123\tfix-thing\t\n' ;;
+  *"pr diff 501"*) echo packages/service/src/x.ts ;;
+  *"commits/abc123/check-runs"*) [ -n "${SP_PASSED:-}" ] && echo 'tests (packages)	success' ;;
+esac
+exit 0
+SPGH
+chmod +x "$sp_dir/bin/gh"
+sp_run() { PATH="$sp_dir/bin:$PATH" sh "$sp_dir/scripts/ci/skipped-parts-audit.sh" 2026-11-01; }
+eq "a landing whose required part never ran is named" "#501: packages: its class (service) calls for this test part, on its \"!parts\" line of classes.txt, but \"tests (packages)\" has not run on this commit" "$(sp_run)"
+eq "the same landing says nothing once its required part passed" "" "$(SP_PASSED=1 sp_run)"
+eq "the audit workflow runs it and adds its lines, in the workflow and its template alike" "2 2" "$(grep -c 'skipped=\$(sh scripts/ci/skipped-parts-audit.sh' "$root/../.github/workflows/audit.yml" "$root/templates/.github/workflows/audit.yml" | awk -F: '{ s += ($2 > 0) } END { print s }') $(grep -c 'if \[ -n "\$skipped" \]' "$root/../.github/workflows/audit.yml" "$root/templates/.github/workflows/audit.yml" | awk -F: '{ s += ($2 > 0) } END { print s }')"
 # The red-main report speaks only for a run on main (#2204).
 rr_stub=$(mktemp -d); mkdir -p "$rr_stub/bin"
 printf '#!/bin/sh\necho "gh called" >> "%s/calls"\n' "$rr_stub" > "$rr_stub/bin/gh"; chmod +x "$rr_stub/bin/gh"
@@ -2583,6 +2625,15 @@ eq "the skipped line names its rule even where only the queue's words are loaded
 eq "a drain that lands a change it waited on names it and the round" "round 7: landing #1200, Review drawer, which was still running CI in round 4 and has turned green." "$(. "$root/templates/scripts/ci/queue/rules-said.sh"; flaky_dir="$SUITE_TMP_ROOT/late"; mkdir -p "$flaky_dir"; rm -f "$flaky_dir/waited-round"; say() { printf '%s\n' "$*"; }; pr_field() { echo 'Review drawer'; }; late_wait_note 4; late_wait_note 5; late_lands_say 7 1200)"
 eq "and says nothing when it never waited" "" "$(. "$root/templates/scripts/ci/queue/rules-said.sh"; flaky_dir="$SUITE_TMP_ROOT/late"; rm -f "$flaky_dir/waited-round"; say() { printf '%s\n' "$*"; }; late_lands_say 2 1200)"
 eq "a serial run on a merged change says it is already on main" "already on main" "$(. "$root/templates/scripts/ci/queue/serial.sh"; . "$root/templates/scripts/ci/queue/rules-said.sh"; gh() { echo true; }; batch_line() { echo "$2"; }; serial_one 1200)"
+# The queue lands a change only when the test parts its files call for
+# have run and passed on its head commit (#2318): computed fresh from the
+# current classes and labels (own_run_decide, full_run_decide), never
+# trusted from the one summary check alone, and named plainly when one is
+# missing.
+eq "serial.sh computes whether its own run must prove its parts, fresh, and checks them before merging" "1 1 1 1" \
+  "$(grep -c 'pr_own=\$(own_run_decide "\$pr_classes" "\$rules")' "$root/templates/scripts/ci/queue/serial.sh") $(grep -c 'pr_full=\$(full_run_decide "\$hb" "\$(pr_field "\$pr" 8)" "\$pr_classes")' "$root/templates/scripts/ci/queue/serial.sh") $(grep -c 'rp_miss=\$(required_parts_say "\$pr_classes" "\$rules"' "$root/templates/scripts/ci/queue/serial.sh") $(grep -c 'Green with a needed part skipped is not green' "$root/templates/scripts/ci/queue/serial.sh")"
+eq "the plugin's and the project's copies of serial.sh agree" "same" "$(cmp -s "$root/templates/scripts/ci/queue/serial.sh" "$root/../scripts/ci/queue/serial.sh" && echo same || echo differ)"
+eq "a pull request's labels reach full_run_decide with no extra call: the one pull request read already carries them" "1" "$(grep -c "join(\",\")" "$root/templates/scripts/ci/queue/state.sh")"
 eq "the queue asks what ships before starting Deploy" "1 1" "$(grep -c 'deploy-gate.sh" --ships' "$mq_all") $(grep -c 'deploy: skipped, nothing that ships changed' "$mq_all")"
 eq "the drain's deploy function is defined before the drain calls it" "yes" "$(awk '/^deploy_if_due\(\) \{/ && !d { d = NR } /^  deploy_if_due "\$d_begin"/ && !c { c = NR } END { print (d && c && d < c) ? "yes" : "no" }' "$mq_all")"
 eq "releaseOn ask" "ask" "$(release_on '{"releases": ["a.yml"], "releaseOn": "ask"}')"
@@ -2997,7 +3048,7 @@ case "$*" in
   *"-X DELETE"*"git/refs/queue/owed"*) rm -f "$RL_DIR/owed" ;;
   *"git/ref/queue/owed"*) [ -f "$RL_DIR/owed" ] && cat "$RL_DIR/owed" || exit 1 ;;
   *"-X POST"*"dispatches"*) echo "dispatch $*" >> "$RL_DIR/said" ;;
-  *"-X POST"*"/comments"*) for a in "$@"; do case "$a" in body=*) echo "comment ${a#body=}" >> "$RL_DIR/said" ;; esac; done ;;
+  *"-X POST"*"/comments"*) for a in "$@"; do case "$a" in body=@*) echo "comment $(cat "${a#body=@}" 2>/dev/null)" >> "$RL_DIR/said" ;; body=*) echo "comment ${a#body=}" >> "$RL_DIR/said" ;; esac; done ;;
   *"issues?labels=queue"*) echo 7 ;;
   *"actions/runs/"*) echo "${RL_RUN_STATUS:-in_progress}" ;;
   *"git/ref/queue/lock"*) [ -f "$RL_DIR/ref" ] && cat "$RL_DIR/ref" || exit 1 ;;
@@ -7423,6 +7474,32 @@ eq "a body that starts with @ and has words stays" "b	maya	@maya all of them" "$
 eq "the readers of the drive issue drop a bare path" "4" "$(grep -c 'without_bare_path_comments' "$root/scripts/drive/approval.sh" "$root/scripts/drive/work-requests.sh" "$root/scripts/drive/answers.sh" "$root/scripts/drive/plan-read-lib.sh" | awk -F: '{ s += $2 } END { print s }')"
 eq "the skill posts from a file through comment.sh, never a hand-written gh call" "1" "$(grep -c 'scripts/drive/comment.sh' "$root/skills/project-drive/SKILL.md" | awk '$1 > 0 { print 1 }')"
 eq "nothing in the drive posts a body from a file with -f" "0" "$(grep -c -- '-f body=@' "$root"/scripts/drive/*.sh | awk -F: '{ s += $2 } END { print s + 0 }')"
+# A standing log (drive, audit, queue) goes through log_post instead (#2319),
+# so it is posted through the service as the app where this project is
+# connected. A task issue (every other call) keeps the one plain gh call.
+cat > "$cm_dir/bin/gh" <<'FAKE'
+#!/bin/sh
+printf '%s\n' "$*" >> "$CM_DIR/log"
+case "$*" in
+  *auth\ status*) exit 0 ;;
+  *issues/9\ --jq*) echo drive ;;
+  *-X\ POST*comments*) for a in "$@"; do case "$a" in body=@*) cp "${a#body=@}" "$CM_DIR/posted" ;; esac; done; echo "https://github.com/maya/rooftop/issues/9#issuecomment-1" ;;
+esac
+exit 0
+FAKE
+: > "$cm_dir/log"
+eq "a standing log's issue is read once for its label, then posted through log_post, not a bare gh call" "1 1 Watered the beds; two sensors need a new battery." \
+  "$(cm_run 9 "$cm_dir/answer.md" > /dev/null; printf '%s %s ' "$(grep -c 'issues/9 --jq' "$cm_dir/log")" "$(grep -c -- '-F body=@' "$cm_dir/log")"; cat "$cm_dir/posted")"
+eq "comment.sh sources the same helper the service route's callers do" "1" "$(grep -c '\. "\$here/log-post-lib\.sh"' "$root/scripts/drive/comment.sh")"
+# A test that no script writes to a standing log except through the helper
+# (#2319): every place that posts to the drive's, the audit's or the merge
+# queue's own issue, enumerated, uses log_post or queue_log_post (its own
+# CI-context wrapper around it), never a bare gh or gh_write call.
+sl_present() { [ "$(grep -c "$1" "$2" 2>/dev/null)" -ge 1 ] && echo 1 || echo 0; }
+sl_bare=$(grep -E 'gh(_write)? api -X POST "repos/\{owner\}/\{repo\}/issues/\$(rd_issue|req_issue|tracking)/comments"' \
+  "$root/../scripts/ci/queue/lock.sh" "$root/../scripts/ci/queue/requests.sh" "$root/../.github/workflows/audit.yml" 2>/dev/null | wc -l | tr -d ' ')
+eq "every writer of a standing log uses the helper, nowhere a bare gh/gh_write call left posting to one" "1 1 1 1 1 1 1 0" \
+  "$(sl_present 'log_post drive' "$root/scripts/drive/handoff.sh") $(sl_present 'log_post drive' "$root/scripts/drive/publish-round.sh") $(sl_present '\. "\$here/log-post-lib\.sh"' "$root/scripts/drive/comment.sh") $(sl_present 'queue_log_post queue "\$rd_issue"' "$root/../scripts/ci/queue/lock.sh") $(sl_present 'queue_log_post queue "\$req_issue"' "$root/../scripts/ci/queue/requests.sh") $(sl_present 'log_post audit "\$tracking"' "$root/../.github/workflows/audit.yml") $(sl_present 'log_post audit "\$tracking"' "$root/templates/.github/workflows/audit.yml") $sl_bare"
 
 section 'the drive puts priority work first and keeps a hopeless ask-fix quiet (drive)'
 . "$root/scripts/drive/priority-lib.sh"

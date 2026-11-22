@@ -151,7 +151,7 @@ remote_lock_dead_said() {
   rd_line="A queue run (${rd_mode:-a queue}${rd_host:+ on $rd_host}${rd_when:+, started $rd_when}) stopped without finishing; this one took its place at $(date '+%-I:%M %p' 2>/dev/null) and goes on with what it left."
   queue_notice "$rd_line"
   rd_issue=$(gh api "repos/{owner}/{repo}/issues?labels=queue&state=all&per_page=20" --jq '[.[] | select(.title == "Merge queue")] | .[0].number // empty' 2>/dev/null | tr -d '\r')
-  [ -z "$rd_issue" ] || gh_write api -X POST "repos/{owner}/{repo}/issues/$rd_issue/comments" -f body="$rd_line" >/dev/null 2>&1 || true
+  [ -z "$rd_issue" ] || queue_log_post queue "$rd_issue" "$rd_line"
 }
 
 # queue_notice LINE: one line for the Queue tab, said by publish-state.sh in

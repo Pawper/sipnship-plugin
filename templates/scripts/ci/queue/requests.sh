@@ -58,7 +58,7 @@ requests_answer() {
   requests_road_set
   case "$req_road" in
     service) printf 'Authorization: Bearer %s\n' "$req_token" | curl -s -o /dev/null --max-time 5 -X POST -H @- -H 'content-type: application/json' --data "{\"outcome\":\"$4\"}" "${SIPNSHIP_URL:-https://sipnship.dev}/v1/repos/$req_id/queue/requests/$1/outcome" 2>/dev/null || true ;;
-    issue) [ -z "$req_issue" ] || gh_write api -X POST "repos/{owner}/{repo}/issues/$req_issue/comments" -f body="$(request_answer_form "$2" "$3" "$4")" >/dev/null 2>&1 || true ;;
+    issue) [ -z "$req_issue" ] || queue_log_post queue "$req_issue" "$(request_answer_form "$2" "$3" "$4")" ;;
   esac
   return 0
 }

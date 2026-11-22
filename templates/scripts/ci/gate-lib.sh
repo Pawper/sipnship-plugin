@@ -258,6 +258,12 @@ own_run_decide() {
   echo no
 }
 
+# required_parts_say (#2318, "says which rule decided a part was not
+# needed"): its own file, required-parts-lib.sh, so this one stays under
+# its line limit. Not sourced here: each caller (queue/serial.sh,
+# skipped-parts-audit.sh) loads it beside this file, since not every
+# caller of gate-lib.sh needs it.
+
 # cheap_gate_say: what a green pull request that has run only its rule
 # checks is told, in the words a person reads (the Queue and Work cards).
 cheap_gate_say() { echo "Its rule checks passed; it lands with the next batch"; }
