@@ -6278,6 +6278,11 @@ wp_plan="1. dispatch 2300 2301${hr_t}A | B
 eq "an approved dispatch the plan still prints is not stale" "" "$(approved_not_planned "$wp_plan" "$(printf 'dispatch 2300 2301\tA | B\nmerge 41\napproved by x\n')")"
 eq "approved dispatches the plan no longer prints are named, each once" "226
 223 240" "$(approved_not_planned "$wp_plan" "$(printf 'dispatch 2300 2301\tA\ndispatch 226\tx\ndispatch 223 240\ty\napproved by x\n')")"
+# A bundle is one goal in any order: the same issues written another way are not a dropped goal (#2341).
+eq "an approved dispatch 1 3 2 and a planned dispatch 1 2 3 are the same goal" "" "$(approved_not_planned "$(printf '1. dispatch 1 2 3\tA\n')" "$(printf 'dispatch 1 3 2\tA\napproved by x\n')")"
+eq "a goal dropped from the plan is still named, its issues in ascending order" "2 3" "$(approved_not_planned "$(printf '1. dispatch 1\tA\n')" "$(printf 'dispatch 3 2\tA\napproved by x\n')")"
+eq "the wake drops a stale goal from the approval in whatever order it is written, and keeps the rest" "dispatch 1 3 2${hr_t}A
+approved by x" "$(drop_stale_goals "$(printf 'dispatch 1 3 2\tA\ndispatch 9 7 8\tB\napproved by x\n')" "7 8 9")"
 eq "wake-check.sh says so and starts none of them" "1" "$(grep -c 'approved_not_planned' "$root/scripts/drive/wake-check.sh")"
 # A request with no issue: the round-wide Start now.
 wq_r="2026-11-12T18:56:00Z${wq_t}sipnship[bot]${wq_t}Queue request: start-now by maya

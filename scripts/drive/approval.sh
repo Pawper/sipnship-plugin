@@ -98,19 +98,21 @@ state=$(printf '%s\n' "$comments" | awk -F'\t' -v me="$me" '
   # the round names the dispatches, the proposal keeps every other goal
   # (drain, merge, fix, audit, release), renumbered.
   # A dispatch the proposal wrote for the same issues keeps its own words (a "First:" field), so a fix for main still leads.
+  # The goal as its issues in ascending order, so a bundle is the same goal in any order (#2341).
+  function gkey(t,   n, a, i, j, v, o) { n = split(t, a, " "); for (i = 3; i <= n; i++) { v = a[i]; for (j = i - 1; j > 1 && a[j] + 0 > v + 0; j--) a[j + 1] = a[j]; a[j + 1] = v } o = ""; for (i = 1; i <= n; i++) o = o (i > 1 ? " " : "") a[i]; return o }
   function merge_round(prop, gl,   n, a, i, line, s, out, c, m, g, k, was) {
     n = split(prop, a, "\n"); out = ""; c = 0; delete was
     for (i = 1; i <= n; i++) {
       line = a[i]; s = line
       if (line ~ /^[0-9]+\. /) {
         sub(/^[0-9]+\. /, "", s)
-        if (s ~ /^dispatch /) { if (match(s, /^dispatch [0-9]+( [0-9]+)*/)) was[substr(s, 1, RLENGTH)] = s; continue }
+        if (s ~ /^dispatch /) { if (match(s, /^dispatch [0-9]+( [0-9]+)*/)) was[gkey(substr(s, 1, RLENGTH))] = s; continue }
         line = (++c) ". " s
       }
       out = out (out == "" ? "" : "\n") line
     }
     m = split(gl, g, "\n")
-    for (i = 1; i <= m; i++) if (g[i] != "") out = out (out == "" ? "" : "\n") (++c) ". " ((g[i] in was) ? was[g[i]] : g[i])
+    for (i = 1; i <= m; i++) if (g[i] != "") out = out (out == "" ? "" : "\n") (++c) ". " ((gkey(g[i]) in was) ? was[gkey(g[i])] : g[i])
     return out
   }
   function shares(a, b,   n, x, i) { n = split(a, x, " "); for (i = 1; i <= n; i++) if (index(b, " " x[i] " ")) return 1; return 0 }

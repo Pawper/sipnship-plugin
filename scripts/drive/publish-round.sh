@@ -122,10 +122,10 @@ if [ -n "$err" ]; then echo "The round was not published: $err." >&2; exit 1; fi
 out=$(printf '%s\n' "$round" | awk -v now="$(date -u +%Y-%m-%dT%H:%M:%SZ)" '
 function esc(s) { gsub(/\\/, "\\\\", s); gsub(/"/, "\\\"", s); gsub(/>/, "\\u003e", s); gsub(/<!/, "\\u003c!", s); gsub(/[\t\r]/, " ", s); return s }
 function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s); return s }
-function numlist(s,   n, a, i, out) {
-  n = split(trim(s), a, /[ ,#]+/); out = ""
-  for (i = 1; i <= n; i++) { if (a[i] == "") continue; if (a[i] !~ /^[0-9]+$/) return "!"; out = out (out == "" ? "" : ",") a[i] }
-  return out
+function numlist(s,   n, a, b, m, i, j, v, out) {
+  n = split(trim(s), a, /[ ,#]+/); out = ""; m = 0; for (i = 1; i <= n; i++) { if (a[i] == "") continue; if (a[i] !~ /^[0-9]+$/) return "!"; b[++m] = a[i] }
+  for (i = 2; i <= m; i++) { v = b[i]; for (j = i - 1; j > 0 && b[j] + 0 > v + 0; j--) b[j + 1] = b[j]; b[j + 1] = v }  # ascending, so two runs over the same issues publish the same line (#2341)
+  for (i = 1; i <= m; i++) out = out (out == "" ? "" : ",") b[i]; return out
 }
 function arealist(s,   n, a, i, out) {
   n = split(s, a, ","); out = ""

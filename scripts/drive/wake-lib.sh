@@ -34,7 +34,22 @@ wake_decision() {
 approved_not_planned() {
   { printf '%s\n' "$1" | tr -d '\r' | sed 's/^[0-9]*\. //' | awk -F'\t' '$1 ~ /^dispatch [0-9]/ { print "P " substr($1, 10) }'
     printf '%s\n' "$2" | tr -d '\r' | sed 's/^[0-9]*\. //' | awk -F'\t' '$1 ~ /^dispatch [0-9]/ { print "A " substr($1, 10) }'; } \
-    | awk '{ k = substr($0, 3); gsub(/[ ]+/, " ", k); sub(/ $/, "", k); if ($1 == "P") planned[k] = 1; else if (!(k in planned) && !(k in said)) { said[k] = 1; print k } }'
+    | awk '
+      # The goal is its set of issues, so the key sorts the numbers: a bundle is the same goal in any order (#2341).
+      function key(s,   n, a, i, j, v, o) { n = split(s, a, " "); for (i = 2; i <= n; i++) { v = a[i]; for (j = i - 1; j > 0 && a[j] + 0 > v + 0; j--) a[j + 1] = a[j]; a[j + 1] = v } o = ""; for (i = 1; i <= n; i++) o = o (i > 1 ? " " : "") a[i]; return o }
+      { k = key(substr($0, 3)); if ($1 == "P") planned[k] = 1; else if (!(k in planned) && !(k in said)) { said[k] = 1; print k } }'
+}
+
+# drop_stale_goals APPROVAL STALE
+# APPROVAL as approval.sh printed it, STALE what approved_not_planned printed (one
+# sorted key a line). The approval without the dispatch goals named in STALE,
+# whatever order the approval wrote their issues in; every other line is kept.
+drop_stale_goals() {
+  printf '%s\n' "$1" | awk -F'\t' -v s="$2" '
+    function key(t,   n, a, i, j, v, o) { n = split(t, a, " "); for (i = 2; i <= n; i++) { v = a[i]; for (j = i - 1; j > 0 && a[j] + 0 > v + 0; j--) a[j + 1] = a[j]; a[j + 1] = v } o = ""; for (i = 1; i <= n; i++) o = o (i > 1 ? " " : "") a[i]; return o }
+    BEGIN { n = split(s, a, "\n"); for (i = 1; i <= n; i++) bad[a[i]] = 1 }
+    $1 ~ /^dispatch [0-9]/ { k = $1; sub(/^dispatch /, "", k); if (key(k) in bad) next }
+    { print }'
 }
 
 # wake_fix_owed NOW ROWS [MINUTES]

@@ -41,7 +41,7 @@ out=$(sh "$here/approval.sh" 2>&1)
 # Goals approved from an older posted proposal that the plan no longer prints start nothing, and the tick says so (#2104).
 stale=$(approved_not_planned "$(cat .scratch/drive/plan.txt 2>/dev/null)" "$out")
 if [ -n "$stale" ]; then
-  out=$(printf '%s\n' "$out" | awk -F'\t' -v s="$stale" 'BEGIN { n = split(s, a, "\n"); for (i = 1; i <= n; i++) bad[a[i]] = 1 } { k = $1; sub(/^dispatch /, "", k); gsub(/ +$/, "", k) } $1 ~ /^dispatch [0-9]/ && (k in bad) { next } { print }')
+  out=$(drop_stale_goals "$out" "$stale")
   out="nothing: the approval names goals the plan no longer prints (#$(printf '%s' "$stale" | tr '\n' ' ' | sed 's/ $//; s/ /, #/g')); none of them is started
 $out"
 fi
