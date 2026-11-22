@@ -41,6 +41,7 @@ here=$(dirname "$0")
 . "$here/done-lib.sh"
 . "$here/held-running-lib.sh"
 . "$here/closed-lib.sh"
+. "$here/settle-lib.sh"
 
 if ! command -v gh >/dev/null 2>&1 || ! gh auth status >/dev/null 2>&1; then
   echo "nothing: gh is not available or not signed in"
@@ -213,7 +214,10 @@ if [ -z "$started_by" ] && printf '%s\n' "$approved" | grep -q '^dispatch '; the
   fi
   # A running round takes a unit that conflicts with none of its running units, as a unit of itself; one that shares an area waits for that unit alone (join-round-lib.sh, #2122).
   all_nums=$(printf '%s\n' "$all_open" | cut -f1)
-  approved=$(join_dispatch "$approved" "$(running_round "$comments" "$inprog" "$open_prs" "$all_nums")" "$(running_units "$comments" "$inprog" "$open_prs" "$all_nums")" "$(proposed_units "$comments")")
+  # A round is over when every issue it took is settled (settle-lib.sh, #2128): the drive settles what its landed pull requests left open in Ready, here, in the same run, and an issue it cannot settle holds the round and is said.
+  mkdir -p .scratch/drive; printf '%s\n' "$comments" > .scratch/drive/settle-comments.txt; printf '%s\n' "$all_nums" > .scratch/drive/settle-open.txt
+  unsettled=$(sh "$here/settle-round.sh" .scratch/drive/settle-comments.txt .scratch/drive/settle-open.txt)
+  approved=$(join_dispatch "$approved" "$(running_round "$comments" "$inprog" "$open_prs" "$all_nums" "$unsettled")" "$(running_units "$comments" "$inprog" "$open_prs" "$all_nums")" "$(proposed_units "$comments")")
 fi
 # An agent needs a worktree: when this run cannot make one (a scheduled run
 # under an account with no access to the worktrees folder), start none.

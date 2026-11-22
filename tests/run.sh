@@ -6073,7 +6073,7 @@ eq "approval.sh passes every open pull request, held ones too, as the fourth arg
 # once its pull requests have merged and its issues are closed.
 rs_two=$(printf '2026-11-20T18:00:00Z\tmaya-drive\tRound started.\\n<!-- sipnship-proposal {"status":"started","units":[{"issues":[410,411],"areas":[],"pr":560}],"held":[]} -->\n')
 eq "a merged pull request whose issues have all closed leaves the round over" "" "$(running_round "$rs_two" '' '' '')"
-eq "approval.sh no longer reads the Ready issues, and running_round takes four arguments" "0 1" "$(grep -c 'labels=state:ready' "$root/scripts/drive/approval.sh") $(grep -c 'running_round "\$comments" "\$inprog" "\$open_prs" "\$all_nums")' "$root/scripts/drive/approval.sh")"
+eq "approval.sh no longer reads the Ready issues, and running_round takes four arguments" "0 1" "$(grep -c 'labels=state:ready' "$root/scripts/drive/approval.sh") $(grep -c 'running_round "\$comments" "\$inprog" "\$open_prs" "\$all_nums"' "$root/scripts/drive/approval.sh")"
 eq "the plan holds every issue of a unit whose pull request is open, one unnumbered hold line each" "hold	301	Water the beds	Its pull request (#531) is still open and its unit is running; no agent is started on it
 hold	302	Tint the beds	Its pull request (#531) is still open and its unit is running; no agent is started on it
 hold	303		Its pull request (#531) is still open and its unit is running; no agent is started on it" "$(started_pr_holds "$sr_comments" "$(printf '531\n')" "$(printf '301\tWater the beds\n302\tTint the beds\n')")"
@@ -8231,6 +8231,18 @@ eq "one still waiting is left alone, and says what for" "1 0" "$(printf '%s
 ' "$fs_out" | grep -c 'waits for #2400 to land') $(grep -c 'head=fixside/pr-320' "$fs_dir/log")"
 eq "fix-owed.sh leaves a change with a waiting side branch to fix-side.sh" "1" "$(grep -c 'fix_side_branch' "$root/scripts/drive/fix-owed.sh")"
 eq "the wake check frees side branches before it looks for red changes" "1" "$(grep -c 'fix-side.sh' "$root/scripts/drive/wake-check.sh")"
+# A round is over when every issue it took is settled, not when its pull requests merge (#2128).
+. "$root/scripts/drive/settle-lib.sh"
+st_comments=$(printf '2026-11-21T08:00:00Z\tmaya-drive\t<!-- sipnship-proposal {"status":"started","units":[{"issues":[31,32],"areas":[],"pr":61}],"held":[]} -->\n')
+eq "a merged pull request closed one issue and left one: the left one is unsettled" "32" "$(settle_candidates "$st_comments" '' "$(printf '32\tready\tno\n')")"
+eq "an issue waiting on the owner or blocked is settled" "" "$(settle_candidates "$st_comments" '' "$(printf '32\twaiting-on-owner\tno\n31\tblocked\tno\n')")"
+eq "an issue noted as settled since the round began is settled" "" "$(settle_candidates "$st_comments" '' "$(printf '32\tready\tyes\n')")"
+eq "while the unit's pull request is open nothing is unsettled yet" "" "$(settle_candidates "$st_comments" "$(printf '61\n')" "$(printf '32\tready\tno\n')")"
+eq "the round is running while an issue is unsettled" "32" "$(running_round "$st_comments" '' '' '' "$(settle_candidates "$st_comments" '' "$(printf '32\tready\tno\n')")")"
+eq "the round ends once the second is settled" "" "$(running_round "$st_comments" '' '' '' "$(settle_candidates "$st_comments" '' "$(printf '32\tready\tyes\n')")")"
+eq "the Work tab says what the last step is" "settling 2 issues" "$(settling_say "$(printf '32\n33\n')")"
+eq "and says nothing when none is left" "" "$(settling_say '')"
+eq "approval.sh settles first, in the same run" "1" "$(grep -c 'settle-round.sh' "$root/scripts/drive/approval.sh")"
 block_end
 section 'a part red with no failing test says why, and a red the next run clears is recorded as a flake'
 . "$root/templates/scripts/ci/run-lib.sh"

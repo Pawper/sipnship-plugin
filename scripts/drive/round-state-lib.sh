@@ -30,7 +30,7 @@
 running_round() {
   rr_units=$(started_units "$1")
   [ -n "$rr_units" ] || return 0
-  printf '%s\n' "$rr_units" | awk -F'\t' -v inprog="$2" -v open="${3:-}" -v haveall="${4+yes}" -v all="${4:-}" '
+  printf '%s\n' "$rr_units" | awk -F'\t' -v inprog="$2" -v open="${3:-}" -v haveall="${4+yes}" -v all="${4:-}" -v unsettled="${5:-}" '
     BEGIN {
       n = split(all, a, "\n"); for (i = 1; i <= n; i++) { gsub(/\r/, "", a[i]); if (a[i] != "") ao[a[i]] = 1 }
       n = split(inprog, a, "\n"); for (i = 1; i <= n; i++) { gsub(/\r/, "", a[i]); if (a[i] != "") ip[a[i]] = 1 }
@@ -44,7 +44,11 @@ running_round() {
         if (hold && !(is[i] in seen)) { seen[is[i]] = 1; out = out (out == "" ? "" : " ") is[i] }
       }
     }
-    END { if (out != "") print out }'
+    END {
+      # An issue the round took and has not settled holds it too (settle-lib.sh, #2128): the round is over only when every issue is settled.
+      n = split(unsettled, a, "\n"); for (i = 1; i <= n; i++) { gsub(/\r/, "", a[i]); if (a[i] != "" && !(a[i] in seen)) { seen[a[i]] = 1; out = out (out == "" ? "" : " ") a[i] } }
+      if (out != "") print out
+    }'
 }
 
 # A round that only waits on the owner holds no agent and no runner (#2030), so the approval step reads
