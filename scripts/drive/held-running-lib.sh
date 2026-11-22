@@ -7,13 +7,13 @@
 
 # held_only_issues PULLS
 # The issues (one a line) that an open pull request held for the owner closes
-# or names, and that no open pull request not held closes or names: the held
+# (its Closes line alone: a Part of or Refs line holds nothing, #2269), and that no open pull request not held closes or names: the held
 # read is all there is of their work.
 held_only_issues() {
   printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' '
     $1 == "" { next }
     {
-      n = split($3, a, ","); m = split($4, b, ","); for (i = 1; i <= m; i++) a[++n] = b[i]
+      n = split($3, a, ",")
       for (i = 1; i <= n; i++) if (a[i] != "") { if ($2 == "yes") held[a[i]] = 1; else live[a[i]] = 1 }
     }
     END { for (k in held) if (!(k in live)) print k }' | sort -n

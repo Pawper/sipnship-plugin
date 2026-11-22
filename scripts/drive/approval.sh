@@ -40,6 +40,7 @@ here=$(dirname "$0")
 . "$here/worktree-access-lib.sh"
 . "$here/done-lib.sh"
 . "$here/held-running-lib.sh"
+. "$here/closed-lib.sh"
 
 if ! command -v gh >/dev/null 2>&1 || ! gh auth status >/dev/null 2>&1; then
   echo "nothing: gh is not available or not signed in"
@@ -204,7 +205,7 @@ if [ -z "$started_by" ] && printf '%s\n' "$approved" | grep -q '^dispatch '; the
   open_prs=$(printf '%s\n' "$all_open" | awk -F'\t' '$2 == "false" { print $1 }')
   # A unit counts as running only while there is evidence of it: a round whose units made no pull request and no branch for twenty minutes is dead, and its issues no longer hold the round. The tick's report sends them back to Ready.
   # An issue whose only pull request is held for the owner's read is not running work, whatever its State label says: the same rule the plan reads (held-running-lib.sh, #2128).
-  inprog=$(without_issues "$inprog" "$(held_only_issues "$pull_lines")")
+  inprog=$(without_issues "$inprog" "$(held_only_issues "$pull_lines")"); inprog=$(without_issues "$inprog" "$(closed_among "$inprog")")  # a closed issue is never a running unit, whatever label it carries (#2198)
   dead=$(dead_round_issues "$(date -u +%s)" "$(started_at "$comments")" "$(gh api "repos/{owner}/{repo}/git/matching-refs/heads/issue-" --jq '.[].ref' 2>/dev/null)" "$(started_units "$comments")")
   if [ -n "$dead" ]; then
     inprog=$(printf '%s\n' "$inprog" | grep -vxF "$(printf '%s\n' $dead)")

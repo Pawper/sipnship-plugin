@@ -66,6 +66,7 @@ stall_note() {
         w = $3; sub(/ \(after: [0-9 ,#]+\)$/, "", w); sub(/^(After: |Waits for “)/, "", w); sub(/” to land.*$/, "", w); wc[w]++
         if (wc[w] > wtop) { wtop = wc[w]; wname = w }
       }
+      if ($3 ~ /held for your read/) rd++  # an issue its held change carries waits on a read by the builder (#2267)
       if (match($3, /^Waits on your (answer|read) on “[^”]*”/)) {
         c = substr($3, RSTART, RLENGTH); verb = (c ~ /^Waits on your read/) ? "reading" : "answering"
         sub(/^Waits on your (answer|read) on /, "", c); key = verb " " c; cnt[key]++
@@ -75,7 +76,8 @@ stall_note() {
     END {
       if (go || h == 0) exit
       if (k == 0) {
-        printf "stall: every ready issue is held (%d), and nothing in it waits on you", h
+        if (rd > 0) printf "stall: every ready issue is held (%d), and %d of them wait on your read of a held change", h, rd
+        else printf "stall: every ready issue is held (%d), and nothing in it waits on you", h
         if (wtop * 2 > h) printf "; %d of them wait for “%s” to land, the reason most share", wtop, wname
         printf "\n"
         exit

@@ -106,7 +106,9 @@ settle_merged() {
     sleep "${SETTLE_WAIT:-3}" 2>/dev/null || true
     [ "$(settle_in_progress "$sm_n")" = yes ] || continue
     [ "$(settle_other_open "$sm_n" "$1")" = yes ] && continue
-    if [ "$(settle_said_open "$1" "$sm_n")" != yes ]; then
+    # Speak only for an issue the pull request's body names; one it never worked on is put back quietly (#2267).
+    if [ "$(settle_said_open "$1" "$sm_n")" != yes ] && printf '%s
+' "$sm_named" | grep -qx "$sm_n"; then
       gh_write api -X POST "repos/{owner}/{repo}/issues/$sm_n/comments" -f body="Pull request #$1 merged without closing this issue, so it is back to Ready; nobody is on it now." >/dev/null 2>&1 || true
     fi
     settle_set "$sm_n" ready && say "  #$sm_n: In progress with no pull request open any more; back to Ready." || true

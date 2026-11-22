@@ -54,7 +54,7 @@ stale_lines() {
     sl_unitpr=$(printf '%s\n' "${6:-}" | awk -F'\t' -v n="$sl_num" '$1 != "" { k = split($2, a, " "); for (i = 1; i <= k; i++) if (a[i] == n) { print $1; exit } }')
     sl_has=no; sl_held=no; sl_pr=""; sl_touch=""
     for sl_m in $sl_members; do
-      sl_pull=$(printf '%s\n' "$2" | awk -F'\t' -v n="$sl_m" '{ k = split($3, a, ","); for (i = 1; i <= k; i++) if (a[i] == n) { print $1 "\t" $2; next } k = split($4, a, ","); for (i = 1; i <= k; i++) if (a[i] == n) print $1 "\tno" }')
+      sl_pull=$(printf '%s\n' "$2" | awk -F'\t' -v n="$sl_m" '{ k = split($3, a, ","); for (i = 1; i <= k; i++) if (a[i] == n) { print $1 "\t" $2; next } }')
       if [ -n "$sl_pull" ]; then
         sl_has=yes
         [ -n "$sl_pr" ] || sl_pr=$(printf '%s\n' "$sl_pull" | head -n 1 | cut -f1)
@@ -189,8 +189,8 @@ carried_holds() {
   printf '%s\n' "$1" | tr -d '\r' | tr '\t' '\037' | while IFS="$ch_us" read -r ch_kind ch_num ch_title ch_labels ch_rest; do
     [ "$ch_kind" = issue ] || continue
     [ "$(state_of_labels "$ch_labels")" = ready ] || continue
-    # A held pull request that only refers to the issue (Refs #N, a spec draft) is the issue's real ask, so it holds it as a closing one does.
-    ch_pull=$(printf '%s\n' "$2" | awk -F'\t' -v n="$ch_num" '{ k = split($3, a, ","); for (i = 1; i <= k; i++) if (a[i] == n) { print $1 "\t" $2; exit } if ($2 == "yes") { k = split($4, a, ","); for (i = 1; i <= k; i++) if (a[i] == n) { print $1 "\t" $2; exit } } }')
+    # Only a Closes line holds an issue; a pull request that says Part of or Refs holds nothing (#2269).
+    ch_pull=$(printf '%s\n' "$2" | awk -F'\t' -v n="$ch_num" '{ k = split($3, a, ","); for (i = 1; i <= k; i++) if (a[i] == n) { print $1 "\t" $2; exit } }')
     [ -n "$ch_pull" ] || continue
     ch_pr=$(printf '%s' "$ch_pull" | cut -f1); ch_held=$(printf '%s' "$ch_pull" | cut -f2)
     if [ "$ch_held" = yes ]; then ch_why="Its pull request (#$ch_pr) is held for your read; no agent is started on it"
@@ -210,9 +210,7 @@ pull_link_row() {
   pl_us=$(printf '\037')
   printf '%s\n' "$1" | tr -d '\r' | while IFS="$pl_us" read -r pl_num pl_ref pl_labels pl_hold pl_closes pl_refs; do
     [ -n "$pl_num" ] || continue
-    # A fourth field, only when the pull request names issues it refers to without closing them (Refs, Spec for).
-    printf '%s\t%s\t%s' "$pl_num" "$(held_by "$pl_labels" "$pl_hold")" "$pl_closes"
-    [ -n "$pl_refs" ] && printf '\t%s' "$pl_refs"
-    printf '\n'
+    # No field for issues it only refers to (Refs, Part of): the drive reads Closes alone (#2269).
+    printf '%s\t%s\t%s\n' "$pl_num" "$(held_by "$pl_labels" "$pl_hold")" "$pl_closes"
   done
 }

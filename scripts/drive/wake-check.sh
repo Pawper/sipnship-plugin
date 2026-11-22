@@ -21,6 +21,7 @@ sh "${WAKE_UPDATE:-$here/../release/update-if-behind.sh}" 2>/dev/null | tail -n 
 # And a release is prepared by script when plugin changes sit on main with no release open; nothing is printed when there is none.
 sh "${WAKE_PREPARE:-$here/../release/prepare.sh}" 2>/dev/null | tail -n 1 | grep -v '^release: nothing to release' || true
 # A red change with nobody on it is looked for first, by script, before the slow plan: its fix agent is owed within minutes (#1897).
+sh "${WAKE_FIX_SIDE:-$here/fix-side.sh}" --apply 2>/dev/null | tail -n 3  # fixes a fix agent could not push are merged when what they wait on lands, with no model (#2260)
 fix=$(sh "${WAKE_FIX_OWED:-$here/fix-owed.sh}" 2>/dev/null)
 # The ten-minute look (WAKE_QUICK=yes) is only this: with no fix agent owed it ends here, with no plan and no model.
 if [ "${WAKE_QUICK:-}" = yes ] && [ -z "$fix" ]; then

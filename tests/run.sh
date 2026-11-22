@@ -5675,9 +5675,9 @@ eq "a Ready issue no pull request closes gets none" "0" "$(printf '%s\n' "$sl_ca
 # A held draft that only refers to a Ready issue (Refs #N, a spec to read) holds it like one that closes it, so no ask-fix is proposed.
 sl_rl=$(printf '1301%sspec-draft%squeue:hold%sQueue: hold, for your read%s%s1120\n1302%sfrost-spec%s%s%s%s1121\n' "$sl_us" "$sl_us" "$sl_us" "$sl_us" "$sl_us" "$sl_us" "$sl_us" "$sl_us" "$sl_us" "$sl_us")
 sl_rp=$(pull_link_row "$sl_rl")
-eq "a pull request that refers to an issue carries it as a fourth field" "1301	yes		1120" "$(printf '%s\n' "$sl_rp" | sed -n 1p)"
+eq "a pull request that refers to an issue carries no refs field" "1301	yes	" "$(printf '%s\n' "$sl_rp" | sed -n 1p)"
 sl_rf=$(printf 'issue\t1120\tRooftop watering plan\tstate:ready\t%s\tbody\nissue\t1121\tFrost alerts\tstate:ready\t%s\tbody\n' "$sl_old" "$sl_old")
-eq "a Ready issue only a held draft refers to gets a hold line naming the draft" "hold	1120	Rooftop watering plan	Its pull request (#1301) is held for your read; no agent is started on it" "$(carried_holds "$sl_rf" "$sl_rp" | sed -n 1p)"
+eq "a Ready issue only a held draft refers to holds nothing back" "" "$(carried_holds "$sl_rf" "$sl_rp" | sed -n 1p)"
 eq "one referred to by a draft that is not held is not held" "0" "$(carried_holds "$sl_rf" "$sl_rp" | grep -c '	1121	')"
 eq "plan.sh reads the refers-to numbers" "1" "$(grep -c 'refs?|references|spec for' "$root/scripts/drive/pr-read-lib.sh")"
 eq "plan.sh adds the carried issues to its hold lines" "1" "$(grep -c 'carried_holds "\$facts" "\$pull_links"' "$root/scripts/drive/plan.sh")"
@@ -7198,11 +7198,11 @@ eq "the same branch with no started round is the old reading: only the first is 
 eq "a bundle quiet for two hours with no pull request goes back to Ready whole" "1 2 3" "$(stale_lines "$gs_facts" '' '' "$gs_now" 2 "$gs_units" | cut -f2 | tr '\n' ' ' | sed 's/ $//')"
 eq "a comment on one issue of the unit counts for all of them" "0" "$(stale_lines "$(printf 'issue\t1\tOne\tstate:in-progress\t%s\tb\nissue\t2\tTwo\tstate:in-progress\t%s\tb\n' "$gs_old" "$(date -u -d "@$(( gs_now - 600 ))" +%Y-%m-%dT%H:%M:%SZ)")" '' '' "$gs_now" 2 "$(printf '\t1 2\n')" | grep -c '^stale')"
 # An open pull request that names the issue as a part, or is its unit's own, is the work in hand.
-eq "a pull request naming it in a Part of line means it is not stale" "0" "$(stale_lines "$gs_facts" "$(printf '70\tno\t\t1\n')" '' "$gs_now" 2 | grep -c '	1	')"
+eq "a pull request that only says Part of no longer keeps it from going stale" "1" "$(stale_lines "$gs_facts" "$(printf '70\tno\t\t1\n')" '' "$gs_now" 2 | grep -c '	1	')"
 eq "the unit's own pull request, named by the started round, keeps all its issues" "0" "$(stale_lines "$gs_facts" "$(printf '71\tno\t9\n')" '' "$gs_now" 2 "$(printf '71\t1 2 3\n')" | grep -c '^stale')"
 eq "an issue of a unit whose pull request has merged goes back to Ready at once, though a closing note touched it a minute ago" "stale: #1 \"One\" was In progress, but its unit's pull request has merged or closed and did not name it, so nobody is on it; it is back to Ready." "$(stale_say "$(stale_lines "$(printf 'issue\t1\tOne\tstate:in-progress\t%s\tb\n' "$(date -u -d "@$(( gs_now - 60 ))" +%Y-%m-%dT%H:%M:%SZ)")" '' '' "$gs_now" 2 "$(printf '71\t1 2\n')" "$(( gs_now - 600 ))")" 2)"
 eq "a unit pull request that is no longer open does not" "3" "$(stale_lines "$gs_facts" "$(printf '72\tno\t9\n')" '' "$gs_now" 2 "$(printf '71\t1 2 3\n')" | grep -c '^stale')"
-eq "plan.sh hands the started round's units to the stale reading and to the unit filter" "2" "$(grep -c 'started_units "$drive_comments")' "$root/scripts/drive/plan.sh")"
+eq "plan.sh hands the started round's units to the stale reading and to the unit filter" "3" "$(grep -c 'started_units "$drive_comments")' "$root/scripts/drive/plan.sh")"
 # A running unit gets no ask about a held pull request that only mentions its issues; one held pull request gets one ask.
 eq "a held pull request that only mentions the issue does not move it to waiting" "0" "$(stale_lines "$gs_facts" "$(printf '80\tyes\t\t1 2 3\n')" '' "$gs_now" 2 '' | grep -c 'waiting')"
 eq "a held pull request that closes two issues asks once, on the first" "1" "$(stale_lines "$(printf 'issue\t1\tOne\tstate:in-progress\t%s\tb\nissue\t2\tTwo\tstate:in-progress\t%s\tb\n' "$gs_old" "$gs_old")" "$(printf '80\tyes\t1,2\n')" '' "$gs_now" 2 '' | grep -c 'waiting')"
@@ -7594,7 +7594,7 @@ section 'an issue never waits behind one whose pull request is held for the owne
 hr_t=$(printf '\t')
 # Maya's rooftop-garden app: the irrigation redesign is in progress, its only pull request a spec draft held for the owner's read.
 hr_pulls=$(printf '201\tyes\t\t31\n202\tno\t32\n')
-eq "an issue only a held pull request names is held-only" "31" "$(held_only_issues "$hr_pulls")"
+eq "an issue only a held pull request only refers to holds nothing (Closes alone reads)" "" "$(held_only_issues "$hr_pulls")"
 eq "an issue a pull request not held closes is not held-only, even when a held one names it" "" "$(held_only_issues "$(printf '201\tyes\t\t32\n202\tno\t32\n')")"
 eq "a held pull request that closes an issue makes it held-only" "31" "$(held_only_issues "$(printf '201\tyes\t31\n')")"
 eq "no pull requests, none held-only" "" "$(held_only_issues '')"
@@ -7967,6 +7967,115 @@ fh_stall=$(printf 'hold 1\tA\tAfter: Frost alerts (after: 9)\nhold 2\tB\tWaits f
 eq "a stall names the unit most held issues wait for" "stall: every ready issue is held (3), and nothing in it waits on you; 2 of them wait for “Frost alerts” to land, the reason most share" "$(stall_note "$fh_stall" 4)"
 eq "a stall with no shared reason says nothing more" "stall: every ready issue is held (2), and nothing in it waits on you" "$(stall_note "$(printf 'hold 1\tA\tAfter: B (after: 1)\nhold 2\tC\tAfter: D (after: 2)\n')" 4)"
 eq "plan.sh hands the running unit's issue number to the plan" "1" "$(grep -c 'running="${running}${title}${tab}${g}${tab}${num}' "$root/scripts/drive/plan.sh")"
+section 'a change with no closes line, a closed issue, an idle issue and a refused fix push are all read as they are (drive)'
+. "$root/scripts/drive/bundle-lib.sh"
+. "$root/scripts/drive/hold-reasons-lib.sh"
+. "$root/scripts/drive/held-running-lib.sh"
+. "$root/scripts/drive/stale-lib.sh"
+. "$root/scripts/drive/held-round-lib.sh"
+. "$root/scripts/drive/round-state-lib.sh"
+. "$root/scripts/drive/round-lib.sh"
+. "$root/scripts/drive/closes-lib.sh"
+. "$root/scripts/drive/closed-lib.sh"
+. "$root/scripts/drive/idle-lib.sh"
+. "$root/scripts/drive/fix-side-lib.sh"
+cl_t=$(printf '\t'); cl_us=$(printf '\037')
+# Maya's rooftop-garden app: a spec draft opened before the closes rule says "Part of" and no "Closes".
+eq "a change that says Part of and no Closes is one the check would fail" "201" "$(closes_missing "$(printf '201\tspec-bed-map\t\n202\tissue-5\t5\n203\tbatch-2026-11-21\t\n')")"
+eq "a body with a Closes line has one" "yes" "$(closes_has_line "$(printf 'Spec: specs/bed-map\nCloses #5\n')")"
+eq "a body that says Part of has none" "no" "$(closes_has_line "$(printf 'Part of #5\n')")"
+eq "the issue a change says it is part of is read" "5" "$(closes_part_of "$(printf 'Spec: specs/bed-map\nPart of #5\n')")"
+eq "a change of only specs and mocks is the spec and mocks of a build" "yes" "$(closes_spec_only "$(printf 'specs/bed-map/spec.md\ndesign/mocks/bed-map.html\n')")"
+eq "a change that also touches code is not" "no" "$(closes_spec_only "$(printf 'specs/bed-map/spec.md\nsrc/beds.ts\n')")"
+eq "the small issue is named for the spec and mocks" "The spec and mocks of Show the bed map" "$(closes_spec_title 'Show the bed map')"
+cl_body=$(closes_add_line "$(printf 'Spec: specs/bed-map\nPart of #5\n')" 90 5 'Show the bed map')
+eq "the added body closes the small issue" "1" "$(printf '%s\n' "$cl_body" | grep -c '^Closes #90$')"
+eq "and the pass's new body now passes the closes check's own rule" "yes" "$(closes_has_line "$cl_body")"
+eq "the build's issue stays open and is named in plain words" "1" "$(printf '%s\n' "$cl_body" | grep -c 'The build itself, "Show the bed map" (#5), stays open')"
+cl_check=$(PR_BODY='Part of #5' sh "$root/templates/scripts/ci/closes-check.sh" 2>&1)
+eq "the check says why, in words the builder can use" "1 1" "$(printf '%s\n' "$cl_check" | grep -c 'closes no issue') $(printf '%s\n' "$cl_check" | grep -c 'Closes #N')"
+eq "the Work tab line says the agent is on it and nothing is needed" "“Show the bed map” is approved, but a check stopped it: it names no issue it closes. Your agent is on it, and nothing is needed from you." "$(closes_builder_words 'Show the bed map')"
+cl_prs=$(printf '201%sspec-bed-map%sy%s%s%s\n' "$cl_us" "$cl_us" "$cl_us" "$cl_us" "")
+eq "the plan says a change the check would fail, before the owner meets it" "closes: pull request #201 “Show the bed map” would fail the closes check: it names no issue it closes. Your agent gives it one; nothing is needed from you." "$(closes_notes "$(printf 'pr\t201\tShow the bed map\tSUCCESS\tMERGEABLE\tspec-bed-map\t\t\n')" "$cl_prs")"
+eq "none is said when every change closes one" "" "$(closes_notes "$(printf 'pr\t202\tWater\n')" "$(printf '202%sissue-5%sx%s%s5%s\n' "$cl_us" "$cl_us" "$cl_us" "$cl_us" "")")"
+# A hold reads only Closes: a held change that says Part of holds nothing.
+eq "a held change that only says Part of holds no issue" "" "$(held_only_issues "$(printf '201\tyes\t\t31\n')")"
+eq "a held change that closes one holds it" "31" "$(held_only_issues "$(printf '201\tyes\t31\n')")"
+cl_facts=$(printf 'issue\t31\tShow the bed map\tstate:ready\t2026-11-21T09:00:00Z\t\n')
+eq "a ready issue a held change only refers to is not held back by it" "" "$(carried_holds "$cl_facts" "$(printf '201\tyes\t\t31\n')")"
+eq "one a held change closes still is" "hold${cl_t}31${cl_t}Show the bed map${cl_t}Its pull request (#201) is held for your read; no agent is started on it" "$(carried_holds "$cl_facts" "$(printf '201\tyes\t31\n')")"
+eq "pull_link_row carries no refs field" "201${cl_t}yes${cl_t}" "$(pull_link_row "$(printf '201%sissue-5%s%sQueue: hold%s%s%s31\n' "$cl_us" "$cl_us" "$cl_us" "$cl_us" "$cl_us" "")")"
+# A closed issue is never a running unit and never something another waits on.
+cl_state() { case "$1" in 31) echo closed ;; *) echo open ;; esac; }
+ISSUE_STATE_CMD=cl_state; export ISSUE_STATE_CMD
+cl_board=$(printf 'issue\t31\tShow the bed map\tstate:in-progress\t2026-11-21T09:00:00Z\t\nissue\t32\tWater the roof beds\tstate:in-progress\t2026-11-21T09:00:00Z\t\nissue\t41\tAdd a rain sensor\tstate:ready\t2026-11-21T07:00:00Z\t\n')
+cl_left=$(PLAN_PUBLISH=no facts_without_closed "$cl_board" | cut -f2 | tr '\n' ' ')
+eq "a closed In progress issue is left out of the board, an open one and a ready one stay" "32 41 " "$cl_left"
+eq "closed_among names the closed ones" "31" "$(closed_among "$(printf '31\n32\n')")"
+cl_round=$(printf '%s\n' '2026-11-21T08:00:00Z	me	<!-- sipnship-proposal {"status":"proposed","held":[{"issues":[41],"why":"Waits on a change that has not landed","waitsOn":[31]}]} -->')
+eq "an issue waiting on one still open keeps its hold" "1" "$(published_holds "$cl_round" "$cl_board" | grep -c '^hold	41	')"
+eq "the same hold, once what it waits on has closed, is dropped as the board is read" "0" "$(published_holds "$cl_round" "$(PLAN_PUBLISH=no facts_without_closed "$cl_board")" | grep -c '^hold	41	')"
+cl_started=$(printf '%s\n' '2026-11-21T08:00:00Z	me	<!-- sipnship-proposal {"status":"started","units":[{"issues":[31],"pr":0}]} -->')
+eq "a round whose issues closed a minute ago is running nothing" "" "$(running_round "$cl_started" "$(without_issues "31" "$(closed_among 31)")")"
+eq "a closed issue with a stale label is not counted as in progress" "32" "$(without_issues "$(printf '31\n32\n')" "$(closed_among "$(printf '31\n32\n')")")"
+eq "a closed issue's labels lose every State label and keep the rest" '{"labels":["design","drive"]}' "$(closed_labels_json "$(printf 'state:in-progress\ndesign\nstate: ready\ndrive\n')")"
+unset ISSUE_STATE_CMD
+# An In progress issue nobody is on is free to pick up again.
+cl_now=$(date -u -d 2026-11-21T10:00:00Z +%s)
+cl_idle=$(printf 'issue\t51\tAdd a rain sensor\tstate:in-progress\t2026-11-21T00:00:00Z\t\n')
+eq "an In progress issue with no agent, pull request or commit is idle" "51" "$(idle_in_progress "$cl_idle" "" "" "$cl_now" "")"
+eq "one with an open pull request is not" "" "$(idle_in_progress "$cl_idle" "$(printf '301\tno\t51\n')" "" "$cl_now" "")"
+eq "one with a commit on its branch is not" "" "$(idle_in_progress "$cl_idle" "" "$(printf '1780000000\torigin/issue-51\n')" "$cl_now" "")"
+eq "one an agent was sent to this round is not" "" "$(idle_in_progress "$cl_idle" "" "" "$cl_now" "$(printf '\t51\n')")"
+eq "one touched a minute ago is still starting" "" "$(idle_in_progress "$(printf 'issue\t51\tAdd a rain sensor\tstate:in-progress\t2026-11-21T09:59:00Z\t\n')" "" "" "$cl_now" "")"
+eq "a side branch named for a change is no commit on an issue's branch" "51" "$(idle_in_progress "$cl_idle" "" "$(printf '1780000000\torigin/fixside/pr-51\n')" "$cl_now" "")"
+eq "plan.sh keeps an idle issue out of what is running" "2" "$(grep -c 'held_only \$idle' "$root/scripts/drive/plan.sh")"
+# The settle step speaks only for an issue the pull request's body names.
+eq "the settle step comments only on an issue the pull request names" "1" "$(grep -c "grep -qx \"\$sm_n\"; then" "$root/templates/scripts/ci/queue/settle.sh")"
+# The stall line counts what waits on the builder's read.
+cl_hold=$(printf 'hold 1\tA\tIts pull request (#9) is held for your read; no agent is started on it\nhold 2\tB\tIts pull request (#9) is held for your read; no agent is started on it\nhold 3\tC\tWaits for “Frost alerts” to land first, since it changes the same files\n')
+eq "a stall says how many wait on a read of a held change" "stall: every ready issue is held (3), and 2 of them wait on your read of a held change" "$(stall_note "$cl_hold" 4)"
+eq "a stall with nothing waiting on a read still says so" "stall: every ready issue is held (1), and nothing in it waits on you" "$(stall_note "$(printf 'hold 3\tC\tIts area is not known: it names no file\n')" 4)"
+# A fix agent whose push is refused leaves its fix where the next agent finds it.
+eq "the side branch is named for the change and is never an issue branch" "fixside/pr-318" "$(fix_side_branch 318)"
+eq "a refusal by the project's check before a push is told apart" "check" "$(fix_push_refusal_kind 'PreToolUse:Bash hook error: require-local-checks refused the push')"
+eq "a refusal by GitHub is told apart" "github" "$(fix_push_refusal_kind ' ! [remote rejected] issue-318 -> issue-318 (protected branch)')"
+eq "anything else is unknown" "unknown" "$(fix_push_refusal_kind 'something odd')"
+cl_note=$(fix_side_note 318 check 2301)
+eq "the note's first line names what the push waits on and the side branch" "Fix waits: #2301 | side: fixside/pr-318" "$(printf '%s\n' "$cl_note" | sed -n 1p)"
+eq "and says in words who refused" "1" "$(printf '%s\n' "$cl_note" | grep -c "the project's own check before a push refused it")"
+eq "the next agent reads what it waits on from the comments" "2301" "$(fix_side_waits "$(printf 'Looked at this.\n%s\n' "$cl_note")")"
+eq "a change that ended removes its side branch" "remove" "$(fix_side_action merged open)"
+eq "what it waited on landing merges it" "merge" "$(fix_side_action open closed)"
+eq "still waiting waits" "wait" "$(fix_side_action open open)"
+eq "a failed merge is said once" "yes no" "$(fix_side_failed "$(fix_side_failed_note fixside/pr-318)") $(fix_side_failed 'nothing')"
+fs_dir=$(mktemp -d); mkdir -p "$fs_dir/bin"
+cat > "$fs_dir/bin/gh" <<'FSEOF'
+#!/bin/sh
+echo "$*" >> "$FS_LOG"
+case "$*" in
+  "auth status") exit 0 ;;
+  *matching-refs/heads/fixside/*) printf 'refs/heads/fixside/pr-318\nrefs/heads/fixside/pr-319\nrefs/heads/fixside/pr-320\n' ;;
+  *pulls/318*) printf 'open\tfalse\tissue-318\n' ;;
+  *pulls/319*) printf 'closed\tfalse\tissue-319\n' ;;
+  *pulls/320*) printf 'open\tfalse\tissue-320\n' ;;
+  *issues/318/comments*) printf 'Fix waits: #2301 | side: fixside/pr-318\n' ;;
+  *issues/320/comments*) printf 'Fix waits: #2400 | side: fixside/pr-320\n' ;;
+  *issues/2301*) printf 'closed\n' ;;
+  *issues/2400*) printf 'open\n' ;;
+esac
+exit 0
+FSEOF
+FS_LOG="$fs_dir/log"; export FS_LOG
+fs_out=$(PATH="$fs_dir/bin:$PATH" sh "$root/scripts/drive/fix-side.sh" --apply 2>&1)
+eq "fix-side.sh merges a fix whose wait landed into the change's branch" "1" "$(grep -c 'POST .*repos/{owner}/{repo}/merges -f base=issue-318 -f head=fixside/pr-318' "$fs_dir/log")"
+eq "and removes its side branch" "1" "$(grep -c 'DELETE .*git/refs/heads/fixside/pr-318' "$fs_dir/log")"
+eq "a side branch of a closed change is removed without a merge" "1 0" "$(grep -c 'DELETE .*git/refs/heads/fixside/pr-319' "$fs_dir/log") $(grep -c 'head=fixside/pr-319' "$fs_dir/log")"
+eq "one still waiting is left alone, and says what for" "1 0" "$(printf '%s
+' "$fs_out" | grep -c 'waits for #2400 to land') $(grep -c 'head=fixside/pr-320' "$fs_dir/log")"
+eq "fix-owed.sh leaves a change with a waiting side branch to fix-side.sh" "1" "$(grep -c 'fix_side_branch' "$root/scripts/drive/fix-owed.sh")"
+eq "the wake check frees side branches before it looks for red changes" "1" "$(grep -c 'fix-side.sh' "$root/scripts/drive/wake-check.sh")"
+block_end
 # --- end of blocks: the summary, kept in every part.
 eq "no test wrote into the checkout's own queue state" "$queue_picture_before" "$([ "$queue_picture_before" = skipped ] && echo skipped || queue_picture)"
 eq "no process started by this suite is still running" "" "$(spawned_alive)"

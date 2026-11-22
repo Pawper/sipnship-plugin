@@ -238,6 +238,13 @@ The goal lines and what each means:
   test-environment problem (a flaky test, a cancelled run, a missing fixture), fix it on that branch (or have
   the unit's own agent fix it in its worktree), re-run the touched tests locally, and push; CI runs again.
   Otherwise leave one comment on the pull request naming the cause and set its issue to `state:blocked`.
+  **A fix whose push is refused is never left only in the agent's checkout (#2260).** When the push to the change's branch
+  is refused, push the commit to the side branch `fixside/pr-N` (`git push origin HEAD:fixside/pr-N`; the queue never lands
+  it and the claim never reads it as work) and leave one comment on the pull request that starts with the line
+  `Fix waits: #M | side: fixside/pr-N`, M being the issue or pull request the push waits on, and says whether the project's
+  own check before a push refused it or GitHub did (`fix-side-lib.sh` writes the note). The wake check's `fix-side.sh`
+  merges the side branch into the change's branch when #M lands, with no model, and removes it when the change lands or
+  closes; only if that merge fails is a fix agent owed again, and it starts from the side branch.
 - **`set-aside N TITLE (red K times)`.** The pull request has been red `setAsideAfterReds` times (on
   different commits; a red whose failing check was also failing on main at the time is not counted, and
   such a pull request is proposed as `merge-main` once main is right). Stop fixing it: one comment on its issue naming the cause in plain words, set the issue
@@ -309,6 +316,11 @@ The goal lines and what each means:
   with a line of its own, `Left: <what is still to build> | areas: <area names>`;
   the plan plans the issue from that line (the areas file names the areas) instead of from its whole body, and
   never reads an issue as partly landed.
+  An agent that finds nothing left to build closes the issue itself (`gh api -X PATCH repos/{owner}/{repo}/issues/N -f state=closed
+  -f state_reason=completed`, its finding first as the closing comment) and takes the State label off with it, so the issue
+  never sits In progress with nobody on it (#2267): an In progress issue with no agent, no open pull request and no commit
+  on its branch is free to pick up again, and the plan never reads it as running. A closed issue is never a running unit
+  and never something another issue waits on (#2198): the plan asks whether an issue is open before it reads its label.
   The plan groups ready issues by the files they are guessed to touch (the paths and specs the body names,
   the project's mocks map, and the files past work on the same spec changed). `dispatch 12 14` with a
   third column "Why together: both change ..." is a bundle: one agent, one worktree, one pull request that

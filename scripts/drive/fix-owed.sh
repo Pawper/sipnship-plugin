@@ -14,6 +14,7 @@ here=$(dirname "$0")
 . "$here/round-lib.sh"
 . "$here/plan-green-lib.sh"
 . "$here/wake-lib.sh"
+. "$here/fix-side-lib.sh"
 
 command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1 || exit 0
 rows=""
@@ -23,6 +24,10 @@ while IFS="$tab" read -r n sha labels hold; do
   [ -n "$n" ] && [ -n "$sha" ] || continue
   [ "$(held_by "$labels" "$hold")" = yes ] && continue
   [ "$(head_settled_red "$sha")" = yes ] || continue
+  # A fix already waits on a side branch (fix-side-lib.sh): fix-side.sh frees it, and asks again only if that fails (#2260).
+  if gh api "repos/{owner}/{repo}/git/matching-refs/heads/$(fix_side_branch "$n")" --jq '.[].ref' 2>/dev/null | grep -q .; then
+    [ "$(fix_side_failed "$(gh api "repos/{owner}/{repo}/issues/$n/comments?per_page=100" --jq '.[].body' 2>/dev/null)")" = yes ] || continue
+  fi
   pushed=$(gh api "repos/{owner}/{repo}/commits/$sha" --jq '.commit.committer.date | fromdateiso8601' 2>/dev/null | tr -d '\r')
   asked=$(gh api "repos/{owner}/{repo}/issues/$n/comments?per_page=100" --jq '[.[] | select(.body | startswith("Fix agent asked")) | (.created_at | fromdateiso8601)] | max // empty' 2>/dev/null | tr -d '\r')
   rows="${rows}${n}${tab}yes${tab}no${tab}${pushed}${tab}${asked}
