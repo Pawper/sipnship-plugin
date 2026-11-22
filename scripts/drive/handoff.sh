@@ -44,7 +44,8 @@ case "$cmd" in
       *) echo "The handoff's first line must start with the word Handoff, so the next session finds it." >&2; exit 1 ;;
     esac
     [ -n "$issue" ] || { echo "No open issue is labeled drive. Pass --issue N to name the drive issue." >&2; exit 1; }
-    gh api -X POST "repos/{owner}/{repo}/issues/$issue/comments" -F "body=@$file" --jq .html_url
+    . "$(dirname "$0")/log-post-lib.sh"
+    log_post drive "$issue" "$file"
     ;;
   *) echo "usage: handoff.sh last | post FILE [--issue N]" >&2; exit 1 ;;
 esac

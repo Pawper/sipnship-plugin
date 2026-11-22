@@ -453,6 +453,14 @@ if [ -f "$root/../scripts/ci/classes.txt" ] && grep -q '^!own-run' "$root/../scr
     eq "a change to $od_path is the plugin-code class and runs every plugin part on its pull request" "plugin-code yes" "$(classify_paths "$od_path" "$od_repo") $(own_run_decide "$(classify_paths "$od_path" "$od_repo")" "$od_repo")"
     eq "its parts for $od_path are the shell parts" '["shell-2","queue-console","shell-5","shell-3","shell-1-4"]' "$(od_m "$od_path")"
   done
+  # A change to the service or core package runs its tests on its pull request (#2316).
+  for od_path in packages/service/src/github-writes.ts packages/service/test/github-writes.test.ts packages/core/src/index.ts packages/core/test/index.test.ts pnpm-lock.yaml; do
+    od_c=$(classify_paths "$od_path" "$od_repo")
+    eq "a change to $od_path is an own run with the packages part" "yes [\"packages\"]" "$(own_run_decide "$od_c" "$od_repo") $(od_m "$od_path")"
+  done
+  eq "a pull request of source and tests in both packages selects the packages part" "core service yes" "$(classify_paths 'packages/core/src/a.ts
+packages/service/src/b.ts
+packages/service/test/b.test.ts' "$od_repo") $(own_run_decide 'service core' "$od_repo")"
   eq "a plugin skill or template is not an own run" "plugin no" "$(classify_paths plugin/skills/project-drive/SKILL.md "$od_repo") $(own_run_decide "$(classify_paths plugin/skills/project-drive/SKILL.md "$od_repo")" "$od_repo")"
 fi
 # The red-main report speaks only for a run on main (#2204).
@@ -8302,6 +8310,47 @@ eq "a fix to a screen is not held for a read" "no" "$(reads_held "Show the scree
 eq "an issue with no files and no such words is not held for a read" "no" "$(reads_held "Water the north bed on time" "")"
 eq "the plan tells them apart before it bundles" "1 1" "$(grep -c 'reads_held "$title $c $d" "$g"' "$root/scripts/drive/plan.sh") $(grep -c 'READ_ISSUES="$read_issues" plan_units' "$root/scripts/drive/plan.sh")"
 eq "the drive skill says a draft for the read is its own unit" "1" "$(grep -c 'never bundled with work that needs no read' "$root/skills/project-drive/SKILL.md")"
+block_end
+section 'a log line is posted as the app when the project is connected, and as the builder when it is not (drive)'
+# Maya's rooftop-garden app: the drive's handoff note goes through the service as the app when she has connected, and
+# through her own sign-in when she has not or the service refuses it (#2308).
+lp_d=$(mktemp -d); mkdir -p "$lp_d/bin" "$lp_d/repo/scripts/ci"
+: > "$lp_d/repo/scripts/ci/service-auth.sh"
+cat > "$lp_d/bin/curl" <<'FAKECURL'
+#!/bin/sh
+cat > /dev/null
+printf '%s\n' "$*" >> "$LP_LOG"
+printf '%s' "$LP_REPLY"
+FAKECURL
+cat > "$lp_d/bin/gh" <<'FAKEGH'
+#!/bin/sh
+printf '%s\n' "$*" >> "$LP_LOG"
+echo "https://github.com/maya/rooftop/issues/3#issuecomment-9"
+FAKEGH
+chmod +x "$lp_d/bin/curl" "$lp_d/bin/gh"
+printf 'Handoff: the watering plan is in review.\n' > "$lp_d/note.md"
+lp_run() {
+  : > "$lp_d/log"
+  ( cd "$lp_d/repo" || exit 1
+    PATH="$lp_d/bin:$PATH"; LP_LOG="$lp_d/log"; export LP_LOG LP_REPLY
+    QUEUE_SERVICE_AUTH_LOADED=1
+    service_sign_in() { if [ "$LP_SIGNED_IN" = yes ]; then sv_token=t; sv_id=77; return 0; fi; return 1; }
+    git() { if [ "$*" = "remote get-url origin" ]; then echo "https://github.com/maya/rooftop.git"; else command git "$@"; fi; }
+    . "$root/scripts/drive/log-post-lib.sh"
+    log_post drive 3 "$lp_d/note.md" 2>"$lp_d/err"
+  )
+}
+eq "connected: the line goes through the service and names the drive's issue" "https://github.com/maya/rooftop/issues/7" "$(LP_SIGNED_IN=yes LP_REPLY='{"issue":7}
+201' lp_run)"
+eq "connected: the service gets the kind and the line, and the builder's own sign-in is not used" "1 0" "$(grep -c '/v1/repos/77/log-comment' "$lp_d/log") $(grep -c 'issues/3/comments' "$lp_d/log")"
+eq "connected: nothing is said, the line simply went" "" "$(cat "$lp_d/err")"
+eq "not connected: the line is posted as before, with the builder's sign-in" "https://github.com/maya/rooftop/issues/3#issuecomment-9" "$(LP_SIGNED_IN=no LP_REPLY='' lp_run)"
+eq "not connected: no call reached the service, and nothing is said" "0 0" "$(grep -c 'log-comment' "$lp_d/log") $(wc -c < "$lp_d/err" | tr -d ' ')"
+eq "the service refuses: the line is not lost, it is posted as the builder" "https://github.com/maya/rooftop/issues/3#issuecomment-9" "$(LP_SIGNED_IN=yes LP_REPLY='{"code":"comment_refused"}
+502' lp_run)"
+eq "the service refuses: it says so in one line" "The service did not take the log line, so it is posted with your own sign-in instead." "$(cat "$lp_d/err")"
+eq "no answer at all from the service is a refusal too" "yes" "$(LP_SIGNED_IN=yes LP_REPLY='' lp_run >/dev/null; [ "$(wc -l < "$lp_d/err" | tr -d ' ')" = 1 ] && echo yes)"
+eq "the handoff and the round's publisher post through the helper" "1 1" "$(grep -c 'log_post drive' "$root/scripts/drive/handoff.sh") $(grep -c 'log_post drive' "$root/scripts/drive/publish-round.sh")"
 block_end
 # --- end of blocks: the summary, kept in every part.
 eq "no test wrote into the checkout's own queue state" "$queue_picture_before" "$([ "$queue_picture_before" = skipped ] && echo skipped || queue_picture)"

@@ -142,3 +142,4 @@ shell-5 a hold the plan works out fresh is never carried from the last round (dr
 shell-5 a change with no closes line, a closed issue, an idle issue and a refused fix push are all read as they are (drive)
 shell-2 a part red with no failing test says why, and a red the next run clears is recorded as a flake
 shell-5 a draft held for the builder's read is never bundled with fixes that need no read (drive)
+shell-5 a log line is posted as the app when the project is connected, and as the builder when it is not (drive)

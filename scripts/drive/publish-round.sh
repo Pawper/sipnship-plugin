@@ -281,11 +281,14 @@ if [ -n "$same" ]; then
   exit 0
 fi
 
-if ! gh api -X POST "repos/{owner}/{repo}/issues/$issue/comments" -F "body=@$body_file" >/dev/null 2>"$body_file.err"; then
-  echo "The round was not published: GitHub refused the comment on #$issue ($(head -n 1 "$body_file.err"))." >&2
+. "$here/log-post-lib.sh"
+if ! log_post drive "$issue" "$body_file" >/dev/null 2>"$body_file.err"; then
+  echo "The round was not published: GitHub refused the comment on #$issue ($(tail -n 1 "$body_file.err"))." >&2
   rm -f "$body_file" "$body_file.err"
   exit 1
 fi
+# The one line a failed call to the service leaves: the round went out under the builder's own sign-in instead.
+[ ! -s "$body_file.err" ] || head -n 1 "$body_file.err" >&2
 rm -f "$body_file" "$body_file.err"
 echo "Published the round on #$issue: $agents, $status."
 
