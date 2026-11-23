@@ -70,7 +70,7 @@ stall_note() {
     /^hold / {
       h++
       if ($3 ~ /^(After: |Waits for ")/) {
-        w = $3; sub(/ \(after: [0-9 ,#]+\)$/, "", w); sub(/^(After: |Waits for ")/, "", w); sub(/" to land.*$/, "", w); wc[w]++
+        w = $3; sub(/ \(after: [0-9 ,#]+\)$/, "", w); sub(/ \[(shares: [^]]*|area: [^]]*|tooling)\]$/, "", w); sub(/^(After: |Waits for ")/, "", w); sub(/" to land.*$/, "", w); wc[w]++
         if (wc[w] > wtop) { wtop = wc[w]; wname = w }
       }
       if ($3 ~ /held for your read/) rd++  # an issue its held change carries waits on a read by the builder (#2267)

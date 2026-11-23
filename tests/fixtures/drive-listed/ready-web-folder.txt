@@ -1,0 +1,3 @@
+Touches: packages/web/src/
+
+Every screen of the web package reads its words from one place.

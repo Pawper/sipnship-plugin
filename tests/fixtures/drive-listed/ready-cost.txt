@@ -1,0 +1,3 @@
+Touches: packages/core/src/seed-cost.ts packages/core/src/minutes.ts packages/web/src/cost.ts specs/017-seeds/
+
+Cost's two sections agree on what the seeds cost.

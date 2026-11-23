@@ -1,0 +1,3 @@
+Touches: packages/web/src/bed-row.ts packages/web/src/styles/beds.css
+
+The bed row says its last watering.

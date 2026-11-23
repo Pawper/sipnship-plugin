@@ -68,7 +68,14 @@ round_file() {
         if (match(why, /\(after: [0-9 ,#]+\)/)) { after = substr(why, RSTART + 8, RLENGTH - 9); gsub(/[#,]/, " ", after); after = trim(after); why = trim(substr(why, 1, RSTART - 1) substr(why, RSTART + RLENGTH)) }
         sub(/^Held in the last proposed round: /, "", why); sub(/; it takes no slot until that changes$/, "", why)
         if (why ~ /^Held in the last proposed round/) why = "Held in the last proposed round"
-        if (why ~ /^After: /) why = "Waits for \"" substr(why, 8) "\" to land first, since it changes the same files"
+        if (why ~ /^After: /) {
+          # The hold names what the two share (#2444): a file or folder, an area of the list, or the test suite of plugin or CI work.
+          wt = substr(why, 8); since = "it changes the same files"
+          if (match(wt, / \[shares: [^]]*\]/)) { since = "both change " substr(wt, RSTART + 10, RLENGTH - 11); wt = substr(wt, 1, RSTART - 1) substr(wt, RSTART + RLENGTH) }
+          else if (match(wt, / \[area: [^]]*\]/)) { since = "both are in the " substr(wt, RSTART + 8, RLENGTH - 9) " area"; wt = substr(wt, 1, RSTART - 1) substr(wt, RSTART + RLENGTH) }
+          else if (match(wt, / \[tooling\]/)) { since = "both are plugin or CI work, which shares one test suite"; wt = substr(wt, 1, RSTART - 1) substr(wt, RSTART + RLENGTH) }
+          why = "Waits for \"" trim(wt) "\" to land first, since " since
+        }
         why = clean(why); if (why == "") why = "Held this round"
         held[num] = "hold: " num " | why: " cap1(substr(why, 1, 200)) (after != "" ? " | after: " after : "") " | areas: none"
         horder[++nh] = num

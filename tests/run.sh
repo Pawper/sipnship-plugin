@@ -5456,7 +5456,7 @@ pj_out=$(bounded 120 env RUN_PART= CI_FULL_RUN=yes sh "$root/tests/run.sh" --fai
 eq "main's full run still refuses an unknown part" "rc 2" "$(printf '%s\n' "$pj_out" | tail -n 1)"
 
 section 'drive bundles issues by the files they touch'
-. "$root/scripts/drive/bundle-lib.sh"
+. "$root/scripts/drive/bundle-lib.sh"; . "$root/scripts/drive/guess-lib.sh"
 . "$root/scripts/drive/hold-reasons-lib.sh"
 db="$fx/drive-bundles"
 db_ready=$(cat "$db/ready.tsv")
@@ -5468,7 +5468,7 @@ rf_units=$(plan_units "$(printf '1\tWater the beds\tsrc/home/\n2\tTint the beds\
 eq "two rushed issues sharing an area are one unit, and it leads the round" "unit	2 3	Tint the beds | Name the beds	both change src/beds/card.ts	src/beds/,src/beds/card.ts" "$(rush_first "$rf_units" "2 3" | sed -n 1p)"
 eq "no rush leaves the order alone" "$rf_units" "$(rush_first "$rf_units" "")"
 db_held=$(plan_units "$db_ready" "$(cat "$db/running.tsv")")
-eq "a unit touching running work is held, naming the running bundle" "hold	16	Tint the bed cards by moisture	After: Frost alerts show the night's low" "$(printf '%s\n' "$db_held" | grep '^hold')"
+eq "a unit touching running work is held, naming the running bundle" "hold	16	Tint the bed cards by moisture	After: Frost alerts show the night's low [shares: src/beds/list.ts]" "$(printf '%s\n' "$db_held" | grep '^hold')"
 eq "held work is not in any unit" "0" "$(printf '%s\n' "$db_held" | grep '^unit' | grep -c '	16	\|^unit	16')"
 eq "a proposal never holds two units sharing a file" "yes" "$(units_disjoint "$db_held")"
 eq "the disjointness check catches a shared file" "no" "$(units_disjoint "$(printf 'unit\t1\tA\t\tsrc/a.ts,src/b/\nunit\t2\tB\t\tsrc/b/c.ts\n')")"
@@ -5533,13 +5533,13 @@ design/mocks/dashboard/RowsInCardsX.html" "$(mocks_files 'packages/web/src/work-
 db_round=$(printf 'dispatch 12\tWater\ndispatch 15\tPhotos\nstop: proposal ready for approval')
 eq "units replace dispatches: a bundle is one goal with its why" "dispatch 12 14 17	Water the beds on a schedule | Remind me before a frost night | Name the reminder screen	Why together: all 3 change src/schedule.ts
 dispatch 15	Add a plant photo to each bed
-hold 16	Tint the bed cards by moisture	After: Frost alerts show the night's low
+hold 16	Tint the bed cards by moisture	After: Frost alerts show the night's low [shares: src/beds/list.ts]
 stop: proposal ready for approval" "$(apply_units "$db_round" "$db_held" 2)"
 eq "units beyond the limit are deferred" "dispatch 12 14 17	Water the beds on a schedule | Remind me before a frost night | Name the reminder screen	Why together: all 3 change src/schedule.ts
-hold 16	Tint the bed cards by moisture	After: Frost alerts show the night's low
+hold 16	Tint the bed cards by moisture	After: Frost alerts show the night's low [shares: src/beds/list.ts]
 defer 1 unit(s): the limit of 1 agent a round is reached (#15)
 stop: proposal ready for approval" "$(apply_units "$db_round" "$db_held" 1)"
-eq "when everything is held the round says work is in flight" "hold 16	Tint the bed cards by moisture	After: Frost alerts show the night's low
+eq "when everything is held the round says work is in flight" "hold 16	Tint the bed cards by moisture	After: Frost alerts show the night's low [shares: src/beds/list.ts]
 stop: work is in flight; nothing to propose until it lands" "$(apply_units "$(printf 'dispatch 16\tTint\nstop: proposal ready for approval')" "$(plan_units "$(printf '16\tTint the bed cards by moisture\tsrc/beds/list.ts\n')" "$(cat "$db/running.tsv")")" 2)"
 # A ready issue that says it comes after another is held back, naming what it waits on in the builder's words;
 # one that names an issue no longer open holds nothing, since its reason ended (read afresh every run).
@@ -5548,6 +5548,37 @@ eq "a ready issue behind a question or other work is held, saying what it waits 
 hold	33	Compost reminders repeat until done	Waits for \"Bed photos show the date\" to land (after: 30)" "$(hold_reasons "$db_facts")"
 eq "everything held with reasons says so, never work in flight" "hold 31	The bed map shows the soil type	Waits on your answer on \"How long may a reminder wait?\" (after: 22)
 stop: everything left waits on what its hold line names; publish the round with each hold and its reason" "$(apply_units "$(printf 'dispatch 31\tSoil\nstop: proposal ready for approval')" "$(hold_reasons "$db_facts" | sed -n 1p)" 2)"
+# An issue whose first line lists its files (Touches:) is planned from that list alone: never from a path its prose
+# mentions in passing, the spec its Spec line names, that spec's past files or a mock its screen maps to (#2444). In the
+# round this reproduces, a running issue's Spec line pulled in the drive skill and the test suite from the spec's history,
+# so an unrelated stall issue and a wake issue were held behind it "since it changes the same files", and a row file's
+# mock joined a cost issue to it; five machines sat idle.
+dl="$fx/drive-listed"
+dl_past=$(past_spec_files "$(cat "$dl/history.txt")")
+dl_mocks=$(cat "$dl/mocks.txt")
+dl_g() { guess_files "$(cat "$dl/$1.txt")" "$dl_mocks" "$dl_past"; }
+eq "a listed issue's files are its list, nothing its prose, its spec's history or a mock adds" "packages/core/src/beds-asked.ts,packages/core/src/beds-view.ts,packages/web/src/bed-row.ts" "$(dl_g running-card)"
+eq "a listed folder stays a folder, and a listed spec folder stays in" "packages/core/src/minutes.ts,packages/core/src/seed-cost.ts,packages/web/src/cost.ts,specs/017-seeds/" "$(dl_g ready-cost)"
+eq "the list ends at the first word that is no path" "packages/web/src/graph/client.ts" "$(listed_files 'Touches: packages/web/src/graph/client.ts. Spec: specs/020-flow')"
+eq "a body whose first line lists nothing has no list" "" "$(listed_files "$(printf 'Water the beds\nTouches: src/a.ts\n')")"
+eq "an issue with no list is still guessed from its body" "plugin/skills/garden/SKILL.md,plugin/tests/run.sh,specs/023-garden-drive/" "$(guess_files 'The garden drive forgets a round. Spec: specs/023-garden-drive' '' "$dl_past")"
+dl_running=$(printf 'Show the plan on the beds card\t%s\t2446\n' "$(dl_g running-card)")
+dl_ready=$(printf '2443\tA look never waits\t%s\n2442\tThe service sets a stall right\t%s\n2438\tCost agrees with itself\t%s\n2433\tThe harvest row opens beside its card\t%s\n' "$(dl_g ready-wake)" "$(dl_g ready-stall)" "$(dl_g ready-cost)" "$(dl_g ready-rows)")
+dl_units=$(PLAN_LISTED="2446 2443 2442 2438 2433" plan_units "$dl_ready" "$dl_running")
+eq "issues that list no file in common with the running one are never held behind it" "0 4" "$(printf '%s\n' "$dl_units" | grep -c '^hold') $(printf '%s\n' "$dl_units" | grep '^unit' | cut -f2 | wc -w | tr -d ' ')"
+dl_bed=$(printf '2450\tThe bed row says its last watering\t%s\n2451\tEvery screen reads its words from one place\t%s\n' "$(dl_g ready-bed-row)" "$(dl_g ready-web-folder)")
+eq "an issue listing a file the running one lists is held, naming the file" "hold	2450	The bed row says its last watering	After: Show the plan on the beds card [shares: packages/web/src/bed-row.ts] (after: 2446)" "$(PLAN_LISTED="2446 2450" plan_units "$(printf '%s\n' "$dl_bed" | sed -n 1p)" "$dl_running" | grep '^hold')"
+eq "an issue listing a folder the running one's file lies under is held, naming the file" "hold	2451	Every screen reads its words from one place	After: Show the plan on the beds card [shares: packages/web/src/bed-row.ts] (after: 2446)" "$(PLAN_LISTED="2446 2451" plan_units "$(printf '%s\n' "$dl_bed" | sed -n 2p)" "$dl_running" | grep '^hold')"
+eq "two listed plugin issues with no file in common: no hold for sharing the test suite" "0" "$(PLAN_LISTED="1 9" plan_units "$(printf '1\tTune the brief\tplugin/brief.sh\n')" "$(printf 'Hook fix\tplugin/hooks/a.sh\t9\n')" | grep -c '^hold')"
+eq "an unlisted plugin issue still waits on running plugin work, saying why" "hold	1	Tune the brief	After: Hook fix [tooling] (after: 9)" "$(plan_units "$(printf '1\tTune the brief\tplugin/brief.sh\n')" "$(printf 'Hook fix\tplugin/hooks/a.sh\t9\n')" | grep '^hold')"
+. "$root/scripts/drive/propose-lib.sh"
+eq "the published hold says which file the two share" "hold: 2450 | why: Waits for \"Show the plan on the beds card\" to land first, since both change packages/web/src/bed-row.ts | after: 2446 | areas: none" "$(round_file "$(printf 'hold 2450\tThe bed row\tAfter: Show the plan on the beds card [shares: packages/web/src/bed-row.ts] (after: 2446)\n')" '' '' 2450 '' '' | grep '^hold:')"
+eq "an area hold says which area" "hold: 2438 | why: Waits for \"Show the plan on the beds card\" to land first, since both are in the cost area | after: 2446 | areas: none" "$(round_file "$(printf 'hold 2438\tCost\tAfter: Show the plan on the beds card [area: cost] (after: 2446)\n')" '' '' 2438 '' '' | grep '^hold:')"
+eq "a suite hold says it is the shared test suite" "hold: 1 | why: Waits for \"Hook fix\" to land first, since both are plugin or CI work, which shares one test suite | after: 9 | areas: none" "$(round_file "$(printf 'hold 1\tBrief\tAfter: Hook fix [tooling] (after: 9)\n')" '' '' 1 '' '' | grep '^hold:')"
+eq "a stall counts holds behind one unit together, whatever each shares" "stall: every ready issue is held (2), and nothing in it waits on you; 2 of them wait for \"Show the plan\" to land, the reason most share" "$(stall_note "$(printf 'hold 1\tA\tAfter: Show the plan [shares: a.ts] (after: 9)\nhold 2\tB\tAfter: Show the plan [area: cost] (after: 9)\n')" 4)"
+eq "the board carries an issue's Touches line as its own field, and the plan reads it" "1 2 1" "$(grep -c 'TOUCHES(its first line' "$root/hooks/scripts/board-now.sh") $(grep -c 'guess_files "$issue_text"' "$root/scripts/drive/plan.sh" "$root/scripts/drive/left-lib.sh" | awk -F: '{ s += $2 } END { print s }') $(grep -c 'PLAN_LISTED=' "$root/scripts/drive/plan.sh")"
+eq "the plan puts an issue's Touches column first and counts it as listed" "src/beds/card.ts| 7" "$(title=Beds c='Touches: src/beds/card.ts' d=src/sun.ts e=src/beds/card.ts num=7 plan_listed=''; plan_issue_text; printf '%s|%s' "$(listed_files "$issue_text")" "$plan_listed")"
+eq "an issue with no Touches column is not listed" "Beds x src/sun.ts|" "$(title=Beds c=x d=src/sun.ts e='' num=7 plan_listed=''; plan_issue_text; printf '%s|%s' "$issue_text" "$plan_listed")"
 
 
 section 'drive publishes its rounds'
@@ -5854,7 +5885,7 @@ eq "plan.sh adds the carried issues to its hold lines" "1" "$(grep -c 'carried_h
 section 'drive runs rounds of units'
 . "$root/scripts/drive/drive-lib.sh"
 . "$root/scripts/drive/auto-lib.sh"
-. "$root/scripts/drive/bundle-lib.sh"
+. "$root/scripts/drive/bundle-lib.sh"; . "$root/scripts/drive/guess-lib.sh"
 . "$root/scripts/drive/hold-reasons-lib.sh"
 . "$root/scripts/drive/round-lib.sh"
 . "$root/scripts/drive/round-notes-lib.sh"
@@ -5939,7 +5970,7 @@ eq "the marker carries the sized words and the hold with its reason" "1 1" "$(pr
 ' "$rd_out" | grep -c '"sized":"5 runners online, 4 free for agents"') $(printf '%s
 ' "$rd_out" | grep -c '"why":"The limit of 4 agents a round is reached"')"
 eq "plugin and CI issues go in one bundle, even with no file in common" "unit	31 32	Hook fix | Queue fix	both are plugin or CI work, which shares one test suite	plugin/hooks/a.sh,scripts/ci/b.sh" "$(plan_units "$(printf '31\tHook fix\tplugin/hooks/a.sh\n32\tQueue fix\tscripts/ci/b.sh\n')" "" | sed -n 1p)"
-eq "plugin work waits on a running plugin unit" "hold	33	Brief fix	After: Hook fix" "$(plan_units "$(printf '33\tBrief fix\tplugin/brief.sh\n')" "$(printf 'Hook fix\tplugin/hooks/a.sh\n')")"
+eq "plugin work waits on a running plugin unit" "hold	33	Brief fix	After: Hook fix [tooling]" "$(plan_units "$(printf '33\tBrief fix\tplugin/brief.sh\n')" "$(printf 'Hook fix\tplugin/hooks/a.sh\n')")"
 rd_snap=$(printf 'pr\t51\tBeds page\tgreen\tmergeable\tapp\npr\t52\tFrost alert\tpending\tmergeable\tapp\npr\t53\tSeed list\tred\tmergeable\tapp\npr\t54\tWatering copy\tgreen\tmergeable\tapp\nissue\t9\tReady thing\tready\tno\n')
 rd_rest=$(printf '51\tclean\t0\tno\n52\tdirty\t0\tno\n53\tunstable\t2\tno\n54\tdirty\t0\tyes\n')
 rd_over=$(overlay_rest "$rd_snap" "$rd_rest")
@@ -6287,7 +6318,7 @@ issue${hr_t}302${hr_t}Water${hr_t}state:ready${hr_t}2026-11-01T00:00:00Z" '' | c
 eq "a reason holding a double quote, a backslash, an apostrophe, a colon and a pipe is published and read back whole" "Held in the last proposed round: Waits on “Wake's \"tick\" \\ a/b: c” to land; it takes no slot until that changes" "$hl_back"
 eq "the drive's comments are read without @tsv, which doubled every backslash" "0" "$(grep -c 'page=\$rdc_page.*| @tsv' "$root/scripts/drive/plan-read-lib.sh")"
 # Asked-for issues lead, bundled, and join the running round (#2122).
-. "$root/scripts/drive/join-round-lib.sh"; . "$root/scripts/drive/bundle-lib.sh"; . "$root/scripts/drive/area-plan-lib.sh"; . "$root/scripts/drive/wake-lib.sh"
+. "$root/scripts/drive/join-round-lib.sh"; . "$root/scripts/drive/bundle-lib.sh"; . "$root/scripts/drive/guess-lib.sh"; . "$root/scripts/drive/area-plan-lib.sh"; . "$root/scripts/drive/wake-lib.sh"
 ja_units="unit${hr_t}3 4${hr_t}Water | Tint${hr_t}both change the beds${hr_t}src/beds/
 unit${hr_t}5${hr_t}Map${hr_t}${hr_t}src/map/
 unit${hr_t}9${hr_t}Fix main${hr_t}${hr_t}src/ci/"
@@ -6342,7 +6373,7 @@ eq "an issue about something else that names no path is still unguessed" "" "$(b
 bd_ready=$(printf '1388\tThe drive proposes a drain for held ones\t%s\n1374\tThe drive proposes set-aside for a waiting one\t%s\n1367\tThe drive proposes mark-waiting every tick\tplugin/scripts/board/digest.sh\n1370\tThe listener carries out land here\tplugin/console/\n1311\tA fix in the workflow\t.github/workflows/ci.yml\n' "$(bd_guess "the plugin's drive plan script")" "$(bd_guess 'in plugin/scripts/drive/plan.sh')")
 eq "plugin and CI issues go into units of at most four, with a reason" "2" "$(plan_units "$bd_ready" '' | grep -c '^unit')"
 eq "the first unit carries four" "1388 1374 1367 1370" "$(plan_units "$bd_ready" '' | awk -F'\t' '$1 == "unit" { print $2 }' | head -n 1)"
-eq "a plugin issue that names no path waits on a running plugin unit" "hold	1388	The drive proposes a drain for held ones	After: Hook fix" "$(plan_units "$(printf '1388\tThe drive proposes a drain for held ones\t%s\n' "$(bd_guess "the plugin's drive plan script")")" "$(printf 'Hook fix\tplugin/hooks/a.sh\n')")"
+eq "a plugin issue that names no path waits on a running plugin unit" "hold	1388	The drive proposes a drain for held ones	After: Hook fix [shares: plugin/hooks/a.sh]" "$(plan_units "$(printf '1388\tThe drive proposes a drain for held ones\t%s\n' "$(bd_guess "the plugin's drive plan script")")" "$(printf 'Hook fix\tplugin/hooks/a.sh\n')")"
 # A red main's issue is one goal, and checks work joins the plugin bundle (#1879).
 eq "an issue naming a workflow, the queue's drain or a check of the CI is guessed as plugin work" "plugin/ plugin/ plugin/ plugin/" "$(bd_guess 'The scheduled deploy run skips the build when nothing changed') $(bd_guess 'The queue drain waits on every pull request') $(bd_guess 'queue-drain.yml starts late') $(bd_guess 'The checks job reads each file twice')"
 eq "an issue about a bed's watering workflow in the app is not" "" "$(bd_guess "Maya's watering reminders arrive late on the rooftop beds")"
@@ -7083,7 +7114,7 @@ da_facts=$(cat "$fx/drive-areas/facts.tsv")
 da_t=$(printf '\t')
 da_titles=$(printf '301\tWater the beds\n402\tWater the beds on a timer\n403\tTint the beds by sun\n404\tFix the schedule page\n405\tTune the build\n')
 # A running unit owns the watering area; the ready ones in it wait behind it, as publish-round.sh would insist.
-eq "an issue in the area a running unit owns is a hold naming that unit, not a dispatch" "hold${da_t}402${da_t}Water the beds on a timer${da_t}After: Water the beds (after: 301)
+eq "an issue in the area a running unit owns is a hold naming that unit, not a dispatch" "hold${da_t}402${da_t}Water the beds on a timer${da_t}After: Water the beds [area: watering] (after: 301)
 unit${da_t}403${da_t}Tint the beds by sun${da_t}${da_t}src/beds/tint.ts" "$(area_units "$da_list" "$(printf 'unit\t402\tWater the beds on a timer\t\tsrc/water/timer.ts\nunit\t403\tTint the beds by sun\t\tsrc/beds/tint.ts\n')" "$(printf '301\twatering\n')" "$da_titles")"
 eq "the plan's output then passes publish-round's own area check" "" "$(area_problem "$(round_areas "$da_list" "$(printf 'unit: 403 | areas: src/beds/tint.ts\nhold: 402 | after: 301 | areas: src/water/timer.ts\n')")" "$(printf '301\twatering\n')")"
 eq "a unit that is part of the running unit is left alone" "unit${da_t}301${da_t}Water the beds${da_t}${da_t}src/water/a.ts" "$(area_units "$da_list" "$(printf 'unit\t301\tWater the beds\t\tsrc/water/a.ts\n')" "$(printf '301\twatering\n')" "$da_titles")"
@@ -7097,8 +7128,8 @@ eq "plan.sh reads the running units' areas and plans by area" "1 1" "$(grep -c '
 # A file on no area never hides the areas of the others, so a unit beside a running unit is a hold, not a start the publisher refuses (areas file: Maya's rooftop-garden app).
 eq "a file on no area is left out, the others still name their areas" "watering,beds" "$(unit_areas "$da_list" 'src/water/timer.ts,notes/loose.txt,src/beds/tint.ts')"
 eq "files on no area at all name none" "" "$(unit_areas "$da_list" 'notes/loose.txt')"
-eq "two ready issues, one with a file on no area, beside a running unit: two holds, no start" "hold${da_t}402${da_t}Water the beds on a timer${da_t}After: Water the beds (after: 301)
-hold${da_t}404${da_t}Fix the schedule page${da_t}After: Water the beds (after: 301)" "$(area_units "$da_list" "$(printf 'unit\t402\tWater the beds on a timer\t\tnotes/loose.txt,src/water/timer.ts\nunit\t404\tFix the schedule page\t\tsrc/schedule.ts\n')" "$(printf '301\twatering\n')" "$da_titles")"
+eq "two ready issues, one with a file on no area, beside a running unit: two holds, no start" "hold${da_t}402${da_t}Water the beds on a timer${da_t}After: Water the beds [area: watering] (after: 301)
+hold${da_t}404${da_t}Fix the schedule page${da_t}After: Water the beds [area: watering] (after: 301)" "$(area_units "$da_list" "$(printf 'unit\t402\tWater the beds on a timer\t\tnotes/loose.txt,src/water/timer.ts\nunit\t404\tFix the schedule page\t\tsrc/schedule.ts\n')" "$(printf '301\twatering\n')" "$da_titles")"
 eq "two ready issues in one area with none running are one bundle" "1" "$(area_units "$da_list" "$(printf 'unit\t402\tWater the beds on a timer\t\tnotes/loose.txt,src/water/timer.ts\nunit\t404\tFix the schedule page\t\tsrc/schedule.ts\n')" '' "$da_titles" | grep -c '^unit')"
 # apply_units can still fill a round with two dispatches that share one area (an asked-for unit and a
 # priority unit, say, both in "queue"), which publish-round.sh refuses outright; the plan holds the
@@ -7106,7 +7137,7 @@ eq "two ready issues in one area with none running are one bundle" "1" "$(area_u
 da_round=$(printf 'dispatch 402\tWater the beds on a timer\ndispatch 403\tTint the beds by sun\nstop: proposal ready for approval\n')
 da_units=$(printf 'unit\t402\tWater the beds on a timer\t\tsrc/water/timer.ts\nunit\t403\tTint the beds by sun\t\tsrc/water/other.ts\n')
 eq "two dispatches in one area: the later holds behind the earlier" "dispatch 402${da_t}Water the beds on a timer
-hold 403${da_t}Tint the beds by sun${da_t}After: Water the beds on a timer (after: 402)
+hold 403${da_t}Tint the beds by sun${da_t}After: Water the beds on a timer [area: watering] (after: 402)
 stop: proposal ready for approval" "$(dispatch_area_holds "$da_round" "$da_units" "$da_list")"
 da_units2=$(printf 'unit\t402\tWater the beds on a timer\t\tsrc/water/timer.ts\nunit\t403\tTint the beds by sun\t\tsrc/beds/tint.ts\n')
 eq "two dispatches in different areas both keep their place" "$da_round" "$(dispatch_area_holds "$da_round" "$da_units2" "$da_list")"
@@ -7158,7 +7189,7 @@ pp_body="$(printf 'What happened %.0s' 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17
 pp_paths="plugin/scripts/drive/,specs/023-drive-on-work"
 eq "the short text alone names no path" "" "$(guess_files "Fix the plan $(printf '%s' "$pp_body" | cut -c1-300)" '' '')"
 eq "the paths field places it by a path past the 300th character" "plugin/scripts/drive/,specs/023-drive-on-work/" "$(guess_files "Fix the plan $(printf '%s' "$pp_body" | cut -c1-300) $pp_paths" '' '')"
-eq "the board reading carries the paths field from the whole text, and the plan reads it" "1 2 1" "$(grep -c 'PATHS(comma separated)' "$root/hooks/scripts/board-now.sh") $(grep -c 'guess_files "$title $c $d"' "$root/scripts/drive/plan.sh" "$root/scripts/drive/left-lib.sh" | awk -F: '{ s += $2 } END { print s }') $(grep -c 'held_pull_of_issues' "$root/scripts/drive/plan.sh")"
+eq "the board reading carries the paths field from the whole text, and the plan reads it" "1 2 1" "$(grep -c 'PATHS(comma separated)' "$root/hooks/scripts/board-now.sh") $(grep -c 'guess_files "$issue_text"' "$root/scripts/drive/plan.sh" "$root/scripts/drive/left-lib.sh" | awk -F: '{ s += $2 } END { print s }') $(grep -c 'held_pull_of_issues' "$root/scripts/drive/plan.sh")"
 eq "plan.sh places by title and holds the unplaced" "1 1" "$(grep -c 'title_area_files "$title $c"' "$root/scripts/drive/left-lib.sh") $(grep -c 'unplaced_holds "$units"' "$root/scripts/drive/plan.sh")"
 # A held issue in two areas, and a ready issue in the second: the plan holds the newcomer behind the held one, and the round built from the plan's own lines publishes (#1894).
 hh_c="2026-11-17T10:00:00Z${da_t}maya-drive${da_t}<!-- sipnship-proposal {\"status\":\"started\",\"units\":[{\"issues\":[301],\"areas\":[\"watering\"]}],\"held\":[{\"issues\":[410],\"waitsOn\":[301],\"areas\":[\"beds\",\"tooling\"],\"why\":\"Waits on the watering change\"}]} -->"
@@ -7166,7 +7197,7 @@ hh_titles=$(printf '301\tWater the beds\n410\tTint the beds by sun\n411\tTune th
 hh_hold=$(published_holds "$hh_c" "$(printf 'issue\t301\tWater the beds\tstate:in-progress\tx\nissue\t410\tTint the beds by sun\tstate:ready\tx\nissue\t411\tTune the build\tstate:ready\tx\n')" '')
 eq "the held entry's issues, waits and areas are read from the last round" "410${da_t}301${da_t}beds,tooling" "$(published_held_areas "$hh_c")"
 hh_out=$(held_area_holds "$da_list" "$(printf 'unit\t411\tTune the build\t\tci/a.sh\n')" "$(published_held_areas "$hh_c")" "$hh_hold" "$hh_titles")
-eq "a ready issue in an area a held issue names is a hold behind the held issue, never a dispatch" "hold${da_t}411${da_t}Tune the build${da_t}After: Tint the beds by sun (after: 410)" "$hh_out"
+eq "a ready issue in an area a held issue names is a hold behind the held issue, never a dispatch" "hold${da_t}411${da_t}Tune the build${da_t}After: Tint the beds by sun [area: tooling] (after: 410)" "$hh_out"
 eq "the round built from those lines publishes without a refusal" "" "$(area_problem "$(round_areas "$da_list" "$(printf 'hold: 410 | after: 301 | areas: src/beds/tint.ts,ci/a.sh\nhold: 411 | after: 410 | areas: ci/a.sh\n')")" "$(printf '301\twatering\n')")"
 eq "a ready issue in another area still starts" "unit${da_t}412${da_t}Water${da_t}${da_t}src/water/t.ts" "$(held_area_holds "$da_list" "$(printf 'unit\t412\tWater\t\tsrc/water/t.ts\n')" "$(published_held_areas "$hh_c")" "$hh_hold" "$hh_titles")"
 eq "plan.sh reads the held round's areas" "1" "$(grep -c 'held_area_holds "$areas_text"' "$root/scripts/drive/plan.sh")"
@@ -7589,7 +7620,7 @@ section 'the drive puts priority work first and keeps a hopeless ask-fix quiet (
 . "$root/scripts/drive/priority-lib.sh"
 . "$root/scripts/drive/ask-gate-lib.sh"
 . "$root/scripts/drive/done-lib.sh"
-. "$root/scripts/drive/bundle-lib.sh"
+. "$root/scripts/drive/bundle-lib.sh"; . "$root/scripts/drive/guess-lib.sh"
 . "$root/scripts/drive/hold-reasons-lib.sh"
 . "$root/scripts/drive/round-lib.sh"
 . "$root/scripts/drive/plan-read-lib.sh"
@@ -7847,7 +7878,7 @@ eq "a git that answers is returned as it is" "$(git rev-parse --git-dir)" "$(sh 
 gb_bare=$(cd "$root/.." && grep -nE '(^|[^a-z_])git +(-C +[^ ]+ +)?(fetch|ls-remote|merge-tree|rev-list|diff-tree|diff|show|log|merge-base|for-each-ref)( |$)' plugin/scripts/drive/*.sh plugin/scripts/sync/known-hashes.sh plugin/scripts/sync/sync-templates.sh plugin/templates/scripts/ci/merge-queue.sh plugin/templates/scripts/ci/queue/*.sh | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(#|say |printf |echo )|timeout .* git |gitb\(\)|git_bounded|^[^:]+:[0-9]+: +else ' | cut -c1-120)
 eq "no unattended script runs an unbound git of a kind that can run long" "" "$gb_bare"
 section 'an issue never waits behind one whose pull request is held for the owner (drive)'
-. "$root/scripts/drive/bundle-lib.sh"
+. "$root/scripts/drive/bundle-lib.sh"; . "$root/scripts/drive/guess-lib.sh"
 . "$root/scripts/drive/hold-reasons-lib.sh"
 . "$root/scripts/drive/areas-lib.sh"
 . "$root/scripts/drive/area-plan-lib.sh"
@@ -7866,9 +7897,9 @@ hr_run=$(printf 'Redesign the irrigation plan\tsrc/water/timer.ts\n')
 hr_list=$(printf 'water\tsrc/water/\n')
 hr_titles=$(printf '31\tRedesign the irrigation plan\n')
 hr_unit=$(printf 'unit\t41\tWater the roof beds on a timer\t\tsrc/water/timer.ts\n')
-eq "an issue overlapping a live unit's files waits behind it" "hold${hr_t}41${hr_t}Water the roof beds on a timer${hr_t}After: Redesign the irrigation plan" "$(plan_units "$hr_guess" "$hr_run")"
+eq "an issue overlapping a live unit's files waits behind it" "hold${hr_t}41${hr_t}Water the roof beds on a timer${hr_t}After: Redesign the irrigation plan [shares: src/water/timer.ts]" "$(plan_units "$hr_guess" "$hr_run")"
 eq "the same issue with the held-read unit left out of what is running starts" "unit${hr_t}41${hr_t}Water the roof beds on a timer${hr_t}${hr_t}src/water/timer.ts" "$(plan_units "$hr_guess" "")"
-eq "an issue in the area of a live unit waits behind it" "hold${hr_t}41${hr_t}Water the roof beds on a timer${hr_t}After: Redesign the irrigation plan (after: 31)" "$(area_units "$hr_list" "$hr_unit" "$(printf '31\twater\n')" "$hr_titles")"
+eq "an issue in the area of a live unit waits behind it" "hold${hr_t}41${hr_t}Water the roof beds on a timer${hr_t}After: Redesign the irrigation plan [area: water] (after: 31)" "$(area_units "$hr_list" "$hr_unit" "$(printf '31\twater\n')" "$hr_titles")"
 eq "an issue in the area of a unit that is not running starts" "$hr_unit" "$(area_units "$hr_list" "$hr_unit" "" "$hr_titles")"
 eq "plan.sh leaves a held-only issue and a held pull request out of what is running" "4" "$(grep -c 'held_only\|held_pull_numbers' "$root/scripts/drive/plan.sh")"
 eq "approval.sh reads the running round through the plan's held-only rule" "2" "$(grep -c 'held_only_issues "$pull_lines"\|PULL_LINES_JQ' "$root/scripts/drive/approval.sh")"
@@ -7882,7 +7913,7 @@ eq "the approval's pull-line query keeps the number, the hold and what the body 
 hr_facts=$(printf 'issue\t31\tRedesign the irrigation plan\tstate: in-progress\t\t\n')
 eq "issue_titles_from_facts reads NUMBER and TITLE from an issue fact" "31${hr_t}Redesign the irrigation plan" "$(issue_titles_from_facts "$hr_facts")"
 eq "issue_titles_from_facts is never empty when a fact names an issue (#2066)" "no" "$([ -z "$(issue_titles_from_facts "$hr_facts")" ] && echo yes || echo no)"
-eq "an area hold built from issue_titles_from_facts still names the issue it waits behind, by title" "hold${hr_t}41${hr_t}Water the roof beds on a timer${hr_t}After: Redesign the irrigation plan (after: 31)" "$(area_units "$hr_list" "$hr_unit" "$(printf '31\twater\n')" "$(issue_titles_from_facts "$hr_facts")")"
+eq "an area hold built from issue_titles_from_facts still names the issue it waits behind, by title" "hold${hr_t}41${hr_t}Water the roof beds on a timer${hr_t}After: Redesign the irrigation plan [area: water] (after: 31)" "$(area_units "$hr_list" "$hr_unit" "$(printf '31\twater\n')" "$(issue_titles_from_facts "$hr_facts")")"
 eq "plan.sh sets issue_titles on its own reachable statement, not inside a trailing comment" "1" "$(grep -c 'issue_titles=\$(issue_titles_from_facts "\$facts")' "$root/scripts/drive/plan.sh")"
 # The general pattern (#2066): a statement hidden after a trailing # comment,
 # of the shape "# ...; name=$(", never runs. A real trailing comment is
@@ -8013,7 +8044,7 @@ eq "a Ready issue an open pull request closes is held, not dispatched" "hold${cl
 eq "the skill claims before every dispatch and the agent checks first" "1 1" "$(grep -c 'claim.sh\" N claim' "$root/skills/project-drive/SKILL.md") $(grep -c 'claim.sh\" N check TOKEN' "$root/skills/project-drive/SKILL.md")"
 block_end
 section 'a round is sized by its work, never by free runners (drive)'
-. "$root/scripts/drive/drive-lib.sh"; . "$root/scripts/drive/round-lib.sh"; . "$root/scripts/drive/bundle-lib.sh"; . "$root/scripts/drive/round-sizing-lib.sh"; . "$root/scripts/drive/hold-reasons-lib.sh"; . "$root/scripts/drive/held-round-lib.sh"
+. "$root/scripts/drive/drive-lib.sh"; . "$root/scripts/drive/round-lib.sh"; . "$root/scripts/drive/bundle-lib.sh"; . "$root/scripts/drive/guess-lib.sh"; . "$root/scripts/drive/round-sizing-lib.sh"; . "$root/scripts/drive/hold-reasons-lib.sh"; . "$root/scripts/drive/held-round-lib.sh"
 . "$root/scripts/drive/round-bound-lib.sh"
 rb_t=$(printf '\t')
 rb_units=$(printf 'unit\t1\tTint the beds\t\ta.ts\nunit\t2\tWater schedule\t\tb.ts\nunit\t3\tFaster frost alerts\t\tc.ts\nunit\t4\tSeed list\t\td.ts\nunit\t5\tPhoto upload\t\te.ts\nunit\t6\tBed labels\t\tf.ts\n')
@@ -8058,7 +8089,7 @@ section 'the plan publishes its own proposal, and what starts is what it propose
 . "$root/scripts/drive/areas-lib.sh"
 . "$root/scripts/drive/asked-lib.sh"
 . "$root/scripts/drive/wake-lib.sh"
-. "$root/scripts/drive/bundle-lib.sh"
+. "$root/scripts/drive/bundle-lib.sh"; . "$root/scripts/drive/guess-lib.sh"
 . "$root/scripts/drive/propose-lib.sh"
 pp_t=$(printf '\t')
 # The plan's lines for Maya's rooftop-garden app: a bundle, a loose issue, a drain, a held issue, a held pull request's own line, a hold behind running work, and one unit the limit left out.
@@ -8245,7 +8276,7 @@ eq "the look's own time counts over the comment's" "" "$(pq_run 4 "$(date -u -d 
 eq "the audit workflow runs it and the plugin owns it" "1 1" "$(grep -c 'looks=$(sh scripts/ci/proposal-audit.sh' "$root/templates/.github/workflows/audit.yml") $(grep -c '^scripts/ci/proposal-audit.sh$' "$root/templates/OWNED.txt")"
 block_end
 section 'a hold the plan works out fresh is never carried from the last round (drive)'
-. "$root/scripts/drive/held-round-lib.sh"; . "$root/scripts/drive/area-plan-lib.sh"; . "$root/scripts/drive/bundle-lib.sh"; . "$root/scripts/drive/hold-reasons-lib.sh"; . "$root/scripts/drive/propose-lib.sh"
+. "$root/scripts/drive/held-round-lib.sh"; . "$root/scripts/drive/area-plan-lib.sh"; . "$root/scripts/drive/bundle-lib.sh"; . "$root/scripts/drive/guess-lib.sh"; . "$root/scripts/drive/hold-reasons-lib.sh"; . "$root/scripts/drive/propose-lib.sh"
 fh_t=$(printf '\t')
 # The round published at 2026-11-21T12:23:01Z, in shape: holds that name nothing they wait on, in the words the plan writes fresh each run, naming units whose issues had closed.
 fh_c="2026-11-21T12:23:01Z${fh_t}sipnship[bot]${fh_t}"'<!-- sipnship-proposal {"status":"proposed","units":[],"looked":"2026-11-21T12:23:15Z","held":[{"issues":[257],"waitsOn":[],"areas":[],"why":"Its pull request (#2172) is held for your read; no agent is started on it"},{"issues":[2198],"waitsOn":[],"areas":[],"why":"Its area is not known: it names no file, and “Frost alerts show the night low” is running. Name its files or area to place it"},{"issues":[2189],"waitsOn":[],"areas":[],"why":"Waits for “Frost alerts show the night low” to land first, since it changes the same files"},{"issues":[2179],"waitsOn":[],"areas":[],"why":"Waits for “Frost alerts show the night low” to land first, since it changes the same files"},{"issues":[2163],"waitsOn":[],"areas":[],"why":"Waits for “Tint the beds by moisture” to land first, since it changes the same files"}]} -->'
@@ -8264,12 +8295,12 @@ eq "a hold that names an issue that has closed is not carried" "" "$(published_h
 fh_list='water src/water/'
 fh_units=$(printf 'unit\t41\tWater the roof beds on a timer\t\tsrc/water/timer.ts\n')
 fh_held=$(area_units "$fh_list" "$fh_units" "$(printf '31 32\twater\n')" "$(printf '31\tRedesign the irrigation plan\n')")
-eq "an issue in the area a running unit owns records that unit's issues" "hold${fh_t}41${fh_t}Water the roof beds on a timer${fh_t}After: Redesign the irrigation plan (after: 31 32)" "$fh_held"
-eq "an issue touching a running unit's files, with no areas list, records that unit's issue" "hold${fh_t}41${fh_t}Water the roof beds${fh_t}After: Hook fix (after: 31)" "$(plan_units "$(printf '41\tWater the roof beds\tplugin/hooks/a.sh\n')" "$(printf 'Hook fix\tplugin/hooks/a.sh\t31\n')")"
+eq "an issue in the area a running unit owns records that unit's issues" "hold${fh_t}41${fh_t}Water the roof beds on a timer${fh_t}After: Redesign the irrigation plan [area: water] (after: 31 32)" "$fh_held"
+eq "an issue touching a running unit's files, with no areas list, records that unit's issue" "hold${fh_t}41${fh_t}Water the roof beds${fh_t}After: Hook fix [shares: plugin/hooks/a.sh] (after: 31)" "$(plan_units "$(printf '41\tWater the roof beds\tplugin/hooks/a.sh\n')" "$(printf 'Hook fix\tplugin/hooks/a.sh\t31\n')")"
 eq "an issue with no known area beside a running unit records that unit's issues" "(after: 31 32)" "$(unplaced_holds "$(printf 'unit\t41\tWater the roof beds\t\tnotes/x.txt\n')" "$(printf '41\tWater the roof beds\t\n')" "$(printf '31 32\twater\n')" "$(printf '31\tRedesign\n')" | sed 's/.*it \((after:[^)]*)\)$/\1/')"
 fh_round=$(printf 'hold 41\tWater the roof beds\t%s\n' "$(printf '%s' "$fh_held" | cut -f4)")
 fh_file=$(round_file "$fh_round" "$(printf 'unit\t41\tWater the roof beds\t\tsrc/water/timer.ts\n')" "$fh_list" 41 "" "" | grep '^hold:')
-eq "the round file carries it as after:, so the published hold names what it waits on" "hold: 41 | why: Waits for \"Redesign the irrigation plan\" to land first, since it changes the same files | after: 31 32 | areas: none" "$fh_file"
+eq "the round file carries it as after:, so the published hold names what it waits on" "hold: 41 | why: Waits for \"Redesign the irrigation plan\" to land first, since both are in the water area | after: 31 32 | areas: none" "$fh_file"
 fh_dir=$(mktemp -d); echo "none none" > "$fh_dir/areas.txt"
 printf 'status: proposed\nhold: 41 | why: Waits for “Redesign” to land first, since it changes the same files | areas: none\n' > "$fh_dir/bare.txt"
 printf 'status: proposed\nhold: 41 | why: Waits for “Redesign” to land first | after: 31 32 | areas: none\n' > "$fh_dir/named.txt"
@@ -8294,7 +8325,7 @@ eq "the comment's plain line keeps the title's accented letter, curly mark and e
 eq "the JSON marker posted to the issue keeps them whole too" "1" "$(printf '%s\n' "$uc_pub" | grep -cF "\"why\":\"Waits on your answer on \\\"${uc_title}\\\"\"")"
 eq "plan.sh hands the running unit's issue number to the plan" "1" "$(grep -c 'running="${running}${title}${tab}${g}${tab}${num}' "$root/scripts/drive/plan.sh")"
 section 'a change with no closes line, a closed issue, an idle issue and a refused fix push are all read as they are (drive)'
-. "$root/scripts/drive/bundle-lib.sh"
+. "$root/scripts/drive/bundle-lib.sh"; . "$root/scripts/drive/guess-lib.sh"
 . "$root/scripts/drive/hold-reasons-lib.sh"
 . "$root/scripts/drive/held-running-lib.sh"
 . "$root/scripts/drive/stale-lib.sh"
@@ -8527,7 +8558,7 @@ eq "the nightly audit runs the flaky-test check" "2" "$(grep -c 'flaky-audit.sh'
 eq "the red report reads the failed tests from the run's annotations" "2" "$(grep -c "annotations" "$root/templates/scripts/ci/report-red.sh")"
 block_end
 section 'a draft held for the builder'"'"'s read is never bundled with fixes that need no read (drive)'
-. "$root/scripts/drive/bundle-lib.sh"
+. "$root/scripts/drive/bundle-lib.sh"; . "$root/scripts/drive/guess-lib.sh"
 . "$root/scripts/drive/reads-held-lib.sh"
 # The round that bundled four issues into one held change, as Maya's rooftop-garden app would meet it: two fixes to the planning, a fix to a screen, and a draft of her stories.
 dh_t=$(printf '\t')
@@ -8547,7 +8578,7 @@ eq "an issue that says it is a draft for the owner's read, naming no code, will 
 eq "an issue that talks about drafts but touches code is code work" "no" "$(reads_held "A draft held for the owner's read is never bundled with fixes" "plugin/scripts/drive/bundle-lib.sh")"
 eq "a fix to a screen is not held for a read" "no" "$(reads_held "Show the screens when no story is written" "packages/web/src/tabs/design-flow-own.ts,specs/020-design-flow/")"
 eq "an issue with no files and no such words is not held for a read" "no" "$(reads_held "Water the north bed on time" "")"
-eq "the plan tells them apart before it bundles" "1 1" "$(grep -c 'reads_held "$title $c $d" "$g"' "$root/scripts/drive/plan.sh") $(grep -c 'READ_ISSUES="$read_issues" plan_units' "$root/scripts/drive/plan.sh")"
+eq "the plan tells them apart before it bundles" "1 1" "$(grep -c 'reads_held "$title $c $d" "$g"' "$root/scripts/drive/plan.sh") $(grep -c 'READ_ISSUES="$read_issues" PLAN_LISTED="$plan_listed" plan_units' "$root/scripts/drive/plan.sh")"
 eq "the drive skill says a draft for the read is its own unit" "1" "$(grep -c 'never bundled with work that needs no read' "$root/skills/project-drive/SKILL.md")"
 block_end
 section 'a log line is posted as the app when the project is connected, and as the builder when it is not (drive)'

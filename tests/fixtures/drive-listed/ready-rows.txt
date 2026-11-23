@@ -1,0 +1,3 @@
+Touches: packages/web/src/harvest-row.ts
+
+The harvest row opens beside its own card.

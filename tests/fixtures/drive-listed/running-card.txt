@@ -1,0 +1,6 @@
+Touches: packages/core/src/beds-asked.ts packages/core/src/beds-view.ts packages/web/src/bed-row.ts
+
+What was seen
+The Proposed card on the beds screen shows the asks, not the plan; the drive skill says what a proposal is.
+
+Spec: specs/023-garden-drive

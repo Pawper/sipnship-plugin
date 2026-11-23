@@ -1,0 +1,5 @@
+Touches: packages/service/src/state.ts packages/service/src/stall-sweep.ts packages/core/src/bed-stalled.ts
+
+The service sets a stalled bed right by itself within minutes.
+
+Spec: specs/023-garden-drive

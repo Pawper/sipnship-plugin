@@ -37,7 +37,7 @@ fi
 . "$here/drive-lib.sh"
 . "$here/labels-lib.sh"
 . "$here/auto-lib.sh"
-. "$here/bundle-lib.sh"; . "$here/reads-held-lib.sh"; . "$here/hold-reasons-lib.sh"
+. "$here/bundle-lib.sh"; . "$here/guess-lib.sh"; . "$here/reads-held-lib.sh"; . "$here/hold-reasons-lib.sh"
 . "$here/round-lib.sh"
 . "$here/round-notes-lib.sh"
 . "$here/round-words-lib.sh"
@@ -200,7 +200,7 @@ areas_text=""; [ -f .claude/areas.txt ] && areas_text=$(cat .claude/areas.txt)
 past=$(past_spec_files "$(gitb log -n 300 --name-only --format='@@ %s' main 2>/dev/null || gitb log -n 300 --name-only --format='@@ %s' 2>/dev/null)")
 asked=$(asked_cancelled "$drive_comments" "$(asked_issues "$drive_comments")"); ASKED_ISSUES=$asked; export ASKED_ISSUES; asked_notes=""  # issues the builder asked for by name keep their place until done (asked-lib.sh, #1930)
 held_only=$(held_only_issues "$pull_links" | tr "
-" " "); idle=$(idle_in_progress "$facts" "$pull_links" "$(gitb for-each-ref --format='%(committerdate:unix)%09%(refname:short)' refs/heads refs/remotes 2>/dev/null)" "$(date +%s)" "$(started_units "$drive_comments")" | tr "\n" " "); guesses=""; running=""; left_reads=0; plan_left_until=$((SECONDS + ${PLAN_LEFT_SECONDS:-90})); answer_led=""; answer_led_notes=""
+" " "); idle=$(idle_in_progress "$facts" "$pull_links" "$(gitb for-each-ref --format='%(committerdate:unix)%09%(refname:short)' refs/heads refs/remotes 2>/dev/null)" "$(date +%s)" "$(started_units "$drive_comments")" | tr "\n" " "); guesses=""; running=""; plan_listed=""; plan_cr=$(printf '\r'); left_reads=0; plan_left_until=$((SECONDS + ${PLAN_LEFT_SECONDS:-90})); answer_led=""; answer_led_notes=""
 # A ready issue that says it comes after another open one is held, naming what it waits on, read afresh each run.
 reasons=$(hold_reasons "$facts" "$held_only")
 # An open pull request that already closes a Ready issue means no agent is started on it again, held or batched (stale-lib.sh).
@@ -215,6 +215,7 @@ published_count=$(printf '%s\n' "$published" | sed '/^$/d' | cut -f2 | sort -u |
 while IFS="$us" read -r kind num title a b c d e; do
   [ "$kind" = issue ] || continue
   labels_facts "$a"  # no process started per issue (labels-lib.sh, #1794)
+  e=${e%"$plan_cr"}; plan_issue_text  # an issue whose first line lists its files is planned from that list alone (guess-lib.sh, #2444)
   [ "$lf_standing" = yes ] && continue  # the drive and audit issues take no dispatch and no slot
   [ "$lf_red" = yes ] && continue  # a red main's issue is the fix-main goal alone, never a dispatch or a bundle member (#1879)
   case "$lf_state" in
@@ -231,7 +232,7 @@ hold	$num	"*) continue ;; esac
       # A change that will be held for the builder's read is its own unit, never bundled with work that needs no read.
       [ "$(reads_held "$title $c $d" "$g")" != yes ] || read_issues="${read_issues} ${num}" ;;
     in-progress)
-      g=$(guess_files "$title $c $d" "$mocks_text" "$past") ; case " $held_only $idle " in *" $num "*) g="" ;; esac  # its only pull request is held for the owner, or nobody is on it at all (no agent, pull request or commit, #2267): no agent is at work, so no unit waits behind it (#2055)
+      g=$(guess_files "$issue_text" "$mocks_text" "$past") ; case " $held_only $idle " in *" $num "*) g="" ;; esac  # its only pull request is held for the owner, or nobody is on it at all (no agent, pull request or commit, #2267): no agent is at work, so no unit waits behind it (#2055)
       [ -n "$g" ] && running="${running}${title}${tab}${g}${tab}${num}
 " ;;
   esac
@@ -239,7 +240,7 @@ done <<EOF_FACTS
 $(printf '%s\n' "$facts" | tr '\t' '\037')
 EOF_FACTS
 if [ -n "$guesses" ] || [ -n "$reasons" ]; then
-  units=$(READ_ISSUES="$read_issues" plan_units "$guesses" "$running")
+  units=$(READ_ISSUES="$read_issues" PLAN_LISTED="$plan_listed" plan_units "$guesses" "$running")
   # The running round's areas, read as publish-round.sh reads them: an issue in an area a running unit owns is a hold behind it, and units sharing an area are one unit, so the proposal publishes as it stands.
   if [ -n "$areas_text" ]; then
     run_units=$(running_units "$(printf '%s\n' "$drive_comments" | cut -f3-)" "$(without_issues "$(printf '%s\n' "$snapshot" | awk -F'\t' '$1 == "issue" && $4 == "in-progress" { print $2 }')" "$held_only $idle")" "$(without_issues "$(printf '%s\n' "$pr_list" | cut -d"$us" -f1)" "$(held_pull_numbers "$pull_links")")" "$(printf '%s\n' "$pr_list" | cut -d"$us" -f1)")  # a unit whose pull request is held for the owner is not running (#2055)

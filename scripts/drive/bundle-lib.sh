@@ -112,42 +112,27 @@ changed_paths() {
     END { for (i = 1; i <= n; i++) if (!(screen && p[i] ~ /^(plugin|scripts\/ci|\.github)\//)) print p[i] }'
 }
 
-# guess_files BODY MOCKS PAST
-# The comma-separated, sorted, unique files an issue is guessed to touch:
-# the paths its body names, the files of any mocks line they hit, and the
-# past files of any spec it names. PAST is past_spec_files' output. Prints
-# nothing when the body names no path.
-guess_files() {
-  gf_paths=$(changed_paths "$(body_paths "$1")")
-  if [ -z "$gf_paths" ]; then
-    # No path named, but plugin or CI work still shares one test suite: an issue that speaks of the plugin, the drive skill, a workflow, the queue's drain or a check of the CI is guessed as plugin/, so it goes into the one bundle (#1879).
-    if printf '%s\n' "$1" | grep -qiE '(^|[^a-z])(plugin|project-drive|publish-round|plan\.sh|drive(.s)? (plan|round|script|skill)s?|[a-z0-9_-]+\.ya?ml|(github )?workflows?|github actions|queue[- ]drain|merge[- ]queue|scheduled (deploy|drain|queue)|deploy (run|job)s?|ci (jobs?|checks?|scripts?)|checks? (job|step)s?|[a-z-]+-check\.sh|scripts/ci|\.github)([^a-z]|$)'; then printf 'plugin/\n'; fi
-    return 0
-  fi
-  {
-    printf '%s\n' "$gf_paths"
-    mocks_files "$gf_paths" "$2"
-    for gf_s in $(spec_areas "$gf_paths"); do
-      printf '%s/\n' "$gf_s"
-      printf '%s\n' "$3" | awk -F'\t' -v s="$gf_s" '$1 == s { print $2 }'
-    done
-  } | sed '/^$/d' | sort -u | paste -sd, -
-}
-
 # plan_units GUESSES RUNNING
 # Bundle ready issues by the files they are guessed to touch. Prints:
 #   unit  NUMBERS(space)  TITLES(" | ")  WHY  FILES(comma)
-#   hold  NUMBER  TITLE  After: TITLE      (touches a running unit's files)
+#   hold  NUMBER  TITLE  After: TITLE [shares: FILE] (after: N)
+#                                      (touches a running issue's files; FILE is
+#                                      one they share, or [tooling] for plugin or
+#                                      CI work, which shares one test suite)
 # Issues whose guesses overlap, directly or through a third, are one unit
 # (one agent, one pull request); the rest are separate units. An issue that
 # overlaps a running unit is held, never started. Units never share a file.
+# PLAN_LISTED (environment, space separated) names the issues whose first line
+# lists their files: when both a ready issue and a running one list theirs, only
+# a listed file they share holds it, never the test suite they share (#2444).
 plan_units() {
   { printf '%s\n' "$1" | sed 's/^/G\t/'; printf '%s\n' "$2" | sed 's/^/R\t/'; } | tr -d '\r' | awk -F'\t' '
-    function ov(a, b, strict,   na, nb, fa, fb, i, j, x, y) {
+    function ov(a, b, strict, notool,   na, nb, fa, fb, i, j, x, y) {
       na = split(a, fa, ","); nb = split(b, fb, ",")
       for (i = 1; i <= na; i++) for (j = 1; j <= nb; j++) {
         x = fa[i]; y = fb[j]
         if (x == "" || y == "") continue
+        if (notool && (x == "@tooling" || y == "@tooling")) continue
         if (strict && (x ~ /^(\.\/)?docs(\/|$)/ || y ~ /^(\.\/)?docs(\/|$)/)) continue  # a shared docs folder joins no two issues (#1891)
         if (x == y) return x
         if (x ~ /\/$/ && index(y, x) == 1) return y
@@ -156,6 +141,7 @@ plan_units() {
       return ""
     }
     function find(i) { while (par[i] != i) i = par[i]; return i }
+    function listed(n) { return n != "" && index(" " ENVIRON["PLAN_LISTED"] " ", " " n " ") > 0 }
     function asked(n) { return index(" " ENVIRON["ASKED_ISSUES"] " ", " " n " ") > 0 }
     # An issue whose change will be held for the builder read (READ_ISSUES, from reads_held) is never bundled with one that is not.
     function reads(i) { return index(" " ENVIRON["READ_ISSUES"] " ", " " num[i] " ") > 0 }
@@ -168,7 +154,7 @@ plan_units() {
       cap = (ENVIRON["PLAN_BUNDLE_MAX"] + 0 > 0) ? ENVIRON["PLAN_BUNDLE_MAX"] + 0 : 4  # a bundle is a few issues; the rest stay loose units (#1891)
       for (i = 1; i <= n; i++) {
         held[i] = ""
-        for (k = 1; k <= r; k++) if (ov(files[i], rfiles[k]) != "") { held[i] = rtitle[k]; heldn[i] = rnum[k]; break }
+        for (k = 1; k <= r; k++) { s = ov(files[i], rfiles[k], 0, listed(num[i]) && listed(rnum[k])); if (s != "") { held[i] = rtitle[k] (s == "@tooling" ? " [tooling]" : " [shares: " s "]"); heldn[i] = rnum[k]; break } }
       }
       for (i = 1; i <= n; i++) if (held[i] == "") for (j = i + 1; j <= n; j++) if (held[j] == "" && reads(i) == reads(j)) {
         s = ov(files[i], files[j], 1)

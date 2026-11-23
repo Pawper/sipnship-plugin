@@ -1,0 +1,5 @@
+Touches: .github/workflows/garden-wake.yml plugin/scripts/garden/ plugin/skills/garden/SKILL.md docs/decisions/
+
+A look for watering work never waits behind an agent at work.
+
+Spec: specs/023-garden-drive

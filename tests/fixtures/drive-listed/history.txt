@@ -1,0 +1,15 @@
+@@ The garden drive proposes rounds (#1)
+specs/023-garden-drive/spec.md
+plugin/skills/garden/SKILL.md
+plugin/tests/run.sh
+
+@@ The garden drive holds by files (#2)
+specs/023-garden-drive/spec.md
+plugin/skills/garden/SKILL.md
+plugin/tests/run.sh
+
+@@ The garden drive names its unit (#3)
+specs/023-garden-drive/spec.md
+plugin/skills/garden/SKILL.md
+plugin/tests/run.sh
+plugin/scripts/garden/plan.sh

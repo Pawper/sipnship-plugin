@@ -2,13 +2,16 @@
 # One network call for the whole board. Prints tab-separated facts:
 #
 #   pr      NUMBER  TITLE  ROLLUP  MERGEABLE  HEAD_BRANCH  FILES(comma separated)  UPDATED_AT
-#   issue   NUMBER  TITLE  LABELS(comma separated)  UPDATED_AT  BODY(first 300 characters)  PATHS(comma separated)
+#   issue   NUMBER  TITLE  LABELS(comma separated)  UPDATED_AT  BODY(first 300 characters)  PATHS(comma separated)  TOUCHES
 #   total   ISSUES_OPEN
 #
 # PATHS is every path-shaped word of the issue's whole text, so an issue written
 # the usual way (what happened first, its Spec line last) is placed by a path
 # past the 300th character; the plan reads it with the same rule it reads a
 # body with (bundle-lib.sh body_paths), at no extra call per issue (#2273).
+# TOUCHES(its first line's list) is what follows "Touches:" when the body's
+# first line is one, whole however long, else empty: an issue that lists its
+# files is planned from that list alone (bundle-lib.sh listed_files, #2444).
 #
 # ROLLUP is the head commit's check rollup: SUCCESS, FAILURE, ERROR,
 # PENDING, EXPECTED, or NONE when there are no checks. UPDATED_AT is the
@@ -58,7 +61,8 @@ board_read() {
       ([.labels.nodes[].name] | join(",")),
       .updatedAt,
       ((.bodyText // "")[0:300] | gsub("[\\t\\n\\r]"; " ")),
-      ([(.bodyText // "") | gsub("[^A-Za-z0-9_.*/-]+"; " ") | split(" ")[] | select(test("/") and (test("//") | not) and (test("^[#/]") | not))] | unique | join(",") | .[0:1500])
+      ([(.bodyText // "") | gsub("[^A-Za-z0-9_.*/-]+"; " ") | split(" ")[] | select(test("/") and (test("//") | not) and (test("^[#/]") | not))] | unique | join(",") | .[0:1500]),
+      ((.bodyText // "") | split("\n")[0] | if test("^[ ]*Touches:") then (sub("^[ ]*Touches:[ ]*"; "") | gsub("[\\t\\r]"; " ") | .[0:1500]) else "" end)
     ] | @tsv),
     (["total", $r.issues.totalCount] | @tsv)
 '

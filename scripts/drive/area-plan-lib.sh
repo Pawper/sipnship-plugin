@@ -94,10 +94,10 @@ area_units() {
       cap = (ENVIRON["PLAN_BUNDLE_MAX"] + 0 > 0) ? ENVIRON["PLAN_BUNDLE_MAX"] + 0 : 4  # a bundle is a few issues; past it the rest stay loose units (#1891)
       for (i = 1; i <= n; i++) {
         held[i] = ""
-        for (k = 1; k <= r; k++) if (!inrun(num[i], ri[k]) && meet(ar[i], ra[k]) != "") {
+        for (k = 1; k <= r; k++) if (!inrun(num[i], ri[k]) && (am = meet(ar[i], ra[k])) != "") {
           first = ri[k]; sub(/[ ,].*/, "", first)
           wo = ri[k]; gsub(/[ ,]+/, " ", wo)  # the issues of the running unit, so a reader can tell when the wait ended
-          held[i] = "After: " (first in tt && tt[first] != "" ? tt[first] : "#" first) " (after: " wo ")"
+          held[i] = "After: " (first in tt && tt[first] != "" ? tt[first] : "#" first) " [area: " am "] (after: " wo ")"  # the area the two share, so a wrong hold is seen for what it is (#2444)
           break
         }
       }
@@ -176,10 +176,10 @@ EOF_DA2
       area = ""
       for (i = 1; i <= na; i++) if (anum[i] == nums) { area = aare[i]; break }
       won = ""
-      if (area != "") for (g = 1; g <= ng; g++) if (meet(area, garea[g]) != "") { won = g; break }
+      if (area != "") for (g = 1; g <= ng; g++) if ((am = meet(area, garea[g])) != "") { won = g; break }
       if (won != "") {
         m = split(nums, ns, " "); q = split(f[2], ts, " \\| ")
-        for (k = 1; k <= m; k++) printf "hold %s\t%s\tAfter: %s (after: %s)\n", ns[k], (q == m ? ts[k] : f[2]), gtitle[won], gnums[won]
+        for (k = 1; k <= m; k++) printf "hold %s\t%s\tAfter: %s [area: %s] (after: %s)\n", ns[k], (q == m ? ts[k] : f[2]), gtitle[won], am, gnums[won]
         next
       }
       ng++; garea[ng] = area; gtitle[ng] = f[2]; sub(/ \| .*/, "", gtitle[ng]); gnums[ng] = nums
@@ -211,8 +211,8 @@ held_area_holds() {
     }
     function meet(a, b,   x, y, i, j, nx, ny) {
       nx = split(a, x, ","); ny = split(b, y, ",")
-      for (i = 1; i <= nx; i++) for (j = 1; j <= ny; j++) if (x[i] != "" && x[i] == y[j]) return 1
-      return 0
+      for (i = 1; i <= nx; i++) for (j = 1; j <= ny; j++) if (x[i] != "" && x[i] == y[j]) return x[i]
+      return ""
     }
     $1 == "H" && $2 != "" { h++; hi[h] = $2; hw[h] = $3; ha[h] = $4 }
     $1 == "P" && $2 != "" { pub[$2] = 1 }
@@ -223,8 +223,8 @@ held_area_holds() {
         split(substr(u[i], 3), f, "\t"); nums = f[2]; by = ""
         if (f[1] == "unit") for (k = 1; k <= h; k++) {
           first = hi[k]; sub(/,.*/, "", first)
-          if (!(first in pub) || has(hw[k], nums) || !meet(f[6], ha[k])) continue
-          by = "After: " (first in tt && tt[first] != "" ? tt[first] : "#" first) " (after: " first ")"; break
+          if (!(first in pub) || has(hw[k], nums) || (am = meet(f[6], ha[k])) == "") continue
+          by = "After: " (first in tt && tt[first] != "" ? tt[first] : "#" first) " [area: " am "] (after: " first ")"; break
         }
         if (by == "") { printf "%s\t%s\t%s\t%s", f[1], f[2], f[3], f[4]; if (f[1] == "unit") printf "\t%s", f[5]; printf "\n"; continue }
         m = split(nums, ns, " "); q = split(f[3], ts, " \\| ")
