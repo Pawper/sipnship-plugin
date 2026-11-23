@@ -70,10 +70,12 @@ mocks_files() {
 # table, the generated status page and its stubs) is never carried forward, the
 # way docs/ joins no two issues: a commit that touched two specs and the areas
 # list must not bundle two unrelated issues from then on (#2366).
+# A commit of over sixty files is a repo-wide sync, counted for no spec (#2403).
 # Prints "SPEC<TAB>FILE".
 past_spec_files() {
   printf '%s\n' "$1" | tr -d '\r' | awk '
     function flush(   i, j, s) {
+      if (nf > 60) { nspec = 0 }
       for (i = 1; i <= nspec; i++) {
         s = specs[i]; sc[s]++
         for (j = 1; j <= nf; j++) if (files[j] !~ /^specs\// && files[j] !~ /^(\.claude\/areas\.txt|scripts\/ci\/(mocks|hotspots|spec-roots|cta-pages|private-names|shared-paths|setup-paths)\.txt|\.claude\/(rules|rules-own|generated-pages)\.txt|AGENTS\.md|STATUS\.md)$/ && files[j] !~ /^status\/stubs\//) pc[s SUBSEP files[j]]++

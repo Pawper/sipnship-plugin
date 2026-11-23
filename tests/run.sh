@@ -5493,6 +5493,9 @@ mb_past=$(past_spec_files "$mb_hist")
 # One batch-merged commit that touched two specs and the areas list is most of each sparse spec's history; the shared config file never joins two issues (#2366).
 ca_past=$(past_spec_files "$(printf '@@ Never shelve a screen (#9)\nspecs/020-flow/spec.md\nspecs/023-drive/spec.md\n.claude/areas.txt\n')")
 eq "a config file every spec's commits touch is never carried forward" "" "$ca_past"
+# One repository-wide commit (a template sync) touching a spec's folder is not work on that spec: it carries forward no file, so an issue naming the spec is not guessed to touch every area (#2403).
+ws_hist=$( { printf '@@ Sync the template (#5)\nspecs/023-drive/spec.md\n'; i=0; while [ $i -lt 200 ]; do printf 'packages/web/src/f%s.ts\n' "$i"; i=$((i + 1)); done; printf '\n@@ Show the drive on Work (#6)\nspecs/023-drive/spec.md\npackages/web/src/work.ts\n\n@@ Tune the drive card (#7)\nspecs/023-drive/spec.md\npackages/web/src/work.ts\n'; } )
+eq "a repository-wide commit carries no file forward for a spec; its own commits still do" "specs/023-drive	packages/web/src/work.ts" "$(past_spec_files "$ws_hist")"
 ca_a=$(guess_files 'Touches: packages/web/src/graph/client.ts. Spec: specs/020-flow' '' "$ca_past")
 ca_b=$(guess_files 'Touches: plugin/scripts/drive/plan.sh. Spec: specs/023-drive' '' "$ca_past")
 eq "two issues on different specs whose history shares only the areas list stay separate units" "2 0" "$(plan_units "$(printf '1\tA\t%s\n2\tB\t%s\n' "$ca_a" "$ca_b")" "" | grep -c '^unit	[12]	') 0"
