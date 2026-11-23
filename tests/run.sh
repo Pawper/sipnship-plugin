@@ -6379,6 +6379,26 @@ esac
 HCEOF2
 chmod +x "$hc_dir2/bin/gh"
 eq "a held change with its own issue, and a free one, name nothing" "" "$(PATH="$hc_dir2/bin:$PATH" sh "$root/templates/scripts/ci/held-change-audit.sh")"
+# A green, unheld change that has not landed in half an hour is named by the audit (#2398).
+eq "the project's copy of the green-stuck audit is the template's" "same" "$(cmp -s "$root/templates/scripts/ci/green-stuck-audit.sh" "$root/../scripts/ci/green-stuck-audit.sh" && echo same || echo differ)"
+eq "the audit calls it, in the workflow and its template alike" "2 2" "$(grep -c 'green-stuck-audit.sh' "$root/../.github/workflows/audit.yml") $(grep -c 'green-stuck-audit.sh' "$root/templates/.github/workflows/audit.yml")"
+eq "the plugin owns the green-stuck script" "1" "$(grep -c '^scripts/ci/green-stuck-audit.sh$' "$root/templates/OWNED.txt")"
+gs_dir=$(mktemp -d); mkdir -p "$gs_dir/bin"
+cat > "$gs_dir/bin/gh" <<'GSEOF'
+#!/bin/sh
+case "$*" in
+  *"/pulls?"*) printf '931\tfree\tCloses #1\n932\tfree\tCloses #2\n933\theld\tCloses #3\n934\tfree\tCloses #4\n' ;;
+  *"/pulls/931"*) echo sha931 ;;
+  *"/pulls/932"*) echo sha932 ;;
+  *"/pulls/934"*) echo sha934 ;;
+  *"sha931/check-runs"*) printf 'completed\tsuccess\t2026-11-22T21:43:00Z\ncompleted\tskipped\t2026-11-22T21:40:00Z\n' ;;
+  *"sha932/check-runs"*) printf 'completed\tsuccess\t2026-11-22T22:50:00Z\n' ;;
+  *"sha934/check-runs"*) printf 'completed\tsuccess\t2026-11-22T21:00:00Z\ncompleted\tfailure\t2026-11-22T21:05:00Z\n' ;;
+esac
+GSEOF
+chmod +x "$gs_dir/bin/gh"
+gs_now=$(date -u -d 2026-11-22T22:52:00Z +%s)
+eq "a change green for over thirty minutes is named with its minutes; a fresh, a held and a red one are not" "#931: green for 69 minutes and not landed." "$(PATH="$gs_dir/bin:$PATH" GREEN_STUCK_NOW=$gs_now sh "$root/templates/scripts/ci/green-stuck-audit.sh")"
 au_line='Issues still open and labeled ready after their PR merged: - #1273 (merged in #1385) - #1364 (merged in #1385) - #1340 (merged in #1385)'
 eq "an audit comment of only stale entries names the merged pull requests once" "1385" "$(audit_stale_prs "$au_line")"
 eq "any other audit comment names none" "" "$(audit_stale_prs 'Open issues with no State label: - #12 Issues still open and labeled ready after their PR merged: - #4 (merged in #30)')"

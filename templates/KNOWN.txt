@@ -35,6 +35,7 @@
 .github/workflows/audit.yml c26459eb0fee6285d36b53edcec77a88e2dad0aa
 .github/workflows/audit.yml d386bb2ea7adbd65f6fc6e6c06846e2ead35f85d
 .github/workflows/audit.yml e42827b4537fda48a3f43fe2251a1779a4439fa3
+.github/workflows/audit.yml e76b11b8d9e59106897aedd231d4da9c4faa6714
 .github/workflows/audit.yml ea4adebf7c365374629b47a8657d0ee67bdc9177
 .github/workflows/audit.yml f772a264163a59635a2f6c26f3e621a184ce9e6f
 .github/workflows/audit.yml fda0ddd362193e2a9678fec72c045336ac986c43
@@ -375,6 +376,7 @@ scripts/ci/gate.sh 5e160d931ed3e95e7657f9629d10c84e02a407ba
 scripts/ci/gate.sh 90b3e3aad094d9a6a235f644b56013521c61f47a
 scripts/ci/gate.sh d923fb458576efe7c408d00513c65bc60cc9fcb4
 scripts/ci/git-bounded-lib.sh 7842085d0a1525942aa966716f2bd3c70dc6a752
+scripts/ci/green-stuck-audit.sh 6427b7414c4cae961425750d1e7e5183bfce99f2
 scripts/ci/held-change-audit.sh 80fb88b11a45844c26b7b4de74e839e3ebc9d7cf
 scripts/ci/hotspots-check.sh 22aa834cdfc90ad8525c5145629e3340dca547b9
 scripts/ci/hotspots-check.sh 2929ddea85c0eec715a6dabf3fbfc4baa5c06a4e

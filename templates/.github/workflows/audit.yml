@@ -244,6 +244,14 @@ jobs:
             [ -z "$heldissue" ] || heldissue=$(printf 'Held changes with nowhere for their question to live:\n%s' "$heldissue")
           fi
 
+          # A green change that is not held and has not landed in half an hour: the queue lands one
+          # within minutes, so a drain missed it and nothing retried (#2398).
+          greenstuck=""
+          if [ -f scripts/ci/green-stuck-audit.sh ]; then
+            greenstuck=$(sh scripts/ci/green-stuck-audit.sh | sed 's/^/- /')
+            [ -z "$greenstuck" ] || greenstuck=$(printf 'Green changes that did not land:\n%s' "$greenstuck")
+          fi
+
           # A closed issue that still carries a State: closing takes the label off in the
           # same step, so one left with it is a close that missed, and the drive reads it
           # as work outstanding.
@@ -283,6 +291,7 @@ jobs:
           if [ -n "$closedstate" ]; then body=$(printf '%s\n\n%s' "$body" "$closedstate" | sed '/./,$!d'); fi
           if [ -n "$closescheck" ]; then body=$(printf '%s\n\n%s' "$body" "$closescheck" | sed '/./,$!d'); fi
           if [ -n "$heldissue" ]; then body=$(printf '%s\n\n%s' "$body" "$heldissue" | sed '/./,$!d'); fi
+          if [ -n "$greenstuck" ]; then body=$(printf '%s\n\n%s' "$body" "$greenstuck" | sed '/./,$!d'); fi
           # The installed plugin copy more than an hour behind the published one, which each round's first step should have updated.
           installed=""
           if [ -f scripts/ci/installed-copy-audit.sh ]; then installed=$(sh scripts/ci/installed-copy-audit.sh); fi

@@ -136,6 +136,7 @@ scripts/ci/in-progress-audit.sh
 scripts/ci/proposal-audit.sh
 scripts/ci/jobs-audit.sh
 scripts/ci/held-change-audit.sh
+scripts/ci/green-stuck-audit.sh
 scripts/ci/installed-copy-audit.sh
 scripts/ci/closed-state-audit.sh
 scripts/ci/closes-check-audit.sh
