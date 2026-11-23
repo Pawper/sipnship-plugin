@@ -7977,6 +7977,16 @@ printf '56\t217\n' > "$cl_dir/pulls"
 eq "an open pull request that closes the issue turns every starter and the agent away" "taken: an open pull request (#56) already carries it" "$(cl_run 217 check drive-1)"
 : > "$cl_dir/pulls"
 eq "releasing ends the claim, so a later round may claim again" "claimed drive-9" "$(cl_run 217 release drive-1 >/dev/null; cl_run 217 claim drive-9)"
+# #2420: the agent's own branch, made after the starter's claim, is not another starter's work.
+mkdir -p "$cl_dir/gitbin"; printf '#!/bin/sh\n[ "$1" = ls-remote ] && echo "abc\trefs/heads/issue-217-compost"\nexit 0\n' > "$cl_dir/gitbin/git"; chmod +x "$cl_dir/gitbin/git"
+cl_runb() { (cd "$cl_dir" && FAKE="$cl_dir" PATH="$cl_dir/gitbin:$cl_dir/bin:$PATH" sh "$root/scripts/drive/claim.sh" "$@" 2>&1); }
+: > "$cl_dir/comments"; cl_run 217 claim drive-1 >/dev/null
+eq "a branch of the agent's own claim is free to go on" "free" "$(cl_runb 217 check drive-1)"
+eq "the same branch still turns away a check with another token" "taken: a branch (issue-217-compost) already works it" "$(cl_runb 217 check wake-2)"
+eq "and a check with no token" "taken: a branch (issue-217-compost) already works it" "$(cl_runb 217 check)"
+printf '56\t217\n' > "$cl_dir/pulls"
+eq "an open pull request still stops the claim's own agent" "taken: an open pull request (#56) already carries it" "$(cl_runb 217 check drive-1)"
+: > "$cl_dir/pulls"; : > "$cl_dir/comments"
 eq "a bad issue number is refused" "2" "$(cl_run abc claim >/dev/null; echo $?)"
 # #2328: a claim names the run that made it (when started on a runner, GITHUB_RUN_ID set), and a reader frees
 # it once that run has ended, rather than waiting out its four-hour TTL for an agent already gone.

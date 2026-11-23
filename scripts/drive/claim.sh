@@ -47,9 +47,13 @@ claim_busy() {
 case "$mode" in
   check)
     why=$(claim_busy)
-    [ -z "$why" ] || { echo "taken: $why"; exit 1; }
     comments=$(claim_comments)
     win=$(claim_winner "$comments" "$(date +%s)" "$ttl" "$(claim_ended_runs "$comments")")
+    # A branch named for the issue is the normal result of the starter's own claim (claim, then worktree, then
+    # the agent's check), so when the live claim carries the token given, the branch is explained and no reason to
+    # stop; a closed issue or an open pull request still is (#2420).
+    case "$why" in "a branch ("*) [ -n "${3:-}" ] && [ "$win" = "$3" ] && why="" ;; esac
+    [ -z "$why" ] || { echo "taken: $why"; exit 1; }
     [ -z "$win" ] || [ "$win" = "${3:-}" ] || { echo "taken: another starter claimed it ($win)"; exit 1; }
     echo free ;;
   claim)
