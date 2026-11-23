@@ -339,7 +339,7 @@ if [ "$mode" = drain ]; then
     QUEUE_IN_DRAIN=1; export QUEUE_IN_DRAIN
     : > "$flaky_dir/untried" 2>/dev/null || true
     : > "$flaky_dir/batch.why" 2>/dev/null || true
-    if [ "$n" -ge 2 ]; then round_out=$(sh "$0" --batch --base "$base" $pick 2>&1 | tee -a "$log_file") || true; else round_out=$(sh "$0" --serial --base "$base" $pick 2>&1 | tee -a "$log_file") || true; fi; tried_why_record "$round_out"  # the real reason a pull request did not land outlives this round, so the next one can say it (queue/passed.sh, #2398)
+    r_start=$(date +%s); if [ "$n" -ge 2 ]; then round_out=$(sh "$0" --batch --base "$base" $pick 2>&1 | tee -a "$log_file") || true; else round_out=$(sh "$0" --serial --base "$base" $pick 2>&1 | tee -a "$log_file") || true; fi; tried_why_record "$round_out" "$(( $(date +%s) - r_start ))"  # the real reason a pull request did not land outlives this round, so the next one can say it (queue/passed.sh, #2398)
     # A pull request the round could not even try (main would not fetch)
     # is not tried: it stays in for the next round.
     untried=$(tr -d '\r' < "$flaky_dir/untried" 2>/dev/null | tr '\n' ' ')

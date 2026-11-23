@@ -24,7 +24,7 @@
 # (a retried pull request may print more than one); WHY is empty for one TEXT
 # says landed ("merged", "merged into the batch", "merged serially" or
 # "already on main"), so a caller merging this into a file kept across rounds
-# can tell a pull request to clear (it is no longer open to retry) from
+# can tell a pull request to clear (it is no longer open to be tried once more) from
 # one this attempt never mentioned at all (left alone, its last reason kept).
 tried_why_of() {
   printf '%s\n' "$1" | tr -d '\r' | awk '
@@ -49,6 +49,48 @@ tried_why_of() {
 # pull requests actually open and tried.
 tried_why_merge() {
   { printf '%s\n' "$1"; printf '%s\n' "$2"; } | tr -d '\r' | awk -F'\t' '$1 != "" { w[$1] = $2 } END { for (k in w) if (w[k] != "") print k "\t" w[k] }' | sort -n
+}
+
+# tries_merge OLD NEW SECONDS: OLD is tries.tsv's own lines ("NUMBER<TAB>TRIES
+# <TAB>MINUTES"), NEW tried_why_of's lines for one round, SECONDS how long that
+# round ran. A pull request NEW gives a reason for gains one try and the
+# round's minutes (rounded up); one NEW says landed (empty reason) is dropped;
+# one NEW never mentions keeps its count. Kept across drain runs, so a change
+# that keeps failing to land is counted past one drain (#2412).
+tries_merge() {
+  { printf '%s\n' "$1" | awk -F'\t' 'NF >= 3 { print "O\t" $1 "\t" $2 "\t" $3 }'; printf '%s\n' "$2" | awk -F'\t' '$1 != "" { print "N\t" $1 "\t" $2 }'; } | tr -d '\r' | awk -F'\t' -v mins="$(( (${3:-0} + 59) / 60 ))" '
+    $1 == "O" { t[$2] = $3; m[$2] = $4 }
+    $1 == "N" { if ($3 == "") { delete t[$2]; delete m[$2] } else { t[$2] = t[$2] + 1; m[$2] = m[$2] + mins } }
+    END { for (k in t) printf "%s\t%d\t%d\n", k, t[k], m[k] }' | sort -n
+}
+
+# tried_why_record ROUND_OUT [SECONDS]: ROUND_OUT is one merge attempt's own stdout
+# (merge-queue.sh's $round_out); merges its reasons over what tried-why.tsv
+# already kept, in $flaky_dir, so a later round that finds the same pull
+# request still green and already tried can say why instead of a placeholder
+# that promised a reason and gave none (#2398); counts each failed try and its
+# minutes in tries.tsv (#2412).
+tried_why_record() {
+  tries_merge "$(cat "$flaky_dir/tries.tsv" 2>/dev/null)" "$(tried_why_of "$1")" "${2:-0}" > "$flaky_dir/tries.tsv.next" 2>/dev/null && mv "$flaky_dir/tries.tsv.next" "$flaky_dir/tries.tsv" 2>/dev/null
+  tried_why_merge "$(cat "$flaky_dir/tried-why.tsv" 2>/dev/null)" "$(tried_why_of "$1")" > "$flaky_dir/tried-why.tsv.next" 2>/dev/null && mv "$flaky_dir/tried-why.tsv.next" "$flaky_dir/tried-why.tsv" 2>/dev/null
+}
+
+# passed_could_not PASSED TRIES AT: PASSED is "number<TAB>why" lines, TRIES
+# tries.tsv's lines, AT the clock time the next look happens. A change that
+# was tried and did not land says "Could not land: WHY; trying again at AT",
+# and after PASSED_TRIES_LIMIT tries (default 3) says it needs a fix agent or
+# an ask, with the minutes the tries cost; any other line is unchanged.
+passed_could_not() {
+  { printf '%s\n' "$2" | tr -d '\r' | awk -F'\t' 'NF >= 3 { print "T\t" $1 "\t" $2 "\t" $3 }'; printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' 'NF >= 2 && $2 != "" { print "P\t" $1 "\t" $2 }'; } | awk -F'\t' -v at="$3" -v limit="${PASSED_TRIES_LIMIT:-3}" '
+    $1 == "T" { n[$2] = $3; m[$2] = $4; next }
+    $1 == "P" {
+      why = $3
+      if (($2 in n) && n[$2] + 0 >= 1 && why !~ /^Could not land/) {
+        if (n[$2] + 0 >= limit) why = sprintf("Could not land after %d tries: %s; it needs a fix agent or an ask, and the tries cost about %d runner minutes", n[$2], why, m[$2])
+        else why = sprintf("Could not land: %s; trying again at %s", why, at)
+      }
+      printf "%s\t%s\n", $2, why
+    }'
 }
 
 # drain_passed_over OPEN BASE PICK TRIED RUSH REDMAIN [TRIEDWHY]: the green
@@ -81,6 +123,8 @@ drain_passed_over() {
 # leave, and sets passed_n for the round's last line.
 passed_round() {
   pr_lines=$(drain_passed_over "$open" "$base" "$pick" "$tried" "$(printf '%s' "${rush_now:-}" | awk '{ print $1 }')" "${rm_issue:-}" "$(cat "$flaky_dir/tried-why.tsv" 2>/dev/null)")
+  pr_at=$(date -d "@$(( $(date +%s) + ${QUEUE_DUE_STUCK_MINUTES:-10} * 60 ))" '+%-I:%M %p' 2>/dev/null)
+  pr_lines=$(passed_could_not "$(printf '%s\n' "$pr_lines" | awk -F'\t' '$2 != ""')" "$(cat "$flaky_dir/tries.tsv" 2>/dev/null)" "${pr_at:-soon}"; printf '%s\n' "$pr_lines" | awk -F'\t' 'NF >= 1 && $1 != "" && $2 == ""')
   printf '%s\n' "$pr_lines" | awk -F'\t' '$2 != ""' > "$flaky_dir/passed.tsv" 2>/dev/null || true
   passed_n=$(printf '%s\n' "$pr_lines" | awk -F'\t' '$2 != "" { n++ } END { print n + 0 }')
   printf '%s\n' "$pr_lines" | awk -F'\t' '$2 != ""' | while IFS="$(printf '\t')" read -r pr_n pr_why; do
@@ -98,5 +142,5 @@ passed_round() {
 passed_open_say() {
   { printf '%s\n' "$2" | tr -d '\r' | awk -F'\t' 'NF >= 2 && $2 != "" { printf "P\t%s\t%s\n", $1, $2 }'; printf '%s\n' "$1" | awk '{ print "O\t" $0 }'; } | awk -F'\t' -v OFS='\t' '
     $1 == "P" { why[$2] = $3; next }
-    $1 == "O" && NF >= 4 { if ($4 == "green" && ($2 in why)) $5 = "green, and not in this landing: " why[$2]; print $2, $3, $4, $5 }'
+    $1 == "O" && NF >= 4 { if ($4 == "green" && ($2 in why)) $5 = (why[$2] ~ /^Could not land/) ? why[$2] : "green, and not in this landing: " why[$2]; print $2, $3, $4, $5 }'
 }

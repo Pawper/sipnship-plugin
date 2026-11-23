@@ -2007,6 +2007,16 @@ printf '51\tits run is queued (a new attempt)\n' > "$po_dir2/tried-why.tsv"
 po_out2=$(say() { printf '%s\n' "$*"; }; flaky_dir=$po_dir2; open=$po_open; base=main; pick=52; tried=51; rush_now=""; rm_issue=""; round=2; passed_round; printf 'pick=%s' "$(printf '%s' "$pick" | tr '\n' ' ')")
 eq "the kept reason is said for the pull request already tried, not the placeholder" "1 0" "$(printf '%s\n' "$po_out2" | grep -c 'round 2: #51 is green and does not land in this round: its run is queued') $(printf '%s\n' "$po_out2" | grep -c 'the reason was not kept')"
 eq "the drain records why a tried pull request did not land after every attempt" "1" "$(grep -c 'tried_why_record "\$round_out"' "$root/templates/scripts/ci/merge-queue.sh")"
+# A change tried and not landed is counted across drains; after three tries it is marked for a fix agent or an ask, with the cost (#2412).
+tm1=$(tries_merge "" "$(printf '51\tstill pending\n')" 130)
+eq "a failed try is counted, with its minutes rounded up" "51	1	3" "$tm1"
+eq "a second failed try adds one and the minutes" "51	2	6" "$(tries_merge "$tm1" "$(printf '51\tstill pending\n')" 180)"
+eq "a landed change is dropped; one never mentioned keeps its count" "52	1	3" "$(tries_merge "$(printf '51\t2\t6\n52\t1\t3\n')" "$(printf '51\t\n')" 60)"
+eq "a first failed try says when it tries again" "51	Could not land: still pending; trying again at 4:10 PM" "$(passed_could_not "$(printf '51\tstill pending\n')" "$(printf '51\t1\t3\n')" '4:10 PM')"
+eq "the third failed try asks for a fix agent or an ask, with the minutes" "51	Could not land after 3 tries: still pending; it needs a fix agent or an ask, and the tries cost about 9 runner minutes" "$(passed_could_not "$(printf '51\tstill pending\n')" "$(printf '51\t3\t9\n')" '4:10 PM')"
+eq "a change never tried keeps its reason" "53	it conflicts with main" "$(passed_could_not "$(printf '53\tit conflicts with main\n')" "$(printf '51\t3\t9\n')" '4:10 PM')"
+eq "the Queue tab shows a could-not-land line as it is" "51	Pots	green	Could not land: still pending; trying again at 4:10 PM" "$(passed_open_say "$(printf '51\tPots\tgreen\tgreen and waiting to merge\n')" "$(printf '51\tCould not land: still pending; trying again at 4:10 PM\n')")"
+eq "the published mode draining counts as a drain running" "" "$(drain_due_reason "$(printf 'no\t0\tsuccess\t600\tdraining\t0\t1\t5000\t1000000\t2')")"
 QUEUE_HOLD_MINUTES=10; export QUEUE_HOLD_MINUTES
 eq "one green with others running: hold" "yes" "$(drain_hold 1 3)"
 eq "two green: batch now, never one then the other" "no" "$(drain_hold 2 1)"
