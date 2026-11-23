@@ -1978,8 +1978,15 @@ eq "by default one green with others running is not held: it lands now" "no no" 
 # A green change a round leaves is named with why; one with no reason lands.
 . "$root/templates/scripts/ci/queue/passed.sh"
 po_open=$(printf '51\tfalse\tMERGEABLE\tgreen\tmain\n52\tfalse\tMERGEABLE\tgreen\tmain\n53\tfalse\tCONFLICTING\tgreen\tmain\n54\ttrue\tMERGEABLE\tgreen\tmain\n55\tfalse\tMERGEABLE\tgreen\trelease\n56\tfalse\tMERGEABLE\tpending\tmain\n')
-eq "a green change already tried, and one in conflict, are named with why" "52	this drain already tried it and it could not land (its line above says why); the next drain tries it again
+eq "a green change already tried, with no kept reason, says so rather than point at a blank (#2398)" "52	this drain already tried it last round; the reason was not kept this time, and the next drain tries it again
 53	it conflicts with main; its agent merges main in first" "$(drain_passed_over "$po_open" main 51 52 '' '')"
+eq "with its real reason kept from the attempt, that is said instead" "52	the required check \"CI passed\" is pending on its head commit; GitHub refuses the merge until it passes" "$(drain_passed_over "$po_open" main 51 52 '' '' "$(printf '52\tthe required check "CI passed" is pending on its head commit; GitHub refuses the merge until it passes\n')" | sed -n 1p)"
+# tried_why_of reads an attempt's own "#NUMBER OUTCOME: WHY" lines (batch_line), landed ones clearing
+# any reason they had, so a reproduction built from a real drain's log is a fixture, not a guess.
+tw_log=$(printf '#51 waiting: its checks are still running; waiting for them (up to 60 minutes), then merging\n#51 not merged: the required check "CI passed" is pending on its head commit; GitHub refuses the merge until it passes\n#52 merged serially: main moved only outside its classes\n')
+eq "the last line for a pull request is kept, and one that landed carries an empty reason (cleared)" "51	the required check \"CI passed\" is pending on its head commit; GitHub refuses the merge until it passes
+52	" "$(tried_why_of "$tw_log")"
+eq "a pull request an attempt never mentions keeps its old reason; one it says landed clears it" "51	still red" "$(tried_why_merge "$(printf '51\tstill red\n52\tan old reason\n')" "$(printf '52\t\n')")"
 eq "a draft, another base and a change in its checks are not named" "" "$(drain_passed_over "$po_open" main "$(printf '51\n52\n53')" '' '' '' | cut -f1 | tr '\n' ' ' | sed 's/ $//')"
 eq "with main red, the green changes not landing say the fix lands first" "51	main is red (issue #60); the change that fixes it lands first" "$(drain_passed_over "$po_open" main '' '52 53' '' 60 | sed -n 1p)"
 eq "with a rush standing, they say it lands first" "51	a rush change (#57) lands first, and this one right after" "$(drain_passed_over "$po_open" main '' '52 53' 57 '' | sed -n 1p)"
@@ -1992,6 +1999,14 @@ eq "and kept for the Queue tab" "53" "$(cut -f1 "$po_dir/passed.tsv")"
 eq "the Queue tab's row for it says why, and keeps its state" "53	Watering reminders	green	green, and not in this landing: it conflicts with main; its agent merges main in first" "$(passed_open_say "$(printf '53\tWatering reminders\tgreen\tgreen and waiting to merge\n56\tFrost alerts\twaiting\tstill running CI\n')" "$(cat "$po_dir/passed.tsv")" | sed -n 1p)"
 eq "other rows are as they were" "56	Frost alerts	waiting	still running CI" "$(passed_open_say "$(printf '53\tWatering reminders\tgreen\tgreen and waiting to merge\n56\tFrost alerts\twaiting\tstill running CI\n')" "$(cat "$po_dir/passed.tsv")" | sed -n 2p)"
 eq "the drain names what it leaves every round, and the publisher shows it" "1 1" "$(grep -c 'redmain_round; passed_round;' "$root/templates/scripts/ci/merge-queue.sh") $(grep -c 'passed_open_say "\$open_tsv"' "$root/templates/scripts/ci/publish-state.sh")"
+# A round reads the kept reason of a pull request it already tried, from tried-why.tsv, so the round
+# after the one above (where #52 lands and #51 is still only tried, not yet attempted) says why #51
+# did not land last time instead of a placeholder (#2398).
+po_dir2=$SUITE_TMP_ROOT/passed2; mkdir -p "$po_dir2"
+printf '51\tits run is queued (a new attempt)\n' > "$po_dir2/tried-why.tsv"
+po_out2=$(say() { printf '%s\n' "$*"; }; flaky_dir=$po_dir2; open=$po_open; base=main; pick=52; tried=51; rush_now=""; rm_issue=""; round=2; passed_round; printf 'pick=%s' "$(printf '%s' "$pick" | tr '\n' ' ')")
+eq "the kept reason is said for the pull request already tried, not the placeholder" "1 0" "$(printf '%s\n' "$po_out2" | grep -c 'round 2: #51 is green and does not land in this round: its run is queued') $(printf '%s\n' "$po_out2" | grep -c 'the reason was not kept')"
+eq "the drain records why a tried pull request did not land after every attempt" "1" "$(grep -c 'tried_why_record "\$round_out"' "$root/templates/scripts/ci/merge-queue.sh")"
 QUEUE_HOLD_MINUTES=10; export QUEUE_HOLD_MINUTES
 eq "one green with others running: hold" "yes" "$(drain_hold 1 3)"
 eq "two green: batch now, never one then the other" "no" "$(drain_hold 2 1)"
@@ -5512,9 +5527,9 @@ stop: work is in flight; nothing to propose until it lands" "$(apply_units "$(pr
 # A ready issue that says it comes after another is held back, naming what it waits on in the builder's words;
 # one that names an issue no longer open holds nothing, since its reason ended (read afresh every run).
 db_facts=$(cat "$db/held-facts.tsv")
-eq "a ready issue behind a question or other work is held, saying what it waits on" "hold	31	The bed map shows the soil type	Waits on your answer on “How long may a reminder wait?” (after: 22)
-hold	33	Compost reminders repeat until done	Waits for “Bed photos show the date” to land (after: 30)" "$(hold_reasons "$db_facts")"
-eq "everything held with reasons says so, never work in flight" "hold 31	The bed map shows the soil type	Waits on your answer on “How long may a reminder wait?” (after: 22)
+eq "a ready issue behind a question or other work is held, saying what it waits on" "hold	31	The bed map shows the soil type	Waits on your answer on \"How long may a reminder wait?\" (after: 22)
+hold	33	Compost reminders repeat until done	Waits for \"Bed photos show the date\" to land (after: 30)" "$(hold_reasons "$db_facts")"
+eq "everything held with reasons says so, never work in flight" "hold 31	The bed map shows the soil type	Waits on your answer on \"How long may a reminder wait?\" (after: 22)
 stop: everything left waits on what its hold line names; publish the round with each hold and its reason" "$(apply_units "$(printf 'dispatch 31\tSoil\nstop: proposal ready for approval')" "$(hold_reasons "$db_facts" | sed -n 1p)" 2)"
 
 
@@ -7094,7 +7109,7 @@ eq "a title that says no area is not placed" "" "$(title_area_files 'Tidy up the
 eq "a word inside another word is not an area" "" "$(title_area_files 'Bedside manner' 'beds   src/beds/')"
 da_nopath=$(printf '501\tTidy up the readme\t\n')
 da_unit=$(plan_units "$da_nopath" "")
-eq "with a unit running, an issue whose area is unknown is a hold that says so, not a dispatch" "hold${da_t}501${da_t}Tidy up the readme${da_t}Its area is not known: it names no file or area, and “Water the beds” is running. The agent's turn: name its files on its first line to place it (after: 301)" "$(unplaced_holds "$da_unit" "$da_nopath" "$(printf '301\twatering\n')" "$da_titles")"
+eq "with a unit running, an issue whose area is unknown is a hold that says so, not a dispatch" "hold${da_t}501${da_t}Tidy up the readme${da_t}Its area is not known: it names no file or area, and \"Water the beds\" is running. The agent's turn: name its files on its first line to place it (after: 301)" "$(unplaced_holds "$da_unit" "$da_nopath" "$(printf '301\twatering\n')" "$da_titles")"
 eq "with nothing running it passes as it came" "$da_unit" "$(unplaced_holds "$da_unit" "$da_nopath" '' "$da_titles")"
 da_mixed=$(printf '501\tTidy up the readme\t\n402\tWater the beds on a timer\tsrc/water/timer.ts\n')
 eq "an issue with files is left alone beside it" "unit${da_t}402" "$(unplaced_holds "$(plan_units "$da_mixed" '')" "$da_mixed" "$(printf '301\twatering\n')" "$da_titles" | grep '^unit' | cut -f1,2)"
@@ -7841,15 +7856,15 @@ eq "no drive script hides a statement after a trailing comment" "" "$hc_bad"
 eq "the check itself still catches the shape of the bug it guards against" "1" "$(printf '%s\n' 'x=$(f "a")  # a note (#1); y=$(g "b")' | grep -cE '[[:space:]]#.*; *[A-Za-z_][A-Za-z0-9_]*=\$\(')"
 # A chain of three names its first cause: the held read at the end, not the issue in the middle.
 hr_facts=$(printf 'issue\t51\tAdd a rain sensor\tstate: ready\t\tafter #52\nissue\t52\tShow sensor history\tstate: ready\t\tafter #53\nissue\t53\tRedesign the irrigation plan\tstate: in-progress\t\t\n')
-eq "a chain of three names its first cause, a held read" "hold${hr_t}51${hr_t}Add a rain sensor${hr_t}Waits on your read of “Redesign the irrigation plan” (after: 52)
-hold${hr_t}52${hr_t}Show sensor history${hr_t}Waits on your read of “Redesign the irrigation plan” (after: 53)" "$(hold_reasons "$hr_facts" "53")"
-eq "the same chain with an agent at work names the live unit" "hold${hr_t}51${hr_t}Add a rain sensor${hr_t}Waits for “Redesign the irrigation plan” to land (after: 52)
-hold${hr_t}52${hr_t}Show sensor history${hr_t}Waits for “Redesign the irrigation plan” to land (after: 53)" "$(hold_reasons "$hr_facts")"
+eq "a chain of three names its first cause, a held read" "hold${hr_t}51${hr_t}Add a rain sensor${hr_t}Waits on your read of \"Redesign the irrigation plan\" (after: 52)
+hold${hr_t}52${hr_t}Show sensor history${hr_t}Waits on your read of \"Redesign the irrigation plan\" (after: 53)" "$(hold_reasons "$hr_facts" "53")"
+eq "the same chain with an agent at work names the live unit" "hold${hr_t}51${hr_t}Add a rain sensor${hr_t}Waits for \"Redesign the irrigation plan\" to land (after: 52)
+hold${hr_t}52${hr_t}Show sensor history${hr_t}Waits for \"Redesign the irrigation plan\" to land (after: 53)" "$(hold_reasons "$hr_facts")"
 hr_ask=$(printf 'issue\t51\tAdd a rain sensor\tstate: ready\t\tafter #52\nissue\t52\tShow sensor history\tstate: ready\t\tafter #53\nissue\t53\tHow often may beds be watered?\tstate: waiting-on-owner\t\t\n')
-eq "a chain ending at a question names the answer" "Waits on your answer on “How often may beds be watered?” (after: 52)" "$(hold_reasons "$hr_ask" | sed -n 1p | cut -f4)"
+eq "a chain ending at a question names the answer" "Waits on your answer on \"How often may beds be watered?\" (after: 52)" "$(hold_reasons "$hr_ask" | sed -n 1p | cut -f4)"
 # Every ready issue held and runners free is a stall, naming the actions that free the most.
 hr_round=$(hold_reasons "$hr_ask" | sed 's/^hold\t\([0-9]*\)\t/hold \1\t/')
-eq "a stall names the answer that frees the most, with the count" "stall: every ready issue is held; answering “How often may beds be watered?” frees 2 issues" "$(stall_note "$hr_round")"
+eq "a stall names the answer that frees the most, with the count" "stall: every ready issue is held; answering \"How often may beds be watered?\" frees 2 issues" "$(stall_note "$hr_round")"
 eq "no stall when an issue is dispatched" "" "$(stall_note "$(printf 'dispatch 9\tWater\n%s\n' "$hr_round")")"
 # Eleven issues held for one reason, with runners free: the round says so (#2047), and not when no runner is online.
 hr_part=$(printf 'hold 1469\tFrost alerts\tPart of it landed; the drive has a reader working out what is left of it this round\nhold 1752\tSeed list\tPart of it landed; the drive has a reader working out what is left of it this round\n')
@@ -8009,7 +8024,7 @@ eq "the round file names the plan's units, bundle first, each held issue with it
 unit: 212 214 | why: both change the frost alerts area | areas: frost
 unit: 217 | areas: compost
 hold: 233 | why: Waits on your read of the bed photos | after: 240 | areas: none
-hold: 236 | why: Waits for “Water the beds” to land first, since it changes the same files | after: 301 | areas: none
+hold: 236 | why: Waits for \"Water the beds\" to land first, since it changes the same files | after: 301 | areas: none
 hold: 239 | why: Waits on the label printer | areas: none
 sized: 4 ready units free of conflict, 2 started; the limit of 2 agents a round held 1
 hold: 238 | why: The limit of 2 agents a round is reached; it starts as soon as one finishes | areas: none" "$pp_file"
@@ -8207,16 +8222,29 @@ eq "an issue touching a running unit's files, with no areas list, records that u
 eq "an issue with no known area beside a running unit records that unit's issues" "(after: 31 32)" "$(unplaced_holds "$(printf 'unit\t41\tWater the roof beds\t\tnotes/x.txt\n')" "$(printf '41\tWater the roof beds\t\n')" "$(printf '31 32\twater\n')" "$(printf '31\tRedesign\n')" | sed 's/.*it \((after:[^)]*)\)$/\1/')"
 fh_round=$(printf 'hold 41\tWater the roof beds\t%s\n' "$(printf '%s' "$fh_held" | cut -f4)")
 fh_file=$(round_file "$fh_round" "$(printf 'unit\t41\tWater the roof beds\t\tsrc/water/timer.ts\n')" "$fh_list" 41 "" "" | grep '^hold:')
-eq "the round file carries it as after:, so the published hold names what it waits on" "hold: 41 | why: Waits for “Redesign the irrigation plan” to land first, since it changes the same files | after: 31 32 | areas: none" "$fh_file"
+eq "the round file carries it as after:, so the published hold names what it waits on" "hold: 41 | why: Waits for \"Redesign the irrigation plan\" to land first, since it changes the same files | after: 31 32 | areas: none" "$fh_file"
 fh_dir=$(mktemp -d); echo "none none" > "$fh_dir/areas.txt"
 printf 'status: proposed\nhold: 41 | why: Waits for “Redesign” to land first, since it changes the same files | areas: none\n' > "$fh_dir/bare.txt"
 printf 'status: proposed\nhold: 41 | why: Waits for “Redesign” to land first | after: 31 32 | areas: none\n' > "$fh_dir/named.txt"
 eq "publish-round.sh refuses a hold that says it waits and names nothing" "The round was not published: a hold that says it waits for something names it" "$(sh "$root/scripts/drive/publish-round.sh" --dry-run --areas "$fh_dir/areas.txt" "$fh_dir/bare.txt" 2>&1 | cut -c1-77)"
 eq "and records the issues in waitsOn when it names them" "1" "$(sh "$root/scripts/drive/publish-round.sh" --dry-run --areas "$fh_dir/areas.txt" "$fh_dir/named.txt" 2>&1 | grep -c '"waitsOn":\[31,32\]')"
 # A round that holds every ready issue says so, naming the reason most of them share.
-fh_stall=$(printf 'hold 1\tA\tAfter: Frost alerts (after: 9)\nhold 2\tB\tWaits for “Frost alerts” to land first, since it changes the same files\nhold 3\tC\tIts area is not known: it names no file, and “Frost alerts” is running. Name its files or area to place it\n')
-eq "a stall names the unit most held issues wait for" "stall: every ready issue is held (3), and nothing in it waits on you; 2 of them wait for “Frost alerts” to land, the reason most share" "$(stall_note "$fh_stall" 4)"
+fh_stall=$(printf 'hold 1\tA\tAfter: Frost alerts (after: 9)\nhold 2\tB\tWaits for "Frost alerts" to land first, since it changes the same files\nhold 3\tC\tIts area is not known: it names no file, and "Frost alerts" is running. Name its files or area to place it\n')
+eq "a stall names the unit most held issues wait for" "stall: every ready issue is held (3), and nothing in it waits on you; 2 of them wait for \"Frost alerts\" to land, the reason most share" "$(stall_note "$fh_stall" 4)"
 eq "a stall with no shared reason says nothing more" "stall: every ready issue is held (2), and nothing in it waits on you" "$(stall_note "$(printf 'hold 1\tA\tAfter: B (after: 1)\nhold 2\tC\tAfter: D (after: 2)\n')" 4)"
+# A title an owner writes can hold any character: an accented letter, a curly mark and an em dash
+# stay whole through hold_reasons, the round file and the comment publish-round.sh posts, on
+# Windows, since this library's own wrapper is a plain ASCII quote and never a command-line
+# argument the title's bytes pass through (#2397).
+uc_title='Café plan — the “bed map”'
+uc_facts=$(printf 'issue\t60\tWaits on something\tstate: ready\t\tafter #61\nissue\t61\t%s\tstate: waiting-on-owner\t\t\n' "$uc_title")
+uc_round=$(hold_reasons "$uc_facts" | sed 's/^hold\t\([0-9]*\)\t/hold \1\t/')
+eq "hold_reasons wraps the title in a plain quote, keeping the title's own characters whole" "hold 60${fh_t}Waits on something${fh_t}Waits on your answer on \"${uc_title}\" (after: 61)" "$uc_round"
+uc_dir=$(mktemp -d); echo "none none" > "$uc_dir/areas.txt"
+printf '%s\n' "$(round_file "$uc_round" "" "" "$(printf '60\n')" "")" > "$uc_dir/round.txt"
+uc_pub=$(sh "$root/scripts/drive/publish-round.sh" --dry-run --areas "$uc_dir/areas.txt" "$uc_dir/round.txt")
+eq "the comment's plain line keeps the title's accented letter, curly mark and em dash whole" "- Waiting: #60: Waits on your answer on \"${uc_title}\"" "$(printf '%s\n' "$uc_pub" | grep '^- Waiting')"
+eq "the JSON marker posted to the issue keeps them whole too" "1" "$(printf '%s\n' "$uc_pub" | grep -cF "\"why\":\"Waits on your answer on \\\"${uc_title}\\\"\"")"
 eq "plan.sh hands the running unit's issue number to the plan" "1" "$(grep -c 'running="${running}${title}${tab}${g}${tab}${num}' "$root/scripts/drive/plan.sh")"
 section 'a change with no closes line, a closed issue, an idle issue and a refused fix push are all read as they are (drive)'
 . "$root/scripts/drive/bundle-lib.sh"
@@ -8252,6 +8280,22 @@ eq "the build's issue stays open and is named in plain words" "1" "$(printf '%s\
 cl_check=$(PR_BODY='Part of #5' sh "$root/templates/scripts/ci/closes-check.sh" 2>&1)
 eq "the check says why, in words the builder can use" "1 1" "$(printf '%s\n' "$cl_check" | grep -c 'closes no issue') $(printf '%s\n' "$cl_check" | grep -c 'Closes #N')"
 eq "the Work tab line says the agent is on it and nothing is needed" "“Show the bed map” is approved, but a check stopped it: it names no issue it closes. Your agent is on it, and nothing is needed from you." "$(closes_builder_words 'Show the bed map')"
+# A change may close an issue only when it builds what the issue's "What done looks like" asks; a
+# leftover naming the closed issue's own title again, or a leftover that is itself already a
+# leftover of something else, builds none of it and compounds the chain instead (#2399).
+cs_state() { case "$1" in 90) echo open ;; 91) echo open ;; 95) echo open ;; *) echo closed ;; esac; }
+cs_title() { case "$1" in 5) echo 'Show the bed map' ;; 90) echo 'Show the bed map' ;; 91) echo 'Tint the beds' ;; *) echo '' ;; esac; }
+cs_body() { case "$1" in 90) printf 'Leftover of #5.\n' ;; 91) printf 'Leftover of #5.\n' ;; 95) printf 'Leftover: #91\nStill asking the same thing.\n' ;; *) printf '' ;; esac; }
+export -f cs_state cs_title cs_body
+ISSUE_STATE_CMD=cs_state ISSUE_TITLE_CMD=cs_title ISSUE_BODY_CMD=cs_body
+export ISSUE_STATE_CMD ISSUE_TITLE_CMD ISSUE_BODY_CMD
+cs_dup=$(PR_BODY=$(printf 'Closes #5\nLeftover: #90\n') sh "$root/templates/scripts/ci/closes-check.sh" 2>&1)
+eq "a leftover whose title repeats the closed issue's own title fails, naming both" "1" "$(printf '%s\n' "$cs_dup" | grep -c 'Leftover: #90 repeats the exact title of #5')"
+cs_chain=$(PR_BODY=$(printf 'Closes #5\nLeftover: #95\n') sh "$root/templates/scripts/ci/closes-check.sh" 2>&1)
+eq "a leftover of a leftover fails, naming what it already traces back to" "1" "$(printf '%s\n' "$cs_chain" | grep -c 'Leftover: #95 is itself a leftover (its own body names Leftover: #91)')"
+cs_ok=$(PR_BODY=$(printf 'Closes #5\nLeftover: #91\n') sh "$root/templates/scripts/ci/closes-check.sh" 2>&1)
+eq "a leftover with a different title and no leftover of its own passes" "Closes check passed." "$cs_ok"
+unset ISSUE_STATE_CMD ISSUE_TITLE_CMD ISSUE_BODY_CMD
 cl_prs=$(printf '201%sspec-bed-map%sy%s%s%s\n' "$cl_us" "$cl_us" "$cl_us" "$cl_us" "")
 eq "the plan says a change the check would fail, before the owner meets it" "closes: pull request #201 “Show the bed map” would fail the closes check: it names no issue it closes. Your agent gives it one; nothing is needed from you." "$(closes_notes "$(printf 'pr\t201\tShow the bed map\tSUCCESS\tMERGEABLE\tspec-bed-map\t\t\n')" "$cl_prs")"
 eq "none is said when every change closes one" "" "$(closes_notes "$(printf 'pr\t202\tWater\n')" "$(printf '202%sissue-5%sx%s%s5%s\n' "$cl_us" "$cl_us" "$cl_us" "$cl_us" "")")"

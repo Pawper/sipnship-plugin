@@ -68,7 +68,7 @@ round_file() {
         if (match(why, /\(after: [0-9 ,#]+\)/)) { after = substr(why, RSTART + 8, RLENGTH - 9); gsub(/[#,]/, " ", after); after = trim(after); why = trim(substr(why, 1, RSTART - 1) substr(why, RSTART + RLENGTH)) }
         sub(/^Held in the last proposed round: /, "", why); sub(/; it takes no slot until that changes$/, "", why)
         if (why ~ /^Held in the last proposed round/) why = "Held in the last proposed round"
-        if (why ~ /^After: /) why = "Waits for “" substr(why, 8) "” to land first, since it changes the same files"
+        if (why ~ /^After: /) why = "Waits for \"" substr(why, 8) "\" to land first, since it changes the same files"
         why = clean(why); if (why == "") why = "Held this round"
         held[num] = "hold: " num " | why: " cap1(substr(why, 1, 200)) (after != "" ? " | after: " after : "") " | areas: none"
         horder[++nh] = num

@@ -322,7 +322,16 @@ The goal lines and what each means:
   The brief also says: an agent whose pull request does not do everything its issue asked files a new issue for
   what is left before the pull request opens (`sh scripts/issue-open.sh`, with the original's State), names it on a
   body line `Leftover: #M`, and still closes its own issue with `Closes #N`; open then means not started or being
-  worked, closed means landed. A leftover is filed Ready, always: `issue-open.sh` refuses In progress for a new issue
+  worked, closed means landed. **Do the main ask, or leave the issue open** (#2399): a `Leftover:` line is for a
+  small remainder, not a way to close an issue whose real ask was never built. Two issues were once closed this way
+  ("Work names the agent that holds the claim" and "Stalled never shows work the drive's own run is on"), each by a
+  change that built a small piece and filed the real ask again as a leftover; a later change bundled both leftovers,
+  built neither, and filed a third issue repeating the same ask once more — one owner request became three open
+  issues, while the two it actually filed read as done. If your own pull request builds less than a bundle's "What
+  done looks like" asks for, do not close that issue and do not file a leftover that only repeats its ask: leave it
+  open, say in a comment exactly what you built and what is still missing, and free your claim
+  (`claim.sh N release TOKEN`) so the next look can pick it up — never a copy of the same issue under a new number.
+  A leftover is filed Ready, always: `issue-open.sh` refuses In progress for a new issue
   unless the caller passes the claim it holds (`ISSUE_OPEN_CLAIM=TOKEN`), and an issue In progress with no claim, no
   branch and no open pull request is set back to Ready by the plan after a short grace and planned that run (#2365). The leftover carries the original's "Start this next" mark and its place in the
   round. An agent that finds its part already landed or in another area says so on the issue and leaves one comment,

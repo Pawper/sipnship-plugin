@@ -286,6 +286,7 @@ scripts/ci/client-env-check.sh 0c054b2adbe91f3418b4e3027bfa5edc6ac6684e
 scripts/ci/client-env-check.sh cd03fc4c7be5190255753e229f35272b7e05d0c6
 scripts/ci/closed-state-audit.sh b6329c61c018a3a25dfc100c156b55d7e187f34d
 scripts/ci/closes-check-audit.sh 830f22e6d2d7b38f561aaab29293bcd336016a2b
+scripts/ci/closes-check.sh 0fc20a3039647c840599f989caedde234c1d3694
 scripts/ci/closes-check.sh a779503411e34e106cd42434b7c095c3d641926d
 scripts/ci/delete-check.sh 1c178aca4caf68a99969bc7da7c9a84ddf7e0cad
 scripts/ci/delete-check.sh de832e14b50d2c16ca2639ba95b67d54fec6ad7c
@@ -422,6 +423,7 @@ scripts/ci/merge-queue.sh 0e168c4eeb48a8f43ffa3a9f75ba44942693ed7a
 scripts/ci/merge-queue.sh 121869dfe6ac47650a3a47138c889a20c63f0833
 scripts/ci/merge-queue.sh 1298ed09e066dcba241afca32cd1a152f94da611
 scripts/ci/merge-queue.sh 131bb7483f1c302e7bc7828024dcc628a6ead537
+scripts/ci/merge-queue.sh 13a5782c837880b74dd0eb54896757e4f60c7d2f
 scripts/ci/merge-queue.sh 19de4abcf9192b7e68c45ed9e6a6b627050aff11
 scripts/ci/merge-queue.sh 1a97828bf5aa7944d0c912bc19421a23e9d01a28
 scripts/ci/merge-queue.sh 1b7c2e04fc40c3584b6b5939745c50785f9f130b
@@ -625,6 +627,8 @@ scripts/ci/queue/log-post.sh acdd6d78c501c1a12991d5bea30b660948263b4a
 scripts/ci/queue/overlaps.sh 08515e29a12df47f524644e926f75dc156a6ea9e
 scripts/ci/queue/overlaps.sh 7530b0c2b389cce044b4bee47f5308cd3dbd65e8
 scripts/ci/queue/overlaps.sh 92add3c9b6b1f8eeec41d56c761a1c04ea654138
+scripts/ci/queue/passed.sh e693188b3e00e7f4f38817bad4af8ca9e5a3b6c6
+scripts/ci/queue/passed.sh 2a519ac879049ce7e4e49dd640eb2483673f9b50
 scripts/ci/queue/passed.sh f9d9f4dfce193dc37721bad5f57551c3df3b5a7b
 scripts/ci/queue/requests.sh 010c702403a406509578d4cc6fec1e860f674c36
 scripts/ci/queue/requests.sh 028c6cd4fb3d360e6509ffa5ecad4319bbc6a2d8

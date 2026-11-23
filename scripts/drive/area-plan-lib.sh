@@ -262,7 +262,7 @@ unplaced_holds() {
     $1 == "T" && $2 != "" { tt[$2] = $3 }
     $1 == "U" && $2 != "" { u[++n] = $0 }
     END {
-      run = (first in tt && tt[first] != "") ? "“" tt[first] "”" : "#" first
+      run = (first in tt && tt[first] != "") ? "\"" tt[first] "\"" : "#" first
       for (i = 1; i <= n; i++) {
         split(u[i], f, "\t"); all = (f[2] == "unit")
         m = split(f[3], ns, " ")

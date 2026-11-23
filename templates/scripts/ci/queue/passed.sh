@@ -9,18 +9,63 @@
 # and its last line said "Nothing is green yet". Now every round names each
 # green change it leaves, with why, in its log and on the Queue tab, and a
 # green change it has no reason to leave is landed with the rest.
+#
+# A later afternoon the same line, "this drain already tried it and it could
+# not land (its line above says why)", pointed at nothing: TRIED only ever
+# carried numbers, never the reason a try failed, so the promised line above
+# was never written (#2398). tried_why_of recovers that reason from the
+# round's own output (every `batch_line`/`batch_out` call, printed as
+# "#NUMBER OUTCOME: WHY" or "#NUMBER OUTCOME"), so a later round can say it
+# instead of pointing at a blank.
 
-# drain_passed_over OPEN BASE PICK TRIED RUSH REDMAIN: the green changes aimed
-# at BASE that this round leaves, one "number<TAB>why" a line in number order;
-# why is empty when no reason applies, and the drain then lands it. OPEN is
-# the round's rows (number, draft, mergeable, rollup, base); PICK what it
-# lands; TRIED what this drain already tried; RUSH the rush change landing
-# first and REDMAIN the red-main issue whose fix lands first, either empty.
-# A draft is not ready, so it is not named.
+# tried_why_of TEXT: TEXT is one merge attempt's own stdout (batch or serial;
+# queue/rules-batch.sh's batch_line, queue/batch.sh's batch_out). One
+# "NUMBER<TAB>WHY" for every pull request TEXT mentions, its last line in TEXT
+# (a retried pull request may print more than one); WHY is empty for one TEXT
+# says landed ("merged", "merged into the batch", "merged serially" or
+# "already on main"), so a caller merging this into a file kept across rounds
+# can tell a pull request to clear (it is no longer open to retry) from
+# one this attempt never mentioned at all (left alone, its last reason kept).
+tried_why_of() {
+  printf '%s\n' "$1" | tr -d '\r' | awk '
+    /^#[0-9]+ / {
+      line = substr($0, 2)
+      n = line; sub(/ .*/, "", n)
+      rest = substr(line, length(n) + 2)
+      ci = index(rest, ": ")
+      if (ci > 0) { outcome = substr(rest, 1, ci - 1); why = substr(rest, ci + 2) } else { outcome = rest; why = "" }
+      seen[n] = 1
+      if (outcome == "merged" || outcome == "merged into the batch" || outcome == "merged serially" || outcome == "already on main") why_of[n] = ""
+      else if (why != "") why_of[n] = why
+    }
+    END { for (k in seen) printf "%s\t%s\n", k, why_of[k] }' | sort -n
+}
+
+# tried_why_merge OLD NEW: OLD and NEW are tried_why_of's own lines (OLD from
+# tried-why.tsv, NEW this round's); NEW's own value for a pull request wins,
+# empty clearing it (landed, so the next round needs no reason for it), and
+# one NEW never mentions keeps OLD's. One "NUMBER<TAB>WHY" per pull request
+# that still has a reason, so the file this writes back never grows past the
+# pull requests actually open and tried.
+tried_why_merge() {
+  { printf '%s\n' "$1"; printf '%s\n' "$2"; } | tr -d '\r' | awk -F'\t' '$1 != "" { w[$1] = $2 } END { for (k in w) if (w[k] != "") print k "\t" w[k] }' | sort -n
+}
+
+# drain_passed_over OPEN BASE PICK TRIED RUSH REDMAIN [TRIEDWHY]: the green
+# changes aimed at BASE that this round leaves, one "number<TAB>why" a line in
+# number order; why is empty when no reason applies, and the drain then lands
+# it. OPEN is the round's rows (number, draft, mergeable, rollup, base); PICK
+# what it lands; TRIED what this drain already tried; RUSH the rush change
+# landing first and REDMAIN the red-main issue whose fix lands first, either
+# empty. TRIEDWHY (tried_why_of's own lines, kept across rounds in
+# tried-why.tsv) names the real reason a tried pull request did not land, read
+# instead of a placeholder that promised one and gave none (#2398). A draft is
+# not ready, so it is not named.
 drain_passed_over() {
-  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v base="$2" -v pick=" $(printf '%s' "$3" | tr '\n' ' ') " -v tried=" $4 " -v rush="$5" -v red="$6" '
+  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v base="$2" -v pick=" $(printf '%s' "$3" | tr '\n' ' ') " -v tried=" $4 " -v rush="$5" -v red="$6" -v triedwhy="$(printf '%s' "${7:-}" | tr -d '\r')" '
+    BEGIN { tn = split(triedwhy, twl, "\n"); for (ti = 1; ti <= tn; ti++) { split(twl[ti], twf, "\t"); if (twf[1] != "") tw[twf[1]] = twf[2] } }
     NF >= 5 && $5 == base && $2 == "false" && $4 == "green" && index(pick, " " $1 " ") == 0 {
-      if (index(tried, " " $1 " ") > 0) why = "this drain already tried it and it could not land (its line above says why); the next drain tries it again"
+      if (index(tried, " " $1 " ") > 0) why = ($1 in tw) ? tw[$1] : "this drain already tried it last round; the reason was not kept this time, and the next drain tries it again"
       else if (toupper($3) == "CONFLICTING") why = "it conflicts with main; its agent merges main in first"
       else if (rush != "") why = "a rush change (#" rush ") lands first, and this one right after"
       else if (red != "") why = "main is red (issue #" red "); the change that fixes it lands first"
@@ -35,7 +80,7 @@ drain_passed_over() {
 # passed.tsv for the Queue tab, adds to the pick any it has no reason to
 # leave, and sets passed_n for the round's last line.
 passed_round() {
-  pr_lines=$(drain_passed_over "$open" "$base" "$pick" "$tried" "$(printf '%s' "${rush_now:-}" | awk '{ print $1 }')" "${rm_issue:-}")
+  pr_lines=$(drain_passed_over "$open" "$base" "$pick" "$tried" "$(printf '%s' "${rush_now:-}" | awk '{ print $1 }')" "${rm_issue:-}" "$(cat "$flaky_dir/tried-why.tsv" 2>/dev/null)")
   printf '%s\n' "$pr_lines" | awk -F'\t' '$2 != ""' > "$flaky_dir/passed.tsv" 2>/dev/null || true
   passed_n=$(printf '%s\n' "$pr_lines" | awk -F'\t' '$2 != "" { n++ } END { print n + 0 }')
   printf '%s\n' "$pr_lines" | awk -F'\t' '$2 != ""' | while IFS="$(printf '\t')" read -r pr_n pr_why; do
