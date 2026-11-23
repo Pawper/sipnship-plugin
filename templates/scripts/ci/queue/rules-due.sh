@@ -21,19 +21,26 @@
 #   GREEN   how many open changes the published state calls green
 #   SINCE   seconds since the state was last published
 #   NOW     the epoch now
+#   STUCK   how many open changes are green on every check and not held for
+#           over QUEUE_DUE_STUCK_MINUTES (default 10), read per change from
+#           its own check runs by green-stuck-audit.sh; 0 or nothing when
+#           none (#2406). The published state's age cannot say this: it
+#           restarts with every write, so a state that keeps being rewritten
+#           never reached the twenty minutes the green rule waits.
 # A failed last drain is not a reason in itself: a drain exits non-zero to
 # name what needs attention, and starting another each time would never end.
 # The green wait is QUEUE_DUE_GREEN_MINUTES (default 20); a drain that ended
 # without finishing is acted on for QUEUE_DUE_WINDOW_MINUTES (default 120).
 drain_due_reason() {
-  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v greenmin="${QUEUE_DUE_GREEN_MINUTES:-20}" -v window="${QUEUE_DUE_WINDOW_MINUTES:-120}" '
+  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v stuckmin="${QUEUE_DUE_STUCK_MINUTES:-10}" -v greenmin="${QUEUE_DUE_GREEN_MINUTES:-20}" -v window="${QUEUE_DUE_WINDOW_MINUTES:-120}" '
     NR == 1 {
-      lock = $1; active = $2 + 0; last = $3; age = $4 + 0; mode = $5; hold = $6 + 0; green = $7 + 0; since = $8 + 0; now = $9 + 0
+      lock = $1; active = $2 + 0; last = $3; age = $4 + 0; mode = $5; hold = $6 + 0; green = $7 + 0; since = $8 + 0; now = $9 + 0; stuck = $10 + 0
       if (active > 0) exit
       if (lock == "yes") { print "a drain ended without finishing and left the queue locked"; exit }
       if ((last == "cancelled" || last == "timed_out") && age <= window * 60) { print "the last drain was stopped before it finished"; exit }
       if (mode == "drain") exit
       if (hold > 0 && hold <= now) { print "a hold ran out and nothing started the drain that lands the change"; exit }
+      if (stuck > 0) { printf "%d change(s) have been green and unheld for over %d minutes and did not land\n", stuck, stuckmin; exit }
       if (green > 0 && hold <= now && since >= greenmin * 60) { printf "%d change(s) have been green for %d minutes with nothing running\n", green, int(since / 60); exit }
     }'
 }

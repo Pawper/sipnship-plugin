@@ -173,6 +173,12 @@ s_stuck() {
     --jq '.workflow_runs[] | [.id, .name, .head_branch, .status, (.created_at | fromdate)] | @tsv' 2>/dev/null || true)
   sq=$(stuck_line "$(stuck_runs "$sq_runs" "$(date +%s)" 10)")
   [ -n "$sq" ] && add "$sq"
+  # A change green on every check and not held for over thirty minutes was not landed by the queue
+  # and nothing retried it: named here as the nightly audit names it (#2406). Two REST calls a change, bounded.
+  if [ -f scripts/ci/green-stuck-audit.sh ] && [ "$have_gh" = yes ]; then
+    gsl=$(GREEN_STUCK_MINUTES=30 run_bounded 8 sh scripts/ci/green-stuck-audit.sh 2>/dev/null | sed 's/ and not landed\.$//' | paste -sd';' - | sed 's/;/; /g' || true)
+    [ -n "$gsl" ] && add "Green and unheld, not landed: $gsl. The queue should have landed these; run the drain."
+  fi
   return 0
 }
 

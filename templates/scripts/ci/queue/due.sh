@@ -31,7 +31,10 @@ stamp=$(printf '%s' "$body" | grep -o '"updatedAt":"[^"]*"' | head -n 1 | sed 's
 since=0
 [ -z "$stamp" ] || since=$(( now - $(date -u -d "$stamp" +%s 2>/dev/null || echo "$now") ))
 
-facts=$(printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s' "$lock" "$active" "$last_c" "$last_age" "$mode" "$(drain_due_hold "$body")" "$(drain_due_green "$body")" "$since" "$now")
+# Green and unheld per change, from each one's own check runs, so a state that is rewritten often cannot hide it.
+stuck=$(GREEN_STUCK_MINUTES="${QUEUE_DUE_STUCK_MINUTES:-10}" sh "$here/../green-stuck-audit.sh" 2>/dev/null | grep -c . || true)
+
+facts=$(printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s'"$lock" "$active" "$last_c" "$last_age" "$mode" "$(drain_due_hold "$body")" "$(drain_due_green "$body")" "$since" "$now" "${stuck:-0}")
 why=$(drain_due_reason "$facts")
 if [ -n "$why" ]; then
   echo "A drain is owed: $why."
