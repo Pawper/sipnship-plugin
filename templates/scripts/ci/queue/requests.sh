@@ -186,8 +186,21 @@ requests_tick_body() {
       hold)
         gh_write api -X POST "repos/{owner}/{repo}/issues/$rq_pr/labels" -f "labels[]=queue:hold" >/dev/null 2>&1 && requests_answer "$rq_id" hold "$rq_pr" held ;;
       release)
-        gh_write api -X DELETE "repos/{owner}/{repo}/issues/$rq_pr/labels/queue:hold" >/dev/null 2>&1 || true
-        requests_answer "$rq_id" release "$rq_pr" released ;;
+        # The one release: the hold comes off wherever it is written, its labels and the "Queue: hold" line in
+        # its own text, and "released" is said only when none is left (#2514).
+        for rq_lab in queue:hold hold; do gh_write api -X DELETE "repos/{owner}/{repo}/issues/$rq_pr/labels/$rq_lab" >/dev/null 2>&1 || true; done
+        rq_body=$(gh api "repos/{owner}/{repo}/pulls/$rq_pr" --jq '(.body // "") | gsub("\r"; "")' 2>/dev/null || true)
+        if [ -n "$(held_reason '' "$rq_body")" ]; then
+          rq_new=$(hold_line_stripped "$rq_body")
+          gh_write api -X PATCH "repos/{owner}/{repo}/pulls/$rq_pr" -f body="$rq_new" >/dev/null 2>&1 || true
+        fi
+        rq_now=$(gh api "repos/{owner}/{repo}/pulls/$rq_pr" --jq '([.labels[].name] | join("\n")) + "\u0001" + ((.body // "") | gsub("\r"; ""))' 2>/dev/null || true)
+        [ -n "$rq_now" ] || continue
+        rq_out=$(release_outcome "${rq_now%%$(printf '\001')*}" "${rq_now#*$(printf '\001')}")
+        if [ "$rq_out" = released ]; then
+          gh_write api -X POST "repos/{owner}/{repo}/issues/$rq_pr/comments" -f body="Let go at the request of $rq_by: the hold is off." >/dev/null 2>&1 || true
+        fi
+        requests_answer "$rq_id" release "$rq_pr" "$rq_out" ;;
       drop)
         if [ -f "$here/../worktrees.sh" ] && sh "$here/../worktrees.sh" close "$rq_pr" "Taken out of the queue at the request of $rq_by: $rq_why" >/dev/null 2>&1; then
           requests_answer "$rq_id" drop "$rq_pr" dropped

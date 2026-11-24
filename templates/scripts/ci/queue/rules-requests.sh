@@ -44,6 +44,23 @@ classes_overlap() {
   return 0
 }
 
+# hold_line_stripped BODY: BODY with every "Queue: hold" line taken out, the same
+# line held_reason reads, so a release that takes the label off takes this mark
+# off too (#2514). Every other line is kept as it is.
+hold_line_stripped() {
+  printf '%s\n' "$1" | grep -viE '^[[:space:]]*queue:[[:space:]]*hold' || true
+}
+
+# release_outcome LABELS BODY: what a release request answers once it has done
+# what it can, read from what the change still carries: "released" only when no
+# hold remains; "hold-label-kept" while a hold label is still on it; else
+# "hold-line-kept" while its text still carries the line (#2514).
+release_outcome() {
+  if printf '%s\n' "$1" | tr -d '\r' | grep -qixE 'queue:hold|hold'; then echo hold-label-kept; return 0; fi
+  if printf '%s\n' "$2" | tr -d '\r' | grep -qiE '^[[:space:]]*queue:[[:space:]]*hold'; then echo hold-line-kept; return 0; fi
+  echo released
+}
+
 # land_next_step ROLLUP CONFLICTS BATCH_RUNNING OVERLAP: what "land this
 # next" does at a tick. red and conflicts end the request; wait leaves it
 # open; after-batch lands it first once the batch lands; serial-now runs the
