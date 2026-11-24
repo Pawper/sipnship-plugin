@@ -938,6 +938,9 @@ eq "a cleared pass ends the failures before it without a flake" "" "$(flaky_offe
 eq "a pass is recorded cleared when retry_is_flake says no" "1" "$(grep -c 'rf_result=cleared' "$root/templates/scripts/ci/queue/runs.sh")"
 
 section 'the queue on the service road (spec 006)'
+po_open="$(printf '12\tAdd retries\tgreen\tgreen and waiting to merge\n13\tFix the chime\twaiting\tstill running CI\n14\tRename\tred\tred; the queue re-runs its failed jobs once, then names it here')"
+po_say=$(publish_say "$po_open" "" "" "" "" "$(printf '2\t1\t0\t0')" "" draining "")
+po_json=$(publish_json "$po_open" "" "3 4 909 905 906 907 909" "$(printf '252\t249\tWater the beds on a schedule\tsrc/lib/dates.ts\tconflicts with #249\tyes')" "$(printf '11\tFirst\tserial\t2026-10-22T18:00:00Z')" "$(printf '2\t1\t0\t0')" "" "$(printf 'abc1234\tgreen')" "deploy: due; none recorded" draining "" "12 13" "$po_say" 2026-10-22T19:00:00Z)
 sv_waits="$(printf '1000\t-\tci / unit\t3\t3\t4\n1100\t-\tci / app\t1\t3\t2\n10\t-\told job\t1\t1\t9')"
 eq "the wait lines are the jobs since the cutoff, in seconds, with why" '[{"job":"ci / unit","waitedSeconds":240,"why":"all 3 runners were busy"},{"job":"ci / app","waitedSeconds":120,"why":"1 of 3 runners were busy"}]' "$(service_waits_json "$sv_waits" 500)"
 eq "no waits is an empty list" '[]' "$(service_waits_json "" 0)"
@@ -1389,6 +1392,7 @@ wtpairs=$(printf '/w/a\tretries\n/w/b\tparser\n/w/c\trename\n/w/d\t\n')
 eq "stale and detached worktrees counted" "1	1" "$(stale_worktrees "$wtpairs" 'retries' "$(printf 'retries\t1000000\nparser\t1000000\nrename\t1900000\n')" 2000000 3)"
 
 section 'worktrees'
+porcelain=$(cat "$fx/worktrees.porcelain")
 . "$root/templates/scripts/worktrees-lib.sh"
 pairs=$(worktree_branches "$porcelain")
 eq "the worktree of a branch" "C:/Users/me/Documents/GitHub/app-parser" "$(worktree_for_branch "$pairs" parser)"
@@ -1419,6 +1423,8 @@ eq "the queue's folder test matches the hook's" "scripts/upload.sh" "$(dirty_non
 ?? .scratch/x')"
 
 section 'shared code and ended branches'
+porcelain=$(cat "$fx/worktrees.porcelain")
+pairs=$(worktree_branches "$porcelain")
 shared='# comment
 scripts/build/*
 src/lib/*'
@@ -1709,6 +1715,7 @@ eq "a body that names no spec is still missing" "missing" "$(spec_check_reason '
 eq "the constitution named in the body does not count" "missing" "$(spec_check_reason 'src/auth.ts' 'per specs/constitution.md')"
 
 section 'rerun-free classes'
+rules=$(cat "$root/templates/scripts/ci/classes.txt")
 eq "the directive names the classes" "docs specs status" "$(rerun_free_classes "$rules")"
 eq "no directive, nothing" "" "$(rerun_free_classes 'app src/*')"
 eq "the directive is not a class" "app" "$(classify_paths 'src/a.ts' '!rerun-free docs
@@ -7066,9 +7073,11 @@ eq "the ask the wake leaves on a pull request starts the line the look reads" "1
 eq "the wake check looks for it before the plan, and the ten-minute look ends there with none owed" "1 2 1" "$(grep -c 'fix-owed.sh' "$root/scripts/drive/wake-check.sh") $(grep -c 'WAKE_QUICK' "$root/scripts/drive/wake-check.sh") $(grep -c 'cron:' "$root/../.github/workflows/drive-wake.yml")"
 wf_dir=$(mktemp -d); mkdir -p "$wf_dir/bin"
 printf '#!/bin/sh\necho "fix-agent 51"\n' > "$wf_dir/fix.sh"; printf '#!/bin/sh\nexit 0\n' > "$wf_dir/none.sh"
+# A stand-in gh, so the look never reads or writes the real drive issue.
+printf '#!/bin/sh\nexit 1\n' > "$wf_dir/bin/gh"; chmod +x "$wf_dir/bin/gh"
 eq "the quick look with a fix agent owed goes on and starts a tick" "fix agents owed: 51
-start: 1 request" "$(cd "$wf_dir" && WAKE_QUICK=yes WAKE_FIX_OWED="$wf_dir/fix.sh" WAKE_UPDATE=/dev/null WAKE_PREPARE=/dev/null WAKE_PLAN=/dev/null PATH="$wf_dir/bin:$PATH" sh "$root/scripts/drive/wake-check.sh" | grep -v '^not published')"
-eq "the quick look with none owed ends at once and plans nothing" "nothing: no red change is waiting for an agent" "$(cd "$wf_dir" && WAKE_QUICK=yes WAKE_FIX_OWED="$wf_dir/none.sh" WAKE_UPDATE=/dev/null WAKE_PREPARE=/dev/null WAKE_PLAN=/dev/null PATH="$wf_dir/bin:$PATH" sh "$root/scripts/drive/wake-check.sh")"
+start: 1 request" "$(cd "$wf_dir" && WAKE_QUICK=yes WAKE_FIX_OWED="$wf_dir/fix.sh" WAKE_UPDATE=/dev/null WAKE_PREPARE=/dev/null WAKE_PLAN=/dev/null WAKE_APPROVAL="$wf_dir/none.sh" WAKE_REQUESTS="$wf_dir/none.sh" PATH="$wf_dir/bin:$PATH" sh "$root/scripts/drive/wake-check.sh" | grep -v '^not published')"
+eq "the quick look with none owed ends at once and plans nothing" "nothing: no red change is waiting for an agent" "$(cd "$wf_dir" && WAKE_QUICK=yes WAKE_FIX_OWED="$wf_dir/none.sh" WAKE_UPDATE=/dev/null WAKE_PREPARE=/dev/null WAKE_PLAN=/dev/null WAKE_APPROVAL="$wf_dir/none.sh" WAKE_REQUESTS="$wf_dir/none.sh" PATH="$wf_dir/bin:$PATH" sh "$root/scripts/drive/wake-check.sh")"
 wk_units=$(cat "$fx/drive-wake-restart/units.tsv")
 eq "no branch, old and no agent running is restarted; young or a live agent is starting; a branch or pull request is working" "301${wk_tab}restart
 302${wk_tab}working

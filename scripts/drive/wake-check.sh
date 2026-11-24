@@ -10,7 +10,7 @@
 # also start, with Auto Drive on and no round running.
 # With GITHUB_OUTPUT set (a workflow step), also writes start=yes or start=no
 # and the reason, so the model step runs only when something is approved.
-# WAKE_PLAN names another plan script (the suite's stand-in).
+# WAKE_PLAN, WAKE_APPROVAL and WAKE_REQUESTS name other scripts for the plan, the approval and the owed requests (the suite's stand-ins, so a test never reads the real drive issue).
 #
 # Usage, from the project root: sh "$CLAUDE_PLUGIN_ROOT/scripts/drive/wake-check.sh"
 here=$(dirname "$0")
@@ -38,7 +38,7 @@ fi
 sh "${WAKE_PLAN:-$here/plan.sh}" --fast > .scratch/drive/plan.txt 2>/dev/null
 pub=$(grep -E '^(published|not published):' .scratch/drive/plan.txt | tail -n 1)
 echo "${pub:-not published: the plan printed no proposal, so the Work tab still shows the last round it was given.}"
-out=$(sh "$here/approval.sh" 2>&1)
+out=$(sh "${WAKE_APPROVAL:-$here/approval.sh}" 2>&1)
 # Goals approved from an older posted proposal that the plan no longer prints start nothing, and the tick says so (#2104).
 stale=$(approved_not_planned "$(cat .scratch/drive/plan.txt 2>/dev/null)" "$out")
 if [ -n "$stale" ]; then
@@ -46,7 +46,7 @@ if [ -n "$stale" ]; then
   out="nothing: the approval names goals the plan no longer prints (#$(printf '%s' "$stale" | tr '\n' ' ' | sed 's/ $//; s/ /, #/g')); none of them is started
 $out"
 fi
-req=$(sh "$here/work-requests.sh" 2>/dev/null)
+req=$(sh "${WAKE_REQUESTS:-$here/work-requests.sh}" 2>/dev/null)
 [ -n "$fix" ] && { echo "fix agents owed: $(printf '%s' "$fix" | sed 's/^fix-agent //' | tr '\n' ' ' | sed 's/ $//; s/ /, /g')"; req="$fix
 $req"; }
 d=$(wake_decision "$out" "$req")

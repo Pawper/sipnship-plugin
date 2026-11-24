@@ -52,8 +52,10 @@ part_script() {
 }
 
 # block_script NAME < run.sh: the script with only the one block called NAME
-# (the prelude and the summary stay). A block that leans on a function an
-# earlier block defined is run by its part instead.
+# (the prelude and the summary stay). Every block passes alone (#2500), so
+# what a block needs is loaded for it: the libraries the other blocks source
+# (a line made only of sources under scripts, hooks or templates) are sourced here too, in
+# order, never left to the block before it.
 block_script() {
   awk -v want="$1" '
     BEGIN { keep = 1 }
@@ -63,7 +65,8 @@ block_script() {
       gsub(/'\''"'\''"'\''/, "'\''", name)
       keep = (name == want)
     }
-    keep'
+    keep { print; next }
+    /^(\. "\$root\/(scripts|hooks|templates)\/[^"]*"(; )?)+$/ { print }'
 }
 
 # parts_touching FILE... < run.sh: the parts with a block that names any of
