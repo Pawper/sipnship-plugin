@@ -188,6 +188,13 @@ test('the hook script exits 0 and prints the line when the service is down', asy
   assert.match(out, /^Could not reach SipNShip/);
 });
 
+test('run as a script, the sender loads without a circular-load warning', () => {
+  const { spawnSync } = require('child_process');
+  const env = envWith('http://127.0.0.1:9');
+  const r = spawnSync(process.execPath, [path.join(__dirname, '..', 'brief-send.js'), '--session', 'z', '--repo', 'acme/shop'], { input: fixture, env: { ...process.env, ...env }, encoding: 'utf8', timeout: 10000 });
+  assert.doesNotMatch(r.stderr, /circular/i);
+});
+
 test('the sample sent on its own carries the last brief block again, with the sessions now', async () => {
   const f = await fake([{ status: 204 }, { status: 204 }]);
   try {

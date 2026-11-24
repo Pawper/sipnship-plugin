@@ -14,6 +14,7 @@
 
 root=${RUN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}
 . "$root/hooks/scripts/lib.sh"
+. "$root/hooks/scripts/budget-rest-lib.sh"
 . "$root/hooks/scripts/agent-model-lib.sh"
 . "$root/templates/status/lib.sh"
 . "$root/templates/scripts/ci/lib.sh"
@@ -644,6 +645,15 @@ eq "no record, no line" "" "$(budget_line '' 1760000200)"
 eq "under the floor is low" "yes" "$(budget_low "312	5000	1760001540	3469	5000	1760001540")"
 eq "at the floor is not" "no" "$(budget_low "500	5000	1760001540	3469	5000	1760001540")"
 eq "an unknown budget is not low" "no" "$(budget_low '')"
+eq "a REST read is named" "gh api repos/OWNER/REPO/issues/7" "$(gh_rest_read_reason 'gh api repos/{owner}/{repo}/issues/7 --jq .title')"
+eq "a REST write is never named" "" "$(gh_rest_read_reason 'gh api -X POST repos/{owner}/{repo}/issues/7/comments -F body=@.scratch/b.md')"
+eq "a body flag is a write" "" "$(gh_rest_read_reason 'gh api repos/{owner}/{repo}/issues/7/comments -f body=hi')"
+eq "the free reading of the budget is never named" "" "$(gh_rest_read_reason 'gh api rate_limit --jq .resources')"
+eq "graphql is the other guard's" "" "$(gh_rest_read_reason 'gh api graphql -f query=x')"
+eq "REST under the floor is low" "yes" "$(budget_rest_low "4000	5000	1760001540	90	5000	1760001540")"
+eq "REST at the floor is not" "no" "$(budget_rest_low "4000	5000	1760001540	150	5000	1760001540")"
+eq "an unknown REST budget is not low" "no" "$(budget_rest_low '')"
+eq "a low REST budget says when it returns" "REST 90 of 5,000 left, back at 09:19Z (in 23 min)." "$(budget_rest_line "4000	5000	1760001540	90	5000	1760001540" 1760000200 | sed 's/5000/5,000/')"
 eq "a REST issue without its State label is named" "gh api .../issues" "$(state_label_reason 'gh api -X POST repos/{owner}/{repo}/issues -f title="Fix" -F body=@.scratch/b.md')"
 eq "a REST issue with labels[]=state: passes" "" "$(state_label_reason "gh api -X POST repos/{owner}/{repo}/issues -f title='Fix' -f 'labels[]=state:ready'")"
 eq "a REST issue from --input passes" "" "$(state_label_reason 'gh api -X POST repos/{owner}/{repo}/issues --input .scratch/issue.json')"
@@ -4564,6 +4574,14 @@ rs_budget 4000
 rs_cnt=$(rs_logs | wc -l | tr -d ' ')
 rs_exit require-gh-budget '{"command":"gh issue list","description":"x"}' >/dev/null
 eq "with the budget fine, an off rule notes nothing" "$rs_cnt" "$(rs_logs | wc -l | tr -d ' ')"
+
+# REST (#2558): with few REST requests left, a read waits and a write goes through.
+rs_none
+printf '%s\t4000\t5000\t%s\t90\t5000\t%s\n' "$(date +%s)" "$(( $(date +%s) + 600 ))" "$(( $(date +%s) + 600 ))" > "$rs_proj/.scratch/gh-budget.txt"
+eq "a REST read is refused with the REST budget low" "2" "$(rs_exit require-gh-budget '{"command":"gh api repos/{owner}/{repo}/issues/7","description":"x"}')"
+eq "a REST write goes through with the REST budget low" "0" "$(rs_exit require-gh-budget '{"command":"gh api -X POST repos/{owner}/{repo}/issues/7/comments -F body=@.scratch/b.md","description":"x"}')"
+eq "the budget's own reading goes through" "0" "$(rs_exit require-gh-budget '{"command":"gh api rate_limit","description":"x"}')"
+rs_budget 4000
 
 # A hook that holds two rules still refuses the one that is on.
 rs_set 'work-has-ending 2026-11-02'

@@ -107,7 +107,7 @@ counterpart: session-only | the hourly API budget is a live reading, not a prope
 protects: The hour's GitHub allowance, shared by every agent.
 catches: A GitHub call made when the budget is nearly spent.
 if-off: Agents can spend the whole allowance, and every agent waits for the next hour.
-row: The API budget lasts the hour | The `require-gh-budget` hook refuses a GraphQL `gh` command when fewer than 500 of the hour's points are left, naming the reset; the brief prints the budget; `scripts/issue-open.sh`, `pr-open.sh` and `pr-checks.sh` are REST
+row: The API budget lasts the hour | The `require-gh-budget` hook refuses a GraphQL `gh` command when fewer than 500 of the hour's points are left, naming the reset; the brief prints the budget; `scripts/issue-open.sh`, `pr-open.sh` and `pr-checks.sh` are REST; the same hook refuses a `gh api` read, never a write, when fewer than 150 of the hour's REST requests are left, naming when they return
 
 id: watch-red-main
 kind: watch

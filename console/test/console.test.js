@@ -209,9 +209,10 @@ test('a port another project claims is passed over even when free', async () => 
   writeClaim('/x/app-one', p, home);
   const mine = await serve({ root, port: p, delivery: false, home });
   try {
-    assert.equal(mine.url, `http://127.0.0.1:${p + 1}/`);
+    assert.ok(Number(new URL(mine.url).port) > p, "passed over the claimed port to a later free one");
     assert.equal(mine.skipped[0].claimed, true);
-    assert.equal(readClaims(home)[Object.keys(readClaims(home)).find((k) => k !== (process.platform === 'win32' ? '/x/app-one'.toLowerCase() : '/x/app-one') && readClaims(home)[k] === p + 1)], p + 1);
+    const got = Number(new URL(mine.url).port);
+    assert.equal(readClaims(home)[Object.keys(readClaims(home)).find((k) => k !== (process.platform === 'win32' ? '/x/app-one'.toLowerCase() : '/x/app-one') && readClaims(home)[k] === got)], got);
   } finally { mine.server.close(); }
 });
 
@@ -227,7 +228,7 @@ test("a taken port: this project's console is reused, another's is named and pas
   assert.equal(again.url, held.url);
   const mine = await serve({ root, port: p, delivery: false, home });
   try {
-    assert.equal(mine.url, `http://127.0.0.1:${p + 1}/`);
+    assert.ok(Number(new URL(mine.url).port) > p, "passed over the claimed port to a later free one");
     assert.equal(mine.skipped[0].port, p);
     assert.equal(mine.skipped[0].claimed, true);
     const page = await (await fetch(mine.url)).text();

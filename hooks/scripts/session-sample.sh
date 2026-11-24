@@ -53,7 +53,16 @@ input=$(cat)
 root=${CLAUDE_PROJECT_DIR:-$(json_field "$input" cwd)}
 [ -n "$root" ] && [ -d "$root" ] && cd "$root" 2>/dev/null || exit 0
 
-[ -f "$sn_home/tokens.json" ] || [ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ] || exit 0
+if [ ! -f "$sn_home/tokens.json" ] && [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
+  # In a workflow run with nothing to report with, say so once in the run's own summary (#2570), never silently.
+  if [ "${GITHUB_ACTIONS:-}" = true ] && [ -n "${GITHUB_STEP_SUMMARY:-}" ] && [ ! -f "$sn_home/brief-send/sample-trouble.txt" ]; then
+    mkdir -p "$sn_home/brief-send" 2>/dev/null
+    sn_why='Its agent could not report to SipNShip: this run holds no identity token for the agent to report with: the job needs `id-token: write`, and the agent'"'"'s own environment must keep it.'
+    printf '%s\n' "$sn_why" >> "$GITHUB_STEP_SUMMARY" 2>/dev/null
+    printf '%s\n' "$sn_why" > "$sn_home/brief-send/sample-trouble.txt" 2>/dev/null
+  fi
+  exit 0
+fi
 command -v node >/dev/null 2>&1 || exit 0
 
 sn_repo=$(git remote get-url origin 2>/dev/null | tr -d '\r' | sed -n 's#.*github\.com[:/]\([^/]*\)/\([^/]*\)$#\1/\2#p' | sed 's/\.git$//')
