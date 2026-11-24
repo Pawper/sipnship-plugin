@@ -8820,7 +8820,7 @@ eq "a claim naming no run (a person's or the desktop app's own) is never called 
 # names it directly.
 printf '317\n' > "$cs_dir/inprog"; : > "$cs_dir/posted"; : > "$cs_dir/runs"
 printf '904\t%s\tClaim: drive-9\t777\n' "$cs_now" > "$cs_dir/comments-317"
-eq "its own run, named directly, needs no gh api call to confirm" "claim-stale: freed issue #317 (claim drive-9, its run ended, no open pull request); set back to Ready." "$(cd "$cs_dir" && FAKE="$cs_dir" CLAIM_STALE_OWN_RUN=777 PATH="$cs_dir/bin:$PATH" sh "$root/scripts/drive/claim-stale.sh" --apply)"
+eq "its own run, named directly, needs no gh api call to confirm; the tick that built nothing says so (#2561)" "$(printf '%s\n%s\n%s' 'claim-stale: freed issue #317 (claim drive-9, its run ended, no open pull request); set back to Ready.' 'claim-stale: This tick claimed #317 and built nothing; the claims are freed and the issues are back to Ready.' '::warning title=A tick that built nothing::This tick claimed #317 and built nothing; the claims are freed and the issues are back to Ready.')" "$(cd "$cs_dir" && FAKE="$cs_dir" CLAIM_STALE_OWN_RUN=777 PATH="$cs_dir/bin:$PATH" sh "$root/scripts/drive/claim-stale.sh" --apply)"
 eq "a run that is not this one still needs the real read" "claim-stale: every In progress issue either has an open pull request, a live claim, or no claim naming a run." "$(cs_dir2=$cs_dir; printf '317\n' > "$cs_dir2/inprog"; : > "$cs_dir2/posted"; printf '905\t%s\tClaim: drive-9\t778\n' "$cs_now" > "$cs_dir2/comments-317"; cd "$cs_dir2" && FAKE="$cs_dir2" CLAIM_STALE_OWN_RUN=777 PATH="$cs_dir2/bin:$PATH" sh "$root/scripts/drive/claim-stale.sh" --apply)"
 
 # #2336, left over from #2328: real work a freed issue's agent already made is rescued to a side branch
