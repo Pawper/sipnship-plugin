@@ -57,13 +57,18 @@ function troubleLine(line, env = process.env, now = new Date()) {
   const text = `Its agent could not report to SipNShip: ${line}.`;
   const fs = require('fs');
   const path = require('path');
-  try { if (env.GITHUB_STEP_SUMMARY) fs.appendFileSync(env.GITHUB_STEP_SUMMARY, `${text}\n`); } catch { /* the summary is not there */ }
+  // Once per run: the report is tried every 20 seconds or so, and the same reason is said once (#2624).
+  try { if (env.GITHUB_STEP_SUMMARY && !readOr(fs, env.GITHUB_STEP_SUMMARY).includes(text)) fs.appendFileSync(env.GITHUB_STEP_SUMMARY, `${text}\n`); } catch { /* the summary is not there */ }
   try {
     const dir = path.join(env.SIPNSHIP_HOME || path.join(require('os').homedir(), '.sipnship'), 'brief-send');
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, 'sample-trouble.txt'), `${now.toISOString()} ${text}\n`);
   } catch { /* nowhere to keep it */ }
   return text;
+}
+
+function readOr(fs, file) {
+  try { return fs.readFileSync(file, 'utf8'); } catch { return ''; }
 }
 
 module.exports = { AUDIENCE, SENDER, inRun, entry, troubleLine };

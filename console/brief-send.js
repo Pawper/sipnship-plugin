@@ -41,7 +41,7 @@ function base(env = process.env) {
 }
 
 /** One bounded POST; the outcome by status alone: ok, not_connected, too_large, rate_limited or unreachable. */
-async function post(url, token, body, timeoutMs = TIMEOUT_MS, onReply) {
+async function post(url, token, body, timeoutMs = TIMEOUT_MS, onReply, onRefused) {
   let res;
   try {
     res = await fetch(url, {
@@ -54,7 +54,7 @@ async function post(url, token, body, timeoutMs = TIMEOUT_MS, onReply) {
     return 'unreachable';
   }
   // A reply with a body (200) may carry the builder's questions; anything else is not read.
-  if (onReply && res.status === 200) { try { onReply(await res.json()); } catch { /* an unreadable reply says nothing */ } } else { try { await res.body?.cancel(); } catch { /* not read */ } }
+  if (onReply && res.status === 200) { try { onReply(await res.json()); } catch { /* an unreadable reply says nothing */ } } else if (onRefused && res.status >= 400) { try { onRefused(await res.json()); } catch { /* a refusal with no words */ } } else { try { await res.body?.cancel(); } catch { /* not read */ } }
   if (res.status >= 200 && res.status < 300) return 'ok';
   if (res.status === 401) return 'not_connected';
   if (res.status === 413) return 'too_large';
@@ -280,13 +280,19 @@ function keepBlock(env, repoId, text) {
   } catch { /* never stops the session */ }
 }
 
-/** A run's session sample: the sessions and nothing else, under the run's own name. Returns '' always; a failure never stops the session. */
+/**
+ * A run's session sample: the sessions and nothing else, under the run's own name. Nothing is sent when the run has no
+ * session to name (#2624: the service takes a run's report only as a session sample, so an empty one was refused and
+ * the summary blamed the run's identity). A refusal's own words go to the run's summary. Returns '' always; a failure
+ * never stops the session.
+ */
 async function sendRunSample(run, agents, env, now) {
-  const body = briefBody('', { now, machine: run.machine, sessions: agents });
-  const text = JSON.stringify(body);
+  if (!agents || !agents.length) return '';
+  const text = JSON.stringify(briefBody('', { now, machine: run.machine, sessions: agents }));
   if (Buffer.byteLength(text) > SEND_MAX_BYTES) return '';
-  const outcome = await post(`${base(env)}/v1/repos/${run.repoId}/brief`, run.token, text, TIMEOUT_MS);
-  if (outcome !== 'ok' && outcome !== 'rate_limited') actionsSignIn.troubleLine(outcome === 'not_connected' ? "SipNShip did not accept this run's identity" : outcome === 'too_large' ? 'the report was too large' : 'SipNShip did not answer', env, now);
+  let refused;
+  const outcome = await post(`${base(env)}/v1/repos/${run.repoId}/brief`, run.token, text, TIMEOUT_MS, undefined, (r) => { refused = r && typeof r.say === 'string' ? r.say.trim().replace(/\.$/, '') : undefined; });
+  if (outcome !== 'ok' && outcome !== 'rate_limited') actionsSignIn.troubleLine(refused ? `SipNShip refused it: ${refused}` : outcome === 'not_connected' ? "SipNShip did not accept this run's identity" : outcome === 'too_large' ? 'the report was too large' : 'SipNShip did not answer', env, now);
   return '';
 }
 

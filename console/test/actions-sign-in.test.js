@@ -121,6 +121,35 @@ test('a run whose identity token is refused says why in its summary, in one line
   } finally { f.server.close(); }
 });
 
+test('#2624: a report SipNShip refuses puts SipNShip\'s own reason in the run\'s summary, once however often it is tried', async () => {
+  const say = 'this run\'s identity token is for another repository than the one it reported to';
+  const server = http.createServer((req, res) => {
+    req.resume().on('end', () => {
+      if (req.url.startsWith('/idtoken')) { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ value: JWT })); return; }
+      res.writeHead(401, { 'content-type': 'application/json' }); res.end(JSON.stringify({ code: 'not_connected', why: 'other_repository', say }));
+    });
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  try {
+    const url = `http://127.0.0.1:${server.address().port}`;
+    const env = { ...runEnv(url), GITHUB_STEP_SUMMARY: path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'sns-sum-')), 'summary.md') };
+    for (let i = 0; i < 2; i++) await send.sendBrief({ text: '', session: 's1', repo: 'ada/garden', env, sampleOnly: true, sessions: [agent] });
+    const said = fs.readFileSync(env.GITHUB_STEP_SUMMARY, 'utf8');
+    assert.strictEqual(said, `Its agent could not report to SipNShip: SipNShip refused it: ${say}.\n`);
+    assert.doesNotMatch(said, /aaa\.bbb/);
+  } finally { server.close(); }
+});
+
+test('#2624: a run with no session to name sends nothing, so no refusal blames its identity', async () => {
+  const f = await fake();
+  try {
+    const env = { ...runEnv(f.url), GITHUB_STEP_SUMMARY: path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'sns-sum-')), 'summary.md') };
+    await send.sendBrief({ text: '', session: 's1', repo: 'ada/garden', env, sampleOnly: true, sessions: [] });
+    assert.strictEqual(f.seen.filter((r) => r.url.startsWith('/v1/')).length, 0);
+    assert.strictEqual(fs.existsSync(env.GITHUB_STEP_SUMMARY), false);
+  } finally { f.server.close(); }
+});
+
 test('a run with no identity token at all says so, naming the job setting', async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'sns-run-'));
   const env = { SIPNSHIP_HOME: home, GITHUB_ACTIONS: 'true', GITHUB_STEP_SUMMARY: path.join(home, 'summary.md') };
