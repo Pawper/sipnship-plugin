@@ -164,7 +164,7 @@ dispatch_area_holds() {
   while IFS= read -r da2_nums; do
     [ -n "$da2_nums" ] || continue
     da2_files=$(printf '%s\n' "$2" | awk -F'\t' -v k="$da2_nums" '$1 == "unit" && $2 == k { print $5; exit }')
-    da2_pairs="${da2_pairs}${da2_nums}	$(unit_areas "$3" "$da2_files")
+    da2_pairs="${da2_pairs}${da2_nums}	$(unit_areas "$3" "$da2_files")	${da2_files}
 "
   done <<EOF_DA2
 $(printf '%s\n' "$1" | awk -F'\t' '$0 ~ /^dispatch [0-9]/ { n = $1; sub(/^dispatch /, "", n); print n }')
@@ -175,23 +175,39 @@ EOF_DA2
       for (i = 1; i <= nx; i++) for (j = 1; j <= ny; j++) if (x[i] != "" && x[i] == y[j]) return x[i]
       return ""
     }
-    $1 == "A" && $2 != "" { na++; anum[na] = $2; aare[na] = $3 }
+    function listed1(x) { return x != "" && index(" " ENVIRON["PLAN_LISTED"] " ", " " x " ") > 0 }
+    function listed_all(nums,   t, k, i) { k = split(nums, t, " "); if (k == 0) return 0; for (i = 1; i <= k; i++) if (!listed1(t[i])) return 0; return 1 }
+    # the first file two comma lists share, a folder counting for what lies under it (as plan_units reads a listed file)
+    function sharefile(a, b,   x, y, i, j, nx, ny, p, q) {
+      nx = split(a, x, ","); ny = split(b, y, ",")
+      for (i = 1; i <= nx; i++) for (j = 1; j <= ny; j++) {
+        p = x[i]; q = y[j]; sub(/^\.\//, "", p); sub(/^\.\//, "", q); sub(/\/$/, "", p); sub(/\/$/, "", q)
+        if (p != "" && q != "" && (p == q || index(p, q "/") == 1 || index(q, p "/") == 1)) return (length(p) >= length(q) ? p : q)
+      }
+      return ""
+    }
+    $1 == "A" && $2 != "" { na++; anum[na] = $2; aare[na] = $3; afil[na] = $4 }
     $1 != "R" { next }
     {
       line = $0; sub(/^R\t/, "", line)
       if (line !~ /^dispatch [0-9]/) { print line; next }
       split(line, f, "\t")
       nums = f[1]; sub(/^dispatch /, "", nums)
-      area = ""
-      for (i = 1; i <= na; i++) if (anum[i] == nums) { area = aare[i]; break }
-      won = ""
-      if (area != "") for (g = 1; g <= ng; g++) if ((am = meet(area, garea[g])) != "") { won = g; break }
+      area = ""; files = ""
+      for (i = 1; i <= na; i++) if (anum[i] == nums) { area = aare[i]; files = afil[i]; break }
+      lst = listed_all(nums)
+      won = ""; how = ""
+      # two dispatches that each list their files are held only for a file they share; an area alone never holds one (#2535)
+      for (g = 1; g <= ng && won == ""; g++) {
+        if (lst && glst[g]) { if ((am = sharefile(files, gfil[g])) != "") { won = g; how = "shares: " am } }
+        else if (area != "" && (am = meet(area, garea[g])) != "") { won = g; how = "area: " am }
+      }
       if (won != "") {
         m = split(nums, ns, " "); q = split(f[2], ts, " \\| ")
-        for (k = 1; k <= m; k++) printf "hold %s\t%s\tAfter: %s [area: %s] (after: %s)\n", ns[k], (q == m ? ts[k] : f[2]), gtitle[won], am, gnums[won]
+        for (k = 1; k <= m; k++) printf "hold %s\t%s\tAfter: %s [%s] (after: %s)\n", ns[k], (q == m ? ts[k] : f[2]), gtitle[won], how, gnums[won]
         next
       }
-      ng++; garea[ng] = area; gtitle[ng] = f[2]; sub(/ \| .*/, "", gtitle[ng]); gnums[ng] = nums
+      ng++; garea[ng] = area; gfil[ng] = files; glst[ng] = lst; gtitle[ng] = f[2]; sub(/ \| .*/, "", gtitle[ng]); gnums[ng] = nums
       print line
     }'
 }
@@ -223,6 +239,8 @@ held_area_holds() {
       for (i = 1; i <= nx; i++) for (j = 1; j <= ny; j++) if (x[i] != "" && x[i] == y[j]) return x[i]
       return ""
     }
+    function listed1(x) { return x != "" && index(" " ENVIRON["PLAN_LISTED"] " ", " " x " ") > 0 }
+    function listed_all(nums,   t, k, i) { k = split(nums, t, " "); if (k == 0) return 0; for (i = 1; i <= k; i++) if (!listed1(t[i])) return 0; return 1 }
     $1 == "H" && $2 != "" { h++; hi[h] = $2; hw[h] = $3; ha[h] = $4 }
     $1 == "P" && $2 != "" { pub[$2] = 1 }
     $1 == "T" && $2 != "" { tt[$2] = $3 }
@@ -232,7 +250,7 @@ held_area_holds() {
         split(substr(u[i], 3), f, "\t"); nums = f[2]; by = ""
         if (f[1] == "unit") for (k = 1; k <= h; k++) {
           first = hi[k]; sub(/,.*/, "", first)
-          if (!(first in pub) || has(hw[k], nums) || (am = meet(f[6], ha[k])) == "") continue
+          if (listed_all(nums) || !(first in pub) || has(hw[k], nums) || (am = meet(f[6], ha[k])) == "") continue
           by = "After: " (first in tt && tt[first] != "" ? tt[first] : "#" first) " [area: " am "] (after: " first ")"; break
         }
         if (by == "") { printf "%s\t%s\t%s\t%s", f[1], f[2], f[3], f[4]; if (f[1] == "unit") printf "\t%s", f[5]; printf "\n"; continue }

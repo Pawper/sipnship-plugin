@@ -7191,6 +7191,20 @@ stop: proposal ready for approval" "$(dispatch_area_holds "$da_round" "$da_units
 da_units2=$(printf 'unit\t402\tWater the beds on a timer\t\tsrc/water/timer.ts\nunit\t403\tTint the beds by sun\t\tsrc/beds/tint.ts\n')
 eq "two dispatches in different areas both keep their place" "$da_round" "$(dispatch_area_holds "$da_round" "$da_units2" "$da_list")"
 eq "with no areas list the round passes unchanged" "$da_round" "$(dispatch_area_holds "$da_round" "$da_units" '')"
+# A round of a dozen issues that each list their files, across areas: no hold's reason is an area; a hold names the file shared (#2535).
+da_big_units=""; da_big_round=""
+for da_i in 1 2 3 4 5 6 7 8 9 10 11 12; do
+  case $da_i in 1|2|3) da_f="src/water/part$da_i.ts";; 4|5|6) da_f="src/beds/part$da_i.ts";; *) da_f="src/schedule/part$da_i.ts";; esac
+  [ $da_i = 6 ] && da_f="src/beds/part5.ts"
+  da_big_units="${da_big_units}unit	50$da_i	Garden task $da_i		$da_f
+"
+  da_big_round="${da_big_round}dispatch 50$da_i	Garden task $da_i
+"
+done
+da_big=$(PLAN_LISTED="501 502 503 504 505 506 507 508 509 5010 5011 5012" dispatch_area_holds "$da_big_round" "$da_big_units" "$da_list")
+eq "a dozen listed issues across areas: no hold's reason is an area" "0" "$(printf '%s\n' "$da_big" | grep '^hold' | grep -c '\[area:')"
+eq "the one pair that lists a file in common is held, naming the file" "hold 506${da_t}Garden task 6${da_t}After: Garden task 5 [shares: src/beds/part5.ts] (after: 505)" "$(printf '%s\n' "$da_big" | grep '^hold')"
+eq "a listed unit is never held by held_area_holds by area alone" "unit${da_t}402${da_t}Water the beds on a timer${da_t}${da_t}src/water/timer.ts" "$(PLAN_LISTED=402 held_area_holds "$da_list" "$(printf 'unit\t402\tWater the beds on a timer\t\tsrc/water/timer.ts\n')" "$(printf '301\t\twatering\n')" "$(printf '301\t301\n')" "$da_titles")"
 . "$root/scripts/drive/propose-lib.sh"
 da_fixed=$(dispatch_area_holds "$da_round" "$da_units" "$da_list")
 da_rf=$(round_file "$da_fixed" "$da_units" "$da_list" "$(printf '402\n403\n')" "")
