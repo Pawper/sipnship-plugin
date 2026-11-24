@@ -2244,6 +2244,7 @@ eq "a queue error exits 1, with or without findings" "rc=1 rc=1" "$(ar_run "" "g
 eq "the drain's end exits with the report, and a failed listing still exits 1" "1 1" "$(grep -c '^  exit \$?$' "$mq_all") $(grep -c 'this is a failed listing, not an empty queue' "$mq_all")"
 eq "the deploy line never says a number of drains it did not count" "0" "$(grep -c 'held across' "$root/templates/scripts/ci/queue/rules-deploy.sh")"
 eq "merging main in reuses GitHub's update-branch" "1" "$(sed -n '/^unstick_one()/,/^}/p' "$mq_all" | grep -c 'pulls/\$us_pr/update-branch')"
+eq "bringing main in leaves one comment with a hidden mark carrying when, in the shape core reads" "1 1" "$(sed -n '/^unstick_one()/,/^}/p' "$mq_all" | grep -c 'merge-queue:bringing-main \$(date -u +%Y-%m-%dT%H:%M:%SZ) -->') $(printf '<!-- merge-queue:bringing-main %s -->' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" | grep -Ec '<!-- merge-queue:bringing-main [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]+Z -->')"
 eq "a clash with main is marked in its comment" "1" "$(sed -n '/^notify_conflict()/,/^}/p' "$mq_all" | grep -c 'unstick_mark clash')"
 
 section 'a stalled queue finds its own way back'

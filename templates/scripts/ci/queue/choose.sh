@@ -226,6 +226,10 @@ unstick_one() {
         [ "$us_started" = no ] || { say "Unsticking: #$us_pr is also behind $base and merges cleanly; its turn is next drain, once this one's CI is running."; continue; }
         if gh_write api -X PUT "repos/{owner}/{repo}/pulls/$us_pr/update-branch" >/dev/null 2>"$gh_err"; then
           say "Unsticking: #$us_pr $( [ "$us_mw" = CONFLICTING ] && echo "showed a clash with $base that merges cleanly" || echo "was $us_behind commit(s) behind $base" ); merged $base into it, and CI runs on the new commit."
+          # One comment with a hidden mark carrying when, so the card says main is being brought in and since when.
+          gh_write api -X POST "repos/{owner}/{repo}/issues/$us_pr/comments" -f body="The merge queue brought $base into this change; its checks run again on the new commit.
+
+<!-- merge-queue:bringing-main $(date -u +%Y-%m-%dT%H:%M:%SZ) -->" >/dev/null 2>&1 || true
           sync_worktree "$(pr_field "$us_pr" 1)"
           us_started=yes
         else
