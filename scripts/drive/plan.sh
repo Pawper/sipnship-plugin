@@ -173,9 +173,9 @@ runners_online=$(gh api 'repos/{owner}/{repo}/actions/runners?per_page=100' --jq
 [ "$fast" = yes ] || plugin_note  # first line of the output: a proposal made by an old plan is read as such (#1846)
 echo "proposal for $(date '+%A %Y-%m-%d'), the owner's local day (at most $max_agents agents, at most $max_minutes minutes; $note):"
 # In progress is not taken on faith: an issue nobody works, or whose pull request is held for the owner, is set right first (./stale-lib.sh).
-stale=$(stale_lines "$facts" "$pull_links" "$(gitb for-each-ref --format='%(committerdate:unix)%09%(refname:short)' refs/heads refs/remotes 2>/dev/null | grep -v 'fixside/')" "$(date +%s)" 2 "$(started_units "$drive_comments")" "$(started_at "$drive_comments")")
+drive_started_at=$(started_at "$drive_comments"); stale=$(stale_lines "$facts" "$pull_links" "$(gitb for-each-ref --format='%(committerdate:unix)%09%(refname:short)' refs/heads refs/remotes 2>/dev/null | grep -v 'fixside/')" "$(date +%s)" 2 "$(started_units "$drive_comments")" "$drive_started_at")  # the round's own start, read once: stale_lines and the idle check below both grace a unit's issues from it, never forever (#2451)
 # An issue In progress with no claim, no branch, no open pull request and no unit of the round, past a short grace, has nobody on it: it is set to Ready and planned as ready work in this same run, so the drive never says "no ready work" with it waiting (#2365).
-stale=$(idle_freed "$facts" "$pull_links" "$(gitb for-each-ref --format='%(committerdate:unix)%09%(refname:short)' refs/heads refs/remotes 2>/dev/null)" "$(started_units "$drive_comments")" "$stale")
+stale=$(idle_freed "$facts" "$pull_links" "$(gitb for-each-ref --format='%(committerdate:unix)%09%(refname:short)' refs/heads refs/remotes 2>/dev/null)" "$(started_units "$drive_comments")" "$stale" "$drive_started_at")
 if [ -n "$stale" ]; then
   stale_say "$stale" 2
   stale_apply "$stale" "$facts"
@@ -200,7 +200,7 @@ areas_text=""; [ -f .claude/areas.txt ] && areas_text=$(cat .claude/areas.txt)
 past=$(past_spec_files "$(gitb log -n 300 --name-only --format='@@ %s' main 2>/dev/null || gitb log -n 300 --name-only --format='@@ %s' 2>/dev/null)")
 asked=$(asked_cancelled "$drive_comments" "$(asked_issues "$drive_comments")"); ASKED_ISSUES=$asked; export ASKED_ISSUES; asked_notes=""  # issues the builder asked for by name keep their place until done (asked-lib.sh, #1930)
 held_only=$(held_only_issues "$pull_links" | tr "
-" " "); idle=$(idle_in_progress "$facts" "$pull_links" "$(gitb for-each-ref --format='%(committerdate:unix)%09%(refname:short)' refs/heads refs/remotes 2>/dev/null)" "$(date +%s)" "$(started_units "$drive_comments")" | tr "\n" " "); guesses=""; running=""; plan_listed=""; plan_cr=$(printf '\r'); left_reads=0; plan_left_until=$((SECONDS + ${PLAN_LEFT_SECONDS:-90})); answer_led=""; answer_led_notes=""
+" " "); idle=$(idle_in_progress "$facts" "$pull_links" "$(gitb for-each-ref --format='%(committerdate:unix)%09%(refname:short)' refs/heads refs/remotes 2>/dev/null)" "$(date +%s)" "$(started_units "$drive_comments")" "" "$drive_started_at" | tr "\n" " "); guesses=""; running=""; plan_listed=""; plan_cr=$(printf '\r'); left_reads=0; plan_left_until=$((SECONDS + ${PLAN_LEFT_SECONDS:-90})); answer_led=""; answer_led_notes=""
 # A ready issue that says it comes after another open one is held, naming what it waits on, read afresh each run.
 reasons=$(hold_reasons "$facts" "$held_only")
 # An open pull request that already closes a Ready issue means no agent is started on it again, held or batched (stale-lib.sh).
@@ -240,10 +240,10 @@ done <<EOF_FACTS
 $(printf '%s\n' "$facts" | tr '\t' '\037')
 EOF_FACTS
 if [ -n "$guesses" ] || [ -n "$reasons" ]; then
-  units=$(READ_ISSUES="$read_issues" PLAN_LISTED="$plan_listed" plan_units "$guesses" "$running")
+  PLAN_LISTED=$plan_listed; export PLAN_LISTED; units=$(READ_ISSUES="$read_issues" PLAN_LISTED="$plan_listed" plan_units "$guesses" "$running")  # exported, so area_units reads it too: a listed issue is never held or bundled by area alone (#2452)
   # The running round's areas, read as publish-round.sh reads them: an issue in an area a running unit owns is a hold behind it, and units sharing an area are one unit, so the proposal publishes as it stands.
   if [ -n "$areas_text" ]; then
-    run_units=$(running_units "$(printf '%s\n' "$drive_comments" | cut -f3-)" "$(without_issues "$(printf '%s\n' "$snapshot" | awk -F'\t' '$1 == "issue" && $4 == "in-progress" { print $2 }')" "$held_only $idle")" "$(without_issues "$(printf '%s\n' "$pr_list" | cut -d"$us" -f1)" "$(held_pull_numbers "$pull_links")")" "$(printf '%s\n' "$pr_list" | cut -d"$us" -f1)")  # a unit whose pull request is held for the owner is not running (#2055)
+    run_units=$(RUNNING_FREED=$idle running_units "$(printf '%s\n' "$drive_comments" | cut -f3-)" "$(without_issues "$(printf '%s\n' "$snapshot" | awk -F'\t' '$1 == "issue" && $4 == "in-progress" { print $2 }')" "$held_only $idle")" "$(without_issues "$(printf '%s\n' "$pr_list" | cut -d"$us" -f1)" "$(held_pull_numbers "$pull_links")")" "$(printf '%s\n' "$pr_list" | cut -d"$us" -f1)")  # a unit whose pull request is held for the owner is not running (#2055); nor one with no evidence left, read fresh this same look (#2451)
     issue_titles=$(issue_titles_from_facts "$facts"); units=$(area_units "$areas_text" "$units" "$run_units" "$issue_titles"); units=$(held_area_holds "$areas_text" "$units" "$(published_held_areas "$(printf '%s\n' "$drive_comments" | cut -f3-)")" "$published" "$issue_titles"); units=$(unplaced_holds "$units" "$guesses" "$run_units" "$issue_titles" "$(held_pull_of_issues "$pull_links")")
   fi
   # Issues a builder rushed (RUSH_ISSUES, space separated, read from work-requests.sh): their bundle leads.

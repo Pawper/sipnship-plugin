@@ -7,8 +7,11 @@
 
 # proposed_units COMMENTS
 # The units of the latest proposed round published on the drive issue (its
-# sipnship-proposal marker with status proposed), one "ISSUES<TAB>AREAS" line
-# each, both comma separated. Nothing when there is none.
+# sipnship-proposal marker with status proposed), one
+# "ISSUES<TAB>AREAS<TAB>LISTED" line each, ISSUES and AREAS comma separated,
+# LISTED "yes" when the unit was published `listed: yes` (every one of its
+# issues lists its own files, publish-round.sh, #2452). Nothing when there is
+# none.
 proposed_units() {
   printf '%s\n' "$1" | tr -d '\r' | grep -F 'sipnship-proposal {"status":"proposed"' | tail -n 1 \
     | sed 's/.*sipnship-proposal {"status":"proposed",//; s/"held":.*//' | awk '
@@ -20,7 +23,8 @@ proposed_units() {
           is = substr(u, 2, RLENGTH - 2); gsub(/ /, "", is)
           ar = ""
           if (match(u, /"areas":\[[^]]*\]/)) { ar = substr(u, RSTART + 9, RLENGTH - 10); gsub(/"/, "", ar) }
-          if (is != "") print is "\t" ar
+          ld = (u ~ /"listed":true/) ? "yes" : ""
+          if (is != "") print is "\t" ar "\t" ld
         }
       }'
 }
@@ -46,13 +50,17 @@ keep_running_units() {
 # join_dispatch GOALS RUNNING RUN_UNITS PROPOSED
 # GOALS are the approved goals; RUNNING the issues of the running round (space
 # separated); RUN_UNITS running_units' lines (the units still at work, with their
-# areas); PROPOSED proposed_units' lines. A dispatch goal goes ahead, joining the
+# areas); PROPOSED proposed_units' lines (ISSUES, AREAS and, since #2452,
+# LISTED). A dispatch goal goes ahead, joining the
 # running round, when its unit shares no area with any running unit and names no
 # issue already running; a unit whose areas are unknown waits, since nothing shows
-# it is free. A goal that went First goes ahead as before. Every other goal goes
-# ahead. Prints the goals left, then one "held:" line when a dispatch waited.
-# Without PROPOSED (no round on the tab to read areas from) every dispatch waits,
-# as hold_dispatch says.
+# it is free. A unit published `listed: yes` (every one of its issues lists its
+# own files) never waits for sharing an area alone: its own file list is the
+# literal truth the plan already checked, the same rule area_units and
+# publish-round.sh's area check hold to (#2452). A goal that went First goes
+# ahead as before. Every other goal goes ahead. Prints the goals left, then one
+# "held:" line when a dispatch waited. Without PROPOSED (no round on the tab to
+# read areas from) every dispatch waits, as hold_dispatch says.
 join_dispatch() {
   if [ -z "$2" ]; then printf '%s\n' "$1"; return 0; fi
   if [ -z "$4" ]; then hold_dispatch "$1" "$2"; return 0; fi
@@ -66,13 +74,13 @@ join_dispatch() {
       n = split(run, a, "\n")
       for (i = 1; i <= n; i++) { gsub(/\r/, "", a[i]); if (a[i] == "") continue; split(a[i], f, "\t"); nr++; ri[nr] = f[1]; ra[nr] = f[2]; k = split(f[1], t, ","); for (j = 1; j <= k; j++) on[t[j]] = 1 }
       n = split(prop, a, "\n")
-      for (i = 1; i <= n; i++) { gsub(/\r/, "", a[i]); if (a[i] == "") continue; split(a[i], f, "\t"); k = split(f[1], t, ","); for (j = 1; j <= k; j++) pa[t[j]] = f[2] }
+      for (i = 1; i <= n; i++) { gsub(/\r/, "", a[i]); if (a[i] == "") continue; split(a[i], f, "\t"); k = split(f[1], t, ","); for (j = 1; j <= k; j++) { pa[t[j]] = f[2]; pl[t[j]] = f[3] } }
     }
     /^dispatch / {
       if (index($0, "	First: ")) { print; next }
       split(substr($0, 10), w, /[ \t]+/); first = w[1]; ok = (first in pa) && pa[first] != ""
       for (j = 1; ok && w[j] ~ /^[0-9]+$/; j++) if (w[j] in on) ok = 0
-      for (q = 1; ok && q <= nr; q++) if (ra[q] == "" || share(pa[first], ra[q])) ok = 0
+      for (q = 1; ok && q <= nr; q++) if (ra[q] == "" || (pl[first] != "yes" && share(pa[first], ra[q]))) ok = 0
       if (ok) print; else held++
       next
     }

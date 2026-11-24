@@ -12,7 +12,7 @@
 #   status: proposed          proposed (the default) waits for a go-ahead and
 #                             draws as "Proposed next round"; started means the
 #                             round was dispatched and draws as Working cards
-#   unit: 12 14 | why: both change the watering schedule | areas: watering | pr: 531
+#   unit: 12 14 | why: both change the watering schedule | areas: watering | pr: 531 | listed: yes
 #                             one agent's work: its issues, then its fields;
 #                             "why" is for a bundle, "areas" (required) are
 #                             the areas it changes, by name from the project's
@@ -50,16 +50,15 @@
 #                             the plan's words when it holds every ready issue
 #                             with runners free; the Work tab says it in place
 #                             of "nothing proposed", never as a quiet round
-# No two units may share an issue, and no two may share an area of the list
-# the project keeps (.claude/areas.txt, or --areas FILE; scripts/drive/
-# areas-lib.sh gives its form) unless an apart line says why: the script says
-# to bundle them or hold one behind the other, and posts nothing. A unit in an
-# area that a running unit owns (the latest started round on the drive issue,
-# with an issue still In progress) is refused the same way: new work there
-# goes to that unit, or waits behind it. A round published by hand is held to
-# this as much as the drive's own. With status started, each unit's issues that have no pull request
-# are set to In progress (the state label, over REST; the nightly board sync
-# sets the board's field), so a dispatched unit never shows as Ready.
+# No two units may share an issue, and no two may share an area of the list the project keeps
+# (.claude/areas.txt, or --areas FILE; scripts/drive/areas-lib.sh gives its form) unless an apart
+# line says why, or one side is `listed: yes` (#2452): bundle them or hold one behind the other,
+# and post nothing. A unit in an area a running unit owns (the latest started round on the drive
+# issue, with an issue still In progress) is refused the same way, `listed: yes` excepted: new
+# work goes to that unit, or waits behind it. A round published by hand is held to this as much
+# as the drive's own. With status started, each unit's issues with no pull request are set to In
+# progress (the state label, over REST; the nightly board sync sets the board's field), so a
+# dispatched unit never shows as Ready.
 # --issue names the drive issue when more than one is open; --dry-run prints
 # the comment and changes nothing; --no-labels leaves the labels alone.
 # Everything here is REST. Needs gh signed in.
@@ -152,13 +151,14 @@ BEGIN { status = "proposed"; units = ""; held = ""; apart = ""; waits = ""; size
   if (nums == "" || nums == "!") bad("a " kind " line starts with the issue numbers: " $0)
   ni = split(nums, ns, ",")
   if (kind != "apart") for (i = 1; i <= ni; i++) { if (ns[i] in seenissue) bad("issue " ns[i] " appears twice"); seenissue[ns[i]] = 1 }
-  why = ""; files = ""; pr = ""; after = ""; na = 0; delete areas
+  why = ""; files = ""; pr = ""; after = ""; na = 0; delete areas; listed = ""
   for (p = 2; p <= np; p++) {
     s = trim(part[p]); k = s; sub(/:.*/, "", k); v = trim(substr(s, length(k) + 2)); k = tolower(trim(k))
     if (k == "why") why = v
     else if (k == "areas") files = arealist(v)
     else if (k == "pr") { if (v !~ /^#?[0-9]+$/) bad("pr is a number: " s); pr = v; sub(/#/, "", pr) }
     else if (k == "after") { after = numlist(v); if (after == "!") bad("after names issue numbers: " s) }
+    else if (k == "listed") listed = tolower(v)  # "yes": every issue lists its own files; trusted over the area (#2452)
     else bad("unknown field " k " in: " $0)
   }
   if (kind == "apart") {
@@ -167,7 +167,7 @@ BEGIN { status = "proposed"; units = ""; held = ""; apart = ""; waits = ""; size
     line = "- Left apart: "; for (i = 1; i <= ni; i++) line = line (i > 1 ? ", " : "") "#" ns[i]
     lines = lines line ": " why "\n"
   } else if (kind == "unit") {
-    j = "{\"issues\":[" nums "]" (why != "" ? ",\"whyTogether\":\"" esc(why) "\"" : "") ",\"areas\":[" files "]" (pr != "" ? ",\"pr\":" pr : "") "}"
+    j = "{\"issues\":[" nums "]" (why != "" ? ",\"whyTogether\":\"" esc(why) "\"" : "") ",\"areas\":[" files "]" (pr != "" ? ",\"pr\":" pr : "") (listed == "yes" ? ",\"listed\":true" : "") "}"
     units = units (units == "" ? "" : ",") j; nu++
     line = "- "; for (i = 1; i <= ni; i++) line = line (i > 1 ? ", " : "") "#" ns[i]
     if (why != "") line = line ": " why

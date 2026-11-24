@@ -19,7 +19,11 @@
 #   stall: ...                                              when every ready issue is held, the plan's stall words
 # An issue is named once: a unit first, then the first hold that names it. A
 # unit on no area of the list says `areas: none`; a hold says none too, since
-# it starts nothing and is planned again next run.
+# it starts nothing and is planned again next run. A unit whose every issue
+# lists its own files (PLAN_LISTED, environment, space separated, as plan_units
+# and area_units read it) carries `| listed: yes`, so publish-round.sh's area
+# check and the approval step's join check trust that file list over the area
+# too, the same way area_units already does (#2452).
 round_file() {
   { printf '%s\n' "$2" | sed 's/^/U\t/'; printf '%s\n' "$4" | sed 's/^/I\t/'; printf '%s\n' "$1" | sed 's/^/R\t/'; } | tr -d '\r' | RF_AREAS=$3 awk -F'\t' -v sized="$5" -v stall="${6:-}" '
     function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s); return s }
@@ -39,6 +43,9 @@ round_file() {
       return out == "" ? "none" : out
     }
     function fresh(nums,   n, x, i, out) { n = split(nums, x, /[ ,#]+/); out = ""; for (i = 1; i <= n; i++) if (x[i] ~ /^[0-9]+$/ && !(x[i] in used)) { used[x[i]] = 1; out = out (out == "" ? "" : " ") x[i] }; return out }
+    # A unit whose every issue lists its own files (PLAN_LISTED, as plan_units and area_units read it) carries that forward as "listed: yes", so publish-round.sh and the approval step trust its own files over the coarse area too (#2452).
+    function listed1(x) { return x != "" && index(" " ENVIRON["PLAN_LISTED"] " ", " " x " ") > 0 }
+    function listed_all(nums,   t, k, i) { k = split(nums, t, " "); if (k == 0) return 0; for (i = 1; i <= k; i++) if (!listed1(t[i])) return 0; return 1 }
     BEGIN {
       n = split(ENVIRON["RF_AREAS"], ln, "\n")
       for (l = 1; l <= n; l++) {
@@ -58,7 +65,7 @@ round_file() {
         nums = substr(f[1], 10); why = ""
         for (i = 2; i in f; i++) if (f[i] ~ /^Why together: /) why = substr(f[i], 15)
         nums = fresh(nums); if (nums == "") next
-        out = "unit: " nums (why != "" ? " | why: " clean(why) : "") " | areas: " areas_of(files[substr(f[1], 10)])
+        out = "unit: " nums (why != "" ? " | why: " clean(why) : "") " | areas: " areas_of(files[substr(f[1], 10)]) (listed_all(nums) ? " | listed: yes" : "")
         units[++nu] = out
         next
       }

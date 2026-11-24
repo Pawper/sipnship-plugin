@@ -85,7 +85,10 @@ round_areas() {
 #   a unit shares an area with a running unit it is not part of: give its
 #     issues to that unit, or hold them behind it.
 # An `apart:` line naming an issue of each side, with its why, lets the two
-# run side by side: the reason is stated, and the Work tab shows it.
+# run side by side: the reason is stated, and the Work tab shows it. A unit
+# marked `listed: yes` (every one of its issues lists its own files) is never
+# refused for sharing an area alone, on either side of the check: it relies on
+# the literal file check the plan already made, not the coarse area (#2452).
 area_problem() {
   printf '%s\n' "$1" | AREA_RUNNING=$2 awk '
     function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s); return s }
@@ -108,8 +111,8 @@ area_problem() {
     function apart(a, b,   k) { for (k = 1; k <= nap; k++) if (meets(ap[k], a) && meets(ap[k], b)) return 1; return 0 }
     function hashes(s) { gsub(/ /, ", #", s); return "#" s }
     function say(msg) { print msg; done = 1; exit }
-    /^[ \t]*unit:/ { s = $0; sub(/^[ \t]*unit:/, "", s); sub(/\|.*/, "", s); nu++; ui[nu] = nums(s); ua[nu] = field($0, "areas"); next }
-    /^[ \t]*hold:/ { s = $0; sub(/^[ \t]*hold:/, "", s); sub(/\|.*/, "", s); nh++; hi[nh] = nums(s); ha[nh] = field($0, "areas"); hw[nh] = nums(field($0, "after")); next }
+    /^[ \t]*unit:/ { s = $0; sub(/^[ \t]*unit:/, "", s); sub(/\|.*/, "", s); nu++; ui[nu] = nums(s); ua[nu] = field($0, "areas"); ul[nu] = (tolower(field($0, "listed")) == "yes"); next }
+    /^[ \t]*hold:/ { s = $0; sub(/^[ \t]*hold:/, "", s); sub(/\|.*/, "", s); nh++; hi[nh] = nums(s); ha[nh] = field($0, "areas"); hw[nh] = nums(field($0, "after")); hl[nh] = (tolower(field($0, "listed")) == "yes"); next }
     /^[ \t]*apart:/ {
       s = $0; sub(/^[ \t]*apart:/, "", s); sub(/\|.*/, "", s)
       if (field($0, "why") == "") say("the apart line " trim(s) " gives no why; say why those issues run apart with | why: ...")
@@ -119,11 +122,11 @@ area_problem() {
       if (done) exit
       for (i = 1; i <= nu; i++) for (j = i + 1; j <= nu; j++) {
         a = shared(ua[i], ua[j])
-        if (a != "" && !apart(ui[i], ui[j])) say(hashes(ui[i]) " and " hashes(ui[j]) " are two units in one area, " a "; bundle them into one unit, or hold one behind the other (hold: " ui[j] " | after: " ui[i] " | areas: " a "); to run them side by side anyway, say why on an apart: line")
+        if (a != "" && !apart(ui[i], ui[j]) && !ul[i] && !ul[j]) say(hashes(ui[i]) " and " hashes(ui[j]) " are two units in one area, " a "; bundle them into one unit, or hold one behind the other (hold: " ui[j] " | after: " ui[i] " | areas: " a "); to run them side by side anyway, say why on an apart: line")
       }
       for (h = 1; h <= nh; h++) for (i = 1; i <= nu; i++) {
         a = shared(ha[h], ua[i])
-        if (a != "" && !meets(hw[h], ui[i]) && !apart(hi[h], ui[i])) say("the held " hashes(hi[h]) " shares the area " a " with " hashes(ui[i]) " but waits on something else; hold it after that unit (after: " ui[i] ")")
+        if (a != "" && !meets(hw[h], ui[i]) && !apart(hi[h], ui[i]) && !hl[h] && !ul[i]) say("the held " hashes(hi[h]) " shares the area " a " with " hashes(ui[i]) " but waits on something else; hold it after that unit (after: " ui[i] ")")
       }
       nr = split(ENVIRON["AREA_RUNNING"], rl, "\n")
       for (r = 1; r <= nr; r++) {
@@ -131,6 +134,7 @@ area_problem() {
         split(rl[r], rf, "\t"); ri = rf[1]; gsub(/,/, " ", ri)
         for (i = 1; i <= nu; i++) {
           if (meets(ui[i], ri)) continue
+          if (ul[i]) continue  # its own Touches line is the literal truth; a running unit area alone never holds it (#2452)
           a = shared(ua[i], rf[2])
           if (a != "" && !apart(ui[i], ri)) say("the unit " hashes(ui[i]) " is in the area " a ", which the running unit " hashes(ri) " owns; give it to that unit (add it to the line of that unit), or hold it after that unit (hold: " ui[i] " | after: " ri " | areas: " a "), or say why it runs apart on an apart: line")
         }
@@ -138,7 +142,7 @@ area_problem() {
     }'
 }
 
-# running_units COMMENTS IN_PROGRESS
+# running_units COMMENTS IN_PROGRESS [OPEN_PRS [ALL_OPEN]]
 # COMMENTS are the drive issue's comment bodies, one per line. IN_PROGRESS is
 # the open issues labeled In progress, one number per line. Prints each unit
 # of the latest started round that still has an issue in progress, one
@@ -148,15 +152,20 @@ area_problem() {
 # A unit also runs while its pull request is open, whatever State its issues
 # show (as running_round counts it): the optional third argument is the open
 # pull requests' numbers, one per line, and a unit whose "pr" is among them runs.
+# RUNNING_FREED (environment, one number a line or spaced), when set, are issues this same look already
+# found no evidence for (idle_in_progress, idle-lib.sh): a unit is running only while it has evidence, so
+# these count as not In progress here whatever their label still says, and a unit left with none of its
+# issues live or open is not running (#2451).
 running_units() {
   ru_m=$(printf '%s\n' "$1" | tr -d '\r' | grep -F 'sipnship-proposal {"status":"started"' | tail -n 1 \
     | sed 's/.*sipnship-proposal {"status":"started",//; s/"held":.*//')
   [ -n "$ru_m" ] || return 0
-  printf '%s\n' "$ru_m" | awk -v withpr="${RUNNING_WITH_PR:-}" -v haveall="${4+yes}" -v al="$(printf '%s\n' "${4:-}" | tr -d '\r' | tr '\n' ' ')" -v ip="$(printf '%s\n' "$2" | tr -d '\r' | tr '\n' ' ')" -v op="$(printf '%s\n' "${3:-}" | tr -d '\r' | tr '\n' ' ')" '
+  printf '%s\n' "$ru_m" | awk -v withpr="${RUNNING_WITH_PR:-}" -v haveall="${4+yes}" -v al="$(printf '%s\n' "${4:-}" | tr -d '\r' | tr '\n' ' ')" -v ip="$(printf '%s\n' "$2" | tr -d '\r' | tr '\n' ' ')" -v op="$(printf '%s\n' "${3:-}" | tr -d '\r' | tr '\n' ' ')" -v fr="$(printf '%s\n' "${RUNNING_FREED:-}" | tr -d '\r' | tr '\n' ' ')" '
     BEGIN {
       n = split(ip, a, " "); for (i = 1; i <= n; i++) if (a[i] != "") live[a[i]] = 1
       n = split(op, a, " "); for (i = 1; i <= n; i++) if (a[i] != "") opn[a[i]] = 1
       n = split(al, a, " "); for (i = 1; i <= n; i++) if (a[i] != "") alln[a[i]] = 1
+      n = split(fr, a, " "); for (i = 1; i <= n; i++) if (a[i] != "") delete live[a[i]]  # evidence says it is freed, whatever the label still shows (#2451)
     }
     {
       k = split($0, part, /\{"issues":/)

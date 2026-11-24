@@ -5645,6 +5645,13 @@ pr_two="The round was not published: #214 and #223 are two units in one area, wa
 eq "two units sharing a file are refused before anything is posted, saying to bundle or hold" "$pr_two|0" "$(: > "$pr_dir/log"; pr_run "$fx/drive-round/overlap.txt" | tr '\n' '|' | sed 's/|$//')|$(grep -c -- '-X' "$pr_dir/log")"
 # The fault this rule was made for: two units in one area, named in different words, went through.
 eq "two units in one area under different words are refused too" "$pr_two" "$(pr_run --dry-run "$fx/drive-round/other-words.txt")"
+# A unit "listed: yes" (every one of its issues lists its own files) is never refused for sharing an
+# area with another unit alone (#2452): it relies on the literal file check the plan already made.
+printf 'unit: 214 | areas: watering | listed: yes\nunit: 223 | areas: watering\n' > "$pr_dir/listed.txt"
+eq "a listed unit sharing an area with another publishes instead of being refused" "0" "$(pr_run --dry-run "$pr_dir/listed.txt" > /dev/null; echo $?)"
+eq "the marker carries the listed flag for the Work tab and the approval step to read" "1" "$(pr_run --dry-run "$pr_dir/listed.txt" | grep -c '"issues":\[214\],"areas":\["watering"\],"listed":true')"
+pr_run --dry-run "$pr_dir/listed.txt" > "$pr_dir/listed.out"
+eq "the other unit, not listed, carries no such flag" "1 0" "$(grep -c '"issues":\[223\],"areas":\["watering"\]}' "$pr_dir/listed.out") $(grep -c '"issues":\[223\],"areas":\["watering"\],"listed"' "$pr_dir/listed.out")"
 eq "a marker carries the area's name, whatever path named it" '"areas":["watering"]},{"issues":[223],"areas":["seeds"]' "$(grep -o '"areas":\["watering"\]},{"issues":\[223\],"areas":\["seeds"\]' "$pr_dir/dry")"
 eq "an area not on the list is refused with where the list is" "The round was not published: Work card is not an area on the list in $pr_areas; name one of its areas, or a path inside one." "$(printf 'unit: 1 | areas: Work card\n' > "$pr_dir/free.txt"; pr_run --dry-run "$pr_dir/free.txt")"
 eq "a unit that names no area is refused" "The round was not published: the unit 1 names no area; add | areas: NAME, from the list in $pr_areas." "$(printf 'unit: 1 | why: beds\n' > "$pr_dir/none.txt"; pr_run --dry-run "$pr_dir/none.txt")"
@@ -5667,9 +5674,13 @@ eq "once the running unit is no longer in progress its area is free" "0" "$(pr_r
 . "$root/scripts/drive/areas-lib.sh"
 eq "running_units names each unit of the latest started round still in progress, with its areas" "300,301	watering,frost" "$(running_units "$(printf '%s\n' 'x <!-- sipnship-proposal {"status":"started","units":[{"issues":[1],"areas":["seeds"]}],"held":[]} -->' 'y <!-- sipnship-proposal {"status":"started","units":[{"issues":[300,301],"whyTogether":"a ] in words","areas":["watering","frost"]},{"issues":[302],"areas":["seeds"],"pr":9}],"held":[{"issues":[303],"waitsOn":[300],"areas":["seeds"]}]} -->')" "$(printf '301\n303\n1\n')")"
 eq "running_units says nothing when no round was started" "" "$(running_units 'a comment' '301')"
+# A unit is running only while it has evidence (#2451): FREED names an issue this same look already found no
+# evidence for, so it counts as not In progress here whatever the label still says.
+eq "an issue the look already freed does not keep its unit running" "" "$(RUNNING_FREED=301 running_units "$(printf '%s\n' 'x <!-- sipnship-proposal {"status":"started","units":[{"issues":[1],"areas":["seeds"]}],"held":[]} -->' 'y <!-- sipnship-proposal {"status":"started","units":[{"issues":[300,301],"whyTogether":"a ] in words","areas":["watering","frost"]},{"issues":[302],"areas":["seeds"],"pr":9}],"held":[{"issues":[303],"waitsOn":[300],"areas":["seeds"]}]} -->')" "$(printf '301\n303\n1\n')")"
 ru_cm=$(printf '%s' 'x <!-- sipnship-proposal {"status":"started","units":[{"issues":[302],"areas":["work"],"pr":9}],"held":[]} -->')
 eq "a unit whose issues show another State still runs while its pull request is open" "302	work" "$(running_units "$ru_cm" '' "$(printf '9\n12\n')")"
 eq "and stops running once its pull request is not open" "" "$(running_units "$ru_cm" '' '12')"
+eq "freed names an issue of no unit here without changing anything" "302	work" "$(RUNNING_FREED=301 running_units "$ru_cm" '' "$(printf '9\n12\n')")"
 eq "plan.sh hands the open pull requests to running_units" "1" "$(grep -c 'running_units .*pr_list' "$root/scripts/drive/plan.sh")"
 eq "the drive's skill says feedback during a round is filed, not dispatched" "yes" "$(grep -q 'files it as a ready issue' "$root/skills/project-drive/SKILL.md" && grep -q 'files it as a ready issue' "$root/skills/handoff/SKILL.md" && echo yes)"
 eq "a line it does not know is refused" "The round was not published: a line this script does not know: garden: beds." "$(printf 'unit: 1 | areas: seeds\ngarden: beds\n' > "$pr_dir/odd.txt"; pr_run --dry-run "$pr_dir/odd.txt")"
@@ -6340,6 +6351,13 @@ eq "two asked issues in another area start in the running round as one unit; the
 held: 1 dispatch goal(s) wait for the running round (#1434) to land" "$(join_dispatch "$(printf 'dispatch 2300 2301\tA | B\tWhy together: both change the web\ndispatch 2302\n')" 1434 "$ja_ru" "$(proposed_units "$ja_prop")")"
 eq "a unit of the proposed round whose areas are unknown never joins a running round blind" "held: 1 dispatch goal(s) wait for the running round (#1434) to land" "$(join_dispatch "$(printf 'dispatch 7\n')" 1434 "$ja_ru" "$(printf '7\t\n')")"
 eq "a goal naming an issue already running is never started twice" "held: 1 dispatch goal(s) wait for the running round (#1434) to land" "$(join_dispatch "$(printf 'dispatch 1434\n')" 1434 "$ja_ru" "$(printf '1434\tother\n')")"
+# A proposed unit published "listed": true (every one of its issues lists its own files) joins the
+# running round at once instead of waiting for sharing an area alone (#2452): proposed_units' third
+# column carries it from the marker, the same rule publish-round's area check holds unit-for-unit.
+ja_prop_listed="2026-11-20T21:30:00Z${hr_t}bot${hr_t}"'<!-- sipnship-proposal {"status":"proposed","units":[{"issues":[2302],"areas":["work"],"listed":true}],"held":[]} -->'
+eq "proposed_units carries the listed flag as a third column" "2302${hr_t}work${hr_t}yes" "$(proposed_units "$ja_prop_listed")"
+eq "a listed dispatch joins the running round instead of waiting for its area" "dispatch 2302" "$(join_dispatch "$(printf 'dispatch 2302\n')" 1434 "$ja_ru" "$(proposed_units "$ja_prop_listed")")"
+eq "without the listed flag the same dispatch still waits" "held: 1 dispatch goal(s) wait for the running round (#1434) to land" "$(join_dispatch "$(printf 'dispatch 2302\n')" 1434 "$ja_ru" "$(proposed_units "$ja_prop")")"
 eq "publishing a started round while another runs keeps the running unit in it, with its pull request" "unit: 2300 2301 | areas: other
 unit: 1434 | areas: work | pr: 2100" "$(keep_running_units "$(printf 'status: started\nunit: 2300 2301 | areas: other\n')" "$(printf '1434\twork\t2100\n')" | sed -n '2,3p')"
 eq "a running unit the round already names is not added twice" "1" "$(keep_running_units "$(printf 'status: started\nunit: 1434 | areas: work\n')" "$(printf '1434\twork\t\n')" | grep -c '^unit:')"
@@ -7131,6 +7149,13 @@ eq "files on no area at all name none" "" "$(unit_areas "$da_list" 'notes/loose.
 eq "two ready issues, one with a file on no area, beside a running unit: two holds, no start" "hold${da_t}402${da_t}Water the beds on a timer${da_t}After: Water the beds [area: watering] (after: 301)
 hold${da_t}404${da_t}Fix the schedule page${da_t}After: Water the beds [area: watering] (after: 301)" "$(area_units "$da_list" "$(printf 'unit\t402\tWater the beds on a timer\t\tnotes/loose.txt,src/water/timer.ts\nunit\t404\tFix the schedule page\t\tsrc/schedule.ts\n')" "$(printf '301\twatering\n')" "$da_titles")"
 eq "two ready issues in one area with none running are one bundle" "1" "$(area_units "$da_list" "$(printf 'unit\t402\tWater the beds on a timer\t\tnotes/loose.txt,src/water/timer.ts\nunit\t404\tFix the schedule page\t\tsrc/schedule.ts\n')" '' "$da_titles" | grep -c '^unit')"
+# An issue that lists its files is never held, or bundled with another, by area alone: areas decide
+# holds only for an issue with no file list (#2452). PLAN_LISTED (as plan_units already reads it)
+# names the issues whose first line lists their files.
+eq "without a file list, a ready issue in the running unit's area is held" "hold${da_t}402${da_t}Water the beds on a timer${da_t}After: Water the beds [area: watering] (after: 301)" "$(area_units "$da_list" "$(printf 'unit\t402\tWater the beds on a timer\t\tsrc/water/timer.ts\n')" "$(printf '301\twatering\n')" "$da_titles")"
+eq "the same issue, with a file list, is never held by area alone" "unit${da_t}402${da_t}Water the beds on a timer${da_t}${da_t}src/water/timer.ts" "$(PLAN_LISTED=402 area_units "$da_list" "$(printf 'unit\t402\tWater the beds on a timer\t\tsrc/water/timer.ts\n')" "$(printf '301\twatering\n')" "$da_titles")"
+eq "two listed issues in one area with no shared file stay two units, not one bundle" "2" "$(PLAN_LISTED='402 404' area_units "$da_list" "$(printf 'unit\t402\tWater the beds on a timer\t\tsrc/water/timer.ts\nunit\t404\tFix the schedule page\t\tsrc/schedule.ts\n')" '' "$da_titles" | grep -c '^unit')"
+eq "one listed and one guessed issue sharing only an area are still two units" "2" "$(PLAN_LISTED='402' area_units "$da_list" "$(printf 'unit\t402\tWater the beds on a timer\t\tsrc/water/timer.ts\nunit\t404\tFix the schedule page\t\tsrc/schedule.ts\n')" '' "$da_titles" | grep -c '^unit')"
 # apply_units can still fill a round with two dispatches that share one area (an asked-for unit and a
 # priority unit, say, both in "queue"), which publish-round.sh refuses outright; the plan holds the
 # later one behind the earlier instead, so its round always publishes (#2136).
@@ -7146,6 +7171,18 @@ eq "with no areas list the round passes unchanged" "$da_round" "$(dispatch_area_
 da_fixed=$(dispatch_area_holds "$da_round" "$da_units" "$da_list")
 da_rf=$(round_file "$da_fixed" "$da_units" "$da_list" "$(printf '402\n403\n')" "")
 eq "the fixed round's own hold names what it waits on, and publish-round's area check passes it" "" "$(area_problem "$(round_areas "$da_list" "$da_rf")" "")"
+# round_file carries PLAN_LISTED into "listed: yes" on a unit whose every issue lists its own files,
+# so publish-round's area check and the approval step's join check trust that list too (#2452).
+da_one_unit=$(printf 'dispatch 402\tWater the beds on a timer\nstop: x\n')
+da_one_units=$(printf 'unit\t402\tWater the beds on a timer\t\tsrc/water/timer.ts\n')
+eq "a unit whose issue lists its files is marked listed: yes" "unit: 402 | areas: watering | listed: yes" "$(PLAN_LISTED=402 round_file "$da_one_unit" "$da_one_units" "$da_list" "$(printf '402\n')" "" | grep '^unit:')"
+eq "the same unit, guessed, carries no listed field" "unit: 402 | areas: watering" "$(round_file "$da_one_unit" "$da_one_units" "$da_list" "$(printf '402\n')" "" | grep '^unit:')"
+# A unit marked "listed: yes" is never refused for sharing an area alone, with another unit of the
+# round or with a running unit (#2452): the published area check holds to the same rule area_units does.
+eq "two units sharing an area, one listed, pass the area check that would otherwise refuse them" "" "$(area_problem "$(round_areas "$da_list" "$(printf 'unit: 402 | areas: watering | listed: yes\nunit: 404 | areas: watering\n')")" "")"
+eq "neither marked listed, the same two units are refused" "1" "$(area_problem "$(round_areas "$da_list" "$(printf 'unit: 402 | areas: watering\nunit: 404 | areas: watering\n')")" "" | grep -c 'are two units in one area')"
+eq "a listed unit sharing the running unit's area passes too" "" "$(area_problem "$(round_areas "$da_list" "$(printf 'unit: 402 | areas: watering | listed: yes\n')")" "$(printf '301\twatering\n')")"
+eq "the same unmarked unit is refused for sharing the running unit's area" "1" "$(area_problem "$(round_areas "$da_list" "$(printf 'unit: 402 | areas: watering\n')")" "$(printf '301\twatering\n')" | grep -c 'is in the area watering, which the running unit')"
 # A green pull request held for the builder's read is not landing and never counts toward a drain (spec 010).
 . "$root/scripts/drive/plan-green-lib.sh"
 hl_snap=$(printf 'pr\t41\tWater the beds\tgreen\tmergeable\tapp\t0\tno\tno\tno\tnone\npr\t42\tTint the beds\tgreen\tmergeable\tapp\t0\tyes\tno\tno\tnone\n')
@@ -8454,6 +8491,12 @@ eq "an In progress issue with no agent, pull request or commit is idle" "51" "$(
 eq "one with an open pull request is not" "" "$(idle_in_progress "$cl_idle" "$(printf '301\tno\t51\n')" "" "$cl_now" "")"
 eq "one with a commit on its branch is not" "" "$(idle_in_progress "$cl_idle" "" "$(printf '1780000000\torigin/issue-51\n')" "$cl_now" "")"
 eq "one an agent was sent to this round is not" "" "$(idle_in_progress "$cl_idle" "" "" "$cl_now" "$(printf '\t51\n')")"
+# A unit is running only while it has evidence: with no STARTED given (an older caller) a unit's own issue is
+# left alone forever, as above; given the round's own start, the grace covers only a unit just started, past
+# which no branch and no pull request means nobody is on it after all (#2451).
+eq "a unit member started long ago with still no evidence is idle now, not exempt forever" "51" "$(idle_in_progress "$cl_idle" "" "" "$cl_now" "$(printf '\t51\n')" "" "$((cl_now - 1000))")"
+eq "the same unit, started moments ago, still keeps its grace" "" "$(idle_in_progress "$cl_idle" "" "" "$cl_now" "$(printf '\t51\n')" "" "$((cl_now - 100))")"
+eq "a unit member with a branch of its own is never idle, however long the round has run" "" "$(idle_in_progress "$cl_idle" "" "$(printf '1780000000\torigin/issue-51\n')" "$cl_now" "$(printf '\t51\n')" "" "$((cl_now - 1000))")"
 eq "one touched a minute ago is still starting" "" "$(idle_in_progress "$(printf 'issue\t51\tAdd a rain sensor\tstate:in-progress\t2026-11-21T09:59:00Z\t\n')" "" "" "$cl_now" "")"
 # A leftover filed In progress with nobody on it (no claim, branch or pull request), ten minutes old, is planned as ready (#2365).
 cl_ten=$(printf 'issue\t52\tCheck the rain sensor wiring\tstate:in-progress\t2026-11-21T09:50:00Z\t\n')
@@ -8464,6 +8507,27 @@ eq "the stale line says so in plain words" "stale: #52 \"Check the rain sensor w
 eq "the plan reads idle issues as stale before it plans" "1" "$(grep -c 'idle_freed' "$root/scripts/drive/plan.sh")"
 eq "a side branch named for a change is no commit on an issue's branch" "51" "$(idle_in_progress "$cl_idle" "" "$(printf '1780000000\torigin/fixside/pr-51\n')" "$cl_now" "")"
 eq "plan.sh keeps an idle issue out of what is running" "2" "$(grep -c 'held_only \$idle' "$root/scripts/drive/plan.sh")"
+# A claim is not live for hours on its own word: idle_claimed checks the run it names too, not only the
+# four-hour TTL and an explicit release (#2328, widened by #2451 to the plan's own look).
+. "$root/scripts/drive/claim-lib.sh"
+cle_dir=$(mktemp -d); mkdir -p "$cle_dir/bin"
+cat > "$cle_dir/bin/gh" <<'IDLEGH'
+#!/bin/sh
+[ "$1" = auth ] && exit 0
+shift; method=GET; url=
+while [ $# -gt 0 ]; do case "$1" in -X) method=$2; shift ;; repos/*) url=$1 ;; esac; shift; done
+case "$method $url" in
+  "GET repos/{owner}/{repo}/issues/"[0-9]*"/comments"*) n=${url#*issues/}; n=${n%%/*}; cat "$FAKE/comments-$n" 2>/dev/null ;;
+  "GET repos/{owner}/{repo}/actions/runs/"*) rid=${url##*/}; awk -F'\t' -v r="$rid" '$1 == r { print $2 }' "$FAKE/runs" 2>/dev/null ;;
+esac
+IDLEGH
+chmod +x "$cle_dir/bin/gh"
+cle_now=$(date +%s)
+printf '901\t%s\tClaim: drive-5\t555\n' "$((cle_now - 60))" > "$cle_dir/comments-61"
+: > "$cle_dir/runs"
+eq "a claim naming a run still going is live, so the issue is claimed" "61 " "$(FAKE="$cle_dir" PATH="$cle_dir/bin:$PATH" idle_claimed 61)"
+printf '555\tcompleted\n' > "$cle_dir/runs"
+eq "the same claim, its run now ended, is not live, with no four-hour wait" "" "$(FAKE="$cle_dir" PATH="$cle_dir/bin:$PATH" idle_claimed 61)"
 # The settle step speaks only for an issue the pull request's body names.
 eq "the settle step comments only on an issue the pull request names" "1" "$(grep -c "grep -qx \"\$sm_n\"; then" "$root/templates/scripts/ci/queue/settle.sh")"
 # The stall line counts what waits on the builder's read.

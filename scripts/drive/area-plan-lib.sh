@@ -65,6 +65,11 @@ areas_meet() {
 #     order, why "both change the X area");
 #   every other line passes as it came.
 # With no areas LIST the lines pass unchanged.
+# PLAN_LISTED (environment, space separated) names the issues whose first line
+# lists their files, the way plan_units reads it: a unit whose every issue
+# lists its files relies on the literal check plan_units already made, and is
+# never held behind a running unit, nor bundled with another unit, by area
+# alone (#2452); only a unit with a guessed issue still reads areas for that.
 area_units() {
   if [ -z "$1" ]; then printf '%s\n' "$2"; return 0; fi
   au_us=$(printf '\037')
@@ -76,6 +81,8 @@ area_units() {
   { printf '%s\n' "$3" | sed 's/^/R\t/'; printf '%s\n' "$4" | sed 's/^/T\t/'; printf '%s\n' "$au_lines" | sed 's/^/U\t/'; } | tr -d '\r' | awk -F'\t' '
     function find(i) { while (par[i] != i) i = par[i]; return i }
     function asked(nums,   t) { split(nums, t, " "); return index(" " ENVIRON["ASKED_ISSUES"] " ", " " t[1] " ") > 0 }
+    function listed1(x) { return x != "" && index(" " ENVIRON["PLAN_LISTED"] " ", " " x " ") > 0 }
+    function listed_all(nums,   t, k, i) { k = split(nums, t, " "); if (k == 0) return 0; for (i = 1; i <= k; i++) if (!listed1(t[i])) return 0; return 1 }
     function meet(a, b,   x, y, i, j, nx, ny) {
       nx = split(a, x, ","); ny = split(b, y, ",")
       for (i = 1; i <= nx; i++) for (j = 1; j <= ny; j++) if (x[i] != "" && x[i] == y[j]) return x[i]
@@ -94,6 +101,7 @@ area_units() {
       cap = (ENVIRON["PLAN_BUNDLE_MAX"] + 0 > 0) ? ENVIRON["PLAN_BUNDLE_MAX"] + 0 : 4  # a bundle is a few issues; past it the rest stay loose units (#1891)
       for (i = 1; i <= n; i++) {
         held[i] = ""
+        if (listed_all(num[i])) continue  # its own Touches line is the literal truth; areas alone never hold it (#2452)
         for (k = 1; k <= r; k++) if (!inrun(num[i], ri[k]) && (am = meet(ar[i], ra[k])) != "") {
           first = ri[k]; sub(/[ ,].*/, "", first)
           wo = ri[k]; gsub(/[ ,]+/, " ", wo)  # the issues of the running unit, so a reader can tell when the wait ended
@@ -102,6 +110,7 @@ area_units() {
         }
       }
       for (i = 1; i <= n; i++) if (held[i] == "") for (j = i + 1; j <= n; j++) if (held[j] == "") {
+        if (listed_all(num[i]) || listed_all(num[j])) continue  # a unit with its own file list is never bundled with another by area alone (#2452)
         s = meet(mar[i], mar[j])
         # an issue asked for by name is bundled by the files it shares like any other, with asked and unasked issues alike (#2122)
         if (s != "") { a = find(i); b = find(j); if (a != b && sz[a] + sz[b] <= cap) { par[b] = a; sz[a] += sz[b]; if (sh[a] == "") sh[a] = s } }
