@@ -76,6 +76,16 @@ claim_ended() {
     }'
 }
 
+# claim_release_slug ISSUE_STATE PR: the State label a freed claim leaves the issue at, by script, never a model's
+# guess (#2441). ISSUE_STATE is "open" or "closed" (the issue's own state over REST); PR is the number of an open
+# pull request that closes the issue, or empty. Closed stays closed; open with such a pull request stays In
+# progress, since the change still carries it; open with none goes back to Ready, printed as "ready", so an agent
+# that freed its claim and left a note of what is left is never the reason an issue sits In progress with nobody
+# on it. Prints nothing when the issue keeps its state as it is.
+claim_release_slug() {
+  [ "$1" = open ] && [ -z "${2:-}" ] && echo ready
+}
+
 # claim_release_hold PULL PENDING [WHY]
 # Whether a claim may be released while PULL (the open change that closes the issue) has its checks PENDING ("yes" when
 # they have not all ended). Prints one plain line saying it is kept, or nothing when the release may go ahead: its checks

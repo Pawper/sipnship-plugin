@@ -8120,18 +8120,29 @@ cl_dir=$(mktemp -d); mkdir -p "$cl_dir/bin"
 cat > "$cl_dir/bin/gh" <<'GHEOF'
 #!/bin/sh
 # A stand-in for gh api: comments live in $FAKE/comments (ID, epoch, first line), open pull requests
-# in $FAKE/pulls, every pull request's branch and state (any state) in $FAKE/pr-branches (#2259).
+# in $FAKE/pulls, every pull request's branch and state (any state) in $FAKE/pr-branches (#2259). The
+# issue's own state and labels, for the release step that sets State by script (#2441), live in
+# $FAKE/issue-info as "STATE<TAB>LABELS,CSV"; a PUT to its labels is recorded whole in $FAKE/put-labels.
 [ "$1" = auth ] && exit 0
-shift; method=GET; body=; url=
-while [ $# -gt 0 ]; do case "$1" in -X) method=$2; shift ;; -f) body=${2#body=}; shift ;; repos/*) url=$1 ;; esac; shift; done
+shift; method=GET; body=; url=; jqexpr=
+while [ $# -gt 0 ]; do case "$1" in -X) method=$2; shift ;; -f) body=${2#body=}; shift ;; --jq) jqexpr=$2; shift ;; repos/*) url=$1 ;; esac; shift; done
 case "$method $url" in
   "GET repos/{owner}/{repo}/issues/"[0-9]*"/comments"*) cat "$FAKE/comments" ;;
-  "GET repos/{owner}/{repo}/issues/"[0-9]*) echo open ;;
+  "GET repos/{owner}/{repo}/issues/"[0-9]*)
+    case "$jqexpr" in
+      *labels*) [ -f "$FAKE/issue-info" ] && cat "$FAKE/issue-info" ;;
+      *) echo open ;;
+    esac ;;
   "GET repos/{owner}/{repo}/pulls?state=all"*) cat "$FAKE/pr-branches" ;;
-  "GET repos/{owner}/{repo}/pulls"*) cat "$FAKE/pulls" ;;
+  "GET repos/{owner}/{repo}/pulls"*)
+    case "$jqexpr" in
+      *head.sha*) [ -f "$FAKE/pulls3" ] && cat "$FAKE/pulls3" ;;
+      *) cat "$FAKE/pulls" ;;
+    esac ;;
   "GET repos/{owner}/{repo}/actions/runs/"*) rid=${url##*/}; awk -F'\t' -v r="$rid" '$1 == r { print $2 }' "$FAKE/runs" 2>/dev/null ;;
   "POST repos/{owner}/{repo}/issues/"[0-9]*"/comments") n=$(( $(wc -l < "$FAKE/comments") + 901 )); fl=$(printf '%s' "$body" | head -n 1); rn=$(printf '%s\n' "$body" | sed -n 's/^Run: //p' | head -n 1); printf '%s\t%s\t%s\t%s\n' "$n" "$(date +%s)" "$fl" "$rn" >> "$FAKE/comments"; echo "$n" ;;
   "PATCH repos/{owner}/{repo}/issues/comments/"*) id=${url##*/}; fl=$(printf '%s' "$body" | head -n 1); awk -F'\t' -v OFS='\t' -v id="$id" -v b="$fl" '$1 == id { $3 = b } { print }' "$FAKE/comments" > "$FAKE/c.new"; mv "$FAKE/c.new" "$FAKE/comments" ;;
+  "PUT repos/{owner}/{repo}/issues/"[0-9]*"/labels") cat > "$FAKE/put-labels" ;;
 esac
 GHEOF
 chmod +x "$cl_dir/bin/gh"; : > "$cl_dir/comments"; : > "$cl_dir/pulls"; : > "$cl_dir/pr-branches"; : > "$cl_dir/runs"
@@ -8171,6 +8182,29 @@ cl_rid=
 cl_runas 318 claim drive-7 >/dev/null
 eq "outside GitHub Actions, no run is named, and the four-hour TTL alone governs" "" "$(awk -F'\t' '$3 ~ /^Claim: drive-7/ { print $4 }' "$cl_dir/comments")"
 : > "$cl_dir/comments"
+# #2441: a freed claim sets the issue's State by script, in the same step, never left for the agent to
+# remember. claim_release_slug itself, pure: closed stays closed; open with a change that closes it stays
+# In progress; open with nothing that closes it goes back to Ready.
+eq "open with no pull request goes back to Ready" "ready" "$(claim_release_slug open "")"
+eq "open with a pull request that closes it keeps its state" "" "$(claim_release_slug open 70)"
+eq "a closed issue keeps its state, pull request or not" "" "$(claim_release_slug closed "")$(claim_release_slug closed 70)"
+# Through claim.sh itself, against the stand-in: no open pull request closes #400, so the release sets its
+# State label to Ready, keeping every other label it carried.
+: > "$cl_dir/pulls"; : > "$cl_dir/pulls3"; rm -f "$cl_dir/put-labels"
+printf 'open\tbug,state:in-progress\n' > "$cl_dir/issue-info"
+cl_run 400 release tok-1 >/dev/null
+eq "open with nothing that closes it: the release itself sets the label to Ready" '{"labels":["bug","state:ready"]}' "$(cat "$cl_dir/put-labels" 2>/dev/null)"
+# An open pull request that closes #400: the release leaves the State label as it is (still In progress).
+rm -f "$cl_dir/put-labels"
+printf '70\tsha70\t400\n' > "$cl_dir/pulls3"
+cl_run 400 release tok-1 >/dev/null
+eq "open with a change that closes it: no label write, it stays In progress" no "$([ -f "$cl_dir/put-labels" ] && echo yes || echo no)"
+# A closed issue: the release leaves it as it is too.
+rm -f "$cl_dir/put-labels"; : > "$cl_dir/pulls3"
+printf 'closed\tbug,state:in-progress\n' > "$cl_dir/issue-info"
+cl_run 400 release tok-1 >/dev/null
+eq "a closed issue: no label write either" no "$([ -f "$cl_dir/put-labels" ] && echo yes || echo no)"
+rm -f "$cl_dir/issue-info" "$cl_dir/put-labels" "$cl_dir/pulls3"
 . "$root/scripts/drive/stale-lib.sh"
 # The plan reads a Ready issue with an open pull request that closes it as running: it is held, never dispatched again.
 cl_facts=$(printf 'issue	214	Frost night reminder	state: ready		

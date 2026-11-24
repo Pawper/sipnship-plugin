@@ -330,7 +330,11 @@ The goal lines and what each means:
   when it prints `claimed TOKEN`, set the issue to `state:in-progress` with `scripts/state.sh` and start the agent. Put
   the token in the brief, so the agent releases it at its end (`claim.sh N release TOKEN`). An agent that opened a change
   stays with it: the release is kept (`kept: ...`) while that change's checks have not finished, unless the agent gives the
-  plain reason it cannot stay (`claim.sh N release TOKEN "WHY"`), which is left on the pull request (#2445).
+  plain reason it cannot stay (`claim.sh N release TOKEN "WHY"`), which is left on the pull request (#2445). The release
+  itself sets the issue's State, by script, never left for the agent to remember (#2441): closed stays closed; open with
+  a change that closes it stays In progress; open with nothing that closes it goes back to Ready at once, whatever note
+  of what is left the agent already wrote as a comment. `claim-stale.sh --apply` frees what a tick left running the same
+  way, so an issue it frees is never left In progress with nobody on it either.
   Keep the brief in a file and the prompt short: name the issue, the worktree and the pull request to open, and
   point at the brief file ("read your brief first and follow it"). The agent-model hook reads such a prompt as a
   unit of work, never a lookup, so `dispatchModel` is allowed for it whatever its length.
@@ -345,7 +349,8 @@ The goal lines and what each means:
   issues, while the two it actually filed read as done. If your own pull request builds less than a bundle's "What
   done looks like" asks for, do not close that issue and do not file a leftover that only repeats its ask: leave it
   open, say in a comment exactly what you built and what is still missing, and free your claim
-  (`claim.sh N release TOKEN`) so the next look can pick it up — never a copy of the same issue under a new number.
+  (`claim.sh N release TOKEN`), which sets it back to Ready itself (#2441) so the next round can pick it up —
+  never a copy of the same issue under a new number.
   A leftover is filed Ready, always: `issue-open.sh` refuses In progress for a new issue
   unless the caller passes the claim it holds (`ISSUE_OPEN_CLAIM=TOKEN`), and an issue In progress with no claim, no
   branch and no open pull request is set back to Ready by the plan after a short grace and planned that run (#2365). The leftover carries the original's "Start this next" mark and its place in the
