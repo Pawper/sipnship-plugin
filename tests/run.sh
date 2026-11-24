@@ -8626,6 +8626,26 @@ eq "a change naming no issue it closes is named, and neither the one that does n
 eq "with no repository named neither says anything" "" "$(GH_REPO= sh "$root/templates/scripts/ci/closed-state-audit.sh")$(GH_REPO= sh "$root/templates/scripts/ci/closes-check-audit.sh")"
 eq "the audit workflow runs both and adds their lines" "1 1 1 1" "$(grep -c 'closedstate=\$(sh scripts/ci/closed-state-audit.sh' "$root/templates/.github/workflows/audit.yml") $(grep -c 'if \[ -n "\$closedstate" \]' "$root/templates/.github/workflows/audit.yml") $(grep -c 'closescheck=\$(sh scripts/ci/closes-check-audit.sh' "$root/templates/.github/workflows/audit.yml") $(grep -c 'if \[ -n "\$closescheck" \]' "$root/templates/.github/workflows/audit.yml")"
 eq "the plugin owns both scripts" "2" "$(grep -cE '^scripts/ci/close(d-state|s-check)-audit\.sh$' "$root/templates/OWNED.txt")"
+# The nightly audit names an open issue whose every "What done looks like" line is built (#2616).
+cl_bdir=$(mktemp -d)
+mkdir -p "$cl_bdir/bin"
+cat > "$cl_bdir/bin/gh" <<'GH'
+#!/bin/sh
+case "$*" in
+  *"issues/comments"*) printf 'Built #61: Show the rain on each bed\n' ;;
+  *"pulls?state=closed"*) printf 'Built #61: Water the beds   on a timer\nBuilt #62: Show the sun on each bed\n' ;;
+  *"issues?state=open"*)
+    printf '61\tPlan the rooftop beds\t## What done looks like\037\037- Show the rain on each bed\037- Water the beds on a timer\037\037## Notes\037- Not a line\n'
+    printf '62\tShow the sun hours\t## What done looks like\037- Show the sun on each bed\037- Warn when a bed is shaded\n'
+    printf '63\tOrder the soil\tNo section here\n'
+    ;;
+esac
+exit 0
+GH
+chmod +x "$cl_bdir/bin/gh"
+eq "an issue with every line built, by a comment and by a landed change, is named; one with a line left or no lines is not" '#61 "Plan the rooftop beds" has every line of its "What done looks like" built and is still open.' "$(PATH="$cl_bdir/bin:$PATH" GH_REPO=maya/rooftop-garden sh "$root/templates/scripts/ci/built-audit.sh")"
+eq "with no repository named it says nothing" "" "$(GH_REPO= sh "$root/templates/scripts/ci/built-audit.sh")"
+eq "the audit workflow runs it and adds its lines, and the plugin owns it" "1 1 1" "$(grep -c 'builtall=\$(sh scripts/ci/built-audit.sh' "$root/templates/.github/workflows/audit.yml") $(grep -c 'if \[ -n "\$builtall" \]' "$root/templates/.github/workflows/audit.yml") $(grep -cx 'scripts/ci/built-audit.sh' "$root/templates/OWNED.txt")"
 # An In progress issue nobody is on is free to pick up again.
 cl_now=$(date -u -d 2026-11-21T10:00:00Z +%s)
 cl_idle=$(printf 'issue\t51\tAdd a rain sensor\tstate:in-progress\t2026-11-21T00:00:00Z\t\n')

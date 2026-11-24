@@ -500,6 +500,7 @@ The goal lines and what each means:
 - **`audit TEXT`.** When the facts are plain (an issue with no State whose title says what it is, an issue
   still ready after its pull request merged), set the state or close it. When they are not plain, leave it;
   the audit will say it again tomorrow.
+- **`#N "Title" has every line of its "What done looks like" built and is still open.`** (the nightly audit's "Open issues with every line built"). Close it the way a goal the proposal marks `done` is closed: one comment saying why, in plain words ("Every line of what done looks like is built, by the changes that carry the `Built` marks"), then close it as completed (`gh api -X PATCH repos/{owner}/{repo}/issues/N -f state=closed -f state_reason=completed`). Re-read the issue first; leave it open when a line was added since or the marks do not cover it.
 - **`set-ready N`.** The digest says the owner has answered an issue still labeled waiting on owner. Confirm it
   by having one reader re-read that issue, then set it to ready with `scripts/state.sh`.
 - **`mark-waiting N`.** The digest says a question to the owner is open on an issue labeled ready or in

@@ -269,6 +269,13 @@ jobs:
             [ -z "$closedstate" ] || closedstate=$(printf 'Closed issues that still carry a State label:\n%s' "$closedstate")
           fi
 
+          # Open issues whose every "What done looks like" line is built: the drive closes them (#2616).
+          builtall=""
+          if [ -f scripts/ci/built-audit.sh ]; then
+            builtall=$(sh scripts/ci/built-audit.sh | sed 's/^/- /')
+            [ -z "$builtall" ] || builtall=$(printf 'Open issues with every line built:\n%s' "$builtall")
+          fi
+
           # An open change the closes check would fail: it fails the moment someone
           # approves it, and looks approved and stuck. Named a night early instead.
           closescheck=""
@@ -302,6 +309,7 @@ jobs:
           if [ -n "$skipped" ]; then body=$(printf '%s\n\n%s' "$body" "$skipped" | sed '/./,$!d'); fi
           if [ -n "$closedstate" ]; then body=$(printf '%s\n\n%s' "$body" "$closedstate" | sed '/./,$!d'); fi
           if [ -n "$closescheck" ]; then body=$(printf '%s\n\n%s' "$body" "$closescheck" | sed '/./,$!d'); fi
+          if [ -n "$builtall" ]; then body=$(printf '%s\n\n%s' "$body" "$builtall" | sed '/./,$!d'); fi
           if [ -n "$unheld" ]; then body=$(printf '%s\n\n%s' "$body" "$unheld" | sed '/./,$!d'); fi
           if [ -n "$heldissue" ]; then body=$(printf '%s\n\n%s' "$body" "$heldissue" | sed '/./,$!d'); fi
           if [ -n "$greenstuck" ]; then body=$(printf '%s\n\n%s' "$body" "$greenstuck" | sed '/./,$!d'); fi

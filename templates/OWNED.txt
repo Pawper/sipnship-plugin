@@ -147,6 +147,7 @@ scripts/ci/held-change-audit.sh
 scripts/ci/green-stuck-audit.sh
 scripts/ci/installed-copy-audit.sh
 scripts/ci/closed-state-audit.sh
+scripts/ci/built-audit.sh
 scripts/ci/closes-check-audit.sh
 scripts/ci/rest-zero-audit.sh
 scripts/ci/skipped-parts-audit.sh

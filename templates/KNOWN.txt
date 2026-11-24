@@ -282,6 +282,7 @@ scripts/ci/batch-lib.sh eec724acf036579f255f40014708a438191a48e3
 scripts/ci/batch-lib.sh f5da59099c390faae56dada5e9a47919c649560e
 scripts/ci/batch-lib.sh fa567389e19b830ba7a2c13fad6c6172d591f001
 scripts/ci/check-log.sh e2947cd7ff3d689ac4e7490f47c678ee0c14d844
+scripts/ci/built-audit.sh c5184899883ab4d0992d3aa2252c381f5ef15070
 scripts/ci/checks-local.sh 0de4e30803de74e2b200396a73d0b338de867fc8
 scripts/ci/checks-local.sh 688ee8f6b024ecf143408faaad7cddd7b646bf6a
 scripts/ci/checks-local.sh 853432bce94f776f8e07237686dd47da9e04f22a
