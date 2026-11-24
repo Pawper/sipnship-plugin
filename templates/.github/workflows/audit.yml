@@ -277,6 +277,10 @@ jobs:
             [ -z "$closescheck" ] || closescheck=$(printf 'Open pull requests the closes check would fail:\n%s' "$closescheck")
           fi
 
+          # The hours the REST budget reached zero in the last day, and who could have spent it (#2607).
+          restzero=""
+          if [ -f scripts/ci/rest-zero-audit.sh ]; then restzero=$(sh scripts/ci/rest-zero-audit.sh | sed "s/^/- /"); fi
+
           # A landing in the last day whose files called for a test part
           # (own_run_decide or full_run_decide) that did not pass on its
           # head commit: "green" with a needed part skipped is not green.
@@ -301,6 +305,7 @@ jobs:
           if [ -n "$unheld" ]; then body=$(printf '%s\n\n%s' "$body" "$unheld" | sed '/./,$!d'); fi
           if [ -n "$heldissue" ]; then body=$(printf '%s\n\n%s' "$body" "$heldissue" | sed '/./,$!d'); fi
           if [ -n "$greenstuck" ]; then body=$(printf '%s\n\n%s' "$body" "$greenstuck" | sed '/./,$!d'); fi
+          if [ -n "$restzero" ]; then body=$(printf "%s\n\n%s" "$body" "$restzero" | sed "/./,\$!d"); fi
           # The installed plugin copy more than an hour behind the published one, which each round's first step should have updated.
           installed=""
           if [ -f scripts/ci/installed-copy-audit.sh ]; then installed=$(sh scripts/ci/installed-copy-audit.sh); fi

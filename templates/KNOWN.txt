@@ -21,6 +21,7 @@
 .github/workflows/audit.yml 300b58351bf7de6d72c5b6fee89c91165b96fad4
 .github/workflows/audit.yml 356d601fbccdab03761b084c2a3a46d57e75b7ea
 .github/workflows/audit.yml 3e3c809ecec3acdfaa7cd3e8dfac7383fc62c861
+.github/workflows/audit.yml 481c41b82734941d4d32c3ea8c2ece689072a735
 .github/workflows/audit.yml 595d80ba4c7c7765ea93dc423aa3f4fdb2751343
 .github/workflows/audit.yml 5a6c61afda718116c66cfa3ebd85320e69d9255d
 .github/workflows/audit.yml 618090d028383645c7cd2e6e81ff6fef15160641
@@ -776,6 +777,7 @@ scripts/ci/report-red.sh 7f628bb20451d9856a49892034cb929541ff86d3
 scripts/ci/report-red.sh a4b8523b81919f6bdf0e9382d0e614f9c06b5244
 scripts/ci/report-red.sh a558b0e46839df53672ada1bc059a9436476eb76
 scripts/ci/required-parts-lib.sh 3a58ed5669a0b5a1327bae5bb10f9eb2b4576c80
+scripts/ci/rest-zero-audit.sh 0262dd31087aaaa59474269244a65363c49ebb77
 scripts/ci/rules-guard.sh 154af6622a5010a84e4be7f1cd1e42e5c24a5d10
 scripts/ci/rules-lib.sh 5e7e08e5ac635fdedd212a5680bcffe41e854a1b
 scripts/ci/rules-lib.sh 8802b5c9bb9341949d582f25cd7b93ddf6118910

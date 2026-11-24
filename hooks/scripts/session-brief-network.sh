@@ -8,9 +8,12 @@
 s_budget() {
   case "$origin_url" in *github.com*) ;; *) return 0 ;; esac
   [ "$have_gh" = yes ] || return 0
-  rl=$(run_bounded 5 sh -c '. "$1/lib.sh"; budget_read "$2"' sh "$here" "$(pwd)" 2>/dev/null || true)
+  rl=$(run_bounded 5 sh -c '. "$1/lib.sh"; . "$1/budget-rest-lib.sh"; budget_read_logged "$2"' sh "$here" "$(pwd)" 2>/dev/null || true)
   rl_line=$(budget_line "$rl" "$(date +%s)")
   [ -n "$rl_line" ] && add "Budget: $rl_line"
+  # Who spends the REST half (#2607), when it runs low: the hour's drop beside what this machine's agents called.
+  spend=$(. "$here/budget-rest-lib.sh"; budget_spend_line "$(budget_history_file)" "$(date +%s)" 2>/dev/null || true)
+  [ -n "$spend" ] && add "Budget: $spend"
   return 0
 }
 

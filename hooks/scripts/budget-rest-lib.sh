@@ -44,3 +44,54 @@ budget_rest_line() {
     }'
 }
 
+# Who spends the REST hour (#2607). GitHub does not say which caller made a request, so two things are kept on this
+# machine: each fresh reading of the budget ("R", when, left, limit, reset) and each REST read or GraphQL call an agent's
+# own shell made through the guard ("C", when). The brief and the nightly audit put them side by side: the hour's drop,
+# and how much of it the agents' own calls explain; the rest is the app, the drive's scripts, check polling and the
+# coordinator's looks, which share one token and cannot be told apart from outside.
+# The file is SIPNSHIP_BUDGET_LOG, else ~/.sipnship/gh-budget-history.txt, so a session and the runner see the same one.
+budget_history_file() {
+  if [ -n "${SIPNSHIP_BUDGET_LOG:-}" ]; then printf '%s\n' "$SIPNSHIP_BUDGET_LOG"; else printf '%s\n' "${HOME:-.}/.sipnship/gh-budget-history.txt"; fi
+}
+
+# budget_history_add KIND [FIELDS...]: one tab-separated line; the file is cut to its last 2000 lines when it passes 3000.
+budget_history_add() {
+  bh_file=$(budget_history_file); bh_kind=$1; shift
+  mkdir -p "$(dirname "$bh_file")" 2>/dev/null || return 0
+  bh_line=$bh_kind; for bh_f in "$@"; do bh_line="$bh_line	$bh_f"; done
+  printf '%s\n' "$bh_line" >> "$bh_file" 2>/dev/null || return 0
+  if [ "$(wc -l < "$bh_file" 2>/dev/null | tr -d ' ')" -gt 3000 ] 2>/dev/null; then
+    tail -n 2000 "$bh_file" > "$bh_file.tmp" 2>/dev/null && mv "$bh_file.tmp" "$bh_file" 2>/dev/null
+  fi
+  return 0
+}
+
+# budget_read_logged ROOT
+# budget_read (lib.sh), and when it took a fresh reading rather than the cached one, the REST half goes in the history.
+budget_read_logged() {
+  brl_before=$(head -n 1 "$1/.scratch/gh-budget.txt" 2>/dev/null | cut -f1)
+  brl_rec=$(budget_read "$1")
+  [ -n "$brl_rec" ] || return 0
+  brl_after=$(head -n 1 "$1/.scratch/gh-budget.txt" 2>/dev/null | cut -f1)
+  if [ -n "$brl_after" ] && [ "$brl_after" != "$brl_before" ]; then
+    budget_history_add R "$brl_after" "$(printf '%s' "$brl_rec" | cut -f4)" "$(printf '%s' "$brl_rec" | cut -f5)" "$(printf '%s' "$brl_rec" | cut -f6)"
+  fi
+  printf '%s\n' "$brl_rec"
+}
+
+# budget_spend_line FILE NOW [UNDER]
+# The brief's second budget sentence, only when fewer than UNDER (default 2500) REST requests are left and the hour has
+# two readings: how much was spent, and how many of those reads this machine's agents made.
+budget_spend_line() {
+  [ -f "$1" ] || return 0
+  awk -F'\t' -v now="$2" -v under="${3:-2500}" '
+    function commas(n,  s) { s = sprintf("%d", n); while (s ~ /[0-9][0-9][0-9][0-9]/) sub(/[0-9][0-9][0-9]$|[0-9][0-9][0-9],/, ",&", s); return s }
+    $1 == "R" && NF >= 5 && now - $2 >= 0 && now - $2 < 3600 { if (n == 0 || $3 + 0 > max) max = $3 + 0; last = $3 + 0; lim = $4 + 0; n++ }
+    $1 == "C" && NF >= 2 && now - $2 >= 0 && now - $2 < 3600 { calls++ }
+    END {
+      if (n < 2 || last >= under) exit
+      used = max - last; if (used <= 0) exit
+      printf "REST spent this hour: about %s of %s; this machine'"'"'s agents made %d of those reads, so the rest is the app, the drive'"'"'s scripts, check polling and the coordinator'"'"'s looks.\n", commas(used), commas(lim), calls
+    }' "$1"
+}
+

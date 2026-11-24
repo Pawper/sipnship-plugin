@@ -24,7 +24,8 @@ rest_hit=
 
 root=${CLAUDE_PROJECT_DIR:-$(json_field "$input" cwd)}
 [ -n "$root" ] || root=.
-rec=$(budget_read "$root")
+budget_history_add C "$(date +%s)"  # an agent's own call, counted for who-spends-the-hour (#2607)
+rec=$(budget_read_logged "$root")
 # REST (#2558): a read that is not needed to land or recover waits when the hour's REST requests run low; a write, and
 # the free reading of the budget itself, never do. The app's reads and the drive's scripts share the same hour.
 if [ -n "$rest_hit" ]; then

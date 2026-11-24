@@ -620,6 +620,12 @@ eq "a cached budget younger than a minute is read" "4120	5000	1760000000	3469	50
 eq "a stale cache is not" "" "$(budget_cached '1759999900	4120	5000	1760000000	3469	5000	1760000000' 1760000000)"
 eq "an empty cache is not" "" "$(budget_cached '' 1760000000)"
 eq "the budget is one line" "GraphQL 4,120 of 5,000 left, resets 09:19Z (in 23 min); REST 3,469 of 5,000 left." "$(budget_line "4120	5000	1760001540	3469	5000	1760001540" 1760000200)"
+bh_log=$(mktemp)
+printf 'R\t1000\t4000\t5000\t4600\nR\t2000\t900\t5000\t4600\nC\t1500\nC\t1600\nR\t3000\t0\t5000\t4600\nC\t4000\n' > "$bh_log"
+eq "who spends the REST hour: the drop beside the agents' own reads" "REST spent this hour: about 4,000 of 5,000; this machine's agents made 2 of those reads, so the rest is the app, the drive's scripts, check polling and the coordinator's looks." "$(budget_spend_line "$bh_log" 3500)"
+eq "no spend sentence while REST is plentiful" "" "$(budget_spend_line "$bh_log" 3500 0)"
+eq "the audit names the hour REST reached zero" "1" "$(NOW=4000 SIPNSHIP_BUDGET_LOG=$bh_log sh "$root/templates/scripts/ci/rest-zero-audit.sh" | grep -c 'reached zero.*3 of them reads')"
+eq "the audit says nothing when REST never reached zero" "" "$(NOW=5000 SIPNSHIP_BUDGET_LOG=$bh_log SINCE_HOURS=0 sh "$root/templates/scripts/ci/rest-zero-audit.sh")"
 # issue-open.sh passes each label as one argument, spaces and all.
 io_dir=$(mktemp -d)
 mkdir -p "$io_dir/bin"
