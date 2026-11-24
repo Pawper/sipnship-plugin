@@ -81,8 +81,7 @@ area_units() {
   { printf '%s\n' "$3" | sed 's/^/R\t/'; printf '%s\n' "$4" | sed 's/^/T\t/'; printf '%s\n' "$au_lines" | sed 's/^/U\t/'; } | tr -d '\r' | awk -F'\t' '
     function find(i) { while (par[i] != i) i = par[i]; return i }
     function asked(nums,   t) { split(nums, t, " "); return index(" " ENVIRON["ASKED_ISSUES"] " ", " " t[1] " ") > 0 }
-    function listed1(x) { return x != "" && index(" " ENVIRON["PLAN_LISTED"] " ", " " x " ") > 0 }
-    function listed_all(nums,   t, k, i) { k = split(nums, t, " "); if (k == 0) return 0; for (i = 1; i <= k; i++) if (!listed1(t[i])) return 0; return 1 }
+    function listed_all(nums,   t, k, i) { k = split(nums, t, " "); if (k == 0) return 0; for (i = 1; i <= k; i++) if (t[i] == "" || index(" " ENVIRON["PLAN_LISTED"] " ", " " t[i] " ") == 0) return 0; return 1 }
     function meet(a, b,   x, y, i, j, nx, ny) {
       nx = split(a, x, ","); ny = split(b, y, ",")
       for (i = 1; i <= nx; i++) for (j = 1; j <= ny; j++) if (x[i] != "" && x[i] == y[j]) return x[i]
@@ -175,13 +174,11 @@ EOF_DA2
       for (i = 1; i <= nx; i++) for (j = 1; j <= ny; j++) if (x[i] != "" && x[i] == y[j]) return x[i]
       return ""
     }
-    function listed1(x) { return x != "" && index(" " ENVIRON["PLAN_LISTED"] " ", " " x " ") > 0 }
-    function listed_all(nums,   t, k, i) { k = split(nums, t, " "); if (k == 0) return 0; for (i = 1; i <= k; i++) if (!listed1(t[i])) return 0; return 1 }
-    # the first file two comma lists share, a folder counting for what lies under it (as plan_units reads a listed file)
+    function listed_all(nums,   t, k, i) { k = split(nums, t, " "); if (k == 0) return 0; for (i = 1; i <= k; i++) if (t[i] == "" || index(" " ENVIRON["PLAN_LISTED"] " ", " " t[i] " ") == 0) return 0; return 1 }
     function sharefile(a, b,   x, y, i, j, nx, ny, p, q) {
-      nx = split(a, x, ","); ny = split(b, y, ",")
+      nx = split(a, x, ","); ny = split(b, y, ",")  # a folder counts for what lies under it
       for (i = 1; i <= nx; i++) for (j = 1; j <= ny; j++) {
-        p = x[i]; q = y[j]; sub(/^\.\//, "", p); sub(/^\.\//, "", q); sub(/\/$/, "", p); sub(/\/$/, "", q)
+        p = x[i]; q = y[j]; gsub(/^\.\/|\/$/, "", p); gsub(/^\.\/|\/$/, "", q)
         if (p != "" && q != "" && (p == q || index(p, q "/") == 1 || index(q, p "/") == 1)) return (length(p) >= length(q) ? p : q)
       }
       return ""
@@ -195,9 +192,7 @@ EOF_DA2
       nums = f[1]; sub(/^dispatch /, "", nums)
       area = ""; files = ""
       for (i = 1; i <= na; i++) if (anum[i] == nums) { area = aare[i]; files = afil[i]; break }
-      lst = listed_all(nums)
-      won = ""; how = ""
-      # two dispatches that each list their files are held only for a file they share; an area alone never holds one (#2535)
+      lst = listed_all(nums); won = ""; how = ""  # two listed dispatches are held only for a file they share, never by area alone (#2535)
       for (g = 1; g <= ng && won == ""; g++) {
         if (lst && glst[g]) { if ((am = sharefile(files, gfil[g])) != "") { won = g; how = "shares: " am } }
         else if (area != "" && (am = meet(area, garea[g])) != "") { won = g; how = "area: " am }
@@ -239,8 +234,7 @@ held_area_holds() {
       for (i = 1; i <= nx; i++) for (j = 1; j <= ny; j++) if (x[i] != "" && x[i] == y[j]) return x[i]
       return ""
     }
-    function listed1(x) { return x != "" && index(" " ENVIRON["PLAN_LISTED"] " ", " " x " ") > 0 }
-    function listed_all(nums,   t, k, i) { k = split(nums, t, " "); if (k == 0) return 0; for (i = 1; i <= k; i++) if (!listed1(t[i])) return 0; return 1 }
+    function listed_all(nums,   t, k, i) { k = split(nums, t, " "); if (k == 0) return 0; for (i = 1; i <= k; i++) if (t[i] == "" || index(" " ENVIRON["PLAN_LISTED"] " ", " " t[i] " ") == 0) return 0; return 1 }
     $1 == "H" && $2 != "" { h++; hi[h] = $2; hw[h] = $3; ha[h] = $4 }
     $1 == "P" && $2 != "" { pub[$2] = 1 }
     $1 == "T" && $2 != "" { tt[$2] = $3 }
