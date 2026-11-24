@@ -6,6 +6,7 @@
 # (from gh api rate_limit, itself free) is cached for a minute in
 # .scratch/gh-budget.txt, where the plugin's require-gh-budget hook reads it.
 # Usage: sh scripts/gh-budget.sh            print the line
+#        sh scripts/gh-budget.sh --check-rest  exit 1 when under GH_REST_BUDGET_MIN (150) REST requests: an agent without hooks asks before a read
 #        sh scripts/gh-budget.sh --check    exit 1 when under GH_BUDGET_MIN (500) GraphQL points
 root=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
 file=$root/.scratch/gh-budget.txt
@@ -24,6 +25,9 @@ printf '%s\n' "$rec" | awk -F'\t' -v now="$now" -v floor="$floor" '
     printf "GraphQL %s of %s left, resets %s (in %d min); REST %s of %s left.", commas($1), commas($2), sprintf("%02d:%02dZ", int(($3 % 86400) / 3600), int(($3 % 3600) / 60)), mins, commas($4), commas($5)
     if ($1 + 0 < floor) printf " Low: use the REST forms (scripts/issue-open.sh, pr-open.sh, pr-checks.sh, gh api) and wait for the reset; never retry before it."
     printf "\n" }'
+if [ "$1" = --check-rest ]; then
+  [ "$(printf '%s\n' "$rec" | cut -f4)" -ge "${GH_REST_BUDGET_MIN:-150}" ] || exit 1
+fi
 if [ "$1" = --check ]; then
   [ "$(printf '%s\n' "$rec" | cut -f1)" -ge "$floor" ] || exit 1
 fi

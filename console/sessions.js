@@ -91,7 +91,8 @@ function pushedIn(command) {
   for (const part of String(command || '').split(/\n|&&|;/)) {
     const m = part.match(/\bgit\s+(?:-C\s+("[^"]+"|'[^']+'|\S+)\s+)?push\b([^|]*)/);
     if (!m) continue;
-    const args = m[2].trim().split(/\s+/).filter((a) => a && !a.startsWith('-'));
+    // A redirect (2>&1, >/dev/null, >> log) belongs to the shell line, never to the refs.
+    const args = m[2].replace(/\d*[<>]+&?\s*\S*/g, ' ').trim().split(/\s+/).filter((a) => a && !a.startsWith('-'));
     const ref = args.length > 1 ? args[args.length - 1] : '';
     const branch = ref.includes(':') ? ref.split(':').pop() : ref;
     if (!branch || branch === 'HEAD' || branch === 'main') continue;
