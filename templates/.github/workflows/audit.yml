@@ -235,6 +235,14 @@ jobs:
             looks=$(sh scripts/ci/proposal-audit.sh | sed 's/^/- /')
           fi
 
+          # A change whose issue waits on the owner is the owner's read; without queue:hold the
+          # queue could merge it unread, and the drive would count it as a running round.
+          unheld=""
+          if [ -f scripts/ci/waiting-hold-audit.sh ]; then
+            unheld=$(sh scripts/ci/waiting-hold-audit.sh | sed 's/^/- /')
+            [ -z "$unheld" ] || unheld=$(printf 'Pull requests whose issue waits on you, with no hold:\n%s' "$unheld")
+          fi
+
           # A held change's question lives as a comment on the issue it closes (spec 024): one
           # that closes none has nowhere for its question to live, and two that close the same
           # issue leave the second usually replacing the first.
@@ -290,6 +298,7 @@ jobs:
           if [ -n "$skipped" ]; then body=$(printf '%s\n\n%s' "$body" "$skipped" | sed '/./,$!d'); fi
           if [ -n "$closedstate" ]; then body=$(printf '%s\n\n%s' "$body" "$closedstate" | sed '/./,$!d'); fi
           if [ -n "$closescheck" ]; then body=$(printf '%s\n\n%s' "$body" "$closescheck" | sed '/./,$!d'); fi
+          if [ -n "$unheld" ]; then body=$(printf '%s\n\n%s' "$body" "$unheld" | sed '/./,$!d'); fi
           if [ -n "$heldissue" ]; then body=$(printf '%s\n\n%s' "$body" "$heldissue" | sed '/./,$!d'); fi
           if [ -n "$greenstuck" ]; then body=$(printf '%s\n\n%s' "$body" "$greenstuck" | sed '/./,$!d'); fi
           # The installed plugin copy more than an hour behind the published one, which each round's first step should have updated.
