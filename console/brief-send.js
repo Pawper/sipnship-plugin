@@ -285,7 +285,8 @@ async function sendRunSample(run, agents, env, now) {
   const body = briefBody('', { now, machine: run.machine, sessions: agents });
   const text = JSON.stringify(body);
   if (Buffer.byteLength(text) > SEND_MAX_BYTES) return '';
-  await post(`${base(env)}/v1/repos/${run.repoId}/brief`, run.token, text, TIMEOUT_MS);
+  const outcome = await post(`${base(env)}/v1/repos/${run.repoId}/brief`, run.token, text, TIMEOUT_MS);
+  if (outcome !== 'ok' && outcome !== 'rate_limited') actionsSignIn.troubleLine(outcome === 'not_connected' ? "SipNShip did not accept this run's identity" : outcome === 'too_large' ? 'the report was too large' : 'SipNShip did not answer', env, now);
   return '';
 }
 
@@ -297,7 +298,9 @@ async function sendBrief({ text, session = '', repo, env = process.env, now = ne
   let entry = tokens.find(repo, env);
   // An agent in a workflow run, on a machine with no token of its own, reports its session as the run (#2437): a sample alone, nothing else.
   if ((!entry || !tokens.looksLikeToken(entry.token)) && sampleOnly) {
-    const run = await actionsSignIn.entry(repo, env);
+    const why = {};
+    const run = await actionsSignIn.entry(repo, env, undefined, why);
+    if (!run && why.line) actionsSignIn.troubleLine(why.line, env, now);
     return run ? sendRunSample(run, agents, env, now) : '';
   }
   if (!entry || !tokens.looksLikeToken(entry.token)) return '';
@@ -366,6 +369,8 @@ async function main() {
   if (line) process.stdout.write(line + '\n');
 }
 
-if (require.main === module) main().catch(() => {}).finally(() => { process.exitCode = 0; });
-
+// Exported before main runs: main reaches listen.js, which reads `base` from this
+// file's exports, and a script run directly would otherwise hand it an empty object.
 module.exports = { post, briefBody, runnerSample, runnerNames, timingsOf,ownerSteps, measuresOf, fit, failureLine, sendBrief, base, SEND_MAX_BYTES, TIMEOUT_MS };
+
+if (require.main === module) main().catch(() => {}).finally(() => { process.exitCode = 0; });

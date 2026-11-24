@@ -3,6 +3,7 @@
 .claude/rules.txt 41651f1b74636b2f4be9347c377b1c0d72f63411
 .claude/rules.txt 532c2186219314f129ad6caeb57a201a72ee316d
 .claude/rules.txt 59509b6d30c8a479477849e105014a50824c361d
+.claude/rules.txt 705297b5c0847c1b371158a093b1b156f937c9d4
 .claude/rules.txt 7982c57baed3cc923bd3f2a2c97d9146b463af15
 .claude/rules.txt b5f8cafd973e77bf9707a9f14bd27fc4ad4d59c0
 .github/workflows/audit.yml 00ddf6c8379ebc42d1e07aba5e6dccb0a2ff58c6

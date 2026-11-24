@@ -19,6 +19,7 @@ function fake() {
     let body = '';
     req.on('data', (d) => (body += d)).on('end', () => {
       seen.push({ method: req.method, url: req.url, auth: req.headers.authorization, body });
+      if (req.url.startsWith('/refused')) { res.writeHead(403); res.end(); return; }
       if (req.url.startsWith('/idtoken')) { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ value: JWT })); return; }
       res.writeHead(204); res.end();
     });
@@ -69,4 +70,26 @@ test('a full brief is never sent as a run: only a sample', async () => {
     await send.sendBrief({ text: 'Main: moved\n', repo: 'ada/garden', env: runEnv(f.url), sampleOnly: false, sessions: [agent] });
     assert.strictEqual(f.seen.filter((r) => r.url.startsWith('/v1/')).length, 0);
   } finally { f.server.close(); }
+});
+
+test('a run whose identity token is refused says why in its summary, in one line', async () => {
+  const f = await fake();
+  try {
+    const env = { ...runEnv(f.url), GITHUB_STEP_SUMMARY: path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'sns-sum-')), 'summary.md') };
+    env.ACTIONS_ID_TOKEN_REQUEST_URL = `${f.url}/refused`;
+    const line = await send.sendBrief({ text: '', session: 's1', repo: 'ada/garden', env, sampleOnly: true, sessions: [agent] });
+    assert.strictEqual(line, '');
+    const said = fs.readFileSync(env.GITHUB_STEP_SUMMARY, 'utf8');
+    assert.match(said, /^Its agent could not report to SipNShip: .*identity token/);
+    assert.strictEqual(said.trim().split('\n').length, 1);
+    assert.doesNotMatch(said, /runtime-secret|aaa\.bbb/);
+    assert.match(fs.readFileSync(path.join(env.SIPNSHIP_HOME, 'brief-send', 'sample-trouble.txt'), 'utf8'), /could not report/);
+  } finally { f.server.close(); }
+});
+
+test('a run with no identity token at all says so, naming the job setting', async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'sns-run-'));
+  const env = { SIPNSHIP_HOME: home, GITHUB_ACTIONS: 'true', GITHUB_STEP_SUMMARY: path.join(home, 'summary.md') };
+  await send.sendBrief({ text: '', session: 's1', repo: 'ada/garden', env, sampleOnly: true, sessions: [agent] });
+  assert.match(fs.readFileSync(env.GITHUB_STEP_SUMMARY, 'utf8'), /id-token: write/);
 });
