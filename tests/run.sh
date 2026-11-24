@@ -7226,6 +7226,8 @@ eq "plan.sh reads the running units' areas and plans by area" "1 1" "$(grep -c '
 # A file on no area never hides the areas of the others, so a unit beside a running unit is a hold, not a start the publisher refuses (areas file: Maya's rooftop-garden app).
 eq "a file on no area is left out, the others still name their areas" "watering,beds" "$(unit_areas "$da_list" 'src/water/timer.ts,notes/loose.txt,src/beds/tint.ts')"
 eq "files on no area at all name none" "" "$(unit_areas "$da_list" 'notes/loose.txt')"
+eq "a bare folder name is not a prefix of every area path under it" "" "$(unit_areas "$da_list" 'src')"
+eq "a folder with its trailing slash still places a file under it" "beds" "$(unit_areas "$da_list" 'src/beds/')"
 eq "two ready issues, one with a file on no area, beside a running unit: two holds, no start" "hold${da_t}402${da_t}Water the beds on a timer${da_t}After: Water the beds [area: watering] (after: 301)
 hold${da_t}404${da_t}Fix the schedule page${da_t}After: Water the beds [area: watering] (after: 301)" "$(area_units "$da_list" "$(printf 'unit\t402\tWater the beds on a timer\t\tnotes/loose.txt,src/water/timer.ts\nunit\t404\tFix the schedule page\t\tsrc/schedule.ts\n')" "$(printf '301\twatering\n')" "$da_titles")"
 eq "two ready issues in one area with none running are one bundle" "1" "$(area_units "$da_list" "$(printf 'unit\t402\tWater the beds on a timer\t\tnotes/loose.txt,src/water/timer.ts\nunit\t404\tFix the schedule page\t\tsrc/schedule.ts\n')" '' "$da_titles" | grep -c '^unit')"

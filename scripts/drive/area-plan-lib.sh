@@ -32,7 +32,7 @@ unit_areas() {
         if (v == "") continue
         for (i = 1; i <= na; i++) {
           hit = (v == name[i])
-          for (j = 1; j <= np[i] && !hit; j++) { p = path[i, j]; if (index(v, p) == 1 || index(p, v) == 1) hit = 1 }
+          for (j = 1; j <= np[i] && !hit; j++) { p = path[i, j]; if (index(v, p) == 1 || (v ~ /[/]$/ && index(p, v) == 1)) hit = 1 }
           if (hit && !(name[i] in seen)) { seen[name[i]] = 1; out = out (out == "" ? "" : ",") name[i] }
         }
       }
