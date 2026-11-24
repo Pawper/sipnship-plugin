@@ -10,8 +10,10 @@
 # When ISSUE is one of the project's three standing logs (drive, audit,
 # queue), the comment goes through log_post instead (#2319), so it posts
 # through the service as the app where this project is connected, and the
-# builder is not its email's author for it. Every other issue (almost every
-# call: an ask, an instruction, a settle note) keeps the one plain gh call.
+# builder is not its email's author for it. Every other issue (an ask, an
+# instruction, a settle note) goes through note_post (#2486): through the
+# service as the app, marked with the agent, naming no one, where the project is
+# connected; with the one plain gh call where it is not or the service refuses.
 here=$(dirname "$0")
 . "$here/comment-lib.sh"
 issue=${1:-}; file=${2:-}
@@ -25,5 +27,6 @@ if [ -n "$kind" ]; then
   . "$here/log-post-lib.sh"
   log_post "$kind" "$issue" "$file"
 else
-  gh api -X POST "repos/{owner}/{repo}/issues/$issue/comments" -F "body=@$file" --jq .html_url
+  . "$here/note-post-lib.sh"
+  note_post "$issue" "$file"
 fi

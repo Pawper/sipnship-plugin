@@ -144,5 +144,6 @@ shell-5 a change with no closes line, a closed issue, an idle issue and a refuse
 shell-2 a part red with no failing test says why, and a red the next run clears is recorded as a flake
 shell-5 a draft held for the builder's read is never bundled with fixes that need no read (drive)
 shell-5 a log line is posted as the app when the project is connected, and as the builder when it is not (drive)
+shell-5 a note on an ordinary issue is posted as the app when the project is connected, and as the builder when it is not (drive)
 shell-5 a red change that ready work waits on is looked after first, and its waiting cards say so (#2445)
 shell-5 an agent stays with its change until its checks end, and says plainly why when it cannot (#2445)
