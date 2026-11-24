@@ -112,7 +112,7 @@ export TMPDIR SUITE_TMP_ROOT GIT_CEILING_DIRECTORIES
 # Blocks that read its text read these two files: the libraries in sourcing
 # order, then the main script (so a function is defined before its call).
 mq_all=$SUITE_TMP_ROOT/merge-queue.all.sh
-cat "$root"/templates/scripts/ci/queue/state.sh "$root"/templates/scripts/ci/queue/requests.sh "$root"/templates/scripts/ci/queue/rush.sh "$root"/templates/scripts/ci/queue/runs.sh "$root"/templates/scripts/ci/queue/choose.sh "$root"/templates/scripts/ci/queue/held.sh "$root"/templates/scripts/ci/queue/rerun.sh "$root"/templates/scripts/ci/queue/rescue.sh "$root"/templates/scripts/ci/queue/serial.sh "$root"/templates/scripts/ci/queue/batch.sh "$root"/templates/scripts/ci/queue/deploy.sh "$root"/templates/scripts/ci/queue/attention.sh "$root"/templates/scripts/ci/queue/wait.sh "$root"/templates/scripts/ci/queue/passed.sh "$root"/templates/scripts/ci/merge-queue.sh > "$mq_all"
+cat "$root"/templates/scripts/ci/queue/state.sh "$root"/templates/scripts/ci/queue/rate-lib.sh "$root"/templates/scripts/ci/queue/requests.sh "$root"/templates/scripts/ci/queue/rush.sh "$root"/templates/scripts/ci/queue/runs.sh "$root"/templates/scripts/ci/queue/choose.sh "$root"/templates/scripts/ci/queue/held.sh "$root"/templates/scripts/ci/queue/rerun.sh "$root"/templates/scripts/ci/queue/rescue.sh "$root"/templates/scripts/ci/queue/serial.sh "$root"/templates/scripts/ci/queue/batch.sh "$root"/templates/scripts/ci/queue/deploy.sh "$root"/templates/scripts/ci/queue/attention.sh "$root"/templates/scripts/ci/queue/wait.sh "$root"/templates/scripts/ci/queue/passed.sh "$root"/templates/scripts/ci/merge-queue.sh > "$mq_all"
 bl_all=$SUITE_TMP_ROOT/batch-lib.all.sh
 cat "$root"/templates/scripts/ci/batch-lib.sh "$root"/templates/scripts/ci/queue/rules-*.sh > "$bl_all"
 
@@ -3064,6 +3064,20 @@ eq "under the floor but the window has reset" "0" "$(rate_wait "120	900" 1000)"
 eq "a custom floor" "0" "$(rate_wait "120	1600" 1000 100)"
 eq "unknown budget, no wait" "0" "$(rate_wait '' 1000)"
 eq "a reset a second away waits one second" "1" "$(rate_wait "0	1001" 1000)"
+# #2513: a wait long enough to outlast the reset is never slept through while the drain holds its
+# lock; a drain once did that for up to an hour, and nothing else could run (a scheduled trigger, or
+# the one a landing or a push would send) until it woke, so a green change sat for two hours. A short
+# wait still sleeps it out as before.
+rg_now=$(date +%s)
+rg1_out=$( ( . "$root/templates/scripts/ci/queue/state.sh"; . "$root/templates/scripts/ci/queue/rate-lib.sh"; flaky_dir=/tmp; log_file=/dev/null; rate_budget() { printf '100\t%s\n' "$((rg_now + 100))"; }; sleep() { echo "slept $1"; }; rate_guard ); echo "RC=$?")
+eq "a short wait still sleeps it out, for the seconds rate_wait says" "yes
+0" "$(printf '%s' "$rg1_out" | grep -q '^slept 100$' && echo yes || echo no; printf '%s' "$rg1_out" | sed -n 's/^RC=//p')"
+rg2_out=$( ( . "$root/templates/scripts/ci/queue/state.sh"; . "$root/templates/scripts/ci/queue/rate-lib.sh"; flaky_dir=/tmp; log_file=/dev/null; rate_budget() { printf '100\t%s\n' "$((rg_now + 1000))"; }; sleep() { echo "SLEPT-WRONGLY $1"; }; rate_guard ); echo "RC=$?")
+eq "a wait past the cap ends the drain instead of sleeping through it, naming when it resumes" "yes
+no
+0" "$(printf '%s' "$rg2_out" | grep -qi 'ending this drain now' && echo yes || echo no; printf '%s' "$rg2_out" | grep -q 'SLEPT-WRONGLY' && echo yes || echo no; printf '%s' "$rg2_out" | sed -n 's/^RC=//p')"
+eq "the cap is a setting, QUEUE_RATE_SLEEP_MAX, not a fixed number, in both the low-budget and the zero-budget guard" "2" "$(grep -c 'QUEUE_RATE_SLEEP_MAX:-300' "$root/templates/scripts/ci/queue/rate-lib.sh")"
+eq "the project's copy of the budget guard is the plugin's shipped one" "same same" "$(cmp -s "$root/templates/scripts/ci/queue/state.sh" "$root/../scripts/ci/queue/state.sh" 2>/dev/null && echo same || { [ -f "$root/../scripts/ci/queue/state.sh" ] || echo same; }) $(cmp -s "$root/templates/scripts/ci/queue/rate-lib.sh" "$root/../scripts/ci/queue/rate-lib.sh" 2>/dev/null && echo same || { [ -f "$root/../scripts/ci/queue/rate-lib.sh" ] || echo same; })"
 eq "a 403 for the rate limit is named" "yes" "$(rate_limit_hit 'HTTP 403: API rate limit exceeded for user ID 1 (https://api.github.com/repos/x/y/actions/runs)')"
 eq "a secondary limit too" "yes" "$(rate_limit_hit 'You have exceeded a secondary rate limit')"
 eq "another error is not" "no" "$(rate_limit_hit 'HTTP 404: Not Found')"
@@ -7140,6 +7154,13 @@ eq "a round younger than twenty minutes is never dead" "" "$(dead_round_issues 2
 eq "a unit with no pull request and no branch for twenty minutes is dead; a pull request or a branch is evidence" "301 302" "$(dead_round_issues 2400 1000 "$dr_branches" "$dr_units")"
 eq "a branch named for another issue is no evidence (issue-3040 is not 304)" "304" "$(dead_round_issues 2400 1000 "$(printf 'issue-3040\n')" "$(printf '\t304\n')")"
 eq "an unknown start time says nothing" "" "$(dead_round_issues 2400 '' "$dr_branches" "$dr_units")"
+# #2513: a round proposed with nothing started, two looks running, is not made to wait the usual
+# twenty minutes for a third identical "held:" line; wake-check.sh sets MINUTES to 0 for this one
+# look (an explicit fifth argument dead_round_issues already took), so a unit with no real evidence
+# is checked, and freed, moments after the round started, not twenty minutes later.
+eq "MINUTES of 0 checks a round for evidence moments after it started, not after twenty minutes" "301 302" "$(dead_round_issues 1010 1000 "$dr_branches" "$dr_units" 0)"
+eq "approval.sh's dead-round check reads DEAD_ROUND_MINUTES from the environment, 20 by default" "1" "$(grep -c 'dead_round_issues .*DEAD_ROUND_MINUTES:-20' "$root/scripts/drive/approval.sh")"
+eq "the wake check sets it to 0 once a round has gone two looks running with nothing started" "1" "$(grep -c 'export DEAD_ROUND_MINUTES=0' "$root/scripts/drive/wake-check.sh")"
 eq "the dead round's restart is said in one line" "1" "$(dead_round_comment | wc -l | tr -d ' ')"
 eq "the tick says how many agents it left running" "Left running when this tick ended: no agents.|Left running when this tick ended: 1 agent.|Left running when this tick ended: 3 agents." "$(wake_agents_left 0)|$(wake_agents_left 1)|$(wake_agents_left 3)"
 wk_yml="$root/../.github/workflows/drive-wake.yml"
@@ -8016,6 +8037,12 @@ eq "approval.sh reads the running round through the plan's held-only rule" "2" "
 ap_in=$(printf '31\n32\n')
 eq "an In progress issue whose only pull request is held is left out of what is running" "32" "$(without_issues "$ap_in" "$(held_only_issues "$(printf '201\tyes\t31\n202\tno\t32\n')")")"
 eq "the approval's pull-line query keeps the number, the hold and what the body closes" "yes" "$(grep -q 'PULL_LINES_JQ=.*closes|fixes|resolves' "$root/scripts/drive/round-state-lib.sh" && echo yes)"
+# A design/spec/mocks pull request held for the owner's read by its own words, not a label or a
+# "Queue: hold" line, is read as held too (#2598): the running round it belongs to then holds nothing
+# but its own area, instead of blocking every later round that shares no file with it.
+eq "the approval's pull-line query also reads a design change held by its own words, not only a label" "yes" "$(grep -q 'PULL_LINES_JQ=.*draft\[' "$root/scripts/drive/round-state-lib.sh" && echo yes)"
+eq "the plan's pull-list query reads the same held-by-its-words wording" "yes" "$(grep -q 'draft\[' "$root/scripts/drive/pr-read-lib.sh" && echo yes)"
+eq "the plan and the approval never disagree: both read the exact same held-by-its-words wording" "1" "$(printf '%s\n%s\n' "$(grep -o 'draft\[\^\.\]{0,80}[^"]*' "$root/scripts/drive/round-state-lib.sh" | head -n 1)" "$(grep -o 'draft\[\^\.\]{0,80}[^"]*' "$root/scripts/drive/pr-read-lib.sh" | head -n 1)" | sort -u | wc -l | tr -d ' ')"
 # issue_titles was once set by a statement hidden after a trailing # comment,
 # so it was always empty and an area hold named the issue it waits behind by
 # number, never by title (#2066).

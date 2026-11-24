@@ -4,7 +4,10 @@
 
 read_open_pull_requests() {
   rest_lines=""; pr_shas=""; unread_prs=0
-  pr_list=$(gh api "repos/{owner}/{repo}/pulls?state=open&per_page=100" --jq '.[] | [(.number | tostring), .head.ref, ([.labels[].name] | join(",")), ((.body // "") | [splits("\r?\n")] | map(select(test("^Queue: hold"; "i"))) | first // ""), ((.body // "") | [scan("(?i)(?:closes|fixes|resolves) #([0-9]+)") | .[0]] | join(",")), ((.body // "") | [scan("(?i)\\b(?:refs?|references|spec for|part of|relates to|related to):? #([0-9]+)") | .[0]] | join(","))] | join("\u001f")' 2>/dev/null | tr -d '\r')
+  # A design/spec/mocks change that says in its own title or body it is held for the owner's (or
+  # builder's) read counts as held here too, the same wording reads_held() reads from an issue (#2598):
+  # a synthetic "Queue: hold" line is reported so held_by() below needs no change.
+  pr_list=$(gh api "repos/{owner}/{repo}/pulls?state=open&per_page=100" --jq '.[] | [(.number | tostring), .head.ref, ([.labels[].name] | join(",")), (if (((.title // "") + " " + (.body // "")) | test("draft[^.]{0,80}(for (the )?(owner|builder|your)('"'"'s)? read|to read)|(held|waits?) for (the )?(owner|builder|your)('"'"'s)? read|(owner|builder)('"'"'s)? (to )?read (it|the draft)"; "i")) then "Queue: hold" else ((.body // "") | [splits("\r?\n")] | map(select(test("^Queue: hold"; "i"))) | first // "") end), ((.body // "") | [scan("(?i)(?:closes|fixes|resolves) #([0-9]+)") | .[0]] | join(",")), ((.body // "") | [scan("(?i)\\b(?:refs?|references|spec for|part of|relates to|related to):? #([0-9]+)") | .[0]] | join(","))] | join("\u001f")' 2>/dev/null | tr -d '\r')
   # One separator that is not whitespace, so a pull request with no hold line or no labels keeps its empty field; a tab would collapse it and shift the Closes numbers left.
   pull_links=$(pull_link_row "$pr_list")
   while IFS="$us" read -r p_num p_ref p_labels p_hold p_closes p_refs; do

@@ -59,7 +59,11 @@ running_round() {
 RUNNING_ISSUES_JQ='.[] | select(([.labels[].name | ascii_downcase] | index("state:waiting-on-owner")) == null) | .number'
 HELD_PRS_JQ='.[] | [.number, ((([.labels[].name | ascii_downcase] | (index("queue:hold") // index("hold"))) != null) or (((.body // "") | test("(^|\n)Queue: hold"; "i")))] | @tsv'
 # PULL_LINES_JQ: "NUMBER<TAB>held<TAB>CLOSES<TAB>REFS" for each open pull request, the plan's pull-line shape (held-running-lib.sh), so the approval reads which issues only a held pull request names by the same rule as the plan (#2128).
-PULL_LINES_JQ='.[] | [.number, (if ((([.labels[].name | ascii_downcase] | (index("queue:hold") // index("hold"))) != null) or ((.body // "") | test("(^|\n)Queue: hold"; "i"))) then "yes" else "no" end), ((.body // "") | [scan("(?i)(?:closes|fixes|resolves) #([0-9]+)") | .[0]] | join(",")), ((.body // "") | [scan("(?i)\\b(?:refs?|references|spec for|part of|relates to|related to):? #([0-9]+)") | .[0]] | join(","))] | @tsv'
+# held is also "yes" for a design/spec/mocks change that says in its own title or body it is held for the
+# owner's (or builder's) read, whatever label or "Queue: hold" line it does or does not carry: the same
+# wording reads_held() (reads-held-lib.sh) reads from an issue, read here from the pull request itself, so
+# a round the drive is approving never disagrees with the round it already proposed (#2598).
+PULL_LINES_JQ='.[] | [.number, (if ((([.labels[].name | ascii_downcase] | (index("queue:hold") // index("hold"))) != null) or ((.body // "") | test("(^|\n)Queue: hold"; "i")) or (((.title // "") + " " + (.body // "")) | test("draft[^.]{0,80}(for (the )?(owner|builder|your)('"'"'s)? read|to read)|(held|waits?) for (the )?(owner|builder|your)('"'"'s)? read|(owner|builder)('"'"'s)? (to )?read (it|the draft)"; "i"))) then "yes" else "no" end), ((.body // "") | [scan("(?i)(?:closes|fixes|resolves) #([0-9]+)") | .[0]] | join(",")), ((.body // "") | [scan("(?i)\\b(?:refs?|references|spec for|part of|relates to|related to):? #([0-9]+)") | .[0]] | join(","))] | @tsv'
 
 # started_units COMMENTS
 # The units of the latest started round on the drive issue (its sipnship-

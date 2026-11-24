@@ -64,6 +64,40 @@ test('outside a run, in another repository\'s run, or when GitHub gives no token
   } finally { f.server.close(); }
 });
 
+test('#2570: a network blip on the first ask is retried once, quietly, and the token still comes through', async () => {
+  let calls = 0;
+  const fetchFn = async (url, opts) => {
+    calls++;
+    if (calls === 1) throw new Error('fetch failed');
+    assert.match(url, /audience=https%3A%2F%2Fsipnship\.dev/);
+    assert.strictEqual(opts.headers.authorization, 'Bearer runtime-secret');
+    return { ok: true, json: async () => ({ value: JWT }) };
+  };
+  const why = {};
+  const got = await actions.entry('ada/garden', { ACTIONS_ID_TOKEN_REQUEST_URL: 'http://x/idtoken', ACTIONS_ID_TOKEN_REQUEST_TOKEN: 'runtime-secret', GITHUB_REPOSITORY_ID: '4242', GITHUB_REPOSITORY: 'ada/garden' }, fetchFn, why);
+  assert.strictEqual(calls, 2);
+  assert.strictEqual(got.token, JWT);
+  assert.strictEqual(why.line, undefined);
+});
+
+test('#2570: GitHub not answering twice running is said once, naming that it was tried twice', async () => {
+  const fetchFn = async () => { throw new Error('fetch failed'); };
+  const why = {};
+  const got = await actions.entry('ada/garden', { ACTIONS_ID_TOKEN_REQUEST_URL: 'http://x/idtoken', ACTIONS_ID_TOKEN_REQUEST_TOKEN: 'runtime-secret', GITHUB_REPOSITORY_ID: '4242', GITHUB_REPOSITORY: 'ada/garden' }, fetchFn, why);
+  assert.strictEqual(got, undefined);
+  assert.match(why.line, /did not answer.*twice/);
+});
+
+test('#2570: GitHub actually refusing the request (a non-OK status) is said once, never retried', async () => {
+  let calls = 0;
+  const fetchFn = async () => { calls++; return { ok: false, status: 403 }; };
+  const why = {};
+  const got = await actions.entry('ada/garden', { ACTIONS_ID_TOKEN_REQUEST_URL: 'http://x/idtoken', ACTIONS_ID_TOKEN_REQUEST_TOKEN: 'runtime-secret', GITHUB_REPOSITORY_ID: '4242', GITHUB_REPOSITORY: 'ada/garden' }, fetchFn, why);
+  assert.strictEqual(got, undefined);
+  assert.strictEqual(calls, 1);
+  assert.match(why.line, /answered 403/);
+});
+
 test('a full brief is never sent as a run: only a sample', async () => {
   const f = await fake();
   try {

@@ -23,20 +23,30 @@ async function entry(repo, env = process.env, fetchFn = fetch, why = {}) {
     return undefined;
   }
   if (repo && env.GITHUB_REPOSITORY && String(env.GITHUB_REPOSITORY).toLowerCase() !== String(repo).toLowerCase()) return undefined;
-  try {
-    const url = env.ACTIONS_ID_TOKEN_REQUEST_URL;
-    const res = await fetchFn(`${url}${url.includes('?') ? '&' : '?'}audience=${encodeURIComponent(AUDIENCE)}`, {
-      headers: { authorization: `Bearer ${env.ACTIONS_ID_TOKEN_REQUEST_TOKEN}` },
-      signal: AbortSignal.timeout(4000),
-    });
-    if (!res.ok) { why.line = `GitHub would not give this run an identity token (answered ${res.status})`; return undefined; }
-    const value = (await res.json()).value;
-    if (!/^[\w-]+\.[\w-]+\.[\w-]+$/.test(value || '')) { why.line = 'GitHub gave this run an identity token that was not readable'; return undefined; }
-    return { repoId: Number(env.GITHUB_REPOSITORY_ID), fullName: env.GITHUB_REPOSITORY, token: value, machine: SENDER, actions: true };
-  } catch {
-    why.line = 'GitHub did not answer this run\'s request for an identity token';
-    return undefined;
+  const url = env.ACTIONS_ID_TOKEN_REQUEST_URL;
+  const full = `${url}${url.includes('?') ? '&' : '?'}audience=${encodeURIComponent(AUDIENCE)}`;
+  // A runner's network is sometimes not ready the instant its job starts (#2570: on a real drive run,
+  // GitHub's own OIDC endpoint once did not answer a request from a runner at all, a transient blip,
+  // not a refusal, caught here and left as "no agent reported" with no retry). One quick retry after a
+  // short pause; never for an answer GitHub actually gave (a non-OK status or an unreadable token are
+  // refusals, not a network failure, and are never retried, so a real "no" is still said once).
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const res = await fetchFn(full, {
+        headers: { authorization: `Bearer ${env.ACTIONS_ID_TOKEN_REQUEST_TOKEN}` },
+        signal: AbortSignal.timeout(4000),
+      });
+      if (!res.ok) { why.line = `GitHub would not give this run an identity token (answered ${res.status})`; return undefined; }
+      const value = (await res.json()).value;
+      if (!/^[\w-]+\.[\w-]+\.[\w-]+$/.test(value || '')) { why.line = 'GitHub gave this run an identity token that was not readable'; return undefined; }
+      return { repoId: Number(env.GITHUB_REPOSITORY_ID), fullName: env.GITHUB_REPOSITORY, token: value, machine: SENDER, actions: true };
+    } catch {
+      if (attempt === 1) { await new Promise((r) => setTimeout(r, 300)); continue; }
+      why.line = 'GitHub did not answer this run\'s request for an identity token, twice';
+      return undefined;
+    }
   }
+  return undefined;
 }
 
 /**

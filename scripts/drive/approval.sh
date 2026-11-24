@@ -209,7 +209,10 @@ if [ -z "$started_by" ] && printf '%s\n' "$approved" | grep -q '^dispatch '; the
   # A unit counts as running only while there is evidence of it: a round whose units made no pull request and no branch for twenty minutes is dead, and its issues no longer hold the round. The tick's report sends them back to Ready.
   # An issue whose only pull request is held for the owner's read is not running work, whatever its State label says: the same rule the plan reads (held-running-lib.sh, #2128).
   inprog=$(without_issues "$inprog" "$(held_only_issues "$pull_lines")"); inprog=$(without_issues "$inprog" "$(closed_among "$inprog")")  # a closed issue is never a running unit, whatever label it carries (#2198)
-  dead=$(dead_round_issues "$(date -u +%s)" "$(started_at "$comments")" "$(gh api "repos/{owner}/{repo}/git/matching-refs/heads/issue-" --jq '.[].ref' 2>/dev/null)" "$(started_units "$comments")")
+  # DEAD_ROUND_MINUTES (environment), when set, overrides the usual twenty minutes: wake-check.sh sets
+  # it to 0 once a round has been proposed with nothing started two looks running, so a unit with no
+  # real evidence is freed at once rather than making a third identical "held:" line (#2513).
+  dead=$(dead_round_issues "$(date -u +%s)" "$(started_at "$comments")" "$(gh api "repos/{owner}/{repo}/git/matching-refs/heads/issue-" --jq '.[].ref' 2>/dev/null)" "$(started_units "$comments")" "${DEAD_ROUND_MINUTES:-20}")
   if [ -n "$dead" ]; then
     inprog=$(printf '%s\n' "$inprog" | grep -vxF "$(printf '%s\n' $dead)")
     echo "the running round's units left nothing in twenty minutes (#$(printf '%s' "$dead" | sed 's/ /, #/g')); it no longer holds the next round" >&2

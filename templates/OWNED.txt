@@ -69,6 +69,7 @@ scripts/ci/batch-lib.sh
 # the pure rules batch-lib.sh loads. A file added there is listed here.
 scripts/ci/queue/state.sh
 scripts/ci/queue/log-post.sh
+scripts/ci/queue/rate-lib.sh
 scripts/ci/queue-app-token.sh
 scripts/ci/service-auth.sh
 scripts/ci/log-post-lib.sh

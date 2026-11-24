@@ -38,6 +38,31 @@ fi
 sh "${WAKE_PLAN:-$here/plan.sh}" --fast > .scratch/drive/plan.txt 2>/dev/null
 pub=$(grep -E '^(published|not published):' .scratch/drive/plan.txt | tail -n 1)
 echo "${pub:-not published: the plan printed no proposal, so the Work tab still shows the last round it was given.}"
+# The drive issue and its tracking comment (wake_repeat_read, #2342) are read once, here, before the
+# approval runs rather than after: a round already proposed, with nothing started, for two looks running
+# (one short of the stall line, "proposed 3 times... ") is not made to wait a whole twenty minutes for
+# dead_round_issues to free a unit with no real evidence behind it (#2513). DEAD_ROUND_MINUTES, read by
+# approval.sh's dead_round_issues call, is set to 0 for this one look, so the round is checked for
+# evidence now and a unit with none is dropped at once, letting the rest of the round (or the next one)
+# go rather than repeat the same "held:" line a third time with nobody freed.
+rk=$(wake_round_key "$(cat .scratch/drive/round.txt 2>/dev/null)")
+drive_issue=$(gh api "repos/{owner}/{repo}/issues?labels=drive&state=open&per_page=1" --jq '.[0] // empty | [(.number|tostring), (.comments|tostring)] | @tsv' 2>/dev/null | tr -d '\r')
+wc_issue=$(printf '%s' "$drive_issue" | cut -f1)
+wc_rows=""
+if [ -n "$wc_issue" ]; then
+  wc_count=$(printf '%s' "$drive_issue" | cut -f2)
+  for wc_page in $(comment_pages "${wc_count:-0}"); do
+    wc_rows="${wc_rows}$(gh api "repos/{owner}/{repo}/issues/$wc_issue/comments?per_page=100&page=$wc_page" --jq '.[] | "\(.id)\t" + (.body | gsub("[\r\n]+"; " "))' 2>/dev/null)
+"
+  done
+fi
+prev=$(wake_repeat_read "$wc_rows")
+pk=$(printf '%s' "$prev" | cut -f1); pc=$(printf '%s' "$prev" | cut -f2)
+case "$pc" in ''|*[!0-9]*) pc=0 ;; esac
+if [ -n "$rk" ] && [ "$rk" = "$pk" ] && [ "$pc" -ge 2 ]; then
+  export DEAD_ROUND_MINUTES=0
+  echo "the round named $(printf '%s' "$rk" | sed 's/ /, #/g; s/^/#/') was proposed with nothing started $((pc + 1)) times running; its evidence is checked now, not after twenty minutes"
+fi
 out=$(sh "${WAKE_APPROVAL:-$here/approval.sh}" 2>&1)
 # Goals approved from an older posted proposal that the plan no longer prints start nothing, and the tick says so (#2104).
 stale=$(approved_not_planned "$(cat .scratch/drive/plan.txt 2>/dev/null)" "$out")
@@ -57,18 +82,9 @@ if [ "$kind" = start ]; then echo "start: $why"; else echo "nothing: $why"; fi
 # three wakes running have found the same round and started nothing (specs/023-drive-on-work, "A round
 # proposed again and again without starting shows as a stall", #2342). The count lives on the drive issue
 # itself, the way wake_fix_asked_comment already keeps a pull request's own state between separate runs.
-rk=$(wake_round_key "$(cat .scratch/drive/round.txt 2>/dev/null)")
-drive_issue=$(gh api "repos/{owner}/{repo}/issues?labels=drive&state=open&per_page=1" --jq '.[0] // empty | [(.number|tostring), (.comments|tostring)] | @tsv' 2>/dev/null | tr -d '\r')
-wc_issue=$(printf '%s' "$drive_issue" | cut -f1)
+# The issue and its prior count were already read above, before the approval ran (#2513); they are not
+# read a second time here.
 if [ -n "$wc_issue" ]; then
-  wc_count=$(printf '%s' "$drive_issue" | cut -f2)
-  wc_rows=""
-  for wc_page in $(comment_pages "${wc_count:-0}"); do
-    wc_rows="${wc_rows}$(gh api "repos/{owner}/{repo}/issues/$wc_issue/comments?per_page=100&page=$wc_page" --jq '.[] | "\(.id)\t" + (.body | gsub("[\r\n]+"; " "))' 2>/dev/null)
-"
-  done
-  prev=$(wake_repeat_read "$wc_rows")
-  pk=$(printf '%s' "$prev" | cut -f1); pc=$(printf '%s' "$prev" | cut -f2)
   started=no; [ "$kind" = start ] && started=yes
   newcount=$(wake_repeat_count "$pk" "$pc" "$rk" "$started")
   if [ "$newcount" != "$pc" ] || [ "$rk" != "$pk" ]; then

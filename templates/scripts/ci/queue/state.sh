@@ -26,43 +26,10 @@ iso_utc() { date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$1" 
 say() { echo "$1"; printf '%s %s\n' "$(date '+%H:%M')" "$1" >> "$log_file" 2>/dev/null || true; }
 hhmm() { date -u -d "@$1" +%H:%M 2>/dev/null || date -u -r "$1" +%H:%M 2>/dev/null || echo "$1"; }
 
-# The REST budget only: every call the queue makes is REST, so a spent
-# GraphQL budget (gh pr, gh issue, the board) never holds it. It once waited
-# for the GraphQL reset with REST half full.
-rate_budget() { gh api rate_limit --jq '.resources.core | "\(.remaining)\t\(.reset)"' 2>/dev/null || true; }
-rate_guard() {
-  rg=$(rate_budget)
-  w=$(rate_wait "$rg" "$(date +%s)" "${QUEUE_RATE_FLOOR:-500}")
-  [ "$w" -gt 0 ] || return 0
-  echo "GitHub API budget is low (${rg%%	*} calls left); waiting $((w / 60 + 1)) minute(s) until it resets at $(hhmm "${rg#*	}") UTC."
-  sleep "$w"
-}
-# rate_stop: after a gh call whose stderr went to $gh_err, back off when
-# GitHub refused it for a rate limit. The hourly quota spent: wait for the
-# reset. The secondary limit, which the budget read cannot see: 60 seconds,
-# then 120, 240 and 480, and the fifth refusal stops; never retry at once. rate_ok clears the
-# count after a round that went through.
-rate_stop() {
-  [ "$(rate_limit_hit "$(cat "$gh_err" 2>/dev/null)")" = yes ] || return 0
-  : > "$gh_err"
-  rg=$(rate_budget); rem=${rg%%	*}
-  if [ "${rem:-1}" = 0 ]; then
-    w=$(rate_wait "$rg" "$(date +%s)" 1)
-    echo "GitHub's hourly API quota is spent; waiting until it resets at $(hhmm "${rg#*	}") UTC."
-    sleep "$w"; return 0
-  fi
-  n=$(cat "$flaky_dir/rate.hits" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "$flaky_dir/rate.hits"
-  case $n in
-    1) w=60 ;;
-    2) w=120 ;;
-    3) w=240 ;;
-    4) w=480 ;;
-    *) say "GitHub refused five calls for its secondary rate limit (too many concurrent or point-heavy requests from this account); stopping. Run the queue again in ten minutes, one copy, with nothing else polling."; exit 1 ;;
-  esac
-  say "GitHub refused the call for its secondary rate limit, which the budget read cannot see (hit $n of 5); waiting $w seconds, never retrying at once."
-  sleep "$w"
-}
-rate_ok() { rm -f "$flaky_dir/rate.hits" 2>/dev/null || true; }
+# rate_budget, rate_guard, rate_stop and rate_ok: the queue's own REST budget guard and back-off, in
+# their own file so this one stays under its line limit (queue/rate-lib.sh, #2513). Guarded, as
+# queue_log_post above, so a test sourcing this file alone is not testing them and must not fail on it.
+[ -z "${here:-}" ] || [ ! -f "$here/queue/rate-lib.sh" ] || . "$here/queue/rate-lib.sh"
 
 # Pull request facts through REST, one call per pull request, cached for
 # sixty seconds. pr_field N COL: 1 head ref, 2 head sha, 3 title, 4 draft,
