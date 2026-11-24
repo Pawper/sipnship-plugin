@@ -633,6 +633,7 @@ scripts/ci/queue/held.sh 131d1317a7fc4e892df47d7f866cb6590a436b5c
 scripts/ci/queue/held.sh 4a47ae4363abb99b427ec0b47f19a647136f62a8
 scripts/ci/queue/held.sh 658d1d131a7b5f00c1ca147171cafd2d32a6baa8
 scripts/ci/queue/held.sh 961635f65cfa68d2cb39590b3f36d90af79edbc2
+scripts/ci/queue/lock.sh 463189683995b92a40f298d7089c208f18bb78ba
 scripts/ci/queue/lock.sh e8dbaedaf649d6b18f1c50c7a4f5a4e3f3ecfd7d
 scripts/ci/queue/log-post.sh acdd6d78c501c1a12991d5bea30b660948263b4a
 scripts/ci/queue/overlaps.sh 08515e29a12df47f524644e926f75dc156a6ea9e
@@ -702,6 +703,7 @@ scripts/ci/queue/rules-rerun.sh 46bafd8b189efef2bbb175bb4139570a98085885
 scripts/ci/queue/rules-rerun.sh 59b89571b61ec380d780ff559dd4fe24cc35099a
 scripts/ci/queue/rules-rerun.sh 96164b3e155ec2ed3a5f1a93385452c1ca11d872
 scripts/ci/queue/rules-rescue.sh 2553d53ddef38ca0ee458a1e066c72a55f6c3f46
+scripts/ci/queue/rules-said.sh 6640c1704fe0fa698ce83cf90dd3d6e2767227f1
 scripts/ci/queue/rules-said.sh c8ebfb00b0e58cf7b2affcc7d05a7fca9c31bb07
 scripts/ci/queue/rules-serial.sh 367d29dc3143c91ce1d0f4fcb7a5ffa410769f0c
 scripts/ci/queue/rules-serial.sh 620357a5deb98869d98438946c8c44c1b479454a
