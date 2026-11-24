@@ -3580,10 +3580,13 @@ eq "a template script OWNED.txt does not list is new" "scripts/ci/mock-check.sh"
 ss_d=$(ss_new)
 while IFS= read -r nf_p; do mkdir -p "$ss_d/$(dirname "$nf_p")"; cp "$root/templates/$nf_p" "$ss_d/$nf_p"; done < "$fixtures_sync/new-files-project.txt"
 git -C "$ss_d" add -A; git -C "$ss_d" commit -q -m start
-ss_dry=$(cd "$ss_d" && sh "$root/scripts/sync/sync-templates.sh" 2>&1)
+# OWNED.txt lists these now, so a copy of the plugin without them stands in for an older version.
+nf_q=$(mktemp -d); cp -R "$root/scripts" "$root/templates" "$root/.claude-plugin" "$nf_q/"
+grep -vx "scripts/ci/mock-check.sh\|scripts/ci/mock-lib.sh\|default scripts/ci/mocks.txt" "$root/templates/OWNED.txt" > "$nf_q/templates/OWNED.txt"
+ss_dry=$(cd "$ss_d" && sh "$nf_q/scripts/sync/sync-templates.sh" 2>&1)
 eq "the dry run lists the new check scripts" "3" "$(printf '%s\n' "$ss_dry" | grep -c 'new:      scripts/ci/mock-check.sh\|new:      scripts/ci/mock-lib.sh\|new:      scripts/ci/mocks.txt')"
 eq "a new file goes only where its folder is" "0" "$(printf '%s\n' "$ss_dry" | grep -c 'new:      scripts/design/')"
-(cd "$ss_d" && sh "$root/scripts/sync/sync-templates.sh" --apply --no-commit >/dev/null 2>&1)
+(cd "$ss_d" && sh "$nf_q/scripts/sync/sync-templates.sh" --apply --no-commit >/dev/null 2>&1)
 eq "and --apply adds them" "yes yes" "$([ -f "$ss_d/scripts/ci/mock-check.sh" ] && echo yes || echo no) $(git -C "$ss_d" diff --cached --name-only | grep -qx scripts/ci/mock-lib.sh && echo yes || echo no)"
 
 section 'template refresh, the sync in a throwaway project'
