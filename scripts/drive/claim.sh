@@ -5,11 +5,14 @@
 # Usage, from the project root:
 #   sh "$CLAUDE_PLUGIN_ROOT/scripts/drive/claim.sh" ISSUE claim [TOKEN]   claim it; prints "claimed TOKEN" (exit 0) or "taken: WHY" (exit 1)
 #   sh "$CLAUDE_PLUGIN_ROOT/scripts/drive/claim.sh" ISSUE check [TOKEN]   only look: "free" (exit 0) or "taken: WHY" (exit 1); an agent's first step, with the token it was given (its own claim is no reason to stop)
-#   sh "$CLAUDE_PLUGIN_ROOT/scripts/drive/claim.sh" ISSUE release TOKEN   end the claim, when the agent is done
+#   sh "$CLAUDE_PLUGIN_ROOT/scripts/drive/claim.sh" ISSUE release TOKEN [WHY]   end the claim, when the agent is done; kept ("kept: ...", exit 1) while an open pull request that closes the issue has checks still running, unless WHY (or CLAIM_RELEASE_REASON) says plainly why the agent cannot stay, which is left on the pull request (#2445)
 # An issue is taken when it is closed, an open pull request closes it, a branch named for it exists, or
 # another live claim (under four hours old; CLAIM_TTL seconds, unless its starter's run has already
 # completed, #2328) is older than this one. REST only.
 here=$(dirname "$0")
+. "$here/../../hooks/scripts/lib.sh"
+. "$here/../../hooks/scripts/board-checks-lib.sh"
+. "$here/round-state-lib.sh"
 . "$here/claim-lib.sh"
 type gitb >/dev/null 2>&1 || gitb() { if command -v timeout >/dev/null 2>&1; then timeout -k 5 "${GIT_BOUND_SECONDS:-120}" git "$@"; else git "$@"; fi; }
 usage() { echo "usage: claim.sh ISSUE claim [TOKEN] | check | release TOKEN" >&2; exit 2; }
@@ -78,6 +81,19 @@ Another starter claimed this issue first." >/dev/null 2>&1
     echo "taken: another starter claimed it first (${win:-unknown})"; exit 1 ;;
   release)
     [ -n "${3:-}" ] || usage
+    # An agent that opened a change stays with it until its checks have ended, or says plainly why it cannot (#2445): a claim freed on
+    # a change whose checks are still running leaves a red one nobody is on.
+    rel_why=${4:-${CLAIM_RELEASE_REASON:-}}
+    rel_pr=$(gh api "repos/{owner}/{repo}/pulls?state=open&per_page=100" --jq '.[] | [.number, .head.sha, ((.body // "") | [scan("(?i)(?:closes|fixes|resolves) #([0-9]+)") | .[0]] | join(","))] | @tsv' 2>/dev/null | tr -d '\r' | awk -F'\t' -v n="$issue" '{ k = split($3, a, ","); for (i = 1; i <= k; i++) if (a[i] == n) { print $1 "\t" $2; exit } }')
+    if [ -n "$rel_pr" ]; then
+      rel_n=$(printf '%s' "$rel_pr" | cut -f1); rel_sha=$(printf '%s' "$rel_pr" | cut -f2)
+      rel_pending=$(checks_pending "$(head_check_lines "$rel_sha")")
+      rel_say=$(claim_release_hold "$rel_n" "$rel_pending" "$rel_why")
+      if [ -n "$rel_say" ]; then echo "$rel_say"; exit 1; fi
+      if [ "$rel_pending" = yes ] && [ -n "$rel_why" ]; then
+        gh api -X POST "repos/{owner}/{repo}/issues/$rel_n/comments" -f "body=The agent that opened this change is leaving before its checks ended, because: $rel_why" >/dev/null 2>&1
+      fi
+    fi
     gh api -X POST "repos/{owner}/{repo}/issues/$issue/comments" -f "body=Claim released: $3
 The agent is done with this issue." >/dev/null 2>&1 && echo "released $3" || { echo "could not release $3" >&2; exit 1; } ;;
   *) usage ;;

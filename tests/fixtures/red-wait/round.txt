@@ -1,0 +1,11 @@
+busy 560	Bed photos in the reminder list	its newest commit is still waiting on its checks
+merge 561	Seed packets can be scanned
+hold 301	Garden task 301	Waits for "Bed photos in the reminder list" to land first, since both are in the photos area (after: 300)
+hold 302	Garden task 302	Waits for "Bed photos in the reminder list" to land first, since both are in the photos area (after: 300)
+hold 303	Garden task 303	Waits for "Bed photos in the reminder list" to land first, since both are in the photos area (after: 300)
+hold 304	Garden task 304	Waits for "Bed photos in the reminder list" to land first, since both are in the photos area (after: 300)
+hold 305	Garden task 305	Waits for "Bed photos in the reminder list" to land first, since both are in the photos area (after: 300)
+hold 306	Garden task 306	Waits for "Bed photos in the reminder list" to land first, since both are in the photos area (after: 300)
+hold 307	Garden task 307	Waits for "Bed photos in the reminder list" to land first, since both are in the photos area (after: 300)
+hold 308	Garden task 308	Waits for "Bed photos in the reminder list" to land first, since both are in the photos area (after: 300)
+stop: nothing to dispatch

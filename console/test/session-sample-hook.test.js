@@ -57,3 +57,12 @@ test('a machine with no connection sends nothing and keeps no mark', () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'sns-hook-none-'));
   assert.strictEqual(run(home, 'Stop'), '');
 });
+
+test('a step of a workflow run with no machine token still sends, as the run (#2437)', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'sns-hook-run-'));
+  const dir = project();
+  const input = JSON.stringify({ session_id: 'x', hook_event_name: 'SessionStart', cwd: dir });
+  const env = { ...process.env, SIPNSHIP_HOME: home, SIPNSHIP_URL: 'http://127.0.0.1:9', CLAUDE_PROJECT_DIR: dir, ACTIONS_ID_TOKEN_REQUEST_URL: 'http://127.0.0.1:9/idtoken', ACTIONS_ID_TOKEN_REQUEST_TOKEN: 'x', GITHUB_REPOSITORY_ID: '1', GITHUB_REPOSITORY: 'acme/shop' };
+  execFileSync('sh', [hook], { input, env, stdio: ['pipe', 'pipe', 'ignore'] });
+  assert.ok(fs.existsSync(path.join(home, 'brief-send', 'sample-at-acme-shop')), 'the hook ran its send for the run');
+});

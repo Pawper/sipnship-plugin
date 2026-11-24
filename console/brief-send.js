@@ -29,6 +29,7 @@ const questions = require('./questions');
 const refusals = require('./refusal-report');
 const designUse = require('./design-use');
 const sampleDigest = require('./sample-digest');
+const actionsSignIn = require('./actions-sign-in');
 
 const SEND_MAX_BYTES = 64 * 1024;
 const TIMEOUT_MS = 3000;
@@ -279,12 +280,26 @@ function keepBlock(env, repoId, text) {
   } catch { /* never stops the session */ }
 }
 
+/** A run's session sample: the sessions and nothing else, under the run's own name. Returns '' always; a failure never stops the session. */
+async function sendRunSample(run, agents, env, now) {
+  const body = briefBody('', { now, machine: run.machine, sessions: agents });
+  const text = JSON.stringify(body);
+  if (Buffer.byteLength(text) > SEND_MAX_BYTES) return '';
+  await post(`${base(env)}/v1/repos/${run.repoId}/brief`, run.token, text, TIMEOUT_MS);
+  return '';
+}
+
 /**
  * Send the brief; returns the line to print ('' for none). With sampleOnly,
  * the block is the last one kept and the send is about the session sample.
  */
 async function sendBrief({ text, session = '', repo, env = process.env, now = new Date(), runners, sessions: agents, ownerSteps: steps, localModels, sampleOnly = false, root = process.cwd(), digest }) {
-  const entry = tokens.find(repo, env);
+  let entry = tokens.find(repo, env);
+  // An agent in a workflow run, on a machine with no token of its own, reports its session as the run (#2437): a sample alone, nothing else.
+  if ((!entry || !tokens.looksLikeToken(entry.token)) && sampleOnly) {
+    const run = await actionsSignIn.entry(repo, env);
+    return run ? sendRunSample(run, agents, env, now) : '';
+  }
   if (!entry || !tokens.looksLikeToken(entry.token)) return '';
   if (sampleOnly) text = lastBlock(env, entry.repoId);
   else if (String(text || '').trim()) keepBlock(env, entry.repoId, text);

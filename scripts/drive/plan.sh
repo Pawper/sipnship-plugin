@@ -58,7 +58,7 @@ fi
 . "$here/deploy-goal-lib.sh"
 . "$here/rank-lib.sh"
 . "$here/red-batch-lib.sh"
-. "$here/claim-lib.sh"; . "$here/closed-lib.sh"; . "$here/closes-lib.sh"; . "$here/idle-lib.sh"; . "$here/pr-read-lib.sh"; . "$here/owner-lib.sh"; . "$here/left-lib.sh"; . "$here/asked-lib.sh"; . "$here/set-aside-lib.sh"; . "$here/round-bound-lib.sh"; . "$here/propose-lib.sh"
+. "$here/claim-lib.sh"; . "$here/closed-lib.sh"; . "$here/closes-lib.sh"; . "$here/idle-lib.sh"; . "$here/pr-read-lib.sh"; . "$here/owner-lib.sh"; . "$here/left-lib.sh"; . "$here/asked-lib.sh"; . "$here/set-aside-lib.sh"; . "$here/round-bound-lib.sh"; . "$here/propose-lib.sh"; . "$here/red-wait-lib.sh"
 
 # No GitHub call waits for ever (#1794): a call that has not answered in PLAN_GH_SECONDS (120) is stopped, the plan
 # names it on its error stream, and reads what that call would have told as not known, as for any failed call.
@@ -260,7 +260,7 @@ if [ -n "$guesses" ] || [ -n "$reasons" ]; then
 fi
 round=$(drop_asks_for_after_holds "$round")  # an issue that names what it follows is a hold, never also an ask (#1875)
 # A project whose queue lands green work by itself: rely on it; propose one drain only when green work has sat 15 minutes.
-plan_stage "ready issues placed"
+plan_stage "ready issues placed"; round=$(red_wait_lead "$round" "$snapshot" "$pull_links")  # a red change that ready work waits on gets its fix agent first, ahead of new work (red-wait-lib.sh, #2445)
 green_prs=$(printf '%s\n' "$snapshot" | awk -F'\t' '$1 == "pr" && $4 == "green" && $5 == "mergeable" && $8 != "yes" { print $2 }')
 runs=""
 if [ -f scripts/ci/merge-queue.sh ] && [ -n "$green_prs" ]; then
@@ -281,7 +281,7 @@ round=$(quiet_declined_goals "$round" "$facts" .scratch/drive/declined.tsv); ext
 round=$(say_every_pr "$round" "$snapshot")  # every open pull request has a line, whatever its checks say
 plan_stage "landing, release and deploy read"
 round=$(lead_red_main "$round")  # a red main's goal is the first numbered line (rank-lib.sh)
-number_proposal "$round"; stall_said=$(stall_note "$round" "$runners_online"); [ -z "$stall_said" ] || printf '%s\n' "$stall_said"  # every ready issue held: said as a stall naming what frees the most (#2055)
+number_proposal "$round"; stall_said=$(red_wait_stall "$round" "$snapshot" "$pull_links" "$(stall_note "$round" "$runners_online")"); [ -z "$stall_said" ] || printf '%s\n' "$stall_said"  # every ready issue held: said as a stall naming what frees the most (#2055)
 # Auto Drive, from the drive issue's label drive:auto: one REST call. On is a
 # standing approval; off, the proposal is posted and waits for a reply.
 auto=$(auto_drive_state "$drive_line")
