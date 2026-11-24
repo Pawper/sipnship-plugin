@@ -2407,6 +2407,13 @@ eq "so does the short label" "held by its label" "$(held_reason 'Hold' '')"
 eq "and a Queue: hold line" 'held by its "Queue: hold" line' "$(held_reason '' "$(printf 'Fix the chime.\n  Queue: hold until #301 lands')")"
 eq "a body that only mentions holding is not held" "" "$(held_reason 'bug' 'We should hold off on the cache.')"
 printf '\n# requests to the queue\n'
+eq "a release strips the Queue: hold line and keeps the rest" "Fix the chime.
+Closes #5" "$(hold_line_stripped "$(printf 'Fix the chime.\n  Queue: hold until #301 lands\nCloses #5')")"
+eq "a change held by label and line is not released while the label stays" "hold-label-kept" "$(release_outcome 'bug
+hold' 'Queue: hold')"
+eq "nor while only the line stays" "hold-line-kept" "$(release_outcome 'bug' 'Queue: hold')"
+eq "released is said once no mark is left" "released" "$(release_outcome 'bug' 'Fix the chime.')"
+eq "the queue's release request takes both labels and the line, then reads what is left" "yes" "$(grep -q 'for rq_lab in queue:hold hold' "$mq_all" && grep -q 'hold_line_stripped' "$mq_all" && grep -q 'release_outcome' "$mq_all" && echo yes)"
 eq "a request in the fixed form is read" "77	land-next	48	maya	speeds the others up" "$(request_from_comment 77 'Queue request: land-next #48 by maya: speeds the others up')"
 eq "the reason is optional" "78	hold	48	maya	" "$(request_from_comment 78 'Queue request: hold #48 by maya')"
 eq "a take-out needs its reason" "" "$(request_from_comment 79 'Queue request: drop #51 by maya')"
