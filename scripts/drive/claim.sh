@@ -14,6 +14,7 @@ here=$(dirname "$0")
 . "$here/../../hooks/scripts/board-checks-lib.sh"
 . "$here/round-state-lib.sh"
 . "$here/claim-lib.sh"
+. "$here/stale-lib.sh"
 type gitb >/dev/null 2>&1 || gitb() { if command -v timeout >/dev/null 2>&1; then timeout -k 5 "${GIT_BOUND_SECONDS:-120}" git "$@"; else git "$@"; fi; }
 usage() { echo "usage: claim.sh ISSUE claim [TOKEN] | check | release TOKEN" >&2; exit 2; }
 case "${1:-}" in ''|*[!0-9]*) usage ;; esac
@@ -93,6 +94,15 @@ Another starter claimed this issue first." >/dev/null 2>&1
       if [ "$rel_pending" = yes ] && [ -n "$rel_why" ]; then
         gh api -X POST "repos/{owner}/{repo}/issues/$rel_n/comments" -f "body=The agent that opened this change is leaving before its checks ended, because: $rel_why" >/dev/null 2>&1
       fi
+    fi
+    # The State label is set here, by the script, not left for the agent to remember (#2441): closed stays
+    # closed; open with a change that closes it (rel_pr above) stays In progress; open with nothing that closes
+    # it goes back to Ready, whatever note of what is left the agent already left as a comment.
+    rel_pr_num=$(printf '%s' "$rel_pr" | cut -f1)
+    rel_info=$(gh api "repos/{owner}/{repo}/issues/$issue" --jq '[.state, (.labels | map(.name) | join(","))] | @tsv' 2>/dev/null)
+    rel_slug=$(claim_release_slug "$(printf '%s' "$rel_info" | cut -f1)" "$rel_pr_num")
+    if [ -n "$rel_slug" ]; then
+      stale_labels_json "$(printf '%s' "$rel_info" | cut -f2 | tr ',' '\n')" "$rel_slug" | gh api -X PUT "repos/{owner}/{repo}/issues/$issue/labels" --input - >/dev/null 2>&1
     fi
     gh api -X POST "repos/{owner}/{repo}/issues/$issue/comments" -f "body=Claim released: $3
 The agent is done with this issue." >/dev/null 2>&1 && echo "released $3" || { echo "could not release $3" >&2; exit 1; } ;;
