@@ -40,13 +40,13 @@ row: Never delete | The `block-delete` hook refuses rm, del, Remove-Item and git
 row: Never delete, on the pull request | The `delete-check` step of the `checks` CI job fails a pull request that deletes a tracked file unless its body carries a line `Deletes: <reason>`
 
 id: one-change-closes-its-issue
-words: One change closes its issue
+words: One change closes its issue only when it builds the whole ask; a small remainder is a leftover issue, and an issue whose main ask isn't built stays open or ready
 locked: no
 check: scripts/ci/closes-check.sh
-protects: A board where open always means not started or being worked, and closed always means landed.
-catches: A pull request with no Closes line, and a Leftover line naming an issue that is closed or missing.
-if-off: An issue can stay open with part of its work landed and the rest written down nowhere.
-row: One change closes its issue | The `closes-check` step of the `checks` CI job fails a pull request whose body has no `Closes #N` line, and one whose `Leftover: #M` line names an issue that is not open; what a change leaves undone is a new issue filed before the change lands
+protects: A board where open always means not started, being worked, or partly built, and closed always means landed, whole.
+catches: A pull request with no Closes line, a Leftover line naming an issue that is closed or missing, and a partly built issue named Closes without saying which lines of "What done looks like" it built.
+if-off: An issue can stay open with part of its work landed and the rest written down nowhere, or close before its main ask is built.
+row: One change closes its issue only when it builds the whole ask; a small remainder is a leftover issue, and an issue whose main ask isn't built stays open or ready, its card saying how much | The `closes-check` step of the `checks` CI job fails a pull request whose body has no `Closes #N` line, one whose `Leftover: #M` line names an issue that is not open, and one that names an issue as partly built without saying which lines it built; what a change leaves undone is a new issue filed before the change lands
 
 id: never-force-push
 words: Never rewrite history on GitHub
