@@ -9,6 +9,7 @@
 here=$(dirname "$0")
 . "$here/lib.sh"
 . "$here/bounded-lib.sh"
+. "$here/budget-rest-lib.sh"
 . "$here/refusal-log.sh"
 . "$here/rule-switch.sh"
 

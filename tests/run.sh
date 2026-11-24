@@ -14,6 +14,7 @@
 
 root=${RUN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}
 . "$root/hooks/scripts/lib.sh"
+. "$root/hooks/scripts/budget-rest-lib.sh"
 . "$root/hooks/scripts/agent-model-lib.sh"
 . "$root/templates/status/lib.sh"
 . "$root/templates/scripts/ci/lib.sh"
