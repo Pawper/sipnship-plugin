@@ -2229,7 +2229,7 @@ eq "no run at all and up to date: said, nothing to re-run" "cannot" "$(unstick_a
 eq "green is not stuck" "" "$(unstick_action "$(us_row MERGEABLE green fff999 6 yes '' done)" "" no)"
 eq "the re-run comment carries its cause and its mark" "1 rerun fff999" "$(unstick_rerun_note 'an install error (EPERM)' fff999 | grep -c 'stopped for an install error (EPERM)') $(unstick_marks "$(unstick_rerun_note x fff999)")"
 eq "the drain's end unsticks once, after its deploy and its held steps, and not after a held step's merge" "1 1" "$(grep -c '^  \[ "\$held_merged" = yes \] || .*drain_over_budget.*|| unstick_one$' "$mq_all") $(sed -n '/deploy_if_due "\$d_begin"/,/|| unstick_one/p' "$mq_all" | grep -c '^  .*drain_over_budget.* || held_steps$')"
-eq "every action returns, so one pull request a drain's end" "3" "$(sed -n '/^unstick_one()/,/^}/p' "$mq_all" | grep -c 'return 0 ;;')"
+eq "a clash costs no runner, so naming it never stops the pass; only update and rerun are capped at one (#2565)" "0 3 2" "$(sed -n '/^unstick_one()/,/^}/p' "$mq_all" | grep -c 'return 0 ;;') $(sed -n '/^unstick_one()/,/^}/p' "$mq_all" | grep -c '^      \(clash\|update\|rerun\))$') $(sed -n '/^unstick_one()/,/^}/p' "$mq_all" | grep -c 'us_started=yes')"
 eq "a missing rush list means no rush, so the drain does not fail at its end" "1" "$(sed -n '/^unstick_one()/,/^}/p' "$mq_all" | grep -c '^  \[ ! -f "\$flaky_dir/rush.list" \] ||')"
 rl_dir=$(mktemp -d)
 rl_out=$( ( flaky_dir=$rl_dir; base=main; gh_err=/dev/null; tab=$(printf '	'); say() { :; }; gh() { echo ghcalled >> "$rl_dir/gh"; return 1; }; . "$root/templates/scripts/ci/queue/choose.sh"; unstick_one; echo "rc=$?"; cat "$rl_dir/gh" ) 2>&1 )
@@ -8497,9 +8497,9 @@ eq "the Work tab line says the agent is on it and nothing is needed" "“Show th
 # A change may close an issue only when it builds what the issue's "What done looks like" asks; a
 # leftover naming the closed issue's own title again, or a leftover that is itself already a
 # leftover of something else, builds none of it and compounds the chain instead (#2399).
-cs_state() { case "$1" in 90) echo open ;; 91) echo open ;; 95) echo open ;; *) echo closed ;; esac; }
+cs_state() { case "$1" in 90) echo open ;; 91) echo open ;; 95) echo open ;; 214) echo open ;; *) echo closed ;; esac; }
 cs_title() { case "$1" in 5) echo 'Show the bed map' ;; 90) echo 'Show the bed map' ;; 91) echo 'Tint the beds' ;; *) echo '' ;; esac; }
-cs_body() { case "$1" in 90) printf 'Leftover of #5.\n' ;; 91) printf 'Leftover of #5.\n' ;; 95) printf 'Leftover: #91\nStill asking the same thing.\n' ;; *) printf '' ;; esac; }
+cs_body() { case "$1" in 90) printf 'Leftover of #5.\n' ;; 91) printf 'Leftover of #5.\n' ;; 95) printf 'Leftover: #91\nStill asking the same thing.\n' ;; 214) printf '## What done looks like\n\n- The bed map shows every bed fill level\n- A bed with no sensor says so\n' ;; *) printf '' ;; esac; }
 export -f cs_state cs_title cs_body
 ISSUE_STATE_CMD=cs_state ISSUE_TITLE_CMD=cs_title ISSUE_BODY_CMD=cs_body
 export ISSUE_STATE_CMD ISSUE_TITLE_CMD ISSUE_BODY_CMD
@@ -8509,6 +8509,14 @@ cs_chain=$(PR_BODY=$(printf 'Closes #5\nLeftover: #95\n') sh "$root/templates/sc
 eq "a leftover of a leftover fails, naming what it already traces back to" "1" "$(printf '%s\n' "$cs_chain" | grep -c 'Leftover: #95 is itself a leftover (its own body names Leftover: #91)')"
 cs_ok=$(PR_BODY=$(printf 'Closes #5\nLeftover: #91\n') sh "$root/templates/scripts/ci/closes-check.sh" 2>&1)
 eq "a leftover with a different title and no leftover of its own passes" "Closes check passed." "$cs_ok"
+# A change that builds part of an issue without closing it names which line, word for word: "Built
+# #N: <the line>" (#2453, D7). Empty text, or text matching none of #N's own lines, fails.
+cs_built_ok=$(PR_BODY=$(printf 'Closes #5\nRefs #214\nBuilt #214: The bed map shows every bed fill level\n') sh "$root/templates/scripts/ci/closes-check.sh" 2>&1)
+eq "a Built line quoting one of the issue's own lines, beside a Closes of something else, passes" "Closes check passed." "$cs_built_ok"
+cs_built_empty=$(PR_BODY=$(printf 'Closes #5\nRefs #214\nBuilt #214:\n') sh "$root/templates/scripts/ci/closes-check.sh" 2>&1)
+eq "a Built line naming no text fails, saying to quote the line word for word" "1" "$(printf '%s\n' "$cs_built_empty" | grep -c 'Built #214: names no line')"
+cs_built_bad=$(PR_BODY=$(printf 'Closes #5\nRefs #214\nBuilt #214: Not a real line\n') sh "$root/templates/scripts/ci/closes-check.sh" 2>&1)
+eq "a Built line matching none of #214's own lines fails, naming it" "1" "$(printf '%s\n' "$cs_built_bad" | grep -c 'Built #214: "Not a real line" matches none')"
 unset ISSUE_STATE_CMD ISSUE_TITLE_CMD ISSUE_BODY_CMD
 cl_prs=$(printf '201%sspec-bed-map%sy%s%s%s\n' "$cl_us" "$cl_us" "$cl_us" "$cl_us" "")
 eq "the plan says a change the check would fail, before the owner meets it" "closes: pull request #201 “Show the bed map” would fail the closes check: it names no issue it closes. Your agent gives it one; nothing is needed from you." "$(closes_notes "$(printf 'pr\t201\tShow the bed map\tSUCCESS\tMERGEABLE\tspec-bed-map\t\t\n')" "$cl_prs")"

@@ -92,5 +92,34 @@ for n in $(printf '%s\n' "$body" | sed -n 's/^[[:space:]]*Leftover: *#\([0-9][0-
   done
 done
 
+# A line of a "What done looks like" section, with its own "- " bullet marker dropped, one per line (#2453).
+what_done_bullets() {
+  printf '%s\n' "$(what_done_lines "$1")" | sed -n 's/^[[:space:]]*-[[:space:]]\+//p'
+}
+
+# A pull request that builds part of an issue without closing it names which line, word for word:
+# "Built #N: <the line>" (also read the same way from a later comment, by the service). A line with
+# no text, or one that matches none of #N's own lines once #N is readable, fails (#2453, D7).
+built_tab=$(printf '\t')
+built_out=$(printf '%s\n' "$body" | sed -n 's/^[[:space:]]*Built #\([0-9][0-9]*\):[[:space:]]*\(.*\)$/\1'"$built_tab"'\2/p' | while IFS="$built_tab" read -r n text; do
+  [ -n "$n" ] || continue
+  if [ -z "$text" ]; then
+    echo "FAIL:Built #$n: names no line; say exactly which line of its \"What done looks like\" this change built, word for word."
+    continue
+  fi
+  bstate=$(issue_state "$n")
+  if [ "$bstate" = unverified ]; then
+    echo "Built #$n not checked here (no credential for a network call); CI checks it on the pull request."
+    continue
+  fi
+  if ! what_done_bullets "$(issue_body "$n")" | grep -qxF "$text"; then
+    echo "FAIL:Built #$n: \"$text\" matches none of #$n's own \"What done looks like\" lines; quote the line word for word."
+  fi
+done)
+if [ -n "$built_out" ]; then
+  printf '%s\n' "$built_out" | sed 's/^FAIL://' >&2
+  printf '%s\n' "$built_out" | grep -q '^FAIL:' && fail=1
+fi
+
 [ "$fail" = 0 ] && echo "Closes check passed."
 exit "$fail"

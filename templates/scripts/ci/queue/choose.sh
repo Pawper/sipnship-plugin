@@ -168,13 +168,17 @@ run_jobs_text() {
   done
 }
 
-# unstick_one: at a drain's end, unstick one open pull request, never two,
-# so CI never runs two re-merges at once (scripts/ci/QUEUE.md,
-# "Unsticking"). The rules are unstick_candidates, unstick_busy,
-# outside_cause and unstick_action; this reads the facts and acts on the
-# first pull request, in number order, the rules give an action. Held
-# pull requests and an open batch's members are left alone, and so is
-# everything while a rush change lands. QUEUE_UNSTICK=off turns it off.
+# unstick_one: at a drain's end, unstick what it can of the open pull
+# requests, in number order, from the rules unstick_candidates,
+# unstick_busy, outside_cause and unstick_action give each one (#2565):
+# every real clash is flagged at once, in the same pass, since a comment
+# costs no runner; at most one is brought up to date or has its CI
+# re-run, never two, so CI never runs two re-merges at once
+# (scripts/ci/QUEUE.md, "Unsticking"). A second clash that merges cleanly
+# waits for that one CI-starting action to land before its own turn, next
+# drain. Held pull requests and an open batch's members are left alone,
+# and so is everything while a rush change lands. QUEUE_UNSTICK=off turns
+# it off.
 unstick_one() {
   [ "${QUEUE_UNSTICK:-on}" != off ] || return 0
   # A missing list means no rush.
@@ -188,6 +192,7 @@ unstick_one() {
   done)
   us_busy=$(unstick_busy "$us_open" "$base")
   gitb fetch -q origin "+refs/heads/$base:refs/remotes/origin/$base" 2>/dev/null || { say "Unsticking: $base could not be fetched; nothing done."; return 0; }
+  us_started=no
   for us_pr in $(unstick_candidates "$us_open" "$base"); do
     us_row=$(printf '%s\n' "$us_open" | awk -F'\t' -v n="$us_pr" '$1 == n { print; exit }')
     us_mw=$(printf '%s' "$us_row" | cut -f3); us_roll=$(printf '%s' "$us_row" | cut -f4)
@@ -213,26 +218,31 @@ unstick_one() {
     us_act=$(unstick_action "$(printf '%s\t%s\t%s\t%s\t%s\t%s\t%s' "$us_mw" "$us_roll" "$us_head" "$us_behind" "$us_merges" "$us_cause" "$us_run")" "$us_marks" "$us_busy")
     case "$us_act" in
       clash)
+        # A comment costs no runner, so every real clash is named in the same pass, not one per drain.
         say "Unsticking: #$us_pr conflicts with $base for real; asking its agent to merge $base in."
         notify_conflict "$us_pr" "$us_files" main
-        return 0 ;;
+        continue ;;
       update)
+        [ "$us_started" = no ] || { say "Unsticking: #$us_pr is also behind $base and merges cleanly; its turn is next drain, once this one's CI is running."; continue; }
         if gh_write api -X PUT "repos/{owner}/{repo}/pulls/$us_pr/update-branch" >/dev/null 2>"$gh_err"; then
           say "Unsticking: #$us_pr $( [ "$us_mw" = CONFLICTING ] && echo "showed a clash with $base that merges cleanly" || echo "was $us_behind commit(s) behind $base" ); merged $base into it, and CI runs on the new commit."
           sync_worktree "$(pr_field "$us_pr" 1)"
+          us_started=yes
         else
           rate_stop
           say "Unsticking: GitHub refused to merge $base into #$us_pr: $(head -n 1 "$gh_err" 2>/dev/null | tr -d '\r')"
         fi
-        return 0 ;;
+        continue ;;
       rerun)
+        [ "$us_started" = no ] || { say "Unsticking: #$us_pr is also stopped outside its code; its turn is next drain, once this one's CI is running."; continue; }
         if gh_write api -X POST "repos/{owner}/{repo}/actions/runs/$us_rid/rerun-failed-jobs" >/dev/null 2>&1 || gh_write api -X POST "repos/{owner}/{repo}/actions/runs/$us_rid/rerun" >/dev/null 2>&1; then
           gh_write api -X POST "repos/{owner}/{repo}/issues/$us_pr/comments" -f body="$(unstick_rerun_note "${us_cause:-no checks on its head commit}" "$us_head")" >/dev/null 2>&1 || true
           say "Unsticking: #$us_pr stopped for ${us_cause:-no checks on its head commit}, not its code; started its CI again, once for this commit."
+          us_started=yes
         else
           say "Unsticking: GitHub refused to re-run CI on #$us_pr."
         fi
-        return 0 ;;
+        continue ;;
       cannot)
         say "Unsticking: #$us_pr has no CI run on its head commit and is up to date with $base, so there is nothing to re-run; a pull request's CI starts on a push to it, so its agent pushes." ;;
     esac
