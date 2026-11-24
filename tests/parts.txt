@@ -148,3 +148,5 @@ shell-5 a note on an ordinary issue is posted as the app when the project is con
 shell-5 a red change that ready work waits on is looked after first, and its waiting cards say so (#2445)
 shell-5 an agent stays with its change until its checks end, and says plainly why when it cannot (#2445)
 shell-5 a damaged round is never published, checks wait in line, and a tick that built nothing frees its claims (#2540, #2559, #2561, #2565)
+shell-3 the three general scripts ship: deploy-here, part-step and loop-tail-check (#2566)
+shell-5 a look never waits behind an agent's work, and two looks never start the same issue (#2443)

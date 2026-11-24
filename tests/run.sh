@@ -7140,7 +7140,8 @@ wk_yml="$root/../.github/workflows/drive-wake.yml"
 if [ -f "$wk_yml" ]; then
   eq "the wake runs on the drive's own runner, never a hosted one" "1 0" "$(grep -c 'runs-on: \[drive\]' "$wk_yml") $(grep -cE 'runs-on:.*(ubuntu|macos|windows-latest)' "$wk_yml")"
   eq "the wake is started by the four events" "4" "$(grep -cE '^  (workflow_dispatch|repository_dispatch|workflow_run|issue_comment):' "$wk_yml")"
-  eq "the model step runs only when something is approved" "1" "$(grep -c "if: steps.check.outputs.start == 'yes'" "$wk_yml")"
+  eq "the model step runs only when something is approved, in a job of its own that a look never waits for (#2443)" "1 1 2" "$(grep -c "if: \${{ needs.look.outputs.start == 'yes' }}" "$wk_yml") $(grep -c 'group: drive-look' "$wk_yml") $(grep -cE '^  (look|drive):' "$wk_yml")"
+  eq "the look never takes the drive's runner, and the work has no place in line with the look (#2443)" "1 0" "$(grep -c 'runs-on: \[self-hosted, windows\]' "$wk_yml") $(grep -c 'group: drive-wake' "$wk_yml")"
 fi
 
 # #2342: a round proposed again and again without starting shows as a stall, on the Work tab and in the
@@ -8841,6 +8842,15 @@ eq "a claim naming no run (a person's or the desktop app's own) is never called 
 printf '317\n' > "$cs_dir/inprog"; : > "$cs_dir/posted"; : > "$cs_dir/runs"
 printf '904\t%s\tClaim: drive-9\t777\n' "$cs_now" > "$cs_dir/comments-317"
 eq "its own run, named directly, needs no gh api call to confirm; the tick that built nothing says so (#2561)" "$(printf '%s\n%s\n%s' 'claim-stale: freed issue #317 (claim drive-9, its run ended, no open pull request); set back to Ready.' 'claim-stale: This tick claimed #317 and built nothing; the claims are freed and the issues are back to Ready.' '::warning title=A tick that built nothing::This tick claimed #317 and built nothing; the claims are freed and the issues are back to Ready.')" "$(cd "$cs_dir" && FAKE="$cs_dir" CLAIM_STALE_OWN_RUN=777 PATH="$cs_dir/bin:$PATH" sh "$root/scripts/drive/claim-stale.sh" --apply)"
+# #2561, from the day's own state kept as a fixture: one tick claimed three issues at 12:46 AM, ended as a success with
+# no branch, no change and no agent, and left all three In progress. Its last step frees all three and the summary names them.
+printf '401\n402\n403\n' > "$cs_dir/inprog"; : > "$cs_dir/posted"; : > "$cs_dir/runs"; : > "$cs_dir/closes"
+for cs_i in 401 402 403; do printf '91%s\t%s\tClaim: drive-%s\t888\n' "${cs_i#4}" "$cs_now" "$cs_i" > "$cs_dir/comments-$cs_i"; echo "state:in-progress" > "$cs_dir/labels-$cs_i"; done
+cs_sum="$cs_dir/summary"; : > "$cs_sum"
+cs_three=$(cd "$cs_dir" && FAKE="$cs_dir" CLAIM_STALE_OWN_RUN=888 GITHUB_STEP_SUMMARY="$cs_sum" PATH="$cs_dir/bin:$PATH" sh "$root/scripts/drive/claim-stale.sh" --apply)
+eq "a tick that claimed three and built nothing frees all three before it ends" "3" "$(printf '%s\n' "$cs_three" | grep -c '^claim-stale: freed issue #40[123] ')"
+eq "each is back to Ready and says plainly that nothing was built" "3 3" "$(grep -c '^40[123]	label	state:ready$' "$cs_dir/posted") $(grep -c 'ended before any work was pushed, so nothing was built' "$cs_dir/posted")"
+eq "the run's summary names what it claimed and that it built nothing, and the log carries the same line" "1 1" "$(grep -c 'This tick claimed #401 #402 #403 and built nothing' "$cs_sum") $(printf '%s\n' "$cs_three" | grep -c '^claim-stale: This tick claimed #401 #402 #403 and built nothing')"
 eq "a run that is not this one still needs the real read" "claim-stale: every In progress issue either has an open pull request, a live claim, or no claim naming a run." "$(cs_dir2=$cs_dir; printf '317\n' > "$cs_dir2/inprog"; : > "$cs_dir2/posted"; printf '905\t%s\tClaim: drive-9\t778\n' "$cs_now" > "$cs_dir2/comments-317"; cd "$cs_dir2" && FAKE="$cs_dir2" CLAIM_STALE_OWN_RUN=777 PATH="$cs_dir2/bin:$PATH" sh "$root/scripts/drive/claim-stale.sh" --apply)"
 
 # #2336, left over from #2328: real work a freed issue's agent already made is rescued to a side branch
@@ -9039,6 +9049,66 @@ eq "claim-stale is valid shell" "0" "$(sh -n "$root/scripts/drive/claim-stale.sh
 eq "the skill says what a start-next may start with Auto Drive off" "1" "$(grep -c 'never claims an issue and walks away' "$root/skills/project-drive/SKILL.md")"
 # #2565: the queue's notice says it cannot land and why, first.
 eq "the queue's conflict notice opens with Cannot land" "Cannot land: it changes the same lines as main." "$(. "$root/templates/scripts/ci/queue/rules-serial.sh" 2>/dev/null; conflict_notice "src/a.ts" main | head -n 1)"
+block_end
+section 'the three general scripts ship: deploy-here, part-step and loop-tail-check (#2566)'
+ship_dir="$root/templates/scripts/ci"
+eq "each of the three is shipped, byte for byte the copy this project runs" "same same same" "$(for s in deploy-here part-step loop-tail-check; do if [ ! -f "$root/../scripts/ci/$s.sh" ] || cmp -s "$ship_dir/$s.sh" "$root/../scripts/ci/$s.sh"; then printf 'same '; else printf 'differs '; fi; done | sed 's/ $//')"
+eq "each is owned by a feature, so a project gets it and the sync refreshes it" "3" "$(grep -cx 'scripts/ci/\(deploy-here\|part-step\|loop-tail-check\)\.sh' "$root/templates/OWNED.txt")"
+eq "each is in the list of known versions" "3" "$(grep -c '^scripts/ci/\(deploy-here\|part-step\|loop-tail-check\)\.sh ' "$root/templates/KNOWN.txt")"
+eq "none is held back in the exceptions file any more" "0" "$(grep -c '^scripts/ci/\(deploy-here\|part-step\|loop-tail-check\)\.sh' "$root/../scripts/ci/template-exceptions.txt" 2>/dev/null || true)"
+eq "each is valid shell" "0 0 0" "$(for s in deploy-here part-step loop-tail-check; do sh -n "$ship_dir/$s.sh"; printf '%s ' $?; done | sed 's/ $//')"
+# part-step names the step above its output and, on a red, in an annotation, and keeps the exit code.
+ps_out=$(sh "$ship_dir/part-step.sh" frost-alerts sh -c 'echo hello; exit 3'; echo "rc=$?")
+eq "part-step names the step, runs it, and names it again on a red with its exit code kept" "1 1 1 1" "$(printf '%s\n' "$ps_out" | grep -c '^=== frost-alerts: sh -c') $(printf '%s\n' "$ps_out" | grep -c '^=== frost-alerts failed (exit 3)') $(printf '%s\n' "$ps_out" | grep -c '::error title=frost-alerts failed::') $(printf '%s\n' "$ps_out" | grep -c '^rc=3')"
+eq "part-step on a green says no failure and exits 0" "0 0" "$(sh "$ship_dir/part-step.sh" watering true | grep -c 'failed') $(sh "$ship_dir/part-step.sh" watering true >/dev/null; echo $?)"
+# loop-tail-check finds a loop that ends on a bare test, in a project of its own.
+lt_dir=$(mktemp -d)
+(cd "$lt_dir" && git init -q . && mkdir -p scripts && printf '#!/bin/sh\nfor b in beds; do\n  [ -n "$b" ] && echo water\ndone\n' > scripts/bad.sh && printf '#!/bin/sh\nfor b in beds; do\n  if [ -n "$b" ]; then echo water; fi\ndone\n' > scripts/good.sh && git add -A && git -c user.email=a@b -c user.name=n commit -qm one)
+lt_out=$(cd "$lt_dir" && sh "$ship_dir/loop-tail-check.sh"; echo "rc=$?")
+eq "loop-tail-check names the script and line whose loop ends on a bare test, and exits 1" "1 1 0" "$(printf '%s\n' "$lt_out" | grep -c 'scripts/bad.sh:3') $(printf '%s\n' "$lt_out" | grep -c '^rc=1') $(printf '%s\n' "$lt_out" | grep -c 'good.sh')"
+(cd "$lt_dir" && git rm -q -f scripts/bad.sh && git -c user.email=a@b -c user.name=n commit -qm two)
+eq "and passes a project whose loops end on an if" "0" "$(cd "$lt_dir" && sh "$ship_dir/loop-tail-check.sh" >/dev/null; echo $?)"
+# deploy-here refuses a project that names no Cloudflare target, before it touches anything.
+dh_dir=$(mktemp -d)
+(cd "$dh_dir" && git init -q . && mkdir -p scripts/ci && cp "$ship_dir/deploy-here.sh" "$ship_dir/deploy-lib.sh" scripts/ci/ && git add -A && git -c user.email=a@b -c user.name=n commit -qm one)
+dh_out=$(cd "$dh_dir" && sh scripts/ci/deploy-here.sh 2>&1; echo "rc=$?")
+eq "deploy-here says plainly when the project names no Cloudflare target, and exits 1" "1 1" "$(printf '%s\n' "$dh_out" | grep -c 'does not name a Cloudflare target') $(printf '%s\n' "$dh_out" | grep -c '^rc=1')"
+eq "the plugin's listener runs the shipped deploy-here" "1" "$(grep -c "scripts/ci/deploy-here.sh" "$root/console/listen-kinds.js")"
+block_end
+section 'a look never waits behind an agent'"'"'s work, and two looks never start the same issue (#2443)'
+# Two looks at the same instant, against a stand-in for GitHub that answers slowly enough that both read
+# the issue as free before either has posted: claim.sh gives it to the lowest claim, and the other stands down.
+tl_dir=$(mktemp -d); mkdir -p "$tl_dir/bin"
+cat > "$tl_dir/bin/gh" <<'GHEOF'
+#!/bin/sh
+[ "$1" = auth ] && exit 0
+shift; method=GET; body=; url=
+while [ $# -gt 0 ]; do case "$1" in -X) method=$2; shift ;; -f) body=${2#body=}; shift ;; repos/*) url=$1 ;; esac; shift; done
+case "$method $url" in
+  "GET repos/{owner}/{repo}/issues/"[0-9]*"/comments"*) out=$(cat "$FAKE/comments"); sleep 1; printf '%s\n' "$out" | sed '/^$/d' ;;
+  "GET repos/{owner}/{repo}/issues/"[0-9]*) echo open ;;
+  "GET repos/{owner}/{repo}/pulls?state=all"*|"GET repos/{owner}/{repo}/pulls"*) : ;;
+  "POST repos/{owner}/{repo}/issues/"[0-9]*"/comments")
+    until mkdir "$FAKE/lock" 2>/dev/null; do sleep 0.05; done
+    n=$(( $(wc -l < "$FAKE/comments") + 901 )); fl=$(printf '%s' "$body" | head -n 1)
+    printf '%s\t%s\t%s\t\n' "$n" "$(date +%s)" "$fl" >> "$FAKE/comments"; rmdir "$FAKE/lock"; echo "$n" ;;
+  "PATCH repos/{owner}/{repo}/issues/comments/"*) id=${url##*/}; fl=$(printf '%s' "$body" | head -n 1); until mkdir "$FAKE/lock" 2>/dev/null; do sleep 0.05; done; awk -F'\t' -v OFS='\t' -v id="$id" -v b="$fl" '$1 == id { $3 = b } { print }' "$FAKE/comments" > "$FAKE/c.new"; mv "$FAKE/c.new" "$FAKE/comments"; rmdir "$FAKE/lock" ;;
+esac
+GHEOF
+chmod +x "$tl_dir/bin/gh"; : > "$tl_dir/comments"
+tl_look() { (cd "$tl_dir" && FAKE="$tl_dir" PATH="$tl_dir/bin:$PATH" sh "$root/scripts/drive/claim.sh" 411 claim "$1" > "$tl_dir/out-$1" 2>&1); }
+tl_look look-a & tl_pa=$!
+tl_look look-b & tl_pb=$!
+wait "$tl_pa" "$tl_pb"
+eq "two looks at once start the issue once: exactly one says claimed" "1" "$(cat "$tl_dir"/out-look-* | grep -c '^claimed ')"
+eq "and the other is told it was claimed first, and starts nothing" "1" "$(cat "$tl_dir"/out-look-* | grep -c '^taken: another starter claimed it')"
+eq "the stand-down is left on the issue as a released claim, so the winner is the only live one" "1 1" "$(grep -c "Claim: " "$tl_dir/comments") $(grep -c 'Claim released:' "$tl_dir/comments")"
+tl_yml="$root/../.github/workflows/drive-wake.yml"
+if [ -f "$tl_yml" ]; then
+  eq "the look and the work are two jobs; only the look has a place in line" "1 2" "$(grep -c 'group: drive-look' "$tl_yml") $(grep -cE '^  (look|drive):' "$tl_yml")"
+  eq "the work starts only when the look says so, with no group of its own" "1 0" "$(grep -c "needs.look.outputs.start == 'yes'" "$tl_yml") $(sed -n '/^  drive:/,$p' "$tl_yml" | grep -c 'concurrency')"
+fi
+eq "the skill says a look never waits and what ends an agent that outlives it" "1" "$(grep -c 'A look never waits behind an agent' "$root/skills/project-drive/SKILL.md")"
 block_end
 # --- end of blocks: the summary, kept in every part.
 eq "no test wrote into the checkout's own queue state" "$queue_picture_before" "$([ "$queue_picture_before" = skipped ] && echo skipped || queue_picture)"

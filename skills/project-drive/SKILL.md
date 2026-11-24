@@ -733,6 +733,16 @@ before they can push anything. So in that tick, and only there:
    line saying so, carried into this tick's report rather than said as "nothing to do" (#2328). A claim made
    outside GitHub Actions (a person's session, the desktop app) names no run and is never touched by this; its
    four-hour TTL still governs, as before.
+7. **A look never waits behind an agent's work (#2443).** The wake is two jobs, not one: the look (`wake-check.sh`:
+   the plan, stalled claims, requests, what is approved) runs on the project's CI runners in seconds and has a place
+   in line of its own, so a look every ten minutes runs whatever agents are working; the work (this tick, the model
+   and its agents) runs on a `drive` runner and has no place in line with the look. The agents stay inside the
+   work job, which ends only when they have, so nothing an agent made is lost when a look ends, and the last step
+   above still frees whatever a work job left. A second `drive` runner lets a second round's work start beside the
+   first; with one, it waits for the runner, but never the look. Two looks at once never start one issue: `claim.sh`
+   gives it to the lowest claim and the other stands down. Cost: a look is about half a minute of a CI runner
+   (self-hosted, no hosted minutes), against the whole of a work job's ninety minutes held before by a look that
+   only waited.
 
 ## f. Report
 

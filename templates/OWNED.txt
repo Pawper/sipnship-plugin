@@ -17,6 +17,8 @@ scripts/ci/lib.sh
 scripts/ci/git-bounded-lib.sh
 scripts/ci/classify.sh
 scripts/ci/test-parts.sh
+scripts/ci/part-step.sh
+scripts/ci/loop-tail-check.sh
 scripts/ci/failure-report.sh
 scripts/ci/check-log.sh
 scripts/ci/pr-text.sh
@@ -165,6 +167,7 @@ scripts/ci/runner-doctor.sh
 feature deploy
 scripts/ci/deploy-lib.sh
 scripts/ci/deploy-health.sh
+scripts/ci/deploy-here.sh
 scripts/ci/vercel-ignore.sh
 scripts/deploy-setup.sh
 .github/workflows/deploy.yml
