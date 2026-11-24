@@ -8685,6 +8685,45 @@ eq "the service refuses: the line is not lost, it is posted as the builder" "htt
 eq "the service refuses: it says so in one line" "The service did not take the log line, so it is posted with your own sign-in instead." "$(cat "$lp_d/err")"
 eq "no answer at all from the service is a refusal too" "yes" "$(LP_SIGNED_IN=yes LP_REPLY='' lp_run >/dev/null; [ "$(wc -l < "$lp_d/err" | tr -d ' ')" = 1 ] && echo yes)"
 eq "the handoff and the round's publisher post through the helper" "1 1" "$(grep -c 'log_post drive' "$root/scripts/drive/handoff.sh") $(grep -c 'log_post drive' "$root/scripts/drive/publish-round.sh")"
+section 'a note on an ordinary issue is posted as the app when the project is connected, and as the builder when it is not (drive)'
+# Maya's rooftop-garden app: an agent's note or question on a task issue goes through the service as the app, marked
+# with the agent and naming no one, when she has connected; through her own sign-in when she has not or the service
+# refuses it (#2486).
+np_d=$(mktemp -d); mkdir -p "$np_d/bin" "$np_d/repo/scripts/ci"
+: > "$np_d/repo/scripts/ci/service-auth.sh"
+cat > "$np_d/bin/curl" <<'FAKECURL'
+#!/bin/sh
+cat > /dev/null
+printf '%s\n' "$*" >> "$NP_LOG"
+printf '%s' "$NP_REPLY"
+FAKECURL
+cat > "$np_d/bin/gh" <<'FAKEGH'
+#!/bin/sh
+printf '%s\n' "$*" >> "$NP_LOG"
+echo "https://github.com/maya/rooftop/issues/5#issuecomment-9"
+FAKEGH
+chmod +x "$np_d/bin/curl" "$np_d/bin/gh"
+printf 'Two beds still need a watering plan.\n' > "$np_d/note.md"
+printf 'Which bed first?\n\n1. North bed: sunniest. Recommended. It sprouts first.\n2. South bed: shadier.\n' > "$np_d/ask.md"
+np_run() {
+  : > "$np_d/log"
+  ( cd "$np_d/repo" || exit 1
+    PATH="$np_d/bin:$PATH"; NP_LOG="$np_d/log"; export NP_LOG NP_REPLY
+    QUEUE_SERVICE_AUTH_LOADED=1
+    service_sign_in() { if [ "$NP_SIGNED_IN" = yes ]; then sv_token=t; sv_id=77; return 0; fi; return 1; }
+    git() { if [ "$*" = "remote get-url origin" ]; then echo "https://github.com/maya/rooftop.git"; else command git "$@"; fi; }
+    . "$root/scripts/drive/note-post-lib.sh"
+    note_post 5 "$1" 2>"$np_d/err"
+  )
+}
+eq "connected: the note goes through the service and names its issue" "https://github.com/maya/rooftop/issues/5" "$(NP_SIGNED_IN=yes NP_REPLY='{"issue":5}
+201' np_run "$np_d/note.md")"
+eq "connected: the note road is called, the builder's own sign-in is not, and nothing is said" "1 0 0" "$(grep -c '/v1/repos/77/issue-note' "$np_d/log") $(grep -c 'issues/5/comments' "$np_d/log") $(wc -c < "$np_d/err" | tr -d ' ')"
+eq "a question waiting on the builder is sent as an ask, and any other note is not" "yes no" "$(. "$root/scripts/drive/note-post-lib.sh"; np_is_ask "$np_d/ask.md" && printf yes || printf no; printf " "; np_is_ask "$np_d/note.md" && printf yes || printf no)"
+eq "not connected: the note is posted as before, with the builder's sign-in, and nothing is said" "https://github.com/maya/rooftop/issues/5#issuecomment-9 0 0" "$(NP_SIGNED_IN=no NP_REPLY='' np_run "$np_d/note.md" | tr '\n' ' ' | sed 's/ $//') $(grep -c 'issue-note' "$np_d/log") $(wc -c < "$np_d/err" | tr -d ' ')"
+eq "the service refuses: the note is not lost, it is posted as the builder, and one line says so" "https://github.com/maya/rooftop/issues/5#issuecomment-9|The service did not take the note, so it is posted with your own sign-in instead." "$(NP_SIGNED_IN=yes NP_REPLY='{"code":"note_refused"}
+502' np_run "$np_d/note.md")|$(cat "$np_d/err")"
+eq "comment.sh posts an ordinary issue's note through the helper" "1" "$(grep -c 'note_post "\$issue" "\$file"' "$root/scripts/drive/comment.sh")"
 section 'an issue In progress with no live agent and a claim from an ended run is freed, not reported as nothing to do (#2328)'
 . "$root/scripts/drive/claim-lib.sh"
 cs_dir=$(mktemp -d); mkdir -p "$cs_dir/bin"
