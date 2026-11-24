@@ -3179,7 +3179,7 @@ tab=\$(printf '\t'); flaky_dir="\$PWD/q"; mkdir -p "\$flaky_dir"; log_file="\$fl
 have_lock=no; base=main; mode=drain; QUEUE_LOCKED=""
 take_lock
 trap - EXIT
-sleep "\${RL_HOLD:-3}"
+if [ -n "\${RL_GO:-}" ]; then rl_i=0; while [ ! -f "\$RL_GO" ] && [ "\$rl_i" -lt 60 ]; do sleep 1; rl_i=\$((rl_i + 1)); done; else sleep "\${RL_HOLD:-3}"; fi
 [ -n "\${RL_RELEASE:-}" ] && { remote_lock_release; echo released; }
 exit 0
 RLH
@@ -3195,12 +3195,14 @@ eq "and on the Merge queue issue, once" "1" "$(grep -c '^comment A queue run (--
 # A queue turned away is kept: it leaves its ask, and the holder starts the next drain as it lets go.
 rm -f "$rl/ref" "$rl/owed" "$rl/said"; rm -rf "$rl/a/q" "$rl/b/q"
 mkdir -p "$rl/a/.github/workflows" && : > "$rl/a/.github/workflows/queue-drain.yml"
-( RL_HOLD=4 RL_RELEASE=yes; export RL_HOLD RL_RELEASE; rl_hold a ) &
+rm -f "$rl/go"
+( RL_GO="$rl/go" RL_RELEASE=yes; export RL_GO RL_RELEASE; rl_hold a ) &
 rl_hp=$!
-sleep 2
+rl_i=0; while [ ! -f "$rl/ref" ] && [ "$rl_i" -lt 60 ]; do sleep 1; rl_i=$((rl_i + 1)); done
 rl_kept=$(cd "$rl/b" && PATH="$rl/bin:$PATH" RL_DIR="$rl" GITHUB_ACTIONS= QUEUE_LOCK_BEAT=0 prs=48 sh "$rl/take.sh" 2>&1)
 eq "a queue turned away hears its request is kept" "1" "$(printf '%s\n' "$rl_kept" | grep -c 'Your request is kept: .*a drain starts the moment that queue ends')"
 eq "and leaves its ask on GitHub" "yes" "$([ -f "$rl/owed" ] && echo yes || echo no)"
+: > "$rl/go"
 wait "$rl_hp" 2>/dev/null
 eq "the holder, letting go, starts the next drain and clears the ask" "1 no" "$(grep -c '^dispatch .*queue-drain.yml/dispatches' "$rl/said" 2>/dev/null) $([ -f "$rl/owed" ] && echo yes || echo no)"
 eq "a GitHub drain turned away by a queue in a terminal leaves its ask too" "1" "$(grep -c 'remote_lock_owe' "$root/templates/scripts/ci/queue/lock.sh" | awk '{ print ($1 >= 2) ? 1 : 0 }')"
