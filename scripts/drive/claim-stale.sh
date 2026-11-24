@@ -69,11 +69,13 @@ rescue_agent_side() {
 }
 
 # Every open issue carrying either label form of state:in-progress, issues only (never a pull request).
-inprog=$(gh api "repos/{owner}/{repo}/issues?state=open&per_page=100" --jq '.[] | select(.pull_request == null) | select([.labels[].name] | any(. == "state:in-progress" or . == "state: in-progress")) | .number' 2>/dev/null)
+# Read by label, not by the first page of open issues: a project with more than a hundred open issues
+# kept its In progress ones past the first page, and this pass saw none of them (#2561).
+inprog=$( { gh api "repos/{owner}/{repo}/issues?state=open&labels=state:in-progress&per_page=100" --jq '.[] | select(.pull_request == null) | .number' 2>/dev/null; gh api "repos/{owner}/{repo}/issues?state=open&labels=state:%20in-progress&per_page=100" --jq '.[] | select(.pull_request == null) | .number' 2>/dev/null; } | sort -un)
 [ -n "$inprog" ] || { echo "claim-stale: no issue is In progress."; exit 0; }
 closes=$(gh api "repos/{owner}/{repo}/pulls?state=open&per_page=100" --jq '[.[].body // "" | [scan("(?i)(?:closes|fixes|resolves) #([0-9]+)") | .[0]][]] | join(",")' 2>/dev/null)
 
-found=0
+found=0; own_freed=""
 for n in $inprog; do
   case ",$closes," in *",$n,"*) continue ;; esac
   comments=$(gh api "repos/{owner}/{repo}/issues/$n/comments?per_page=100&sort=created&direction=desc" --jq '[.[] | select(.body | test("^Claim(: | released: )"))] | reverse | .[] | [.id, (.created_at | fromdateiso8601), (.body | split("\n")[0]), ((.body | capture("(?m)^Run: (?<r>[0-9]+)$")?.r) // "")] | @tsv' 2>/dev/null)
@@ -92,6 +94,9 @@ $r"; fi
   win=$(claim_winner "$comments" "$(date +%s)" "$ttl" "$ended")
   [ -z "$win" ] || continue
   found=1
+  # A claim made by this very run, on an issue with no branch and no open pull request: this tick claimed it and built nothing (#2561).
+  own=no
+  if [ -n "${CLAIM_STALE_OWN_RUN:-}" ] && printf '%s\n' "$comments" | tr -d '\r' | awk -F'\t' -v r="$CLAIM_STALE_OWN_RUN" '$4 == r { f = 1 } END { exit !f }'; then own=yes; fi
   if [ "$apply" != yes ]; then
     echo "claim-stale: issue #$n is In progress under a claim ($rawwin) whose run has ended, with no open pull request; it would be freed, back to Ready."
     continue
@@ -106,6 +111,10 @@ $(agentside_rescue_note "$n" "$rb" "$rc" "$rf")"
     released_words="The run that made this claim has ended; freed by the next tick instead of waiting out its four-hour claim (#2328)."
     freed_said=" Its real work was not lost, pushed to $rb; back to Ready for the next round, which can start from it."
   fi
+  if [ "$own" = yes ] && [ -z "$rescued" ]; then
+    released_words="This drive tick claimed the issue and ended without building anything, so the claim is freed before the tick ends (#2561)."
+    freed_said=" Nothing was built and nothing is on it; it is back to Ready, and the next round can pick it up."
+  fi
   gh api -X POST "repos/{owner}/{repo}/issues/$n/comments" -f "body=Claim released: $rawwin
 ${released_words}${rescue_said}" >/dev/null 2>&1
   have=$(gh api "repos/{owner}/{repo}/issues/$n/labels" --jq '.[].name' 2>/dev/null)
@@ -116,7 +125,12 @@ ${released_words}${rescue_said}" >/dev/null 2>&1
     gh api -X DELETE "repos/{owner}/{repo}/issues/$n/labels/$enc" >/dev/null 2>&1
   done
   if gh api -X POST "repos/{owner}/{repo}/issues/$n/labels" -f "labels[]=$form" >/dev/null 2>&1; then
-    gh api -X POST "repos/{owner}/{repo}/issues/$n/comments" -f "body=Freed: the wake that claimed this issue ended with its agent still working, and that run has since finished.${freed_said}" >/dev/null 2>&1
+    if [ "$own" = yes ] && [ -z "$rescued" ]; then
+      own_freed="$own_freed #$n"
+      gh api -X POST "repos/{owner}/{repo}/issues/$n/comments" -f "body=Freed: the drive tick that claimed this issue ended before any work was pushed, so nothing was built.${freed_said}" >/dev/null 2>&1
+    else
+      gh api -X POST "repos/{owner}/{repo}/issues/$n/comments" -f "body=Freed: the wake that claimed this issue ended with its agent still working, and that run has since finished.${freed_said}" >/dev/null 2>&1
+    fi
     if [ -n "$rescued" ]; then
       echo "claim-stale: freed issue #$n (claim $rawwin, its run ended); rescued $rc commit(s), $rf file(s), to $rb; set back to Ready."
     else
@@ -126,5 +140,12 @@ ${released_words}${rescue_said}" >/dev/null 2>&1
     echo "claim-stale: released the claim on #$n, but could not set it back to Ready; set it with scripts/state.sh."
   fi
 done
+# A run that claimed and built nothing is not a plain success: say so where the run's summary and the drive's log read it (#2561).
+if [ -n "$own_freed" ]; then
+  say="This tick claimed${own_freed} and built nothing; the claims are freed and the issues are back to Ready."
+  echo "claim-stale: $say"
+  echo "::warning title=A tick that built nothing::$say"
+  [ -z "${GITHUB_STEP_SUMMARY:-}" ] || printf '### Nothing was built\n\n%s\n' "$say" >> "$GITHUB_STEP_SUMMARY"
+fi
 [ "$found" = 1 ] || echo "claim-stale: every In progress issue either has an open pull request, a live claim, or no claim naming a run."
 exit 0

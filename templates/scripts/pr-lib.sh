@@ -51,3 +51,44 @@ pr_red_say() {
 pr_body_held() {
   if printf '%s\n' "$1" | tr -d '\r' | grep -qiE '^[[:space:]]*Queue:[[:space:]]*hold'; then echo yes; else echo no; fi
 }
+
+# checks_wait_bound AHEAD
+# How many minutes an agent waits for its change's checks to end, given AHEAD runs in line before them
+# (queued, other changes'): a floor of twenty minutes and eight more for each run ahead, so a busy hour
+# is waited out and an idle one is not (#2559).
+checks_wait_bound() {
+  cwb_n=${1:-0}; case "$cwb_n" in ''|*[!0-9]*) cwb_n=0 ;; esac
+  echo $((20 + 8 * cwb_n))
+}
+
+# checks_poll_gap BUDGET
+# Seconds between two reads of a change's checks while waiting: one every few minutes, slower as the
+# hour's budget falls (BUDGET is the points left; empty or unknown reads as plenty).
+checks_poll_gap() {
+  case "${1:-}" in ''|*[!0-9]*) echo 240; return 0 ;; esac
+  if [ "$1" -ge 3000 ]; then echo 240; elif [ "$1" -ge 1500 ]; then echo 360; elif [ "$1" -ge 500 ]; then echo 600; else echo 900; fi
+}
+
+# checks_line_say AHEAD RUNNING ONLINE BUSY
+# The one line every agent reads the same: the runs in line ahead of the change's checks and the machines'
+# state. ONLINE and BUSY are counts of the machines that take this project's jobs, or "?" when the
+# token cannot list them.
+checks_line_say() {
+  case "$3" in '?') cls_m="machines: not known (the token cannot list them)" ;; *) cls_m="machines: $3 online, ${4:-0} working" ;; esac
+  printf 'Line: %s run(s) waiting ahead, %s running; %s\n' "${1:-0}" "${2:-0}" "$cls_m"
+}
+
+# checks_wait_decide AHEAD ONLINE WAITED_MINUTES
+# Whether an agent keeps waiting. Prints "wait: waiting behind N runs (...)" while a machine that can take
+# its jobs is online (or not known) and the bound for the line is not past; otherwise "leave: WHY", in
+# words that go on the change as they are. Checks not yet started are waiting in line, not failing to start.
+checks_wait_decide() {
+  cwd_b=$(checks_wait_bound "$1")
+  if [ "$2" = 0 ]; then
+    printf 'leave: no machine that can take its jobs is online, so the checks cannot start until one is\n'
+  elif [ "${3:-0}" -gt "$cwd_b" ] 2>/dev/null; then
+    printf 'leave: the checks have waited %s minutes, past the %s minutes a line of %s run(s) is given\n' "$3" "$cwd_b" "${1:-0}"
+  else
+    printf 'wait: waiting behind %s runs (leave only after %s minutes, or when no machine is online)\n' "${1:-0}" "$cwd_b"
+  fi
+}

@@ -151,7 +151,12 @@ still starts it at once: SipNShip's app leaves it on the drive issue as `Queue r
 and `approval.sh` approves the proposal whole for that person, even while a round runs. A round published
 with `publish-round.sh` counts as the proposal when no numbered one covers it, one `dispatch` goal per unit,
 and once that round is published as started, the request is spent. With the label off,
-dispatch only on a reply or that request: post the proposal and wait, as below.
+dispatch only on a reply or that request: post the proposal and wait, as below. **What a `start-next` request may
+start with Auto Drive off (#2561):** the request is a person's word about one issue, so it starts that issue whether
+or not Auto Drive is on, and the work is really done (claim, agent, branch); or it waits and claims nothing. A tick
+never claims an issue and walks away: one that ends with a claim of its own and no branch or open change frees the
+claim and sets the issue back to Ready before it ends (`claim-stale.sh --apply`, the workflow's last step), with one
+note saying nothing was built, and its summary and the log say what it claimed and that it built nothing.
 
 **Requests from the Work tab.** SipNShip's app also leaves `Queue request: start-next #N by LOGIN` and
 `Queue request: start-now #N by LOGIN` and `Queue request: hold-agent #N by LOGIN` and `Queue request: send-agent
@@ -302,10 +307,16 @@ The goal lines and what each means:
   checks); a push that lands on main while you worked can make yours conflict, and GitHub starts no checks on
   a pull request that conflicts, so waiting for them would wait forever (#2096). When it conflicts, merge
   origin/main in your own worktree, regenerate any generated files, re-run the touched tests per file, and push
-  again before you wait for anything. A wait for your first checks to start that has not ended within a few
-  minutes ends too: say the reason in one comment on the pull request (what you waited for, and since when)
-  and end your turn, rather than waiting with no bound. Once they start, stay for them to end (up to thirty
-  minutes): a red change with nobody on it is the stall this project most wants not to happen (#1897). If they
+  again before you wait for anything. Checks that have not started are most often waiting in line, not failing
+  to start (#2559): `sh scripts/pr-checks.sh N` prints a `Line:` line with the runs waiting ahead of yours and the
+  machines online and working. While a machine is online, wait, and say on the pull request "waiting behind N
+  runs"; leave only when no machine that can take your jobs is online, or after the bound for the line (twenty
+  minutes and eight more for each run ahead: `checks_wait_decide` in `scripts/pr-lib.sh` says which). Read once
+  every few minutes, never in a tight loop, and slower as the hour's budget falls (`checks_poll_gap`). An agent
+  that must leave says on the pull request exactly where it stopped, what it had done and what it expected the
+  checks to show, so the next agent does not start cold. Once they start, stay for them to end (up to thirty
+  minutes, longer as the line allows): a red change with nobody on it is the stall this project most wants not to
+  happen (#1897), and the drive sends a fix agent the moment the checks end red, not at a later look. If they
   end green, your turn ends there. If they end red from a mistake in your own change, fix it on your own
   branch (the same way `fix-pr` below does), re-run the touched tests per file, and push once; wait for that
   one push's checks to end too, then end your turn whichever way they end. Never a second fix attempt and

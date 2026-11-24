@@ -100,6 +100,20 @@ round_file() {
   [ -z "$rf_defer" ] || deferred_holds "$rf_defer" | sed 's/$/ | areas: none/'
 }
 
+# round_file_check < ROUNDFILE
+# Reads a round file back. Prints nothing and succeeds when every line is one
+# the publisher knows and none holds another line inside it; otherwise prints
+# the first bad line's number and fails (#2540).
+round_file_check() {
+  awk '
+    /^(status|sized|stall): / { next }
+    /^(unit|hold): / {
+      s = $0; n = gsub(/(unit|hold): [0-9]+[0-9 ]* \| /, "&", s)
+      if (n > 1 || $0 !~ / \| areas: [^|]*(\| listed: yes)?$/) { printf "a damaged line (line %d)", NR; exit 1 }
+      next }
+    { printf "a damaged line (line %d)", NR; exit 1 }'
+}
+
 # publish_proposal ROUND UNITS AREAS FACTS SIZED [STALL]
 # Writes the round file to .scratch/drive/round.txt and publishes it with
 # publish-round.sh, then prints one line the round's report carries:
@@ -116,7 +130,15 @@ publish_proposal() {
     { echo "# Guessed by the plan from each unit's files: this project keeps no list of areas."; echo "unplaced .scratch/drive/unplaced"
       printf '%s\n' "$2" | awk -F'\t' '$1 == "unit" { n = split($5, f, ","); for (i = 1; i <= n; i++) if (f[i] != "" && f[i] != "@tooling" && !(f[i] in s)) { s[f[i]] = 1; print f[i] " " f[i] } }'; } > "$pp_areas"
   fi
-  round_file "$1" "$2" "$pp_list" "$(printf '%s\n' "$4" | awk -F'\t' '$1 == "issue" { print $2 }')" "$5" "${6:-}" > .scratch/drive/round.txt
+  # The file is built beside the round file, read back and checked, and moved into place whole: a line spliced into another (#2540) is built again once and never published.
+  pp_tmp=.scratch/drive/round.txt.$$; pp_try=0; pp_ok=no
+  while [ "$pp_try" -lt 2 ] && [ "$pp_ok" = no ]; do
+    pp_try=$((pp_try + 1))
+    round_file "$1" "$2" "$pp_list" "$(printf '%s\n' "$4" | awk -F'\t' '$1 == "issue" { print $2 }')" "$5" "${6:-}" > "$pp_tmp"
+    round_file_check < "$pp_tmp" > /dev/null && pp_ok=yes
+  done
+  if [ "$pp_ok" = no ]; then echo "not published: the round file came out with $(round_file_check < "$pp_tmp"); the plan is read again next run"; return 0; fi
+  mv -f "$pp_tmp" .scratch/drive/round.txt
   if [ "${PLAN_PUBLISH:-yes}" = no ]; then echo "not published: this run was told not to publish (a dry run); the round is in .scratch/drive/round.txt"; return 0; fi
   pp_out=$(sh "$here/publish-round.sh" --areas "$pp_areas" .scratch/drive/round.txt 2>&1); pp_rc=$?
   pp_first=$(printf '%s\n' "$pp_out" | sed -n 1p)

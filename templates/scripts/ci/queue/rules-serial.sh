@@ -175,6 +175,7 @@ anchored_group() {
 conflict_notice() {
   cn_files=$(printf '%s\n' "$1" | sed '/^[[:space:]]*$/d' | head -n 10 | sed 's/^/- `/; s/$/`/')
   if [ "$2" = main ]; then cn_with="main"; else cn_with="#$2, which goes into this batch first"; fi
+  printf 'Cannot land: it changes the same lines as %s.\n\n' "${cn_with%%,*}"
   printf 'The merge queue could not take this pull request: it conflicts with %s' "$cn_with"
   if [ -n "$cn_files" ]; then printf ' in:\n\n%s\n\n' "$cn_files"; else printf '.\n\n'; fi
   if [ "$3" = generated ]; then printf 'Every file here is generated build output (scripts/ci/generated-paths.txt): a rebuild on the batch would resolve this, and the queue does that itself when the list names a rebuild: command.\n\n'; fi

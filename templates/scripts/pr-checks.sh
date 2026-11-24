@@ -18,7 +18,16 @@ pr=$1
 [ -n "$pr" ] || { echo "Usage: sh scripts/pr-checks.sh PR_NUMBER" >&2; exit 2; }
 sha=$(gh api "repos/{owner}/{repo}/pulls/$pr" --jq .head.sha)
 runs=$(gh api "repos/{owner}/{repo}/commits/$sha/check-runs?per_page=100" --jq '.check_runs[] | "\(.name)\t\(.conclusion // .status)\t\(.id)"')
-if [ -z "$runs" ]; then echo "No check runs on #$pr yet ($sha)."; echo "none"; exit 2; fi
+# While checks have not ended, say how many runs stand ahead and what the machines are doing, so every
+# agent reads the same answer (#2559): waiting in line is not the same as not starting.
+say_line() {
+  l_q=$(gh api "repos/{owner}/{repo}/actions/runs?status=queued&per_page=100" --jq "[.workflow_runs[] | select(.head_sha != \"$sha\")] | length" 2>/dev/null) || l_q=0
+  l_r=$(gh api "repos/{owner}/{repo}/actions/runs?status=in_progress&per_page=100" --jq "[.workflow_runs[] | select(.head_sha != \"$sha\")] | length" 2>/dev/null) || l_r=0
+  l_m=$(gh api "repos/{owner}/{repo}/actions/runners" --jq '[.runners[] | select(.status == "online")] as $o | "\($o | length) \([$o[] | select(.busy)] | length)"' 2>/dev/null) || l_m="? 0"
+  [ -n "$l_m" ] || l_m="? 0"
+  checks_line_say "${l_q:-0}" "${l_r:-0}" "${l_m% *}" "${l_m#* }"
+}
+if [ -z "$runs" ]; then echo "No check runs on #$pr yet ($sha)."; say_line; echo "none"; exit 2; fi
 why=""; seen=""
 while IFS="$(printf '\t')" read -r name outcome id; do
   case "$outcome" in failure|cancelled) ;; *) seen="$seen$name	$outcome
@@ -38,5 +47,6 @@ EOF
 printf '%s' "$seen" | awk -F'\t' 'NF { printf "  %-40s %s\n", $1, $2 }'
 rollup=$(rest_rollup "$(printf '%s' "$seen" | cut -f2)")
 [ -z "$why" ] || printf '%s' "$why"
+case "$rollup" in pending) say_line ;; esac
 echo "$rollup"
 case "$rollup" in green) exit 0 ;; red) exit 1 ;; *) exit 2 ;; esac

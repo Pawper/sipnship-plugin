@@ -8988,6 +8988,38 @@ eq "once the checks have ended, red or green, it goes" "released drive-1" "$(rh_
 eq "an issue with no open change releases as before" "released drive-2" "$(rh_run 300 release drive-2 | sed -n 1p)"
 eq "the skill tells the agent it stays with its change, and to push its branch at its first commit" "1 1" "$(grep -c 'release is kept' "$root/skills/project-drive/SKILL.md") $(grep -c 'push your branch at your first commit' "$root/skills/project-drive/SKILL.md")"
 block_end
+section 'a damaged round is never published, checks wait in line, and a tick that built nothing frees its claims (#2540, #2559, #2561, #2565)'
+. "$root/scripts/drive/propose-lib.sh"
+. "$root/templates/scripts/pr-lib.sh"
+# #2540: a hold line spliced into another, as one tick wrote it, is read back as damaged; a whole round is not.
+good_round=$(printf 'status: proposed\nunit: 12 | why: both change the beds | areas: watering\nhold: 2533 | why: Waits for "Frost alerts" to land first, since both change packages/core/src/bed-map.ts | after: 2519 | areas: none\nhold: 2479 | why: The limit of 5 agents a round is reached | areas: none\nsized: 3 ready\n')
+bad_round=$(printf 'status: proposed\nhold: 2533 | why: Waits for "Several notices of one kind ahold: 2479 | why: The limit of 5 agents a round is reached; it starts as soon as one finishes | areas: none\ncore/src/bed-map.ts | after: 2519 | areas: none\n')
+spliced_only=$(printf 'status: proposed\nhold: 2533 | why: Waits for "Several ahold: 2479 | why: The limit | areas: none\n')
+eq "a whole round passes the read-back" "0" "$(printf '%s\n' "$good_round" | round_file_check >/dev/null; echo $?)"
+eq "a stray line left over from a splice fails it, naming the line" "a damaged line (line 2)" "$(printf '%s\n' "$bad_round" | round_file_check)"
+eq "a hold with another hold inside it fails it" "a damaged line (line 2)" "$(printf '%s\n' "$spliced_only" | round_file_check)"
+eq "a unit marked listed still passes" "0" "$(printf 'status: proposed\nunit: 402 | areas: watering | listed: yes\n' | round_file_check >/dev/null; echo $?)"
+eq "publish_proposal builds beside the round file and moves it whole" "1 1" "$(grep -c 'round.txt.\$\$' "$root/scripts/drive/propose-lib.sh") $(grep -c 'mv -f "\$pp_tmp"' "$root/scripts/drive/propose-lib.sh")"
+# #2559: waiting in line is not failing to start.
+eq "the wait bound is twenty minutes and eight more for each run in line" "20 52 100" "$(checks_wait_bound 0) $(checks_wait_bound 4) $(checks_wait_bound 10)"
+eq "a bound read from nothing is the floor" "20" "$(checks_wait_bound '')"
+eq "the read gap lengthens as the hour's budget falls" "240 360 600 900 240" "$(checks_poll_gap 4000) $(checks_poll_gap 2000) $(checks_poll_gap 800) $(checks_poll_gap 100) $(checks_poll_gap '')"
+eq "ten minutes behind six runs with machines online is waiting in line, not leaving" "wait: waiting behind 6 runs (leave only after 68 minutes, or when no machine is online)" "$(checks_wait_decide 6 5 10)"
+eq "no machine online is the reason to leave" "leave: no machine that can take its jobs is online, so the checks cannot start until one is" "$(checks_wait_decide 6 0 10)"
+eq "past the bound for the line is the other reason to leave" "leave: the checks have waited 90 minutes, past the 68 minutes a line of 6 run(s) is given" "$(checks_wait_decide 6 5 90)"
+eq "machines that cannot be listed are not read as none" "wait: waiting behind 0 runs (leave only after 20 minutes, or when no machine is online)" "$(checks_wait_decide 0 '?' 5)"
+eq "the line every agent reads is the same" "Line: 6 run(s) waiting ahead, 2 running; machines: 5 online, 4 working" "$(checks_line_say 6 2 5 4)"
+eq "and says plainly when the machines are not known" "Line: 0 run(s) waiting ahead, 0 running; machines: not known (the token cannot list them)" "$(checks_line_say 0 0 '?' 0)"
+eq "pr-checks.sh prints the line while checks are pending, in the shipped copy" "1 1" "$(grep -c 'say_line ;; esac' "$root/templates/scripts/pr-checks.sh") $(grep -c checks_line_say "$root/templates/scripts/pr-checks.sh")"
+eq "the skill tells the agent to wait behind the line and say so" "1 1" "$(grep -c 'waiting behind N' "$root/skills/project-drive/SKILL.md") $(grep -c 'checks_poll_gap' "$root/skills/project-drive/SKILL.md")"
+# #2561: a tick that claims and builds nothing frees the claim before it ends, and says so.
+eq "claim-stale reads In progress issues by label, not by the first page of open issues" "1" "$(grep -c 'labels=state:' "$root/scripts/drive/claim-stale.sh")"
+eq "claim-stale reads its own run's claim, frees it and says nothing was built" "1 1 1 3" "$(grep -c 'CLAIM_STALE_OWN_RUN:-}" \] && printf' "$root/scripts/drive/claim-stale.sh") $(grep -c 'ended before any work was pushed, so nothing was built' "$root/scripts/drive/claim-stale.sh") $(grep -c 'GITHUB_STEP_SUMMARY' "$root/scripts/drive/claim-stale.sh") $(grep -c 'and built nothing' "$root/scripts/drive/claim-stale.sh")"
+eq "claim-stale is valid shell" "0" "$(sh -n "$root/scripts/drive/claim-stale.sh"; echo $?)"
+eq "the skill says what a start-next may start with Auto Drive off" "1" "$(grep -c 'never claims an issue and walks away' "$root/skills/project-drive/SKILL.md")"
+# #2565: the queue's notice says it cannot land and why, first.
+eq "the queue's conflict notice opens with Cannot land" "Cannot land: it changes the same lines as main." "$(. "$root/templates/scripts/ci/queue/rules-serial.sh" 2>/dev/null; conflict_notice "src/a.ts" main | head -n 1)"
+block_end
 # --- end of blocks: the summary, kept in every part.
 eq "no test wrote into the checkout's own queue state" "$queue_picture_before" "$([ "$queue_picture_before" = skipped ] && echo skipped || queue_picture)"
 eq "no process started by this suite is still running" "" "$(spawned_alive)"
