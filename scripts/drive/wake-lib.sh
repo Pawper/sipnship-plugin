@@ -62,11 +62,15 @@ drop_stale_goals() {
 # "Fix agent asked" comment on it. Prints "fix-agent NUMBER" for each one red and
 # not held whose last push is at least MINUTES (default 5) less a minute of grace
 # old, and which no fix agent was asked for since that push (a push is the agent's
-# evidence, so a later look never asks twice for the same commit). Longest first.
+# evidence, so a later look never asks twice for the same commit). An optional sixth field is how many ready issues wait on
+# the change (red-wait-lib.sh, #2445): each takes a minute off the wait, down to none, and the change most issues wait on
+# goes first; otherwise the longest first.
 wake_fix_owed() {
   printf '%s\n' "$2" | tr -d '\r' | awk -F'\t' -v now="$1" -v m="${3:-5}" '
-    $1 != "" && $2 == "yes" && $3 != "yes" && $4 ~ /^[0-9]+$/ && now - $4 >= (m - 1) * 60 && !($5 ~ /^[0-9]+$/ && $5 >= $4) { print $4 "\t" $1 }' \
-    | sort -n | cut -f2 | sed 's/^/fix-agent /'
+    $1 != "" && $2 == "yes" && $3 != "yes" && $4 ~ /^[0-9]+$/ {
+      w = ($6 ~ /^[0-9]+$/) ? $6 + 0 : 0; me = m - w; if (me < 1) me = 1
+      if (now - $4 >= (me - 1) * 60 && !($5 ~ /^[0-9]+$/ && $5 >= $4)) print (100000 - w) "\t" $4 "\t" $1 }' \
+    | sort -n -k1,1 -k2,2n | cut -f3 | sed 's/^/fix-agent /'
 }
 
 # wake_fix_asked_comment

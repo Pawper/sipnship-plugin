@@ -8856,6 +8856,66 @@ eq "only the one real file is in the rescued commit: the scratch note never reac
 eq "the secret-looking file is left exactly where the agent left it: never committed, never lost" "PUMP_TOKEN=do-not-commit" "$(cat "$ac_dir/wt/.env" 2>/dev/null)"
 eq "the release comment names the side branch, the commit and the file" "1" "$(grep -c 'Side branch: agentside/issue-500 | 1 commit rescued, 1 file touched' "$ac_dir/posted")"
 block_end
+section 'a red change that ready work waits on is looked after first, and its waiting cards say so (#2445)'
+# The case: Monday 2:41 PM, a change opened at 2:28 PM went red on two checks while others still ran, its agent had freed its claim,
+# and the round of 2:35 PM held eight ready issues behind it and started nothing (fixtures/red-wait, Maya's rooftop-garden app).
+. "$root/scripts/drive/red-wait-lib.sh"; . "$root/scripts/drive/wake-lib.sh"
+rw_t=$(printf '\t'); rw_fix="$root/tests/fixtures/red-wait"
+rw_round=$(cat "$rw_fix/round.txt"); rw_snap=$(cat "$rw_fix/snapshot.tsv"); rw_pulls=$(cat "$rw_fix/pulls.tsv")
+eq "eight held issues wait on the change that closes issue 300, counted from the plan's lines and from the published round file" "8 8" "$(red_waiters "$rw_round" 300) $(red_waiters "$(cat "$rw_fix/round-file.txt")" "300,9")"
+eq "a change nothing waits on has none waiting" "0" "$(red_waiters "$rw_round" 310)"
+eq "the red change nobody is on and eight issues wait on is named, with how many" "560${rw_t}Bed photos in the reminder list${rw_t}8" "$(red_wait_goal "$rw_snap" "$rw_pulls" "$rw_round")"
+rw_led=$(red_wait_lead "$rw_round" "$rw_snap" "$rw_pulls")
+eq "its fix agent leads the round, ahead of any new work, and says why" "fix-pr 560${rw_t}Bed photos in the reminder list${rw_t}First: 8 ready issues wait on it, and it is red with nobody on it; a fix agent goes ahead of any new work" "$(printf '%s\n' "$rw_led" | sed -n 1p)"
+eq "the busy line that waited on its other checks is gone, and every other line stays" "0 1 8" "$(printf '%s\n' "$rw_led" | grep -c '^busy 560') $(printf '%s\n' "$rw_led" | grep -c '^merge 561') $(printf '%s\n' "$rw_led" | grep -c '^hold ')"
+eq "a held change, one an agent is on (a recent push) and a change with nothing waiting are not led" "" "$(red_wait_goal "$(printf '%s\n' "$rw_snap" | sed 's/\tno\tno\tyes\tnone/\tyes\tno\tyes\tnone/')" "$rw_pulls" "$rw_round")$(red_wait_goal "$(printf '%s\n' "$rw_snap" | sed 's/\tno\tno\tyes\tnone/\tno\tyes\tyes\tnone/')" "$rw_pulls" "$rw_round")$(red_wait_goal "$rw_snap" "$rw_pulls" "hold 301${rw_t}T${rw_t}Waits (after: 99)")"
+eq "a round with nothing waiting on a red change passes unchanged" "$rw_round" "$(red_wait_lead "$rw_round" "$rw_snap" "$(printf '560\tno\t999\n')")"
+eq "when everything ready waits on that one change the round says so in one line, with whose turn it is" 'stall: every ready issue (8) waits on "Bed photos in the reminder list", which is red with nobody on it; your drive sends a fix agent to it first, and nothing is owed by you' "$(red_wait_stall "$(printf '%s\n' "$rw_round" | grep -v '^merge')" "$rw_snap" "$rw_pulls" 'stall: old')"
+eq "with work to dispatch, or when not everything waits on it, the plan's own stall line stands" "stall: old stall: old" "$(red_wait_stall "$(printf 'dispatch 5\n%s\n' "$rw_round")" "$rw_snap" "$rw_pulls" 'stall: old') $(red_wait_stall "$(printf '%s\nhold 400%sT%sWaits on your answer\n' "$(printf '%s\n' "$rw_round" | grep -v '^merge')" "$rw_t" "$rw_t")" "$rw_snap" "$rw_pulls" 'stall: old')"
+eq "one check failed while others still run is a failure" "yes no no" "$(any_failed "completed${rw_t}failure
+in_progress${rw_t}") $(any_failed "completed${rw_t}success
+in_progress${rw_t}") $(any_failed '')"
+rw_now=1800000000
+rw_rows="61${rw_t}yes${rw_t}no${rw_t}$((rw_now - 30))${rw_t}${rw_t}8
+62${rw_t}yes${rw_t}no${rw_t}$((rw_now - 150))${rw_t}${rw_t}2
+63${rw_t}yes${rw_t}no${rw_t}$((rw_now - 150))${rw_t}${rw_t}0
+64${rw_t}yes${rw_t}no${rw_t}$((rw_now - 400))${rw_t}${rw_t}0"
+eq "the more issues wait on a red change, the sooner its fix agent goes, and the one most wait on first" "fix-agent 61
+fix-agent 62
+fix-agent 64" "$(wake_fix_owed "$rw_now" "$rw_rows")"
+eq "a change nothing waits on keeps its five minutes, and a held one is never owed" "fix-agent 64" "$(wake_fix_owed "$rw_now" "63${rw_t}yes${rw_t}no${rw_t}$((rw_now - 150))${rw_t}${rw_t}0
+64${rw_t}yes${rw_t}no${rw_t}$((rw_now - 400))${rw_t}${rw_t}0
+65${rw_t}yes${rw_t}yes${rw_t}$((rw_now - 400))${rw_t}${rw_t}9")"
+eq "fix-owed.sh reads the last round's holds and the failed check while others run, and plan.sh leads with the fix agent and names the stall" "1 1 1 1" "$(grep -c 'red_waiters' "$root/scripts/drive/fix-owed.sh") $(grep -c 'any_failed' "$root/scripts/drive/fix-owed.sh") $(grep -c 'red_wait_lead' "$root/scripts/drive/plan.sh") $(grep -c 'red_wait_stall' "$root/scripts/drive/plan.sh")"
+block_end
+section 'an agent stays with its change until its checks end, and says plainly why when it cannot (#2445)'
+. "$root/scripts/drive/claim-lib.sh"
+eq "checks still running on the change keeps the release, naming the change" "1" "$(claim_release_hold 560 yes | grep -c '^kept: the checks on pull request #560 have not finished')"
+eq "ended checks, no change, or a plain reason let it go" "" "$(claim_release_hold 560 no)$(claim_release_hold '' yes)$(claim_release_hold 560 yes 'my run is out of time')"
+rh_dir=$(mktemp -d); mkdir -p "$rh_dir/bin"
+cat > "$rh_dir/bin/gh" <<'RHGHEOF'
+#!/bin/sh
+# A stand-in for gh api: the open pull requests in $FAKE/pulls (number, head sha, closes), the head's check runs in $FAKE/checks.
+[ "$1" = auth ] && exit 0
+shift; method=GET; url=; body=
+while [ $# -gt 0 ]; do case "$1" in -X) method=$2; shift ;; -f) body=${2#body=}; shift ;; repos/*) url=$1 ;; esac; shift; done
+case "$method $url" in
+  "GET repos/{owner}/{repo}/pulls?state=open"*) cat "$FAKE/pulls" ;;
+  "GET repos/{owner}/{repo}/commits/"*"/check-runs"*) cat "$FAKE/checks" ;;
+  "POST repos/{owner}/{repo}/issues/"[0-9]*"/comments") printf '%s => %s\n' "${url#*issues/}" "$(printf '%s' "$body" | head -n 1)" >> "$FAKE/posted" ;;
+esac
+RHGHEOF
+chmod +x "$rh_dir/bin/gh"; : > "$rh_dir/posted"
+printf '560\tabc123\t300\n' > "$rh_dir/pulls"; printf 'in_progress\t\ncompleted\tfailure\n' > "$rh_dir/checks"
+rh_run() { (cd "$rh_dir" && FAKE="$rh_dir" PATH="$rh_dir/bin:$PATH" sh "$root/scripts/drive/claim.sh" "$@" 2>&1; echo "exit $?"); }
+eq "release is refused while its change's checks run: kept, with the exit that says so, and nothing posted" "1 1 0" "$(rh_run 300 release drive-1 | grep -c '^kept: the checks on pull request #560') $(rh_run 300 release drive-1 | grep -c '^exit 1') $(wc -l < "$rh_dir/posted" | tr -d ' ')"
+eq "with the plain reason it goes, and the reason is left on the change" "released drive-1 1 1" "$(rh_run 300 release drive-1 'my run is out of time' | sed -n 1p) $(grep -c '^560/comments => The agent that opened this change is leaving before its checks ended, because: my run is out of time' "$rh_dir/posted") $(grep -c '^300/comments => Claim released: drive-1' "$rh_dir/posted")"
+: > "$rh_dir/posted"; printf 'completed\tfailure\n' > "$rh_dir/checks"
+eq "once the checks have ended, red or green, it goes" "released drive-1" "$(rh_run 300 release drive-1 | sed -n 1p)"
+: > "$rh_dir/posted"; : > "$rh_dir/pulls"
+eq "an issue with no open change releases as before" "released drive-2" "$(rh_run 300 release drive-2 | sed -n 1p)"
+eq "the skill tells the agent it stays with its change, and to push its branch at its first commit" "1 1" "$(grep -c 'release is kept' "$root/skills/project-drive/SKILL.md") $(grep -c 'push your branch at your first commit' "$root/skills/project-drive/SKILL.md")"
+block_end
 # --- end of blocks: the summary, kept in every part.
 eq "no test wrote into the checkout's own queue state" "$queue_picture_before" "$([ "$queue_picture_before" = skipped ] && echo skipped || queue_picture)"
 eq "no process started by this suite is still running" "" "$(spawned_alive)"

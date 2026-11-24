@@ -1,0 +1,72 @@
+'use strict';
+// #2437: an agent started by the drive's own workflow run, on a runner whose machine holds no repository token,
+// reports its session with GitHub's identity token for the run, as a session sample alone. Maya's rooftop-garden app.
+const test = require('node:test');
+const assert = require('node:assert');
+const fs = require('fs');
+const os = require('os');
+const http = require('http');
+const path = require('path');
+const actions = require('../actions-sign-in');
+const send = require('../brief-send');
+
+const JWT = 'aaa.bbb.ccc';
+
+/** A stand-in for GitHub's token endpoint and for SipNShip, on one local port. */
+function fake() {
+  const seen = [];
+  const server = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', (d) => (body += d)).on('end', () => {
+      seen.push({ method: req.method, url: req.url, auth: req.headers.authorization, body });
+      if (req.url.startsWith('/idtoken')) { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ value: JWT })); return; }
+      res.writeHead(204); res.end();
+    });
+  });
+  return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve({ server, seen, url: `http://127.0.0.1:${server.address().port}` })));
+}
+
+const runEnv = (url) => ({
+  SIPNSHIP_HOME: fs.mkdtempSync(path.join(os.tmpdir(), 'sns-run-')), SIPNSHIP_URL: url,
+  ACTIONS_ID_TOKEN_REQUEST_URL: `${url}/idtoken?api=1`, ACTIONS_ID_TOKEN_REQUEST_TOKEN: 'runtime-secret', GITHUB_REPOSITORY_ID: '4242', GITHUB_REPOSITORY: 'ada/garden',
+});
+const agent = { id: 'agent-7c1e5a', issues: [31, 32], worktree: { name: 'issue-31-32', path: '/work/garden/issue-31-32' }, branch: 'issue-31-32', model: 'claude-sonnet', startedAt: '2026-11-02T10:00:00Z', lastLine: 'Writing the watering-schedule test' };
+
+test('a step of a run with no machine token sends its sessions as the run, asking GitHub for the audience once', async () => {
+  const f = await fake();
+  try {
+    const env = runEnv(f.url);
+    const line = await send.sendBrief({ text: '', session: 's1', repo: 'ada/garden', env, sampleOnly: true, sessions: [agent] });
+    assert.strictEqual(line, '');
+    const asked = f.seen.find((r) => r.url.startsWith('/idtoken'));
+    assert.match(asked.url, /audience=https%3A%2F%2Fsipnship\.dev/);
+    assert.strictEqual(asked.auth, 'Bearer runtime-secret');
+    const posted = f.seen.find((r) => r.url === '/v1/repos/4242/brief');
+    assert.strictEqual(posted.auth, `Bearer ${JWT}`);
+    const body = JSON.parse(posted.body);
+    assert.strictEqual(body.machine, 'GitHub Actions');
+    assert.deepStrictEqual(body.cards, []);
+    assert.deepStrictEqual(body.sessions[0].issues, [31, 32]);
+    for (const k of ['runners', 'ownerSteps', 'can', 'design', 'answers']) assert.strictEqual(body[k], undefined, `no ${k} rides along`);
+  } finally { f.server.close(); }
+});
+
+test('outside a run, in another repository\'s run, or when GitHub gives no token, nothing is sent', async () => {
+  const f = await fake();
+  try {
+    const plain = { SIPNSHIP_HOME: fs.mkdtempSync(path.join(os.tmpdir(), 'sns-none-')), SIPNSHIP_URL: f.url };
+    assert.strictEqual(actions.inRun(plain), false);
+    await send.sendBrief({ text: '', repo: 'ada/garden', env: plain, sampleOnly: true, sessions: [agent] });
+    await send.sendBrief({ text: '', repo: 'ada/other', env: runEnv(f.url), sampleOnly: true, sessions: [agent] });
+    assert.strictEqual(await actions.entry('ada/garden', runEnv(f.url), async () => ({ ok: false })), undefined);
+    assert.strictEqual(f.seen.filter((r) => r.url.startsWith('/v1/')).length, 0);
+  } finally { f.server.close(); }
+});
+
+test('a full brief is never sent as a run: only a sample', async () => {
+  const f = await fake();
+  try {
+    await send.sendBrief({ text: 'Main: moved\n', repo: 'ada/garden', env: runEnv(f.url), sampleOnly: false, sessions: [agent] });
+    assert.strictEqual(f.seen.filter((r) => r.url.startsWith('/v1/')).length, 0);
+  } finally { f.server.close(); }
+});

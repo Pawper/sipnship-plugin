@@ -296,6 +296,8 @@ The goal lines and what each means:
   The brief also says: your first step, before a worktree or any work, is `sh "${CLAUDE_PLUGIN_ROOT}/scripts/drive/claim.sh" N check TOKEN`
   for each issue: when it prints `taken:` for an open pull request, a branch or another starter's claim, stop with one
   line saying so and build nothing; your own token is not a reason to stop.
+  The brief also says: push your branch at your first commit (`git push -u origin HEAD`), so the card on Work shows the
+  branch within minutes and nothing is lost when the run ends at its time limit; push again as you go (#2437).
   The brief also says: once the pull request is open, check that it can merge (its mergeable state, not the
   checks); a push that lands on main while you worked can make yours conflict, and GitHub starts no checks on
   a pull request that conflicts, so waiting for them would wait forever (#2096). When it conflicts, merge
@@ -315,7 +317,9 @@ The goal lines and what each means:
   claim through this one script, so the second starter sees the first, #2238). `taken: WHY` means another starter, a
   branch or an open pull request already has the issue: start no agent for it, say the why in one line and go on. Only
   when it prints `claimed TOKEN`, set the issue to `state:in-progress` with `scripts/state.sh` and start the agent. Put
-  the token in the brief, so the agent releases it at its end (`claim.sh N release TOKEN`).
+  the token in the brief, so the agent releases it at its end (`claim.sh N release TOKEN`). An agent that opened a change
+  stays with it: the release is kept (`kept: ...`) while that change's checks have not finished, unless the agent gives the
+  plain reason it cannot stay (`claim.sh N release TOKEN "WHY"`), which is left on the pull request (#2445).
   Keep the brief in a file and the prompt short: name the issue, the worktree and the pull request to open, and
   point at the brief file ("read your brief first and follow it"). The agent-model hook reads such a prompt as a
   unit of work, never a lookup, so `dispatchModel` is allowed for it whatever its length.

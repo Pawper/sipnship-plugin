@@ -20,7 +20,9 @@
 # differs from the last send's (brief-send/sample-sum-OWNER-NAME, its hash);
 # a turn's end sends anyway when nothing went for a minute. Those sends run
 # in the background, print nothing and never hold up the event. Only when
-# this machine holds a token for the repository (npx sipnship connect --repo).
+# this machine holds a token for the repository (npx sipnship connect --repo), or the
+# session runs as a step of a workflow run with `id-token: write`, which reports as the run
+# (console/actions-sign-in.js, #2437: the drive's own agents are on a runner with no token).
 # One request, a few seconds at most; always exits 0; never prints a token.
 sn_home="${SIPNSHIP_HOME:-$HOME/.sipnship}"
 every=${SIPNSHIP_SAMPLE_EVERY:-20}
@@ -30,7 +32,7 @@ every=${SIPNSHIP_SAMPLE_EVERY:-20}
 # brief-send/root-FOLDER, which the first call writes. Shell builtins only,
 # where the shell has them (bash's), since a tool call waits for this.
 if [ "${1:-}" = tool ]; then
-  [ -f "$sn_home/tokens.json" ] || exit 0
+  [ -f "$sn_home/tokens.json" ] || [ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ] || exit 0
   if [ -n "${CLAUDE_PROJECT_DIR:-}" ]; then
     if [ -n "${BASH_VERSION:-}" ]; then eval 'sn_key=${CLAUDE_PROJECT_DIR//[^A-Za-z0-9]/-}'; else sn_key=$(printf '%s' "$CLAUDE_PROJECT_DIR" | tr -c 'A-Za-z0-9' '-'); fi
     sn_mark= sn_last=
@@ -51,7 +53,7 @@ input=$(cat)
 root=${CLAUDE_PROJECT_DIR:-$(json_field "$input" cwd)}
 [ -n "$root" ] && [ -d "$root" ] && cd "$root" 2>/dev/null || exit 0
 
-[ -f "$sn_home/tokens.json" ] || exit 0
+[ -f "$sn_home/tokens.json" ] || [ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ] || exit 0
 command -v node >/dev/null 2>&1 || exit 0
 
 sn_repo=$(git remote get-url origin 2>/dev/null | tr -d '\r' | sed -n 's#.*github\.com[:/]\([^/]*\)/\([^/]*\)$#\1/\2#p' | sed 's/\.git$//')

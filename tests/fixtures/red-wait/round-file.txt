@@ -1,0 +1,9 @@
+status: proposed
+hold: 301 | why: Waits for "Bed photos in the reminder list" to land first, since both are in the photos area | after: 300 | areas: none
+hold: 302 | why: Waits for "Bed photos in the reminder list" to land first, since both are in the photos area | after: 300 | areas: none
+hold: 303 | why: Waits for "Bed photos in the reminder list" to land first, since both are in the photos area | after: 300 | areas: none
+hold: 304 | why: Waits for "Bed photos in the reminder list" to land first, since both are in the photos area | after: 300 | areas: none
+hold: 305 | why: Waits for "Bed photos in the reminder list" to land first, since both are in the photos area | after: 300 | areas: none
+hold: 306 | why: Waits for "Bed photos in the reminder list" to land first, since both are in the photos area | after: 300 | areas: none
+hold: 307 | why: Waits for "Bed photos in the reminder list" to land first, since both are in the photos area | after: 300 | areas: none
+hold: 308 | why: Waits for "Bed photos in the reminder list" to land first, since both are in the photos area | after: 300 | areas: none

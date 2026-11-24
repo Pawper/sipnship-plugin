@@ -75,3 +75,12 @@ claim_ended() {
       print "yes"
     }'
 }
+
+# claim_release_hold PULL PENDING [WHY]
+# Whether a claim may be released while PULL (the open change that closes the issue) has its checks PENDING ("yes" when
+# they have not all ended). Prints one plain line saying it is kept, or nothing when the release may go ahead: its checks
+# have ended, there is no such change (PULL empty), or WHY says plainly why the agent cannot stay (#2445).
+claim_release_hold() {
+  [ -n "$1" ] && [ "$2" = yes ] && [ -z "${3:-}" ] || return 0
+  printf 'kept: the checks on pull request #%s have not finished, so the claim stays with you; wait for them to end (a red one is yours to fix once), or release with the plain reason you cannot: claim.sh N release TOKEN "WHY"\n' "$1"
+}
