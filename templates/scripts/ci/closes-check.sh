@@ -15,7 +15,7 @@
 # building it directly, never a third issue asking the same thing again.
 # Usage: PR_BODY="..." sh scripts/ci/closes-check.sh
 #   ISSUE_STATE_CMD (tests) names a command that prints an issue's state
-#   (open, closed or nothing) for the number it is given.
+#   (open, closed, unverified or nothing) for the number it is given.
 #   ISSUE_TITLE_CMD (tests) names a command that prints an issue's title for
 #   the number it is given.
 #   ISSUE_BODY_CMD (tests) names a command that prints an issue's body for
@@ -24,16 +24,21 @@ rules_lib="$(dirname "$0")/rules-lib.sh"
 if [ -f "$rules_lib" ]; then . "$rules_lib"; if rule_skip one-change-closes-its-issue; then exit 0; fi; fi
 body=$(printf '%s\n' "${PR_BODY:-}" | tr -d '\r')
 
+no_credential() { [ -z "${GH_TOKEN:-}" ] && [ -z "${GITHUB_TOKEN:-}" ]; }
 issue_state() {
   if [ -n "${ISSUE_STATE_CMD:-}" ]; then $ISSUE_STATE_CMD "$1"; return; fi
+  # No credential (the local pre-push run unsets it on purpose): cannot verify.
+  no_credential && { echo unverified; return; }
   gh api "repos/${GITHUB_REPOSITORY:-{owner\}/{repo\}}/issues/$1" --jq .state 2>/dev/null
 }
 issue_title() {
   if [ -n "${ISSUE_TITLE_CMD:-}" ]; then $ISSUE_TITLE_CMD "$1"; return; fi
+  no_credential && return
   gh api "repos/${GITHUB_REPOSITORY:-{owner\}/{repo\}}/issues/$1" --jq .title 2>/dev/null
 }
 issue_body() {
   if [ -n "${ISSUE_BODY_CMD:-}" ]; then $ISSUE_BODY_CMD "$1"; return; fi
+  no_credential && return
   gh api "repos/${GITHUB_REPOSITORY:-{owner\}/{repo\}}/issues/$1" --jq .body 2>/dev/null
 }
 # The lines of a "What done looks like" (or "What done would look like") section, trimmed to its
@@ -55,7 +60,10 @@ fi
 
 for n in $(printf '%s\n' "$body" | sed -n 's/^[[:space:]]*Leftover: *#\([0-9][0-9]*\).*/\1/p'); do
   state=$(issue_state "$n")
-  if [ "$state" != open ]; then
+  if [ "$state" = unverified ]; then
+    echo "Leftover: #$n not checked here (no credential for a network call); CI checks it on the pull request."
+    continue
+  elif [ "$state" != open ]; then
     echo "Leftover: #$n is not an open issue (${state:-not found}). File the issue for what this change leaves undone before the pull request lands, then name it on the line Leftover: #M." >&2
     fail=1
     continue

@@ -23,24 +23,49 @@ apply=no; [ "${1:-}" = --apply ] && apply=yes
 command -v gh >/dev/null 2>&1 || { echo "claim-stale: gh is not available; nothing to check."; exit 0; }
 ttl=${CLAIM_TTL:-14400}
 
-# Before an issue is freed, real work its agent already made (a worktree with commits not yet on GitHub) is
-# rescued to a side branch, so it is not lost once the workspace is cleaned up (#2336, left over from #2328).
-# Nothing when git cannot list worktrees, none matches the issue, or it has nothing unpushed. Prints the
-# branch and how many commits on success; nothing, and changes nothing, when there is no work to rescue.
+# Before an issue is freed, real work its agent already made is rescued to a side branch, so it is not lost
+# once the workspace is cleaned up (#2336, left over from #2328; #2465 widens this from commits not yet on
+# GitHub to files the agent changed or created but never committed at all, which until now stayed in a
+# folder nothing read again). Nothing when git cannot list worktrees, none matches the issue, or it has
+# nothing to rescue, committed or not. Prints the branch, how many commits and how many files on success;
+# nothing, and changes nothing, when there is no work to rescue.
 type gitb >/dev/null 2>&1 || gitb() { if command -v timeout >/dev/null 2>&1; then timeout -k 5 "${GIT_BOUND_SECONDS:-120}" git "$@"; else git "$@"; fi; }
+
+# Uncommitted or untracked work the agent made, committed as one commit plainly marked as not its own
+# (agentside_wip_message), before it is counted and pushed as if it had always been there. `git add -A`
+# already skips everything the worktree's own .gitignore excludes (.scratch, build output); a path that
+# looks like a secret by its name alone (agentside_looks_secret) is unstaged again before the commit is
+# made, so it is never included, left exactly as it was in the worktree. Nothing when there is nothing to
+# commit, or nothing is left once a secret-looking path is set aside.
+commit_uncommitted() {
+  wt=$1
+  gitb -C "$wt" add -A -- . >/dev/null 2>&1
+  staged=$(gitb -C "$wt" diff --cached --name-only 2>/dev/null)
+  [ -n "$staged" ] || return 0
+  printf '%s\n' "$staged" | while IFS= read -r f; do
+    agentside_looks_secret "$f" && gitb -C "$wt" reset -q -- "$f" >/dev/null 2>&1
+  done
+  staged=$(gitb -C "$wt" diff --cached --name-only 2>/dev/null)
+  [ -n "$staged" ] || return 0
+  agentside_wip_message | gitb -C "$wt" commit -q -F - >/dev/null 2>&1
+}
+
 rescue_agent_side() {
   command -v git >/dev/null 2>&1 || return 0
   wt=$(gitb worktree list --porcelain 2>/dev/null); wt=$(agentside_worktree_path "$1" "$wt")
   [ -n "$wt" ] && [ -d "$wt" ] || return 0
   branch=$(git -C "$wt" branch --show-current 2>/dev/null)
   [ -n "$branch" ] || return 0
+  commit_uncommitted "$wt"
   gitb -C "$wt" fetch origin --quiet 2>/dev/null
   unpushed=$(gitb -C "$wt" rev-list "$branch" --not --remotes=origin 2>/dev/null)
   [ -n "$unpushed" ] || return 0
   count=$(printf '%s\n' "$unpushed" | grep -c .)
+  oldest=$(printf '%s\n' "$unpushed" | tail -n1)
+  files=$(gitb -C "$wt" diff --name-only "$oldest"^ "$branch" 2>/dev/null | grep -c .)
   side=$(agentside_branch "$1")
   gitb -C "$wt" push origin "$branch:refs/heads/$side" >/dev/null 2>&1 || return 0
-  printf '%s\t%s\n' "$side" "$count"
+  printf '%s\t%s\t%s\n' "$side" "$count" "$files"
 }
 
 # Every open issue carrying either label form of state:in-progress, issues only (never a pull request).
@@ -75,9 +100,9 @@ $r"; fi
   rescue_said=""; freed_said=" Nothing is on it now; back to Ready for the next round."
   released_words="The run that made this claim has ended, with nothing pushed; freed by the next tick instead of waiting out its four-hour claim (#2328)."
   if [ -n "$rescued" ]; then
-    rb=$(printf '%s' "$rescued" | cut -f1); rc=$(printf '%s' "$rescued" | cut -f2)
+    rb=$(printf '%s' "$rescued" | cut -f1); rc=$(printf '%s' "$rescued" | cut -f2); rf=$(printf '%s' "$rescued" | cut -f3)
     rescue_said="
-$(agentside_rescue_note "$n" "$rb" "$rc")"
+$(agentside_rescue_note "$n" "$rb" "$rc" "$rf")"
     released_words="The run that made this claim has ended; freed by the next tick instead of waiting out its four-hour claim (#2328)."
     freed_said=" Its real work was not lost, pushed to $rb; back to Ready for the next round, which can start from it."
   fi
@@ -93,7 +118,7 @@ ${released_words}${rescue_said}" >/dev/null 2>&1
   if gh api -X POST "repos/{owner}/{repo}/issues/$n/labels" -f "labels[]=$form" >/dev/null 2>&1; then
     gh api -X POST "repos/{owner}/{repo}/issues/$n/comments" -f "body=Freed: the wake that claimed this issue ended with its agent still working, and that run has since finished.${freed_said}" >/dev/null 2>&1
     if [ -n "$rescued" ]; then
-      echo "claim-stale: freed issue #$n (claim $rawwin, its run ended); rescued $rc commit(s) to $rb; set back to Ready."
+      echo "claim-stale: freed issue #$n (claim $rawwin, its run ended); rescued $rc commit(s), $rf file(s), to $rb; set back to Ready."
     else
       echo "claim-stale: freed issue #$n (claim $rawwin, its run ended, no open pull request); set back to Ready."
     fi

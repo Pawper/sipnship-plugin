@@ -824,6 +824,18 @@ chmod +x "$sb_live_bin/gh"
 eq "it walks past runs that did not look, to the latest that did" "Live app: The seed catalog is slow for visitors. Its host answers after 9 seconds." "$(PATH="$sb_live_bin:$PATH" live_app_read)"
 eq "a signed-out gh leaves the line out" "" "$(PATH="$sb_bin:$PATH" live_app_read)"
 eq "the background read keeps the live line, and the brief prints it with its age" "1 1" "$(grep -c 'session-brief-live.sh' "$root/hooks/scripts/session-brief-slow.sh") $(grep -c 'cached live-app' "$root/hooks/scripts/session-brief-network.sh")"
+# How many setup exceptions from the plugin's shipped copies this project holds, and the oldest (#2470).
+se_dir=$(mktemp -d)
+git init -q -b main "$se_dir"
+(
+  cd "$se_dir" && git config user.email t@t && git config user.name t
+  mkdir -p scripts/ci && printf '# header\none/path | because | none\n' > scripts/ci/template-exceptions.txt
+  git add -A && GIT_AUTHOR_DATE='2026-01-02T00:00:00' GIT_COMMITTER_DATE='2026-01-02T00:00:00' git commit -q -m 'add it'
+) >/dev/null 2>&1
+se_run() { ( cd "$se_dir" && has() { return 0; }; add() { printf '%s\n' "$1"; }; have_git=$1; . "$root/hooks/scripts/session-brief-exceptions.sh" ); }
+eq "git unavailable, no line" "" "$(se_run no)"
+eq "one exception, singular, with the oldest read from git blame on the file" "This project has 1 setup exception from the plugin's shipped copies (scripts/ci/template-exceptions.txt); the oldest since 2026-01-02." "$(se_run yes)"
+eq "the background read keeps the exceptions line, and the brief prints it with its age" "1 1" "$(grep -c 'session-brief-exceptions.sh' "$root/hooks/scripts/session-brief-slow.sh") $(grep -c 'cached exceptions' "$root/hooks/scripts/session-brief-local.sh")"
 
 section 'the queue runs a test file with its own runner'
 rt="$root/templates/scripts/ci/run-test-file.mjs"; rtf="$fx/test-runner"
@@ -8746,7 +8758,7 @@ eq "the side branch is named for the issue, matching the fixside/pr-N convention
 as_wts=$(printf 'worktree /work/sipnship\nHEAD abc\nbranch refs/heads/main\n\nworktree /work/wt/issue-317-watering\nHEAD def\nbranch refs/heads/issue-317-watering\n\nworktree /work/wt/other\nHEAD ghi\ndetached\n')
 eq "the worktree whose branch is named for the issue is found, a bundle's shared branch too" "/work/wt/issue-317-watering" "$(agentside_worktree_path 317 "$as_wts")"
 eq "issue-31 is not issue-317, and a detached worktree matches nothing" "" "$(agentside_worktree_path 31 "$as_wts")$(agentside_worktree_path 999 "$as_wts")"
-eq "one commit is singular, more than one is plural" "Side branch: agentside/issue-317 | 1 commit rescued|Side branch: agentside/issue-317 | 3 commits rescued" "$(agentside_rescue_note 317 agentside/issue-317 1 | sed -n 1p)|$(agentside_rescue_note 317 agentside/issue-317 3 | sed -n 1p)"
+eq "commits and files are each singular or plural on their own" "Side branch: agentside/issue-317 | 1 commit rescued, 1 file touched|Side branch: agentside/issue-317 | 3 commits rescued, 1 file touched|Side branch: agentside/issue-317 | 1 commit rescued, 5 files touched" "$(agentside_rescue_note 317 agentside/issue-317 1 1 | sed -n 1p)|$(agentside_rescue_note 317 agentside/issue-317 3 1 | sed -n 1p)|$(agentside_rescue_note 317 agentside/issue-317 1 5 | sed -n 1p)"
 eq "the note names the side branch so the next agent starts from it" "1" "$(agentside_rescue_note 317 agentside/issue-317 2 | sed -n 2p | grep -c 'starts from it instead of from scratch')"
 # A real worktree, with a commit never pushed to its remote: claim-stale.sh pushes it to the side branch
 # before the issue is freed, over real git (no fake), and names it in the release comment.
@@ -8786,7 +8798,7 @@ printf '317\n' > "$as_dir/inprog"; : > "$as_dir/closes"; printf '555\tcompleted\
 printf '906\t%s\tClaim: drive-5\t555\n' "$((cs_now - 60))" > "$as_dir/comments-317"
 echo "state:in-progress" > "$as_dir/labels-317"
 as_run() { ( cd "$as_dir/main" && FAKE="$as_dir" PATH="$as_dir/bin:$PATH" sh "$root/scripts/drive/claim-stale.sh" --apply 2>&1 ); }
-eq "the tick's own log names the rescued branch and how many commits" "claim-stale: freed issue #317 (claim drive-5, its run ended); rescued 1 commit(s) to agentside/issue-317; set back to Ready." "$(as_run)"
+eq "the tick's own log names the rescued branch, how many commits and how many files" "claim-stale: freed issue #317 (claim drive-5, its run ended); rescued 1 commit(s), 1 file(s), to agentside/issue-317; set back to Ready." "$(as_run)"
 eq "the side branch on the remote carries exactly the worktree's own unpushed commit" "$as_sha" "$(git -C "$as_dir/origin.git" rev-parse refs/heads/agentside/issue-317 2>/dev/null)"
 eq "main itself never gained that commit" "" "$(git -C "$as_dir/origin.git" branch --contains "$as_sha" main 2>/dev/null)"
 eq "the release comment names the side branch, so the next agent starts from it" "1" "$(grep -c 'Side branch: agentside/issue-317' "$as_dir/posted")"
@@ -8796,6 +8808,53 @@ printf '907\t%s\tClaim: drive-6\t556\n' "$((cs_now - 60))" > "$as_dir/comments-3
 printf '556\tcompleted\n' > "$as_dir/runs"
 as_run >/dev/null
 eq "a worktree with nothing unpushed is left alone: no side branch, no mention of one" "0" "$(grep -c 'Side branch' "$as_dir/posted")"
+
+# #2465: a worktree whose agent never made a single commit, only edited and created files, still has its
+# run end; before this fix the worktree had no commit difference from origin at all, so rescue_agent_side
+# found nothing and none of it reached GitHub. The scratch folder and a secret-looking file are both left
+# alone: never committed, never lost either (they stay exactly where the agent left them).
+ac_dir=$(mktemp -d)
+git init -q --bare "$ac_dir/origin.git"
+git init -q -b main "$ac_dir/main"
+(
+  cd "$ac_dir/main" && git config user.email t@t && git config user.name t && git config core.autocrlf false
+  printf '.scratch/\n' > .gitignore && git add .gitignore && git commit -q -m "the garden app begins" && git remote add origin "$ac_dir/origin.git" && git push -q origin main
+  git worktree add -q -b issue-500-pump "$ac_dir/wt" main
+) >/dev/null 2>&1
+mkdir -p "$ac_dir/wt/.scratch"
+echo "scratch note, never committed" > "$ac_dir/wt/.scratch/notes.txt"
+echo "PUMP_TOKEN=do-not-commit" > "$ac_dir/wt/.env"
+echo "water the tomatoes at dawn" > "$ac_dir/wt/pump.txt"
+mkdir -p "$ac_dir/bin"
+cat > "$ac_dir/bin/gh" <<'ACGHEOF'
+#!/bin/sh
+[ "$1" = auth ] && exit 0
+shift; method=GET; url=; args=
+while [ $# -gt 0 ]; do case "$1" in -X) method=$2; shift ;; -f) args="$args
+$2"; shift ;; repos/*) url=$1 ;; esac; shift; done
+case "$method $url" in
+  "GET repos/{owner}/{repo}/issues?state=open"*) cat "$FAKE/inprog" ;;
+  "GET repos/{owner}/{repo}/pulls?state=open"*) cat "$FAKE/closes" ;;
+  "GET repos/{owner}/{repo}/issues/"[0-9]*"/comments"*) n=${url#*issues/}; n=${n%%/*}; cat "$FAKE/comments-$n" 2>/dev/null ;;
+  "GET repos/{owner}/{repo}/actions/runs/"*) rid=${url##*/}; awk -F'\t' -v r="$rid" '$1 == r { print $2 }' "$FAKE/runs" 2>/dev/null ;;
+  "GET repos/{owner}/{repo}/issues/"[0-9]*"/labels") n=${url#*issues/}; n=${n%%/*}; cat "$FAKE/labels-$n" 2>/dev/null ;;
+  "POST repos/{owner}/{repo}/issues/"[0-9]*"/comments") printf '%s\n---\n' "$(printf '%s' "$args" | sed -n '/^body=/,$p' | sed '1s/^body=//')" >> "$FAKE/posted" ;;
+  "DELETE repos/{owner}/{repo}/issues/"[0-9]*"/labels/"*) echo "delete $url" >> "$FAKE/posted" ;;
+  "POST repos/{owner}/{repo}/issues/"[0-9]*"/labels") echo "label $(printf '%s' "$args" | sed -n 's/^labels\[\]=//p')" >> "$FAKE/posted" ;;
+esac
+ACGHEOF
+chmod +x "$ac_dir/bin/gh"
+: > "$ac_dir/posted"
+printf '500\n' > "$ac_dir/inprog"; : > "$ac_dir/closes"; printf '557\tcompleted\n' > "$ac_dir/runs"
+printf '908\t%s\tClaim: drive-7\t557\n' "$((cs_now - 60))" > "$ac_dir/comments-500"
+echo "state:in-progress" > "$ac_dir/labels-500"
+ac_run() { ( cd "$ac_dir/main" && FAKE="$ac_dir" PATH="$ac_dir/bin:$PATH" sh "$root/scripts/drive/claim-stale.sh" --apply 2>&1 ); }
+eq "uncommitted work with no commit ever made is still rescued, as one commit, pushed, named in the release comment" "claim-stale: freed issue #500 (claim drive-7, its run ended); rescued 1 commit(s), 1 file(s), to agentside/issue-500; set back to Ready." "$(ac_run)"
+eq "the rescued commit is on the side branch, never on main" "" "$(git -C "$ac_dir/origin.git" branch --contains refs/heads/agentside/issue-500 main 2>/dev/null)"
+eq "the rescued commit's own message marks it as not the agent's: a reader tells the two apart by its first line alone" "1" "$(git -C "$ac_dir/origin.git" log -1 --format=%B refs/heads/agentside/issue-500 | grep -c '^Work in progress: rescued when the run ended')"
+eq "only the one real file is in the rescued commit: the scratch note never reaches it" "pump.txt" "$(git -C "$ac_dir/origin.git" show --name-only --format= refs/heads/agentside/issue-500)"
+eq "the secret-looking file is left exactly where the agent left it: never committed, never lost" "PUMP_TOKEN=do-not-commit" "$(cat "$ac_dir/wt/.env" 2>/dev/null)"
+eq "the release comment names the side branch, the commit and the file" "1" "$(grep -c 'Side branch: agentside/issue-500 | 1 commit rescued, 1 file touched' "$ac_dir/posted")"
 block_end
 # --- end of blocks: the summary, kept in every part.
 eq "no test wrote into the checkout's own queue state" "$queue_picture_before" "$([ "$queue_picture_before" = skipped ] && echo skipped || queue_picture)"
