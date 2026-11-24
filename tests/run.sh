@@ -6873,7 +6873,7 @@ section 'an ask with choices recommends one'
 # The shared cases: the dashboard's reader is tested against the same list.
 ak_fx="$fx/ask"
 ak_cases=$(grep -v '^#' "$ak_fx/verdicts.txt" | tr -d '\r')
-eq "the shared list has its cases" "16" "$(printf '%s\n' "$ak_cases" | grep -c .)"
+eq "the shared list has its cases" "17" "$(printf '%s\n' "$ak_cases" | grep -c .)"
 printf '%s\n' "$ak_cases" | while read -r ak_name ak_want; do
   [ -n "$ak_name" ] || continue
   eq "the shared case $ak_name reads $ak_want" "$ak_want" "$(ask_verdict < "$ak_fx/$ak_name.md")"
@@ -6893,6 +6893,12 @@ eq "Instructions needs no fix" "" "$(ask_fix instructions)"
 eq "an action and a deferral says to write Instructions" "yes" "$(ask_fix actiondefer | grep -q 'Write it as Instructions instead' && echo yes)"
 eq "a choice that is only to read it, or to decide later, is fixed by naming what to read and offering outcomes" "putoff putoff one" "$(ask_verdict < "$ak_fx/read-first.md") $(ask_verdict < "$ak_fx/decide-later.md") $(ask_verdict < "$ak_fx/read-then-land.md")"
 eq "a put-off says reading is never a choice and what to write" "yes" "$(ask_fix putoff | grep -q 'Reading is never a choice' && ask_fix putoff | grep -q 'Ask for changes' && echo yes)"
+eq "an ask that only checks a fix works is a confirmation, and says no fix is confirmed with the builder" "confirmation yes" "$(ask_verdict < "$ak_fx/confirm-fix.md") $(ask_fix confirmation | grep -q "Never ask the builder to confirm a fix" && echo yes)"
+eq "a real decision with Done in it is not a confirmation" "one" "$(printf 'Which bed first?
+
+1. Done with the herbs, move on to the roses: Recommended, the herbs are planted.
+2. Stay on the herbs.
+' | ask_verdict)"
 eq "Read it and let it land is reading offered as a choice, so a put-off" "putoff" "$(printf 'Should it land?\n\n1. Read it and let it land. Recommended. It waits only for your read.\n2. Tell your agent what to change first. Nothing lands.\n' | ask_verdict)"
 eq "a choice that starts with another word is not reading" "one" "$(printf 'Should the beds be watered?\n\n1. Ready the hose: it runs at six. Recommended, so the beds stay damp.\n2. Wait: nothing runs.\n' | ask_verdict)"
 # The words of an ask in the shape, held to what a builder who is not technical can answer (Maya's rooftop-garden app).

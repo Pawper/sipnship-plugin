@@ -42,6 +42,7 @@ ASK_NEXT="--- next comment ---"
 #   instructions   steps for the owner, marked "Instructions:" (no choice)
 #   actiondefer    two choices that are an action and a deferral
 #   putoff         a choice that is only to read it, or to decide later
+#   confirmation   choices that only say a fix works or does not ("Done", "Not right yet"), no decision in them
 #   question       a question with no choices
 #   one            choices, exactly one recommended
 #   unrecommended  choices, none recommended
@@ -116,6 +117,14 @@ ask_read() {
       sub(/[ \t]*\(.*$/, "", s); sub(/[ \t]+[—-][ \t].*$/, "", s); sub(/[.:!\t ]+$/, "", s)
       sub(/[:.].*$/, "", s); sub(/[ 	]+$/, "", s)
       return s ~ /^(read([ ,].*)?|let me read([ ,].*)?|look at it( first| later)?|look it over|have a look|decide later|decide it later|i will decide later|later|not yet|think about it|let me think( about it)?)$/
+    }
+    # A confirmation: a choice that only says a fix shows ("Done", "Yes, it works") or does not ("Not right yet", "Still wrong"). Same words as isConfirm in the core reader.
+    function confirm_kind(l,   s) {
+      s = tolower(plain(l)); sub(/^[0-9][0-9]?[.)][ \t]+/, "", s)
+      sub(/[ \t]*\(.*$/, "", s); sub(/[ \t]+[—-][ \t].*$/, "", s); sub(/[:.!,].*$/, "", s); s = trim(s)
+      if (s ~ /^(done|it works|it is working|works|looks good|it looks good|fixed|it is fixed|confirmed|yes|yes it works|yes it does|it is right)$/) return 1
+      if (s ~ /^(not right yet|not right|not yet|still wrong|still broken|still not right|not fixed|no|no it does not|it does not work|it is not right|not working)$/) return 2
+      return 0
     }
     # A choice split as the card splits it (choiceOf in the core reader): the
     # word "Recommended" taken out, then the words before a colon within 60
@@ -210,7 +219,7 @@ ask_read() {
         before = at - 1
         while (before >= 1 && L[before] == "") before--
         if (before < 1 || !asks(L[before])) continue
-        items = 0; recs = 0; offs = 0
+        items = 0; recs = 0; offs = 0; cyes = 0; cno = 0
         for (k = at; k <= n; k++) {
           if (L[k] == "") continue
           if (!is_choice(L[k])) break
@@ -219,6 +228,7 @@ ask_read() {
           items++
           if (recommended(L[k])) recs++
           if (is_putoff(L[k])) offs++
+          ck = confirm_kind(L[k]); if (ck == 1) cyes++; else if (ck == 2) cno++
         }
         if (items < 2) continue
         if (check == 2) {
@@ -231,6 +241,7 @@ ask_read() {
           for (k = at + 1; k <= n; k++) if (is_choice(L[k])) { c2 = cname(L[k]); break }
           if ((is_go(c1) && has_action(c1) && is_defer(c2)) || (is_go(c2) && has_action(c2) && is_defer(c1))) return "actiondefer"
         }
+        if (cyes > 0 && cno > 0 && cyes + cno == items) return "confirmation"
         if (offs > 0) return "putoff"
         if (recs == 1 && check == 1 && (w = wording(L, L[before], at, n)) != "") return w
         return recs == 1 ? "one" : recs == 0 ? "unrecommended" : "several"
@@ -274,6 +285,7 @@ ask_fix() {
     twice) printf '%s\n' 'the same question was already posted on another issue in the last day. Each issue gets its own ask, saying what to look at for that issue alone, so the builder never reviews one change twice; write this one for this issue only' ;;
     question) printf '%s\n' 'its ask is a question with no choices. Turn it into choices: keep the question on its own line, then a numbered list of two to four, your best guess first, ending "Recommended." and a short reason why; for an open question, give a draft to say yes to and a last choice such as "I will write my own on the issue."' ;;
     actiondefer) printf '%s\n' 'its ask is a step the owner does outside the app, dressed as a choice between doing it and setting it aside. Write it as Instructions instead: start the comment with the word "Instructions:" and give the steps as a numbered list (what to do, where, any value or command), with no choices and no "Recommended."; if the steps are already done, say so on the issue and move it on instead of waiting' ;;
+    confirmation) printf '%s\n' 'its ask only checks that a fix works ("Done", "Not right yet"), which is no decision. Never ask the builder to confirm a fix: it closes when it is built and its tests pass (and, for a screen, when you have seen it on the live page), and the builder reports anew if it is wrong. Close the issue with one comment saying what was built; wait on the builder only for a decision, a design to read, or a step only they can do' ;;
     putoff) printf '%s\n' 'one of its choices is only to read the thing, or to decide later. Reading is never a choice: the builder is there to read it. Name the file or files to read in the comment (a link that opens it), and make every choice an outcome that follows the read: "Approve it as written", "Ask for changes" (the builder says what), and any real alternative such as "Split it: the spec waits for your read, the rest lands now"' ;;
     unrecommended) printf '%s\n' 'its ask gives choices and none is recommended. End the one you would pick with "Recommended." and a short reason why, in the same comment' ;;
     several) printf '%s\n' 'its ask gives choices and more than one says "Recommended". Keep the word on the one you would pick, with a short reason why, and take it off the others' ;;
