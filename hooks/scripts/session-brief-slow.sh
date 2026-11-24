@@ -12,6 +12,8 @@
 #   live-app         the live app's one line, from the latest Live run
 #   mock-stale       mock-check.sh --stale's first six, joined
 #   hotspots         the hotspot line
+#   exceptions       how many setup exceptions from the plugin's shipped
+#                    copies this project holds, and the oldest (#2470)
 #   handoff-comment  the newest handoff on the drive issue, epoch and link
 #   answers          the builder's answers still owed, from the drive's answers.sh
 #   plugin-versions  released version and the installed copies' versions
@@ -96,6 +98,16 @@ if [ -f scripts/ci/hotspots.txt ] && [ -f scripts/ci/hotspots-lib.sh ] && [ "$ha
     ml_file="${SIPNSHIP_HOME:-$HOME/.sipnship}/runner-watch/machine.tsv"
     . "$here/session-brief-hotspots.sh"
   ) 2>/dev/null | keep hotspots &
+fi
+
+# How many setup exceptions from the plugin's shipped copies this project holds, and the oldest (#2470).
+# Only the plugin's home has scripts/ci/template-exceptions.txt; local git only.
+if [ -f scripts/ci/template-exceptions.txt ] && [ "$have_git" = yes ]; then
+  (
+    has() { return 0; }
+    add() { printf '%s\n' "$1"; }
+    . "$here/session-brief-exceptions.sh"
+  ) 2>/dev/null | keep exceptions &
 fi
 
 # The drive's proposal, from the board the hook read. Read-only. With no

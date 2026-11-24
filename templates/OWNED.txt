@@ -37,6 +37,7 @@ scripts/ci/checks-local.sh
 scripts/ci/hotspots-lib.sh
 scripts/ci/delete-check.sh
 scripts/ci/closes-check.sh
+scripts/ci/step-names-check.sh
 scripts/ci/numbering-check.sh
 scripts/ci/numbering-lib.sh
 scripts/ci/client-env-check.sh
@@ -98,6 +99,10 @@ scripts/ci/queue/due.sh
 scripts/ci/queue/rescue.sh
 scripts/ci/queue/wait.sh
 scripts/ci/queue/passed.sh
+scripts/ci/queue/attention.sh
+scripts/ci/queue/budget.sh
+scripts/ci/queue/lock.sh
+scripts/ci/queue/rules-said.sh
 scripts/ci/run-lib.sh
 scripts/ci/run-test-file.mjs
 scripts/ci/QUEUE.md
@@ -182,6 +187,8 @@ scripts/design/generate.mjs
 scripts/design/copy-extract.mjs
 scripts/design/screens.sh
 scripts/ci/design-check.sh
+scripts/ci/mock-check.sh
+scripts/ci/mock-lib.sh
 # The design source and its config are the project's: added once, never replaced.
 default design/tokens.json
 default design/icons.json
@@ -190,6 +197,7 @@ default design/README.md
 default scripts/ci/design-ui.txt
 default scripts/ci/design-allow.txt
 default scripts/ci/copy-allow.txt
+default scripts/ci/mocks.txt
 feature supabase
 scripts/supabase-create.sh
 scripts/env-lib.sh

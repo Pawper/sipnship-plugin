@@ -113,6 +113,13 @@ s_screens() {
     hs_line=$(with_age "$(cached hotspots)" "$sb_age")
     [ -z "$hs_line" ] || add "$hs_line"
   fi
+  # How many setup exceptions from the plugin's shipped copies this project
+  # holds, and the oldest (#2470): session-brief-exceptions.sh, run in the
+  # background, printed with its age.
+  if has leftover && [ -f scripts/ci/template-exceptions.txt ] && [ "$have_git" = yes ]; then
+    ex_line=$(with_age "$(cached exceptions)" "$sb_age")
+    [ -z "$ex_line" ] || add "$ex_line"
+  fi
   return 0
 }
 
