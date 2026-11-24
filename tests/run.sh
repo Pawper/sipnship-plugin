@@ -3332,6 +3332,16 @@ eq "22 and 0022 are the same number" "0022	22_a.sql 0022_b.sql" "$(duplicate_num
 m/0022_b.sql' 'm/*.sql')"
 eq "no duplicates, nothing" "" "$(duplicate_numbers 'm/0021_x.sql
 m/0022_y.sql' 'm/*.sql')"
+eq "two spec folders sharing a number" "0032	032-notifications 032-system-quality" "$(duplicate_numbers 'specs/031-explore/spec.md
+specs/032-notifications/spec.md
+specs/032-system-quality/spec.md
+specs/constitution.md' 'specs/*/spec.md')"
+eq "spec folders with distinct numbers" "" "$(duplicate_numbers 'specs/032-system-quality/spec.md
+specs/033-notifications/spec.md' 'specs/*/spec.md')"
+eq "a spec folder is numbered by its folder" "031
+033" "$(numbers_in 'specs/031-explore/spec.md
+specs/033-notifications/spec.md
+specs/constitution.md' 'specs/*/spec.md')"
 eq "running task numbers are found" "## 14. Add the exporter
 - [ ] 7: Fix the chime
 T12) Rename the page
