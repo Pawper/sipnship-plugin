@@ -41,8 +41,7 @@ ASK_NEXT="--- next comment ---"
 #   none           no comment carries an ask
 #   instructions   steps for the owner, marked "Instructions:" (no choice)
 #   actiondefer    two choices that are an action and a deferral
-#   putoff         a choice that is only to read it, or to decide later
-#   confirmation   choices that only say a fix works or does not ("Done", "Not right yet"), no decision in them
+#   putoff         a choice that is only to read it, or to decide later; confirmation, choices that only say a fix works ("Done", "Not right yet")
 #   question       a question with no choices
 #   one            choices, exactly one recommended
 #   unrecommended  choices, none recommended
@@ -118,14 +117,8 @@ ask_read() {
       sub(/[:.].*$/, "", s); sub(/[ 	]+$/, "", s)
       return s ~ /^(read([ ,].*)?|let me read([ ,].*)?|look at it( first| later)?|look it over|have a look|decide later|decide it later|i will decide later|later|not yet|think about it|let me think( about it)?)$/
     }
-    # A confirmation: a choice that only says a fix shows ("Done", "Yes, it works") or does not ("Not right yet", "Still wrong"). Same words as isConfirm in the core reader.
-    function confirm_kind(l,   s) {
-      s = tolower(plain(l)); sub(/^[0-9][0-9]?[.)][ \t]+/, "", s)
-      sub(/[ \t]*\(.*$/, "", s); sub(/[ \t]+[—-][ \t].*$/, "", s); sub(/[:.!,].*$/, "", s); s = trim(s)
-      if (s ~ /^(done|it works|it is working|works|looks good|it looks good|fixed|it is fixed|confirmed|yes|yes it works|yes it does|it is right)$/) return 1
-      if (s ~ /^(not right yet|not right|not yet|still wrong|still broken|still not right|not fixed|no|no it does not|it does not work|it is not right|not working)$/) return 2
-      return 0
-    }
+    function confirm_kind(l,   s) { s = tolower(plain(l)); sub(/^[0-9][0-9]?[.)][ \t]+/, "", s); sub(/[ \t]*\(.*$/, "", s); sub(/[ \t]+[—-][ \t].*$/, "", s); sub(/[:.!,].*$/, "", s); s = trim(s)
+      return s ~ /^(done|it works|it is working|works|looks good|it looks good|fixed|it is fixed|confirmed|yes|yes it works|yes it does|it is right)$/ ? 1 : s ~ /^(not right yet|not right|not yet|still wrong|still broken|still not right|not fixed|no|no it does not|it does not work|it is not right|not working)$/ ? 2 : 0 }
     # A choice split as the card splits it (choiceOf in the core reader): the
     # word "Recommended" taken out, then the words before a colon within 60
     # characters, else the first sentence. Sets NAME and REASON.
@@ -241,8 +234,7 @@ ask_read() {
           for (k = at + 1; k <= n; k++) if (is_choice(L[k])) { c2 = cname(L[k]); break }
           if ((is_go(c1) && has_action(c1) && is_defer(c2)) || (is_go(c2) && has_action(c2) && is_defer(c1))) return "actiondefer"
         }
-        if (cyes > 0 && cno > 0 && cyes + cno == items) return "confirmation"
-        if (offs > 0) return "putoff"
+        if (cyes > 0 && cno > 0 && cyes + cno == items) return "confirmation"; if (offs > 0) return "putoff"
         if (recs == 1 && check == 1 && (w = wording(L, L[before], at, n)) != "") return w
         return recs == 1 ? "one" : recs == 0 ? "unrecommended" : "several"
       }

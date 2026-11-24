@@ -303,6 +303,9 @@ The goal lines and what each means:
   line saying so and build nothing; your own token is not a reason to stop.
   The brief also says: push your branch at your first commit (`git push -u origin HEAD`), so the card on Work shows the
   branch within minutes and nothing is lost when the run ends at its time limit; push again as you go (#2437).
+  A session shows on an issue only when it works that issue (it holds the claim, or is in a worktree or on a branch
+  for it): the drive's own session, which plans and starts agents, is the drive on the round, never an agent on
+  each issue it only read, and two runs at once report under their own identities side by side (#2633).
   The brief also says: once the pull request is open, check that it can merge (its mergeable state, not the
   checks); a push that lands on main while you worked can make yours conflict, and GitHub starts no checks on
   a pull request that conflicts, so waiting for them would wait forever (#2096). When it conflicts, merge
@@ -565,6 +568,24 @@ Three kinds, three moves, never a fourth.
    on a decision the owner has stated.
 3. **Work outside the goal's own words**: file a new issue with a State label and leave it. Never widen the
    round. Widening is a new proposal, next round.
+
+**What waits on the builder.** Needs you holds three kinds of thing and no other: a decision, a design to read,
+and a step only the builder can do. Never set an issue to waiting on the builder to ask whether a fix works
+("Done" or "Not right yet"): that is a confirmation, and the ask check refuses it, naming why. A fix closes when
+it is built and its tests pass and, where it is a screen, when whoever lands it has seen it on the live page; the
+builder reports anew if it is wrong. Never write "stays open until the owner says it shows" in a brief or an
+issue. Answering Done on a step ends the step: the issue moves on to what the steps unblock, or closes when
+nothing is left, and never goes back to Ready as if unbuilt. The nightly audit names any confirmation ask that
+reached the builder another way.
+
+**A design's approval leaves its build.** A design opened for a read names the issue that holds its build in its
+description from the start (a `Build: #N` line, or a new Ready issue filed with the design when none exists), and
+the check that reads the description says so when it names none. When the builder approves a design, make sure,
+before the design lands, that its build has an open, ready issue: the one the design names, or a new one titled
+for the build, naming the spec and carrying what the builder said when approving ("Maya wants the frost alert
+to reach her phone first"). The design's own issue closes when the design lands; the build must never exist only
+in what was said on approving. The approval's card says what happens next in plain words ("Your agent builds it
+from this design"), with the build as a row.
 
 **How to write an ask.** Whoever sets `state:waiting-on-owner`, the drive or a coordinator, leaves one comment
 the dashboard reads onto the issue's Needs you card. Its reader is the builder the mission names: someone who
