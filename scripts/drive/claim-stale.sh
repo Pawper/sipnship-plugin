@@ -103,16 +103,29 @@ found=0; own_freed=""; own_left=""; own_built=0
 for n in $cands; do
   comments=$(gh api "repos/{owner}/{repo}/issues/$n/comments?per_page=100&sort=created&direction=desc" --jq '[.[] | select(.body | test("^Claim(: | released: )"))] | reverse | .[] | [.id, (.created_at | fromdateiso8601), (.body | split("\n")[0]), ((.body | capture("(?m)^Run: (?<r>[0-9]+)$")?.r) // "")] | @tsv' 2>/dev/null)
   runs=$(claim_run_ids "$comments")
-  [ -n "$runs" ] || continue
   rawwin=$(claim_winner "$comments" "$(date +%s)" "$ttl" "")
   [ -n "$rawwin" ] || continue
+  idle_run=no
+  if [ -z "$runs" ]; then
+    # A claim naming no run is released by itself only when it has sat idle: older than CLAIM_IDLE_MINUTES (ninety)
+    # with no open pull request, no branch named for the issue and no note on it since (#2847). Anything less is
+    # a person or an agent still starting, and is left exactly as it was.
+    idle=$(claim_idle "$comments" "$(date +%s)" "$ttl" $(( ${CLAIM_IDLE_MINUTES:-90} * 60 )))
+    [ -n "$idle" ] || continue
+    idle_at=$(printf '%s' "$idle" | cut -f2)
+    printf '%s\n' "$pulls" | tr -d '\r' | awk -F'\t' -v n="$n" '{ k = split($2, a, ","); for (i = 1; i <= k; i++) if (a[i] == n) f = 1 } END { exit !f }' && continue
+    [ -z "$( { gitb ls-remote --heads origin "issue-$n" "issue-$n-*" "fix-$n" 2>/dev/null; git branch --list "issue-$n" "issue-$n-*" "fix-$n" 2>/dev/null; } )" ] || continue
+    note_at=$(gh api "repos/{owner}/{repo}/issues/$n/comments?per_page=100&sort=created&direction=desc&note=1" --jq '[.[] | select(.body | test("^Claim(: | released: )") | not)] | first | (.created_at // "") | if . == "" then 0 else fromdateiso8601 end' 2>/dev/null | tr -d '\r')
+    [ "${note_at:-0}" -lt "$idle_at" ] 2>/dev/null || continue
+    idle_run=yes
+  fi
   ended=""
   for r in $runs; do
     if run_ended "$r"; then ended="$ended
 $r"; fi
   done
   win=$(claim_winner "$comments" "$(date +%s)" "$ttl" "$ended")
-  [ -z "$win" ] || continue
+  [ -z "$win" ] || [ "$idle_run" = yes ] || continue
   # A claim made by this very run (#2561); with no branch and no open pull request, this tick claimed it and built nothing.
   own=no
   if [ -n "${CLAIM_STALE_OWN_RUN:-}" ] && printf '%s\n' "$comments" | tr -d '\r' | awk -F'\t' -v r="$CLAIM_STALE_OWN_RUN" '$4 == r { f = 1 } END { exit !f }'; then own=yes; fi
@@ -142,7 +155,8 @@ $r"; fi
       continue
     fi
     rescued=""; [ "$kind" = ready ] && rescued=$(rescue_agent_side "$n")
-    if [ "$state" = closed ]; then words="The run that made this claim has ended, and the issue is closed, so nothing is left on it; the claim is released (#2716)."
+    if [ "$idle_run" = yes ]; then words="This claim named no run, and for more than ${CLAIM_IDLE_MINUTES:-90} minutes no agent, branch, pull request or note has followed it, so nobody is on the issue; the claim is released (#2847)."
+    elif [ "$state" = closed ]; then words="The run that made this claim has ended, and the issue is closed, so nothing is left on it; the claim is released (#2716)."
     elif [ -n "$pr" ]; then words="The run that made this claim has ended. Its change, pull request #$pr, is still open and carries the issue, so its State stays as it is; the claim is released (#2716)."
     elif [ "$kind" = ready ] && [ "$own" = yes ] && [ -z "$rescued" ]; then words="This drive run claimed the issue and ended with nothing pushed for it, so the claim is released before the run ends. It is in Ready, and the next round can start it (#2716)."
     elif [ "$kind" = ready ]; then words="The run that made this claim has ended, with nothing pushed for this issue, and nobody is on it. It is in Ready, and the next round can start it (#2716)."
@@ -179,6 +193,7 @@ $(agentside_rescue_note "$n" "$rb" "$rc" "$rf")"
     released_words="This drive tick claimed the issue and ended without building anything, so the claim is freed before the tick ends (#2561)."
     freed_said=" Nothing was built and nothing is on it; it is back to Ready, and the next round can pick it up."
   fi
+  [ "$idle_run" != yes ] || released_words="This claim named no run, and for more than ${CLAIM_IDLE_MINUTES:-90} minutes no agent, branch, pull request or note has followed it, so nobody is on the issue; the claim is released and it is back to Ready (#2847)."
   gh api -X POST "repos/{owner}/{repo}/issues/$n/comments" -f "body=Claim released: $rawwin
 ${released_words}${rescue_said}" >/dev/null 2>&1
   have=$(gh api "repos/{owner}/{repo}/issues/$n/labels" --jq '.[].name' 2>/dev/null)

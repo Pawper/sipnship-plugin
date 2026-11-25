@@ -25,10 +25,11 @@
 # requests' runs. When a check fails, "checks" cancels its own run, so a
 # doomed run costs only the jobs already started.
 #
-# On self-hosted runners, one runner can be kept for the batch and main:
+# On self-hosted runners, machines can be kept for the batch and main:
 # give each pull-request job (checks, app, tests, screens, CI passed) the
 # runs-on expression in scripts/ci/RUNNERS.md ("One runner kept for the
-# batch and main"), and the merge queue keeps the runners' labels itself.
+# batch and main"), which sends a batch's jobs to the kept machines first,
+# and the merge queue keeps the runners' labels itself.
 #
 # RUNS_ON is the runner label for every job here. ubuntu-latest for hosted
 # runners; [self-hosted, windows] for a studio's own machines. The gh-only

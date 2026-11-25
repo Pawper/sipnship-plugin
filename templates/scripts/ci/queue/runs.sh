@@ -94,7 +94,10 @@ runner_labels_keep() {
     rk_runs=$(gh_write api "repos/{owner}/{repo}/actions/workflows/ci.yml/runs?event=pull_request&status=success&per_page=100" --jq '.workflow_runs[].head_sha' 2>/dev/null | tr -d '\r') || rk_runs=""
     rk_green=$(green_waiting "$rk_pulls" "$rk_runs"); rk_landing=$(landing_now "$rk_pulls")
     rk_want=$(keep_count "$rk_online" "$rk_green" "$rk_landing")
-    say "runners: $(keep_why "$rk_online" "$rk_green" "$rk_landing")"
+    rk_why=$(keep_why "$rk_online" "$rk_green" "$rk_landing")
+    # Called again at each round of a drain, so the labels follow the line (#2856): the reason is said only when it changed.
+    [ "$rk_why" = "${rk_last_why:-}" ] || say "runners: $rk_why"
+    rk_last_why=$rk_why
     rk_plan=$(runner_label_plan "$rk_list" "$rk_want")
     kept_say "$rk_want" > "$flaky_dir/runner-kept" 2>/dev/null || true
     while IFS="$tab" read -r rk_do rk_id rk_name; do
@@ -105,6 +108,15 @@ runner_labels_keep() {
     done <<RKPLAN
 $rk_plan
 RKPLAN
+    # The kept machines also carry "kept", so a batch's jobs ask for them by name; planned from the labels just set.
+    rk_kplan=$(kept_label_plan "$(plan_applied "$rk_list" "$rk_plan")")
+    while IFS="$tab" read -r rk_do rk_id rk_name; do
+      [ -n "$rk_do" ] || continue
+      if [ "$rk_do" = add ]; then gh_write api -X POST "repos/{owner}/{repo}/actions/runners/$rk_id/labels" -f "labels[]=$KEPT_LABEL" >/dev/null 2>&1 || rk_ok=no
+      else gh_write api -X DELETE "repos/{owner}/{repo}/actions/runners/$rk_id/labels/$KEPT_LABEL" >/dev/null 2>&1 || rk_ok=no; fi
+    done <<RKKPLAN
+$rk_kplan
+RKKPLAN
   fi
   rk_set=$(keep_runner_var "$rk_ok" "$rk_var")
   if [ -n "$rk_set" ] && ! set_repo_var CI_KEEP_RUNNER "$rk_set"; then rk_set="$rk_set (could not set it)"; fi
