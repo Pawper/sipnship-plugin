@@ -777,7 +777,9 @@ before they can push anything. So in that tick, and only there:
    that has since completed, with no open pull request on it, is released and set back to Ready, with one
    line saying so, carried into this tick's report rather than said as "nothing to do" (#2328). A claim made
    outside GitHub Actions (a person's session, the desktop app) names no run and is never touched by this; its
-   four-hour TTL still governs, as before.
+   four-hour TTL still governs, as before. A claim in any other State is read too, closed issues included: it
+   is released, saying what happened, and the State kept, so no round waits on an issue whose only holder is a
+   run that is over (#2716).
 7. **A look never waits behind an agent's work (#2443).** The wake is two jobs, not one: the look (`wake-check.sh`:
    the plan, stalled claims, requests, what is approved) runs on the project's CI runners in seconds and has a place
    in line of its own, so a look every ten minutes runs whatever agents are working; the work (this tick, the model

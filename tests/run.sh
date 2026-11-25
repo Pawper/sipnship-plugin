@@ -9093,9 +9093,11 @@ case "$method $url" in
   "GET repos/{owner}/{repo}/issues/"[0-9]*"/comments"*) n=${url#*issues/}; n=${n%%/*}; cat "$FAKE/comments-$n" 2>/dev/null ;;
   "GET repos/{owner}/{repo}/actions/runs/"*) rid=${url##*/}; awk -F'\t' -v r="$rid" '$1 == r { print $2 }' "$FAKE/runs" 2>/dev/null ;;
   "GET repos/{owner}/{repo}/issues/"[0-9]*"/labels") n=${url#*issues/}; n=${n%%/*}; cat "$FAKE/labels-$n" 2>/dev/null ;;
-  "POST repos/{owner}/{repo}/issues/"[0-9]*"/comments") n=${url#*issues/}; n=${n%%/*}; printf '%s\t%s\n' "$n" "$(printf '%s' "$args" | sed -n 's/^body=//p' | head -n 1)" >> "$FAKE/posted" ;;
+  "POST repos/{owner}/{repo}/issues/"[0-9]*"/comments") n=${url#*issues/}; n=${n%%/*}; printf '%s\t%s\n' "$n" "$(printf '%s' "$args" | sed -n 's/^body=//p' | head -n 1)" >> "$FAKE/posted"; printf '%s\t%s\n' "$n" "$(printf '%s' "$args" | tr '\n' ' ')" >> "$FAKE/bodies" ;;
   "DELETE repos/{owner}/{repo}/issues/"[0-9]*"/labels/"*) echo "delete $url" >> "$FAKE/posted" ;;
   "POST repos/{owner}/{repo}/issues/"[0-9]*"/labels") n=${url#*issues/}; n=${n%%/*}; printf '%s\tlabel\t%s\n' "$n" "$(printf '%s' "$args" | sed -n 's/^labels\[\]=//p')" >> "$FAKE/posted" ;;
+  "GET repos/{owner}/{repo}/issues/comments?"*) echo "$url" >> "$FAKE/asked"; cat "$FAKE/claimed" 2>/dev/null ;;
+  "GET repos/{owner}/{repo}/issues/"[0-9]*) n=${url##*/}; cat "$FAKE/issue-$n" 2>/dev/null ;;
 esac
 CSGHEOF
 chmod +x "$cs_dir/bin/gh"
@@ -9104,7 +9106,7 @@ cs_now=$(date +%s)
 printf '317\n' > "$cs_dir/inprog"; : > "$cs_dir/closes"; : > "$cs_dir/runs"; : > "$cs_dir/posted"
 printf '901\t%s\tClaim: drive-5\t555\n' "$((cs_now - 60))" > "$cs_dir/comments-317"
 echo "state:in-progress" > "$cs_dir/labels-317"
-eq "its run still going: not reported, and nothing is written" "claim-stale: every In progress issue either has an open pull request, a live claim, or no claim naming a run." "$(cs_run)"
+eq "its run still going: not reported, and nothing is written" "claim-stale: no claim is held by a run that has ended." "$(cs_run)"
 eq "nothing posted while the run has not ended" "" "$(cat "$cs_dir/posted")"
 printf '555\tcompleted\n' > "$cs_dir/runs"
 eq "its run has ended: the dry run says it would be freed" "claim-stale: issue #317 is In progress under a claim (drive-5) whose run has ended, with no open pull request; it would be freed, back to Ready." "$(cs_run)"
@@ -9119,11 +9121,11 @@ echo "state:in-progress" > "$cs_dir/labels-318"
 printf '555\tcompleted\n556\tin_progress\n' > "$cs_dir/runs"
 eq "an issue whose claim's run is still going is left alone" "0" "$(cs_run --apply >/dev/null; grep -c '^318' "$cs_dir/posted")"
 printf '317\n' > "$cs_dir/inprog"; : > "$cs_dir/posted"
-printf '55,317\n' > "$cs_dir/closes"
-eq "an issue an open pull request already closes is left alone, whatever its claim" "claim-stale: every In progress issue either has an open pull request, a live claim, or no claim naming a run." "$(cs_run)"
+printf '40\t55,317\n' > "$cs_dir/closes"
+eq "an issue an open pull request already closes keeps its State, though its ended run's claim is released" "claim-stale: issue #317 holds a claim (drive-5) whose run has ended; it would be released (its open pull request #40 carries it, so its State stays as it is)." "$(cs_run)"
 : > "$cs_dir/closes"
 printf '903\t%s\tClaim: maya\n' "$((cs_now - 60))" > "$cs_dir/comments-317"
-eq "a claim naming no run (a person's or the desktop app's own) is never called stale here" "claim-stale: every In progress issue either has an open pull request, a live claim, or no claim naming a run." "$(cs_run)"
+eq "a claim naming no run (a person's or the desktop app's own) is never called stale here" "claim-stale: no claim is held by a run that has ended." "$(cs_run)"
 # The same job, right after the step that dispatched the agent (drive-wake.yml, "Free any agent this tick
 # left running"): its own run has not completed yet, so nothing asks GitHub about it; CLAIM_STALE_OWN_RUN
 # names it directly.
@@ -9139,7 +9141,38 @@ cs_three=$(cd "$cs_dir" && FAKE="$cs_dir" CLAIM_STALE_OWN_RUN=888 GITHUB_STEP_SU
 eq "a tick that claimed three and built nothing frees all three before it ends" "3" "$(printf '%s\n' "$cs_three" | grep -c '^claim-stale: freed issue #40[123] ')"
 eq "each is back to Ready and says plainly that nothing was built" "3 3" "$(grep -c '^40[123]	label	state:ready$' "$cs_dir/posted") $(grep -c 'ended before any work was pushed, so nothing was built' "$cs_dir/posted")"
 eq "the run's summary names what it claimed and that it built nothing, and the log carries the same line" "1 1" "$(grep -c 'This tick claimed #401 #402 #403 and built nothing' "$cs_sum") $(printf '%s\n' "$cs_three" | grep -c '^claim-stale: This tick claimed #401 #402 #403 and built nothing')"
-eq "a run that is not this one still needs the real read" "claim-stale: every In progress issue either has an open pull request, a live claim, or no claim naming a run." "$(cs_dir2=$cs_dir; printf '317\n' > "$cs_dir2/inprog"; : > "$cs_dir2/posted"; printf '905\t%s\tClaim: drive-9\t778\n' "$cs_now" > "$cs_dir2/comments-317"; cd "$cs_dir2" && FAKE="$cs_dir2" CLAIM_STALE_OWN_RUN=777 PATH="$cs_dir2/bin:$PATH" sh "$root/scripts/drive/claim-stale.sh" --apply)"
+eq "a run that is not this one still needs the real read" "claim-stale: no claim is held by a run that has ended." "$(cs_dir2=$cs_dir; printf '317\n' > "$cs_dir2/inprog"; : > "$cs_dir2/posted"; printf '905\t%s\tClaim: drive-9\t778\n' "$cs_now" > "$cs_dir2/comments-317"; cd "$cs_dir2" && FAKE="$cs_dir2" CLAIM_STALE_OWN_RUN=777 PATH="$cs_dir2/bin:$PATH" sh "$root/scripts/drive/claim-stale.sh" --apply)"
+# #2716, from the day's own state kept as a fixture: a drive run claimed an issue in Ready, bundled it with two others,
+# landed that bundle's change (which closed the two) and ended, never releasing the claim on the one it left open. Its
+# State was Ready, not In progress, so no look ever read it, and the round waited an hour on an issue "nobody is on".
+: > "$cs_dir/inprog"; : > "$cs_dir/posted"; : > "$cs_dir/bodies"; : > "$cs_dir/closes"; : > "$cs_dir/asked"
+printf '620\n' > "$cs_dir/claimed"
+printf 'open\tstate:ready\n' > "$cs_dir/issue-620"; echo "state:ready" > "$cs_dir/labels-620"
+printf '920\t%s\tClaim: drive-620\t45592277483\n' "$((cs_now - 3600))" > "$cs_dir/comments-620"
+printf '45592277483\tcompleted\n' > "$cs_dir/runs"
+eq "an issue in Ready under a claim whose run has ended is found by a later look, not only one In progress" "claim-stale: released the claim on #620 (claim drive-620, its run ended); it was already in Ready, so the next round can start it." "$(cs_run --apply)"
+eq "a look reads every claim made within the claim's four hours, whatever the State" "1" "$(grep -c 'issues/comments?since=' "$cs_dir/asked")"
+eq "the claim is released by name and its State is not touched" "1 0" "$(grep -c '^620	Claim released: drive-620$' "$cs_dir/posted") $(grep -c 'label\|delete' "$cs_dir/posted")"
+eq "the release says plainly what happened" "1" "$(grep -c 'The run that made this claim has ended, with nothing pushed for this issue' "$cs_dir/bodies")"
+: > "$cs_dir/posted"; : > "$cs_dir/bodies"; printf '45592277483\tin_progress\n' > "$cs_dir/runs"
+eq "a claim in Ready whose run is still going is left alone" "0" "$(cs_run --apply >/dev/null; wc -l < "$cs_dir/posted" | tr -d ' ')"
+# The same run's own last step: it releases every claim it made, whatever happened to each issue.
+: > "$cs_dir/posted"; : > "$cs_dir/bodies"; : > "$cs_dir/runs"; cs_sum2="$cs_dir/summary2"; : > "$cs_sum2"
+printf '620\n621\n622\n' > "$cs_dir/claimed"
+for cs_i in 620 621 622; do printf '9%s\t%s\tClaim: drive-%s\t999\n' "$cs_i" "$((cs_now - 3600))" "$cs_i" > "$cs_dir/comments-$cs_i"; done
+printf 'closed\t\n' > "$cs_dir/issue-621"; printf 'closed\t\n' > "$cs_dir/issue-622"
+cs_end=$(cd "$cs_dir" && FAKE="$cs_dir" CLAIM_STALE_OWN_RUN=999 GITHUB_STEP_SUMMARY="$cs_sum2" PATH="$cs_dir/bin:$PATH" sh "$root/scripts/drive/claim-stale.sh" --apply)
+eq "a run that ends releases every claim it made, on the issues its change closed too" "3" "$(grep -c '^62[012]	Claim released: drive-62[012]$' "$cs_dir/posted")"
+eq "each says what was done: the closed ones that nothing is left, the open one that nothing was pushed for it" "2 1" "$(grep -c 'the issue is closed, so nothing is left on it' "$cs_dir/bodies") $(grep -c 'This drive run claimed the issue and ended with nothing pushed for it' "$cs_dir/bodies")"
+eq "no State is touched, and a run whose change landed is not called one that built nothing" "0 0" "$(grep -c 'label\|delete' "$cs_dir/posted") $(printf '%s\n' "$cs_end" | grep -c 'built nothing')"
+eq "the run's summary names the issue it left open" "1" "$(grep -c 'left #620 open with nothing pushed for it' "$cs_sum2")"
+# Any other State (here waiting on the builder) is left as it is; only the claim goes.
+: > "$cs_dir/posted"; : > "$cs_dir/bodies"; printf '623\n' > "$cs_dir/claimed"; printf '999\tcompleted\n' > "$cs_dir/runs"
+printf 'open\tstate:waiting-on-owner\n' > "$cs_dir/issue-623"; echo "state:waiting-on-owner" > "$cs_dir/labels-623"
+printf '9623\t%s\tClaim: drive-623\t999\n' "$((cs_now - 3600))" > "$cs_dir/comments-623"
+eq "an issue waiting on the builder keeps its State; the ended run's claim is released" "claim-stale: released the claim on #623 (claim drive-623, its run ended); its State stays as it is." "$(cs_run --apply)"
+eq "and nothing but the release is written" "1 0" "$(grep -c '^623	Claim released: drive-623$' "$cs_dir/posted") $(grep -c 'label\|delete' "$cs_dir/posted")"
+: > "$cs_dir/claimed"
 
 # #2336, left over from #2328: real work a freed issue's agent already made is rescued to a side branch
 # before it is lost, named in the claim's release comment.
