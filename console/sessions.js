@@ -326,7 +326,9 @@ const ENDED_SLACK_MS = 10 * 1000;
  * newest first, for the repository at root. logsDir is the runtime's log
  * folder (default ~/.claude/projects); worktrees may be given for tests.
  */
-function readSessions({ root, logsDir, worktrees, localModels, now = Date.now(), endedFile } = {}) {
+function readSessions({ root, logsDir, worktrees, localModels, now = Date.now(), endedFile, signIn } = {}) {
+  // How this machine's agent signed in, said once for every session of a hosted model: a plan, a key or not known.
+  const billing = signIn || require('./billing').claudeSignIn();
   const dir = logsDir || path.join(os.homedir(), '.claude', 'projects');
   const trees = worktrees || worktreesOf(root);
   const ended = endedAgents(endedFile || path.join(require('./tokens').home(), 'brief-send', 'agents-ended.tsv'));
@@ -372,6 +374,7 @@ function readSessions({ root, logsDir, worktrees, localModels, now = Date.now(),
       const note = startedWith(root, s.worktree.name);
       if (note.how) s.startedWith = note.how;
       if (note.category) s.category = note.category;
+      if (!isLocal(s.model)) Object.assign(s, billing);
       out.push({ ...s, _at: at });
     }
   }
