@@ -297,4 +297,7 @@ summary_note
 health_note
 wake_note
 # The proposal is published by this run itself, never left to the round's model (propose-lib.sh, #2101): the report carries this line.
-publish_proposal "$round" "$units" "$areas_text" "$facts" "$sized_said" "$stall_said"
+# RUNNING and TITLES let publish_proposal read the round back the way publish-round.sh will before it goes out
+# (round_areas_safe, #2820): a unit whose area only shows once its files are resolved against the project's own
+# list is held behind the running unit that owns it, instead of the whole round being refused for the one unit.
+publish_proposal "$round" "$units" "$areas_text" "$facts" "$sized_said" "$stall_said" "${run_units:-}" "${issue_titles:-}"
