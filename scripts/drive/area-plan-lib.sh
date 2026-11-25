@@ -98,9 +98,12 @@ area_units() {
     $1 == "U" && $2 != "unit" && $2 != "" { line[++L] = "o"; other[L] = $2 "\t" $3 "\t" $4 "\t" $5 }
     END {
       cap = (ENVIRON["PLAN_BUNDLE_MAX"] + 0 > 0) ? ENVIRON["PLAN_BUNDLE_MAX"] + 0 : 4  # a bundle is a few issues; past it the rest stay loose units (#1891)
+      bmax = (ENVIRON["PLAN_BROAD_AREAS"] + 0 > 0) ? ENVIRON["PLAN_BROAD_AREAS"] + 0 : 6
       for (i = 1; i <= n; i++) {
         held[i] = ""
         if (listed_all(num[i])) continue  # its own Touches line is the literal truth; areas alone never hold it (#2452)
+        # A unit that names no files is only guessed (a bare folder such as plugin/), and a guess that reaches many areas is every area at once: it clashes with whatever runs and the publisher refuses the whole round. It is held alone, so the rest of the round publishes (#2766).
+        if (split(ar[i], broad, ",") > bmax) { held[i] = "Its files are not known: it names none, and the guess spans " split(ar[i], broad, ",") " areas. The agent'"'"'s turn: name its files on its first line (Touches: PATH PATH) to place it"; continue }
         for (k = 1; k <= r; k++) if (!inrun(num[i], ri[k]) && (am = meet(ar[i], ra[k])) != "") {
           first = ri[k]; sub(/[ ,].*/, "", first)
           wo = ri[k]; gsub(/[ ,]+/, " ", wo)  # the issues of the running unit, so a reader can tell when the wait ended
