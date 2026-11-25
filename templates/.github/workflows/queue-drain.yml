@@ -76,7 +76,8 @@ concurrency:
 jobs:
   drain:
     if: ${{ vars.QUEUE_RUNS_ON != '' && !contains(vars.QUEUE_RUNS_ON, 'windows') && (github.event_name != 'workflow_run' || (github.event.workflow_run.event == 'pull_request' && (github.event.workflow_run.conclusion == 'success' || github.event.workflow_run.conclusion == 'failure' || (startsWith(github.event.workflow_run.head_branch, 'batch-') && contains(fromJSON('["failure", "cancelled", "timed_out"]'), github.event.workflow_run.conclusion))))) }}
-    runs-on: ${{ vars.QUEUE_RUNS_ON || 'self-hosted' }}
+    # A value written as a list (`["self-hosted","windows"]`) is read as a list, a plain label as one label (#2778).
+    runs-on: ${{ startsWith(vars.QUEUE_RUNS_ON, '[') && fromJSON(vars.QUEUE_RUNS_ON) || vars.QUEUE_RUNS_ON || 'self-hosted' }}
     timeout-minutes: 60
     defaults:
       run:
@@ -203,7 +204,7 @@ jobs:
 
   drain-windows:
     if: ${{ (vars.QUEUE_RUNS_ON == '' || contains(vars.QUEUE_RUNS_ON, 'windows')) && (github.event_name != 'workflow_run' || (github.event.workflow_run.event == 'pull_request' && (github.event.workflow_run.conclusion == 'success' || github.event.workflow_run.conclusion == 'failure' || (startsWith(github.event.workflow_run.head_branch, 'batch-') && contains(fromJSON('["failure", "cancelled", "timed_out"]'), github.event.workflow_run.conclusion))))) }}
-    runs-on: [self-hosted, "${{ vars.QUEUE_RUNS_ON || 'windows' }}"]
+    runs-on: ${{ startsWith(vars.QUEUE_RUNS_ON, '[') && fromJSON(vars.QUEUE_RUNS_ON) || fromJSON(format('["self-hosted","{0}"]', vars.QUEUE_RUNS_ON || 'windows')) }}
     timeout-minutes: 60
     defaults:
       run:
