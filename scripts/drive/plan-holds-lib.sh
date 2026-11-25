@@ -17,15 +17,16 @@ drop_asks_for_after_holds() {
     }'
 }
 
-# hold_for_publish_view AREAS UNITS COMMENTS INPROG RUN_UNITS TITLES
+# hold_for_publish_view AREAS UNITS COMMENTS SNAPSHOT RUN_UNITS TITLES
 # The plan frees a running unit that evidence says nobody is on (RUN_UNITS leaves it out), but
 # publish-round.sh reads "running" from the round's comments and the In progress labels alone, and
 # refuses a unit in the area of any unit it counts. So that the round still publishes, a unit publish
 # counts and the plan did not is read once more as running, and a ready unit in its area becomes a
-# hold behind it rather than a proposal publish refuses (#2710). INPROG is every issue labeled In
-# progress, one a line.
+# hold behind it rather than a proposal publish refuses (#2710). SNAPSHOT is the plan's snapshot
+# lines; every issue it shows In progress counts, as the label does for publish.
 hold_for_publish_view() {
-  hp_extra=$(printf '%s\n' "$(running_units "$3" "$4")" | awk -v have="$(printf '%s\n' "$5" | tr '\n' '~')" '
+  hp_inprog=$(printf '%s\n' "$4" | awk -F'\t' '$1 == "issue" && $4 == "in-progress" { print $2 }')
+  hp_extra=$(printf '%s\n' "$(running_units "$3" "$hp_inprog")" | awk -v have="$(printf '%s\n' "$5" | tr '\n' '~')" '
     BEGIN { n = split(have, a, "~"); for (i = 1; i <= n; i++) if (a[i] != "") seen[a[i]] = 1 }
     NF && !($0 in seen)')
   if [ -z "$hp_extra" ]; then printf '%s\n' "$2"; else area_units "$1" "$2" "$hp_extra" "$6"; fi
