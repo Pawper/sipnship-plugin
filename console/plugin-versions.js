@@ -40,6 +40,22 @@ function releasedFrom(home) {
   } catch { return undefined; }
 }
 
+/**
+ * How many of this project's shipped files the last sync report found older than the plugin's, and how many the builder
+ * changed (#2703). Read from what that report kept inside .git, and only while it still holds: the same plugin version and
+ * the same commit. Nothing is run beyond one git call; when it cannot tell, nothing is said.
+ */
+function shippedFrom(root, installed) {
+  try {
+    const kept = JSON.parse(fs.readFileSync(path.join(root, '.git', 'sipnship-shipped.json'), 'utf8'));
+    if (!installed || kept.version !== installed) return undefined;
+    const head = require('child_process').execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, timeout: 3000, encoding: 'utf8' }).trim();
+    if (!head || kept.head !== head) return undefined;
+    const whole = (n) => Number.isInteger(n) && n >= 0 && n < 100000;
+    return whole(kept.older) && whole(kept.edited) ? { older: kept.older, edited: kept.edited } : undefined;
+  } catch { return undefined; }
+}
+
 /** {installed, released, repository} for this machine and project, or undefined when none is known. */
 function read({ root = process.cwd(), env = process.env } = {}) {
   const home = env.SIPNSHIP_HOME || path.join(os.homedir(), '.sipnship');
@@ -47,10 +63,12 @@ function read({ root = process.cwd(), env = process.env } = {}) {
   const repository = versionOf(path.join(root, 'plugin', '.claude-plugin', 'plugin.json'));
   const released = releasedFrom(home);
   const out = {};
+  const shipped = shippedFrom(root, installed);
+  if (shipped) out.shipped = shipped;
   if (installed) out.installed = installed;
   if (released) out.released = released;
   if (repository) out.repository = repository;
   return Object.keys(out).length ? out : undefined;
 }
 
-module.exports = { read, versionOf, releasedFrom };
+module.exports = { read, versionOf, releasedFrom, shippedFrom };
