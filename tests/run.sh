@@ -5372,6 +5372,14 @@ hv_one=$(
   ( batch_red batch-test "$(printf '41\ta\n')" "" ) 2>&1 | tr '\n' '|'
 )
 eq "a red batch of one is not halved" "yes" "$(printf '%s' "$hv_one" | grep -q 'not green; nothing merged' && ! printf '%s' "$hv_one" | grep -q 'ran:' && echo yes)"
+bc_tab=$(printf '\t')
+eq "a closed batch names the job that really failed" "yes" "$(batch_closed_say "checks${bc_tab}failure
+tests (web)${bc_tab}cancelled
+CI passed${bc_tab}failure" | grep -q 'failed in: checks\.' && echo yes)"
+bc_stopped=$(batch_closed_say "checks${bc_tab}cancelled
+tests (web)${bc_tab}cancelled
+CI passed${bc_tab}failure")
+eq "a batch whose checks were only stopped is never called not green" "yes" "$(printf '%s' "$bc_stopped" | grep -q 'were stopped' && ! printf '%s' "$bc_stopped" | grep -qi 'not green' && echo yes)"
 eq "the queue loads the halving module and the batch's red path calls it" "1 1" "$(grep -c 'queue/halve.sh' "$root/templates/scripts/ci/merge-queue.sh") $(grep -c 'batch_red "\$branch" "\$carried" "\$dropped"' "$root/templates/scripts/ci/queue/batch.sh")"
 eq "the plugin's template copies of the gate match the project's" "same same" "$(cmp -s "$root/templates/scripts/ci/gate-lib.sh" "$root/../scripts/ci/gate-lib.sh" && echo same || echo differ) $(cmp -s "$root/templates/scripts/ci/gate.sh" "$root/../scripts/ci/gate.sh" && echo same || echo differ)"
 
@@ -7274,6 +7282,10 @@ eq "a unit that is part of the running unit is left alone" "unit${da_t}301${da_t
 eq "two ready issues in one area become one unit" "unit${da_t}402 404${da_t}Water the beds on a timer | Fix the schedule page${da_t}both change the watering area${da_t}src/water/timer.ts,src/schedule.ts" "$(area_units "$da_list" "$(printf 'unit\t402\tWater the beds on a timer\t\tsrc/water/timer.ts\nunit\t404\tFix the schedule page\t\tsrc/schedule.ts\n')" '' "$da_titles")"
 eq "two ready issues in the tooling area become one unit" "unit${da_t}405 406${da_t}Tune the build | Fix the scripts${da_t}both change the tooling area${da_t}ci/a.sh,scripts/b.sh" "$(area_units "$da_list" "$(printf 'unit\t405\tTune the build\t\tci/a.sh\nunit\t406\tFix the scripts\t\tscripts/b.sh\n')" '' "$da_titles")"
 eq "three issues a partial landing returned to Ready, one area, come out as one unit" "unit${da_t}402 404 407" "$(area_units "$da_list" "$(printf 'unit\t402\tWater the beds on a timer\t\tsrc/water/timer.ts\nunit\t404\tFix the schedule page\t\tsrc/schedule.ts\nunit\t407\tShow the next watering\t\tsrc/water/next.ts\n')" '' "$da_titles" | cut -f1,2)"
+dab_list=$(printf 'watering src/water/\nbeds src/beds/\nsun src/sun/\n')
+dab_out=$(PLAN_BROAD_AREAS=2 area_units "$dab_list" "$(printf 'unit\t410\tTidy the app\t\tsrc/\nunit\t411\tWater the beds\t\tsrc/water/t.ts\n')" '' '')
+eq "a unit that names no files and guesses every area is held alone, with its reason" "yes" "$(printf '%s\n' "$dab_out" | grep -q "^hold${da_t}410${da_t}Tidy the app${da_t}Its files are not known" && echo yes)"
+eq "the rest of the round still publishes as a unit" "unit${da_t}411" "$(printf '%s\n' "$dab_out" | grep '^unit' | cut -f1,2)"
 eq "units in different areas stay apart" "2" "$(area_units "$da_list" "$(printf 'unit\t402\tWater\t\tsrc/water/t.ts\nunit\t403\tTint\t\tsrc/beds/t.ts\n')" '' "$da_titles" | grep -c '^unit')"
 eq "with no areas list the lines pass unchanged" "unit${da_t}402${da_t}Water${da_t}${da_t}x" "$(area_units '' "$(printf 'unit\t402\tWater\t\tx\n')" "$(printf '301\twatering\n')" '')"
 eq "a hold line passes through" "hold${da_t}9${da_t}Seeds${da_t}After: Pots" "$(area_units "$da_list" "$(printf 'hold\t9\tSeeds\tAfter: Pots\n')" '' '')"
