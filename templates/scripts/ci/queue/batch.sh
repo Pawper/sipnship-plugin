@@ -332,7 +332,7 @@ bt_run_begin=$(date +%s)  # the batch's run, timed for Cost (spec 005); read by 
 printf '%s\n' "$carried" | cut -f1 > "$flaky_dir/batch.members" 2>/dev/null || true
 if [ "$have_lock" = yes ]; then trap ': > "$flaky_dir/batch.members" 2>/dev/null; queue_exit' EXIT; else trap ': > "$flaky_dir/batch.members" 2>/dev/null' EXIT; fi
 batch_cancel_tries=0
-if wait_for_run "$batch_pr" "$branch" && wait_required "$batch_sha"; then batch_ok=yes
+if batch_first_wait; then batch_ok=yes
 else
   # A job cancelled before a runner took it, or stopped to make room, fails the required check without anything
   # being wrong: re-run the failed and cancelled jobs and wait again, up to QUEUE_CANCEL_RETRIES times (default 2,

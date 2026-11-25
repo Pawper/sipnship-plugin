@@ -77,3 +77,26 @@ drain_rescue() {
   IFS=$dr_old_ifs
   if [ "$dr_moved" = yes ]; then sleep 5; rescue_finish; fi
 }
+
+# batch_unserved RUN_ID: say so (and return 0) when the batch's queued jobs ask for a label no online machine
+# carries; the line is kept in unserved_said. Two REST reads, made only every two minutes by wait_for_run.
+batch_unserved() {
+  bu_jobs=$(gh api "repos/{owner}/{repo}/actions/runs/$1/jobs?per_page=100" --jq '.jobs[] | [.name, .status, (.labels | join(","))] | @tsv' 2>/dev/null | tr -d '\r' || true)
+  bu_runners=$(GH_TOKEN="${ADMIN_TOKEN:-${QUEUE_MERGE_TOKEN:-${GH_TOKEN:-}}}" gh api 'repos/{owner}/{repo}/actions/runners?per_page=100' --jq '.runners[] | [.status, (.busy | tostring), ([.labels[].name] | join(","))] | @tsv' 2>/dev/null | tr -d '\r' || true)
+  [ -n "$bu_runners" ] || return 1
+  bu_labels=$(unserved_labels "$bu_jobs" "$bu_runners")
+  [ -n "$bu_labels" ] || return 1
+  unserved_said=$(unserved_words "$bu_labels"); echo "$unserved_said"
+}
+
+# batch_first_wait: wait for the batch's run and its required check (0 green). A batch asking for a machine none of
+# yours is (wait_for_run returns 4) is closed at once and its changes land one at a time; the script ends there.
+batch_first_wait() {
+  bw_code=0; wait_for_run "$batch_pr" "$branch" || bw_code=$?
+  if [ "$bw_code" -eq 4 ]; then
+    close_pr "$batch_pr" "${unserved_said:-This batch asks for a kind of machine none of yours is, so it was taken apart.}"
+    for pr in $(printf '%s' "$carried" | cut -f1) $dropped; do serial_one "$pr"; done
+    exit 0
+  fi
+  [ "$bw_code" -eq 0 ] && wait_required "$batch_sha"
+}

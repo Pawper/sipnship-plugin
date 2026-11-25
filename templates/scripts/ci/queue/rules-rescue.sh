@@ -91,3 +91,38 @@ rescue_words() {
     *) echo "$(place_name "$1") left this build waiting past your wait limit, so it was started again elsewhere, and $(place_name "$1") is passed over for an hour." ;;
   esac
 }
+
+# unserved_labels JOBS RUNNERS
+# A batch's jobs can ask for a kind of machine none of yours is: the change
+# under test alters which label a build asks for, and the queue that would
+# hand the label out is in the same change. Prints the labels (comma list) of
+# the first queued job on your own machines (its labels include self-hosted)
+# that no online runner carries all of, or nothing. JOBS is
+# "name<TAB>status<TAB>labels" a job; RUNNERS is "status<TAB>busy<TAB>labels".
+# A job already running means the batch has machines, so nothing is said.
+unserved_labels() {
+  { printf '%s\n' "$2" | tr -d '\r' | sed 's/^/R\t/'; printf '%s\n' "$1" | tr -d '\r' | sed 's/^/J\t/'; } \
+  | awk -F'\t' '
+    function has(list, x,   n, a, i) { n = split(list, a, ","); for (i = 1; i <= n; i++) if (a[i] == x) return 1; return 0 }
+    function served(labels,   n, w, i, j, ok) {
+      n = split(labels, w, ",")
+      for (j = 1; j <= nr; j++) {
+        if (rs[j] != "online") continue
+        ok = 1; for (i = 1; i <= n; i++) if (w[i] != "" && !has(rl[j], w[i])) ok = 0
+        if (ok) return 1
+      }
+      return 0
+    }
+    $1 == "R" && NF >= 4 { nr++; rs[nr] = $2; rl[nr] = $4; next }
+    $1 == "J" && NF >= 4 {
+      if ($3 == "in_progress") running = 1
+      if ($3 == "queued" && has($4, "self-hosted") && !served($4) && first == "") first = $4
+    }
+    END { if (!running && first != "") print first }'
+}
+
+# unserved_words LABELS: the one calm line the queue writes when it takes a
+# batch apart for it.
+unserved_words() {
+  printf 'This batch asks for a kind of machine none of yours is (%s), so its checks could never start. It was taken apart, and the changes in it are tried again one at a time.\n' "$1"
+}

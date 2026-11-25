@@ -210,7 +210,7 @@ wait_seen_end() {
 }
 
 # wait_for_run PR BRANCH: wait for the branch's latest run, saying plainly
-# what is happening. Returns 0 green, 1 red, 3 gave up.
+# what is happening. Returns 0 green, 1 red, 3 gave up, 4 a batch whose jobs ask for a machine none carries.
 wait_for_run() {
   w_start=$(date +%s); outage_on=no; w_seen=""
   while :; do
@@ -260,6 +260,8 @@ wait_for_run() {
         wait_seen_end
       fi
     fi
+    # A batch asking for a label no online machine carries will never start: say so in minutes (rescue.sh).
+    if [ "$2" = "${branch:-}" ] && [ $(( $(date +%s) - w_start )) -gt 180 ] && [ $(( ${w_tick:-0} % 4 )) -eq 0 ] && batch_unserved "$run_id"; then wait_seen_end; return 4; fi
     # A run still queued after five minutes with no runner online will not
     # start: say so and stop rather than wait out the hour.
     case "$run" in

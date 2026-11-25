@@ -2215,7 +2215,7 @@ eq "and for a hold, why the green one is held" "One pull request is green and 2 
 mq_tpl="$root/templates/scripts/ci/merge-queue.sh"
 eq "the drain loop takes its step from drain_wait_step and ends on end-hold and end-wait" "1 2" "$(grep -c 'step=\$(drain_wait_step ' "$mq_tpl") $(grep -c 'end-hold)\|end-wait)' "$mq_tpl")"
 eq "the step is read before the round merges, never while its batch runs" "yes" "$(awk '/drain_wait_step /{ s = NR } /sh "\$0" --batch/{ b = NR } END { print (s && b && s < b) ? "yes" : "no" }' "$mq_tpl")"
-eq "the batch still waits for its own full run" "1" "$(grep -c '^if wait_for_run "\$batch_pr" "\$branch" && wait_required "\$batch_sha"; then batch_ok=yes' "$root/templates/scripts/ci/queue/batch.sh")"
+eq "the batch still waits for its own full run" "11" "$(grep -c '^if batch_first_wait; then batch_ok=yes' "$root/templates/scripts/ci/queue/batch.sh")$(grep -c 'wait_for_run "\$batch_pr" "\$branch" || bw_code' "$root/templates/scripts/ci/queue/rescue.sh")"
 eq "a batch an earlier run left open is settled by the next drain" "1 1" "$(grep -c 'merged batch #\$bp, left green by an earlier run' "$mq_tpl") $(grep -c 'is still running CI; its members' "$mq_tpl")"
 eq "a batch left green by an earlier run tidies its members' worktrees too" "1" "$(sed -n '/left green by an earlier run/,/elif .\$bstate. = failed/p' "$mq_tpl" | grep -c 'tidy_worktree')"
 eq "the drain loads its waits" "1" "$(grep -c '\. "\$here/queue/wait.sh"' "$mq_tpl")"
@@ -7099,6 +7099,14 @@ eq "a refusal is noted for an hour, beside another place's still inside its hour
 eq "an older refusal is dropped" "refused.tenki=1793000000" "$(rescue_skip 'refused.github=1792990000' tenki 1793000000)"
 eq "the rescue's line for a machine that went off" "Your machine went offline while this build waited for it, so it was started again to find another place." "$(rescue_words own offline)"
 eq "the rescue's line for a hosted place that left a build waiting" "Tenki left this build waiting past your wait limit, so it was started again elsewhere, and Tenki is passed over for an hour." "$(rescue_words tenki stuck)"
+# A batch whose jobs ask for a machine label none of Maya's online machines carries is noticed.
+us_runners=$(printf 'online\tfalse\tself-hosted,windows\nonline\ttrue\tself-hosted,windows,pr\noffline\tfalse\tself-hosted,windows,batch')
+eq "a queued job asking for a label no online machine has is named" "self-hosted,windows,batch" "$(unserved_labels "$(printf 'checks\tqueued\tself-hosted,windows,batch\napp\tqueued\tself-hosted,windows')" "$us_runners")"
+eq "a queued job an online machine can take is not named" "" "$(unserved_labels "$(printf 'checks\tqueued\tself-hosted,windows,pr')" "$us_runners")"
+eq "a batch with a job already running has machines, so nothing is named" "" "$(unserved_labels "$(printf 'checks\tin_progress\tself-hosted,windows\napp\tqueued\tself-hosted,windows,batch')" "$us_runners")"
+eq "a hosted job is never named" "" "$(unserved_labels "$(printf 'site\tqueued\tubuntu-latest')" "$us_runners")"
+eq "the line for a batch asking for a missing machine" "This batch asks for a kind of machine none of yours is (self-hosted,windows,batch), so its checks could never start. It was taken apart, and the changes in it are tried again one at a time." "$(unserved_words self-hosted,windows,batch)"
+eq "the batch takes itself apart on that answer" "1" "$(grep -c 'bw_code" -eq 4' "$root/templates/scripts/ci/queue/rescue.sh")"
 eq "the order with more than one place and a wait limit is rescued" "yes" "$(rescue_on 'order=own,tenki wait=10')"
 # The drain calls the rescue every round, and the place job's scripts read the rules.
 eq "the drain calls the rescue each round" "1" "$(grep -c '^    drain_rescue' "$root/templates/scripts/ci/merge-queue.sh")"
