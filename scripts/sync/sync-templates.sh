@@ -48,7 +48,7 @@
 # commits them, so every change is a reviewable diff in a pull request and
 # the old versions stay in git. It does not push.
 here=$(dirname "$0")
-. "$here/sync-lib.sh"; . "$here/sync-deps.sh"; . "$here/known-lib.sh"; [ -f "$here/../../templates/scripts/ci/git-bounded-lib.sh" ] && . "$here/../../templates/scripts/ci/git-bounded-lib.sh"; type git_bounded >/dev/null 2>&1 || git_bounded() { gb_s=$1; shift; if command -v timeout >/dev/null 2>&1; then timeout -k 5 "$gb_s" git "$@"; else git "$@"; fi; }
+. "$here/sync-lib.sh"; . "$here/sync-deps.sh"; . "$here/known-lib.sh"; . "$here/sync-shipped.sh"; [ -f "$here/../../templates/scripts/ci/git-bounded-lib.sh" ] && . "$here/../../templates/scripts/ci/git-bounded-lib.sh"; type git_bounded >/dev/null 2>&1 || git_bounded() { gb_s=$1; shift; if command -v timeout >/dev/null 2>&1; then timeout -k 5 "$gb_s" git "$@"; else git "$@"; fi; }
 plugin=$(cd "$here/../.." && pwd)
 tpl="$plugin/templates"
 apply=no; force=no; only=""; no_commit=no
@@ -320,16 +320,7 @@ for p in $changed $missing; do
   case "$p" in .github/workflows/*.yml) why=$(refusal_of "$p") ;; *) why="" ;; esac
   if [ -n "$why" ]; then refused="$refused $p"; fi
 done
-# What the report found, kept inside .git for the brief to carry (the dashboard's "setup is current" item): counts and the commit and
-# version they were read at, so a later commit or a newer plugin makes the reading stale and the brief drops it.
-if [ -z "$only" ] && [ "$apply" = no ] && [ -d .git ]; then
-  sh_edited=0; sh_older=0
-  for p in $changed; do case " $edited " in *" $p "*) sh_edited=$((sh_edited + 1)) ;; *) sh_older=$((sh_older + 1)) ;; esac; done
-  sh_older=$((sh_older + $(printf '%s' "$missing" | wc -w | tr -d ' ')))
-  printf '{"head":"%s","version":"%s","older":%s,"edited":%s}
-' "$(git rev-parse HEAD 2>/dev/null)" "$version" "$sh_older" "$sh_edited" > .git/sipnship-shipped.json 2>/dev/null || true
-fi
-echo "Plugin $version. Plugin-owned files here: $current current, $(printf '%s' "$changed" | wc -w | tr -d ' ') older or edited, $(printf '%s' "$missing" | wc -w | tr -d ' ') missing."
+keep_shipped; echo "Plugin $version. Plugin-owned files here: $current current, $(printf '%s' "$changed" | wc -w | tr -d ' ') older or edited, $(printf '%s' "$missing" | wc -w | tr -d ' ') missing."
 for p in $changed; do
   case " $edited " in
     *" $p "*)
