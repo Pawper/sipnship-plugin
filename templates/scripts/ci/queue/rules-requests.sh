@@ -253,6 +253,14 @@ say_with_need() {
   printf '%s\n' "$1" | awk -v n="$2" 'NR == 3 && n != "" { $0 = ($0 == "Nothing needs you." ? n : $0 " " n) } { print }'
 }
 
+# say_with_kept SAY KEPT_LINE: publish_say's three lines with KEPT_LINE
+# (kept_say's own words, "N machines kept for landing") added to the
+# first, what the queue is doing now; SAY as it was when KEPT_LINE is
+# empty (fewer than two runners online, so none is kept).
+say_with_kept() {
+  printf '%s\n' "$1" | awk -v k="$2" 'NR == 1 && k != "" { $0 = $0 " " k "." } { print }'
+}
+
 # runner_label_problem RUNNERS: the nightly audit's line when no online
 # runner is kept, or none carries the label; nothing when it is right or
 # when fewer than two are online (the audit says that already).

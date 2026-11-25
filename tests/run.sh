@@ -2647,11 +2647,18 @@ The token cannot manage runners." "$(say_with_need "$(printf 'Nothing waits.\nNo
 eq "no note leaves the Queue's lines as they were" "a
 b
 c" "$(say_with_need "$(printf 'a\nb\nc')" "")"
+eq "the Queue's doing-now line carries how many machines are kept" "Draining. 2 machines kept for landing.
+Nothing is open.
+Nothing needs you." "$(say_with_kept "$(printf 'Draining.\nNothing is open.\nNothing needs you.')" "2 machines kept for landing")"
+eq "none kept (fewer than two online) leaves the Queue's lines as they were" "Draining.
+Nothing is open.
+Nothing needs you." "$(say_with_kept "$(printf 'Draining.\nNothing is open.\nNothing needs you.')" "")"
 rl_fn=$(sed -n '/^runner_labels_keep()/,/^}/p' "$qs_mq")
 eq "it acts only where ci.yml keeps a runner, and reads the runners with the queue's token" "1 1" "$(printf '%s\n' "$rl_fn" | grep -c "grep -q 'vars.CI_KEEP_RUNNER' .github/workflows/ci.yml") $(printf '%s\n' "$rl_fn" | grep -c 'gh_write api "repos/{owner}/{repo}/actions/runners?per_page=100"')"
 eq "a refused label write or read turns it off and leaves the note for the Queue" "2 1" "$(printf '%s\n' "$rl_fn" | grep -c '>/dev/null 2>&1 || rk_ok=no') $(printf '%s\n' "$rl_fn" | grep -c "printf 'cannot")"
 eq "each drain keeps the labels at its start" "1" "$(grep -c '; runner_labels_keep # one runner kept for the batch and main$' "$qs_mq")"
 eq "the Queue's needs line carries the note" "1" "$(grep -c 'say=\$(say_with_need "\$say" "\$(head -n 1 "\$flaky_dir/runner-labels"' "$root/templates/scripts/ci/publish-state.sh")"
+eq "the Queue's doing-now line reads how many machines are kept, from what the drain just wrote" "1" "$(grep -c 'say=\$(say_with_kept "\$say" "\$(head -n 1 "\$flaky_dir/runner-kept"' "$root/templates/scripts/ci/publish-state.sh")"
 eq "the audit says when none is kept" "1" "$(runner_label_problem "$(printf '11\tgarden-1\tonline\tpr\n12\tgarden-2\tonline\tpr')" | grep -c '^No runner is kept')"
 eq "or none carries the label" "1" "$(runner_label_problem "$(printf '11\tgarden-1\tonline\t\n12\tgarden-2\tonline\tx64')" | grep -c '^No online runner carries the pr label')"
 eq "and nothing when one is kept" "" "$(runner_label_problem "$(cat "$rl_dir/right.tsv")")"
