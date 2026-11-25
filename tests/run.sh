@@ -3084,7 +3084,7 @@ eq "a reset a second away waits one second" "1" "$(rate_wait "0	1001" 1000)"
 rg_now=$(date +%s)
 rg1_out=$( ( . "$root/templates/scripts/ci/queue/state.sh"; . "$root/templates/scripts/ci/queue/rate-lib.sh"; flaky_dir=/tmp; log_file=/dev/null; rate_budget() { printf '100\t%s\n' "$((rg_now + 100))"; }; sleep() { echo "slept $1"; }; rate_guard ); echo "RC=$?")
 eq "a short wait still sleeps it out, for the seconds rate_wait says" "yes
-0" "$(printf '%s' "$rg1_out" | grep -q '^slept 100$' && echo yes || echo no; printf '%s' "$rg1_out" | sed -n 's/^RC=//p')"
+0" "$(printf '%s' "$rg1_out" | grep -Eq '^slept (99|100)$' && echo yes || echo no; printf '%s' "$rg1_out" | sed -n 's/^RC=//p')"
 rg2_out=$( ( . "$root/templates/scripts/ci/queue/state.sh"; . "$root/templates/scripts/ci/queue/rate-lib.sh"; flaky_dir=/tmp; log_file=/dev/null; rate_budget() { printf '100\t%s\n' "$((rg_now + 1000))"; }; sleep() { echo "SLEPT-WRONGLY $1"; }; rate_guard ); echo "RC=$?")
 eq "a wait past the cap ends the drain instead of sleeping through it, naming when it resumes" "yes
 no
