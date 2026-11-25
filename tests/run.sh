@@ -659,6 +659,13 @@ eq "graphql is the other guard's" "" "$(gh_rest_read_reason 'gh api graphql -f q
 eq "REST under the floor is low" "yes" "$(budget_rest_low "4000	5000	1760001540	90	5000	1760001540")"
 eq "REST at the floor is not" "no" "$(budget_rest_low "4000	5000	1760001540	150	5000	1760001540")"
 eq "an unknown REST budget is not low" "no" "$(budget_rest_low '')"
+# #2672: an agent without hooks asks the script before a read; under the REST floor it says no, as the hook does.
+rb_dir=$(mktemp -d); git init -q "$rb_dir"; mkdir -p "$rb_dir/.scratch"
+printf '%s\t4000\t5000\t1760001540\t90\t5000\t1760001540\n' "$(date +%s)" > "$rb_dir/.scratch/gh-budget.txt"
+eq "a REST count under the floor is refused by the check" "1" "$(cd "$rb_dir" && sh "$root/templates/scripts/gh-budget.sh" --check-rest >/dev/null 2>&1; echo $?)"
+eq "a custom REST floor lets it through" "0" "$(cd "$rb_dir" && GH_REST_BUDGET_MIN=50 sh "$root/templates/scripts/gh-budget.sh" --check-rest >/dev/null 2>&1; echo $?)"
+printf '%s\t4000\t5000\t1760001540\t900\t5000\t1760001540\n' "$(date +%s)" > "$rb_dir/.scratch/gh-budget.txt"
+eq "plenty of REST left passes the check" "0" "$(cd "$rb_dir" && sh "$root/templates/scripts/gh-budget.sh" --check-rest >/dev/null 2>&1; echo $?)"
 eq "a low REST budget says when it returns" "REST 90 of 5,000 left, back at 09:19Z (in 23 min)." "$(budget_rest_line "4000	5000	1760001540	90	5000	1760001540" 1760000200 | sed 's/5000/5,000/')"
 eq "a REST issue without its State label is named" "gh api .../issues" "$(state_label_reason 'gh api -X POST repos/{owner}/{repo}/issues -f title="Fix" -F body=@.scratch/b.md')"
 eq "a REST issue with labels[]=state: passes" "" "$(state_label_reason "gh api -X POST repos/{owner}/{repo}/issues -f title='Fix' -f 'labels[]=state:ready'")"
