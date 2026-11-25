@@ -2698,6 +2698,14 @@ eq "the kept runner went offline: the oldest online is kept and it gets the labe
 remove	12	garden-2" "$(runner_label_plan "$(cat "$rl_dir/kept-offline.tsv")")"
 eq "with one runner online none is kept, so pull requests never wait for an offline one" "add	12	garden-2" "$(runner_label_plan "$(cat "$rl_dir/one-online.tsv")")"
 eq "nothing waiting green and no batch in its checks: one machine kept" "1" "$(keep_count 6 0 0)"
+# The kept machines carry "kept" too, so a batch's jobs ask for them by name and never land on an ordinary machine (#2856).
+eq "the kept machine is given the kept label, and the others have none" "add	11	garden-1" "$(kept_label_plan "$(cat "$rl_dir/right.tsv")" | head -n 1)"
+eq "six online with three kept: the plan after the pr labels move gives kept to exactly those three" "add	11	garden-1
+add	12	garden-2
+add	13	garden-3" "$(kept_label_plan "$(plan_applied "$(cat "$rl_dir/six-online.tsv")" "$(runner_label_plan "$(cat "$rl_dir/six-online.tsv")" 3)")")"
+eq "a runner that went back to carrying pr loses kept" "remove	11	g1" "$(kept_label_plan "$(printf '11\tg1\tonline\tself-hosted,pr,kept\n12\tg2\tonline\tself-hosted,pr')")"
+eq "labels already right: no call for the kept label either" "" "$(kept_label_plan "$(printf '11\tg1\tonline\tself-hosted,kept\n12\tg2\tonline\tself-hosted,pr')")"
+eq "each round of a drain keeps the labels again, saying only what changed" "1 2" "$(grep -c '\[ "\$round" -le 1 \] || runner_labels_keep' "$qs_mq") $(sed -n '/^runner_labels_keep()/,/^}/p' "$qs_mq" | grep -c 'rk_last_why')"
 eq "a change waiting green: half the online machines, at least two" "3 3 2 4" "$(keep_count 6 1) $(keep_count 6 5) $(keep_count 4 1) $(keep_count 9 1)"
 eq "a batch in its checks keeps half too, with nothing else waiting green" "3" "$(keep_count 6 0 1)"
 eq "never the last machine, and none with fewer than two online" "2 0 1" "$(keep_count 3 9) $(keep_count 1 9) $(keep_count 2 9)"
@@ -2706,7 +2714,7 @@ remove	13	garden-3" "$(runner_label_plan "$(cat "$rl_dir/six-online.tsv")" "$(ke
 eq "the line clear again: back to one kept" "" "$(runner_label_plan "$(cat "$rl_dir/six-online.tsv")" "$(keep_count 6 0 0)")"
 eq "a batch in its checks is an open batch or rush test head, never a draft" "2" "$(landing_now "$(printf '1\tfalse\taaa\tbatch-2026-11-24-192140\n2\tfalse\tbbb\tissue-12\n3\tfalse\tccc\trush-52-on-48\n4\ttrue\tddd\tbatch-x')")"
 eq "the drain's line says how many are kept and why" "3 of 6 machines kept for landing: 2 changes wait green.|3 of 6 machines kept for landing: a batch is in its checks.|3 of 6 machines kept for landing: 1 change waits green and a batch is in its checks.|1 of 6 machines kept for landing: nothing waits green.|none kept for landing: fewer than two machines online." "$(keep_why 6 2 0)|$(keep_why 6 0 1)|$(keep_why 6 1 1)|$(keep_why 6 0 0)|$(keep_why 1 3 0)"
-eq "each drain says it in the queue's log" "1" "$(sed -n '/^runner_labels_keep()/,/^}/p' "$qs_mq" | grep -c 'say "runners: \$(keep_why')"
+eq "each drain says it in the queue's log" "1" "$(sed -n '/^runner_labels_keep()/,/^}/p' "$qs_mq" | grep -c 'say "runners: \$rk_why"')"
 eq "the audit takes half the machines kept as right" "" "$(runner_label_problem "$(sed 's/,pr$//' "$rl_dir/six-online.tsv" | awk -F'\t' 'NR > 3 { $4 = $4 ",pr" } { print }' OFS='\t')")"
 eq "and says so when more than half are kept" "1" "$(runner_label_problem "$(sed 's/,pr$//' "$rl_dir/six-online.tsv" | awk -F'\t' 'NR > 4 { $4 = $4 ",pr" } { print }' OFS='\t')" | grep -c 'More than half')"
 eq "green changes are counted by their open, non-draft head with a green run" "2" "$(green_waiting "$(printf '1\tfalse\taaa\n2\ttrue\tbbb\n3\tfalse\tccc\n4\tfalse\tddd')" "$(printf 'aaa\nbbb\nccc\nccc')")"
@@ -2730,7 +2738,7 @@ Nothing is open.
 Nothing needs you." "$(say_with_kept "$(printf 'Draining.\nNothing is open.\nNothing needs you.')" "")"
 rl_fn=$(sed -n '/^runner_labels_keep()/,/^}/p' "$qs_mq")
 eq "it acts only where ci.yml keeps a runner, and reads the runners with the queue's token" "1 1" "$(printf '%s\n' "$rl_fn" | grep -c "grep -q 'vars.CI_KEEP_RUNNER' .github/workflows/ci.yml") $(printf '%s\n' "$rl_fn" | grep -c 'gh_write api "repos/{owner}/{repo}/actions/runners?per_page=100"')"
-eq "a refused label write or read turns it off and leaves the note for the Queue" "2 1" "$(printf '%s\n' "$rl_fn" | grep -c '>/dev/null 2>&1 || rk_ok=no') $(printf '%s\n' "$rl_fn" | grep -c "printf 'cannot")"
+eq "a refused label write or read turns it off and leaves the note for the Queue" "4 1" "$(printf '%s\n' "$rl_fn" | grep -c '>/dev/null 2>&1 || rk_ok=no') $(printf '%s\n' "$rl_fn" | grep -c "printf 'cannot")"
 eq "each drain keeps the labels at its start" "1" "$(grep -c '; runner_labels_keep # one runner kept for the batch and main$' "$qs_mq")"
 eq "the Queue's needs line carries the note" "1" "$(grep -c 'say=\$(say_with_need "\$say" "\$(head -n 1 "\$flaky_dir/runner-labels"' "$root/templates/scripts/ci/publish-state.sh")"
 eq "the Queue's doing-now line reads how many machines are kept, from what the drain just wrote" "1" "$(grep -c 'say=\$(say_with_kept "\$say" "\$(head -n 1 "\$flaky_dir/runner-kept"' "$root/templates/scripts/ci/publish-state.sh")"
@@ -5621,7 +5629,7 @@ if [ -f "$pj_repo" ] && grep -q '^!parts plugin' "$pj_repo"; then
   eq "the web part installs the packages first, then runs the type-check and the tests as named steps" "1" "$(class_parts all "$pj_rc" | awk -F'\t' '$1 == "web" && index($2, "install-packages.sh && ")' | grep -c .)"
   pj_ci_repo="$root/../.github/workflows/ci.yml"
   pj_pr_on=$(for pj_j in checks app tests screens ci-passed; do awk -v j="  $pj_j:" '$0 == j {f=1; next} /^  [a-z-]*:$/ {f=0} f && /^    runs-on:/' "$pj_ci_repo"; done)
-  eq "every pull-request job asks for the kept-runner label by one expression, and batch, rush and main take any runner" "5 1 1" "$(printf '%s\n' "$pj_pr_on" | grep -c "vars.CI_KEEP_RUNNER == 'on' && '\[\"self-hosted\",\"windows\",\"pr\"\]' || '\[\"self-hosted\",\"windows\"\]'") $(printf '%s\n' "$pj_pr_on" | sort -u | grep -c .) $(printf '%s\n' "$pj_pr_on" | sort -u | grep -c "github.event_name == 'pull_request' && !startsWith(github.head_ref, 'batch-') && !startsWith(github.head_ref, 'rush-')")"
+  eq "every pull-request job asks for the machines by one expression: a batch or rush test head for the kept ones, a change for the ordinary ones, any machine when none is kept" "5 1 1 1" "$(printf '%s\n' "$pj_pr_on" | grep -c "vars.CI_KEEP_RUNNER == 'on' && ((startsWith(github.head_ref, 'batch-') || startsWith(github.head_ref, 'rush-')) && '\[\"self-hosted\",\"windows\",\"kept\"\]' || '\[\"self-hosted\",\"windows\",\"pr\"\]') || '\[\"self-hosted\",\"windows\"\]'") $(printf '%s\n' "$pj_pr_on" | sort -u | grep -c .) $(printf '%s\n' "$pj_pr_on" | sort -u | grep -c "github.event_name == 'pull_request' && vars.CI_KEEP_RUNNER == 'on'") $(grep -c "'\[\"self-hosted\",\"windows\",\"kept\"\]'" "$root/templates/scripts/ci/RUNNERS.md")"
   eq "the gate, classify and main's jobs take any runner" "0" "$(for pj_j in gate classify full report-red report-green; do awk -v j="  $pj_j:" '$0 == j {f=1; next} /^  [a-z-]*:$/ {f=0} f && /^    runs-on:/' "$pj_ci_repo"; done | grep -c 'CI_KEEP_RUNNER')"
   # A run started by hand on a branch other than main (to check it fully
   # before merging) is never read as main going red or green: report-red
@@ -9108,6 +9116,7 @@ $2"; shift ;; repos/*) url=$1 ;; esac; shift; done
 case "$method $url" in
   "GET repos/{owner}/{repo}/issues?state=open"*) cat "$FAKE/inprog" ;;
   "GET repos/{owner}/{repo}/pulls?state=open"*) cat "$FAKE/closes" ;;
+  "GET repos/{owner}/{repo}/issues/"[0-9]*"/comments"*"note=1") n=${url#*issues/}; n=${n%%/*}; cat "$FAKE/note-$n" 2>/dev/null || echo 0 ;;
   "GET repos/{owner}/{repo}/issues/"[0-9]*"/comments"*) n=${url#*issues/}; n=${n%%/*}; cat "$FAKE/comments-$n" 2>/dev/null ;;
   "GET repos/{owner}/{repo}/actions/runs/"*) rid=${url##*/}; awk -F'\t' -v r="$rid" '$1 == r { print $2 }' "$FAKE/runs" 2>/dev/null ;;
   "GET repos/{owner}/{repo}/issues/"[0-9]*"/labels") n=${url#*issues/}; n=${n%%/*}; cat "$FAKE/labels-$n" 2>/dev/null ;;
@@ -9144,6 +9153,21 @@ eq "an issue an open pull request already closes keeps its State, though its end
 : > "$cs_dir/closes"
 printf '903\t%s\tClaim: maya\n' "$((cs_now - 60))" > "$cs_dir/comments-317"
 eq "a claim naming no run (a person's or the desktop app's own) is never called stale here" "claim-stale: no claim is held by a run that has ended." "$(cs_run)"
+# A claim naming no run, left idle (#2847): released by itself after CLAIM_IDLE_MINUTES, only when nothing else shows anyone on the issue.
+eq "claim_idle: a no-run claim older than the idle time is named, a younger one and a run's are not" "maya	$((cs_now - 7200)) |  | " "$(claim_idle "$(printf '903\t%s\tClaim: maya\t' "$((cs_now - 7200))")" "$cs_now" 14400 5400) | $(claim_idle "$(printf '903\t%s\tClaim: maya\t' "$((cs_now - 60))")" "$cs_now" 14400 5400) | $(claim_idle "$(printf '903\t%s\tClaim: drive-1\t55' "$((cs_now - 7200))")" "$cs_now" 14400 5400)"
+printf '' > "$cs_dir/inprog"; printf '317\n' > "$cs_dir/claimed"; printf 'open\tstate:ready\n' > "$cs_dir/issue-317"; : > "$cs_dir/posted"; : > "$cs_dir/bodies"
+printf '903\t%s\tClaim: maya\n' "$((cs_now - 7200))" > "$cs_dir/comments-317"; echo 0 > "$cs_dir/note-317"
+eq "an idle claim naming no run, with no agent, branch, pull request or note, is released and said on the issue" "claim-stale: released the claim on #317 (claim maya, its run ended); it was already in Ready, so the next round can start it." "$(cs_run --apply 2>&1 | head -n 1)"
+eq "the release says why, in plain words" "1" "$(grep -c 'This claim named no run, and for more than 90 minutes' "$cs_dir/bodies")"
+: > "$cs_dir/posted"; : > "$cs_dir/bodies"; echo "$((cs_now - 3600))" > "$cs_dir/note-317"
+eq "a note left on the issue since the claim keeps it" "claim-stale: no claim is held by a run that has ended." "$(cs_run --apply)"
+echo 0 > "$cs_dir/note-317"; printf '40\t317\n' > "$cs_dir/closes"
+eq "an open pull request carrying the issue keeps it" "claim-stale: no claim is held by a run that has ended." "$(cs_run --apply)"
+: > "$cs_dir/closes"
+printf '903\t%s\tClaim: maya\n' "$((cs_now - 3600))" > "$cs_dir/comments-317"
+eq "a claim younger than the idle time is left alone" "claim-stale: no claim is held by a run that has ended." "$(cs_run --apply)"
+rm -f "$cs_dir/claimed" "$cs_dir/issue-317"; printf '317\n' > "$cs_dir/inprog"
+eq "the idle time is set by CLAIM_IDLE_MINUTES, ninety by default" "1 1" "$(grep -c 'CLAIM_IDLE_MINUTES:-90' "$root/scripts/drive/claim-stale.sh" | sed 's/^[2-9].*/1/') $(grep -c '^claim_idle()' "$root/scripts/drive/claim-lib.sh")"
 # The same job, right after the step that dispatched the agent (drive-wake.yml, "Free any agent this tick
 # left running"): its own run has not completed yet, so nothing asks GitHub about it; CLAIM_STALE_OWN_RUN
 # names it directly.

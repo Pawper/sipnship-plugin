@@ -46,6 +46,18 @@ claim_live() {
     END { for (i = 1; i <= n; i++) if (!(tok[i] in rel) && now - at[i] <= ttl && !(run[i] != "" && (run[i] in end))) print id[i] "\t" tok[i] }'
 }
 
+# claim_idle COMMENTS NOW TTL IDLE
+# The live claim that holds the issue when it names no run (a person's session, the desktop app) and is older
+# than IDLE seconds: "TOKEN<TAB>EPOCH", or nothing. A claim naming a run ends with the run (claim_live); one that
+# names none has only the clock, so the caller releases it by itself only when nothing else shows anyone on the
+# issue (no agent, branch, open pull request or note since, #2847). COMMENTS are claim_live's lines.
+claim_idle() {
+  ci_win=$(claim_live "$1" "$2" "$3" | sort -n | head -n 1 | cut -f1)
+  [ -n "$ci_win" ] || return 0
+  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v id="$ci_win" -v now="$2" -v idle="$4" '
+    $1 == id && $4 == "" && now - $2 >= idle { t = $3; sub(/^Claim: /, "", t); sub(/[ \t].*/, "", t); print t "\t" $2 }'
+}
+
 # claim_winner COMMENTS NOW TTL [ENDED]
 # The token that holds the issue: the live claim with the lowest comment number. Nothing when none.
 claim_winner() {
