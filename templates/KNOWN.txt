@@ -617,6 +617,7 @@ scripts/ci/queue/batch.sh 8900fc22f7ac83e1b31636f1f51421c6bdc3048d
 scripts/ci/queue/batch.sh 89fc826daf33b73d1d96c1860094d350e322a762
 scripts/ci/queue/batch.sh 8bf93aa5de8293657821c159971460f6a01dd9d6
 scripts/ci/queue/batch.sh d93afc5f3c9d0e36c1d31038932b7ef603087b81
+scripts/ci/queue/batch.sh ec9660d03ae6f527c8c7d5348b5ab4c49fea3b8d
 scripts/ci/queue/batch.sh ef6c996a683e53d960aa9f51d30d0922b0077ed6
 scripts/ci/queue/batch.sh f39497c4e4ff3dc8f614f59e9661f6c78c7eef72
 scripts/ci/queue/budget.sh 57f0835817b8a21edaffa97189b2cb21bfe35f0b
