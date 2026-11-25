@@ -275,3 +275,46 @@ test('status says what is true when the listener holds the project and the conne
   assert.ok(!/not listening now/.test(o.text));
   assert.ok(/connecting|starts your drive here/.test(o.text));
 });
+
+test('a look is its own message, for its own repository, and never a wake', () => {
+  const LOOK = JSON.stringify({ wake: 'look-now', repo: REPO });
+  assert.strictEqual(wake.readLook(LOOK, REPO), true);
+  assert.strictEqual(wake.readWake(LOOK, REPO), false);
+  assert.strictEqual(wake.readLook(WAKE, REPO), false);
+  assert.strictEqual(wake.readLook(JSON.stringify({ wake: 'look-now', repo: 4242 }), REPO), false);
+  assert.strictEqual(wake.readLook(JSON.stringify({ wake: 'look-now', repo: REPO, run: 'x' }), REPO), false);
+});
+
+test('a look runs the drive with no approval check', async () => {
+  const calls = [];
+  const run = async (cmd) => { calls.push(cmd); return { status: 0, stdout: '' }; };
+  const r = await runTick({ root: home(), plugin: '/plugin', run, look: true });
+  assert.deepStrictEqual(calls, ['claude']);
+  assert.strictEqual(r.model, true);
+});
+
+test('a look that could not start the coding agent is said as a failure, not as an ended look', async () => {
+  const run = async (cmd) => (cmd === 'sh' ? { status: 0, stdout: 'start: approved\n' } : { status: -1, stdout: '' });
+  const r = await runTick({ root: home(), plugin: '/plugin', run });
+  assert.strictEqual(r.failed, true);
+  const facts = [];
+  const t = ticker({ tick: async () => r, report: (f) => facts.push(Object.keys(f)[0]) });
+  await t.wake();
+  assert.deepStrictEqual(facts, ['taken', 'failed']);
+});
+
+test('a wake leaves its lines in the log, and status prints them with no token', async () => {
+  const env = connected();
+  const { Socket, made } = sockets();
+  const t = timers();
+  const conn = wake.run({ env, repoId: REPO, root: home(), Socket, timers: t, alive: () => true, tick: async () => ({ outcome: 'started: approved', model: true }) });
+  made[0].onopen();
+  made[0].onmessage({ data: WAKE });
+  await settle();
+  const o = sink();
+  wake.status({ env, cwd: '.', out: o, repoOf: () => String(REPO) });
+  for (const word of ['connected', 'wake received', 'wake taken', 'look ended: started: approved']) assert.ok(o.text.includes(word), word);
+  assert.ok(!o.text.includes(TOKEN));
+  conn.stop();
+  await conn;
+});

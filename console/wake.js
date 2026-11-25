@@ -33,6 +33,9 @@ const RETRY_FIRST_MS = 1000;
 const RETRY_MOST_MS = 60000;
 const NOT_CONNECTED = 'This machine is no longer connected to SipNShip.';
 const WAKE = 'request-waiting';
+/** The other word it hears: Look now was pressed, so the drive looks whether or not anything is approved. */
+const LOOK = 'look-now';
+const LOG_KEEP = 200;
 
 const dir = (env = process.env) => path.join(tokens.home(env), 'wake');
 const file = (env, name) => path.join(dir(env), name);
@@ -75,14 +78,38 @@ function sessionsAlive(env = process.env, now = Date.now()) {
 /** The wait before the next try: growing from a second to a minute. */
 const retryMs = (tries) => Math.min(RETRY_FIRST_MS * 2 ** Math.max(0, tries), RETRY_MOST_MS);
 
-/** True only for the one message, for this repository. Anything else is dropped unread. */
-function readWake(text, repoId) {
-  if (typeof text !== 'string' || text.length > 200) return false;
+/** True only for the wake message, for this repository. Anything else is dropped unread. */
+function readWake(text, repoId) { return readWord(text, repoId) === WAKE; }
+/** True only for the look message, for this repository. */
+function readLook(text, repoId) { return readWord(text, repoId) === LOOK; }
+
+/** The message's one word when it is exactly one of the two known messages for this repository, else undefined. */
+function readWord(text, repoId) {
+  if (typeof text !== 'string' || text.length > 200) return undefined;
   let m;
-  try { m = JSON.parse(text); } catch { return false; }
-  if (!m || typeof m !== 'object' || Array.isArray(m)) return false;
-  if (Object.keys(m).some((k) => k !== 'wake' && k !== 'repo')) return false;
-  return m.wake === WAKE && m.repo === repoId;
+  try { m = JSON.parse(text); } catch { return undefined; }
+  if (!m || typeof m !== 'object' || Array.isArray(m)) return undefined;
+  if (Object.keys(m).some((k) => k !== 'wake' && k !== 'repo')) return undefined;
+  return m.repo === repoId && (m.wake === WAKE || m.wake === LOOK) ? m.wake : undefined;
+}
+
+/**
+ * What the connection did, one line each, in the plugin's home folder (never a token): connected, a wake received
+ * and for which project, a look started or why not, the look ended. `sipnship wake status` prints the last few.
+ */
+const logFile = (env) => file(env, 'wake.log');
+function writeLog(env, line, now = Date.now()) {
+  try {
+    ensureDir(env);
+    const f = logFile(env);
+    let lines = [];
+    try { lines = fs.readFileSync(f, 'utf8').split('\n').filter(Boolean); } catch { /* none yet */ }
+    lines.push(`${new Date(now).toISOString()} ${String(line).replace(/[\r\n]+/g, ' ').slice(0, 300)}`);
+    fs.writeFileSync(f, lines.slice(-LOG_KEEP).join('\n') + '\n');
+  } catch { /* a log that cannot be written never stops the connection */ }
+}
+function readLog(env, n = 8) {
+  try { return fs.readFileSync(logFile(env), 'utf8').split('\n').filter(Boolean).slice(-n); } catch { return []; }
 }
 
 const pidAlive = (pid) => {
@@ -170,6 +197,8 @@ function launchRun({ env, repoId, root }) {
  * and drive look. Resolves when it ends: no session for a while, the token refused, or `stop()`.
  */
 function run({ env = process.env, repoId, root, plugin = path.resolve(__dirname, '..'), Socket = globalThis.WebSocket, fetchFn = (u, i) => fetch(u, i), tick, timers = { setTimeout, clearTimeout, setInterval, clearInterval }, now = Date.now, alive = () => sessionsAlive(env, now()) || listenerAlive(env, now()), log = () => {} } = {}) {
+  const note = (line) => writeLog(env, `[${repoId}] ${line}`, now());
+  const logTick = (r) => { note(`look ended: ${r && r.outcome ? r.outcome : 'no word'}`); log(r); };
   const entry = tokens.find(String(repoId), env);
   if (!entry || typeof Socket !== 'function') return Promise.resolve('none');
   ensureDir(env);
@@ -185,7 +214,7 @@ function run({ env = process.env, repoId, root, plugin = path.resolve(__dirname,
   let finish;
   const done = new Promise((r) => { finish = r; });
   const say = (fact) => { if (open && ws) { try { ws.send(JSON.stringify(fact)); } catch { /* the next connection says it */ } } };
-  const looks = ticker({ tick: tick || (() => runTick({ root, plugin, env })), report: say, lockPath: path.join(root, '.scratch', 'drive', 'wake.lock'), now, log });
+  const looks = ticker({ tick: tick || ((kind) => runTick({ root, plugin, env, look: kind === 'look' })), report: say, lockPath: path.join(root, '.scratch', 'drive', 'wake.lock'), now, log: logTick, note });
 
   const end = (why) => {
     if (ended) return;
@@ -215,11 +244,17 @@ function run({ env = process.env, repoId, root, plugin = path.resolve(__dirname,
     try { s = new Socket(url.replace(/^http/, 'ws'), { headers }); } catch { schedule(); return; }
     ws = s;
     let opened = false;
-    s.onopen = () => { opened = true; open = true; tries = 0; say({ beat: true }); };
-    s.onmessage = (ev) => { if (readWake(typeof ev.data === 'string' ? ev.data : String(ev.data), repoId)) looks.wake(); };
+    s.onopen = () => { opened = true; open = true; tries = 0; note('connected'); say({ beat: true }); };
+    s.onmessage = (ev) => {
+      const word = readWord(typeof ev.data === 'string' ? ev.data : String(ev.data), repoId);
+      if (!word) return;
+      note(`${word === LOOK ? 'look' : 'wake'} received, for ${repoId}, asked ${new Date(now()).toISOString()}`);
+      looks.wake(word === LOOK ? 'look' : 'wake');
+    };
     s.onerror = () => {};
     s.onclose = async () => {
       if (ws !== s) return;
+      if (open) note('connection closed');
       open = false;
       ws = null;
       if (ended) return;
@@ -254,12 +289,15 @@ function status({ env = process.env, cwd = process.cwd(), out = process.stdout, 
   if (refused && refused.connectedAt === entry.connectedAt) { out.write(`${NOT_CONNECTED}\n`); return 0; }
   const pid = readPid(env, entry.repoId);
   const holds = listenerAlive(env) && !!listenerState(env).roots[String(entry.repoId)];
+  const lines = readLog(env, 200).filter((l) => l.includes(`[${entry.repoId}]`)).slice(-8);
+  const said = lines.length ? `Last things it did:\n${lines.map((l) => `  ${l}`).join('\n')}\n` : 'It has not done anything yet.\n';
   out.write(pid && pidAlive(pid)
     ? `This machine is listening for ${entry.fullName}: a press on the dashboard starts your drive here.\n`
     : holds
       ? `This machine is connecting for ${entry.fullName}: a press on the dashboard starts your drive here within a minute.\n`
       : `This machine is not listening for ${entry.fullName} now. Turn the listener on here (npx sipnship listen on) and a press starts your drive here, with no session open; until then a press waits for your drive's next look.\n`);
+  out.write(said);
   return 0;
 }
 
-module.exports = { start, startAll, listenerAlive, run, status, readWake, retryMs, touchSeen, sessionsAlive, mainRoot, launchRun, BEAT_MS, LIVE_MS, NOT_CONNECTED };
+module.exports = { start, startAll, listenerAlive, run, status, readWake, readLook, writeLog, readLog, retryMs, touchSeen, sessionsAlive, mainRoot, launchRun, BEAT_MS, LIVE_MS, NOT_CONNECTED };

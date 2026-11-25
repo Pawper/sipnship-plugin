@@ -83,14 +83,21 @@ function verdictOf(text) {
  * One look, in the project's main checkout. Returns { outcome, model } where model says whether Claude ran.
  * `run` stands in for spawnSync in tests; `plugin` is the plugin's root, where wake-check.sh lives.
  */
-async function runTick({ root, plugin, run = exec, env = process.env, platform = process.platform }) {
-  if (await runnerWakeBusy(root, run)) return { outcome: "the project's own wake is already on it", model: false };
-  const check = await run('sh', [path.join(plugin, 'scripts', 'drive', 'wake-check.sh')], { cwd: root, timeoutMs: 5 * 60000 });
-  const v = verdictOf(check.stdout);
-  if (!v.start) return { outcome: `nothing to start: ${v.why}`, model: false };
+async function runTick({ root, plugin, run = exec, env = process.env, platform = process.platform, look = false }) {
+  if (!look && await runnerWakeBusy(root, run)) return { outcome: "the project's own wake is already on it", model: false };
+  // Look now asks the drive to look whether or not anything is approved, so the approval check is not asked.
+  let v = { start: true, why: 'a look was asked for' };
+  if (!look) {
+    const check = await run('sh', [path.join(plugin, 'scripts', 'drive', 'wake-check.sh')], { cwd: root, timeoutMs: 5 * 60000 });
+    v = verdictOf(check.stdout);
+    if (check.status === -1 && !v.start) return { outcome: 'the check could not run on this computer', model: false, failed: true };
+    if (!v.start) return { outcome: `nothing to start: ${v.why}`, model: false };
+  }
   // The agents the look starts outlive its own turn, as on the runner; the hundred minutes still bound it.
   // On Windows the shell finds claude whether it is installed as a program or as an npm command; the arguments are fixed.
   const r = await run('claude', ['-p', PROMPT], { cwd: root, timeoutMs: TICK_MAX_MS, shell: platform === 'win32', env: { ...env, CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS: '0' } });
+  // The program could not be found or started at all (not a look that began and ended badly): the band says so.
+  if (r.status === -1 && !r.stdout) return { outcome: 'the coding agent could not be started in the project folder; the timed drive takes it next', model: false, failed: true };
   return { outcome: r.status === 0 ? `started: ${v.why}` : 'the drive did not finish its look; the timed drive takes it next', model: true };
 }
 
@@ -98,28 +105,34 @@ async function runTick({ root, plugin, run = exec, env = process.env, platform =
  * The one-at-a-time rule. `tick()` runs one look (async, resolving to its result); `report(fact)` tells the
  * service; `lockPath` is the project's lock. wake() is called for each wake heard.
  */
-function ticker({ tick, report = () => {}, lockPath, now = Date.now, log = () => {} }) {
-  const t = { running: false, pending: false, looks: 0 };
+function ticker({ tick, report = () => {}, lockPath, now = Date.now, log = () => {}, note = () => {} }) {
+  const t = { running: false, pending: false, looks: 0, kind: 'wake' };
   async function go() {
     if (lockPath && !takeLock(lockPath, now())) {
       // Another look on this machine holds the project: this one waits behind it, and is tried again at the next heartbeat.
       t.pending = true;
+      note('a look is already running on this computer; waiting for it');
       report({ pending: true });
       return;
     }
     t.running = true;
     t.pending = false;
     t.looks += 1;
+    const kind = t.kind;
+    t.kind = 'wake';
     report({ taken: true });
+    note(`${kind === 'look' ? 'look' : 'wake'} taken; starting a look`);
     let result;
-    try { result = await tick(); } catch { result = { outcome: 'the look could not run; the timed drive takes it next', model: false }; }
+    try { result = await tick(kind); } catch { result = { outcome: 'the look could not run; the timed drive takes it next', model: false, failed: true }; }
     if (lockPath) freeLock(lockPath);
     t.running = false;
-    report({ done: true });
+    // A look that could not start is said apart from one that ended: the band tells the builder within the minute.
+    report(result && result.failed ? { failed: true } : { done: true });
     log(result);
     if (t.pending) await go();
   }
-  t.wake = () => {
+  t.wake = (kind) => {
+    if (kind === 'look') t.kind = 'look';
     if (t.running) {
       if (!t.pending) report({ pending: true });
       t.pending = true;
