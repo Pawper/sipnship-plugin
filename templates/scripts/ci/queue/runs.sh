@@ -86,7 +86,14 @@ runner_labels_keep() {
   # No runner registered: nothing to keep, and nothing to say.
   [ "$rk_ok" = no ] || [ -n "$rk_list" ] || return 0
   if [ "$rk_ok" = yes ]; then
-    rk_plan=$(runner_label_plan "$rk_list")
+    # How many are kept follows how many changes wait green, read now from
+    # the open pull requests and CI's green runs; a failed read counts none.
+    rk_online=$(printf '%s\n' "$rk_list" | awk -F'\t' '$3 == "online" { c++ } END { print c + 0 }')
+    rk_pulls=$(gh_write api "repos/{owner}/{repo}/pulls?state=open&per_page=100" --jq '.[] | [.number, (.draft | tostring), .head.sha] | @tsv' 2>/dev/null | tr -d '\r') || rk_pulls=""
+    rk_runs=$(gh_write api "repos/{owner}/{repo}/actions/workflows/ci.yml/runs?event=pull_request&status=success&per_page=100" --jq '.workflow_runs[].head_sha' 2>/dev/null | tr -d '\r') || rk_runs=""
+    rk_want=$(keep_count "$rk_online" "$(green_waiting "$rk_pulls" "$rk_runs")")
+    rk_plan=$(runner_label_plan "$rk_list" "$rk_want")
+    kept_say "$rk_want" > "$flaky_dir/runner-kept" 2>/dev/null || true
     while IFS="$tab" read -r rk_do rk_id rk_name; do
       [ -n "$rk_do" ] || continue
       if [ "$rk_do" = add ]; then gh_write api -X POST "repos/{owner}/{repo}/actions/runners/$rk_id/labels" -f "labels[]=$KEEP_LABEL" >/dev/null 2>&1 || rk_ok=no

@@ -2632,6 +2632,13 @@ eq "a runner added without the label gets it; the kept one stays kept" "add	14	g
 eq "the kept runner went offline: the oldest online is kept and it gets the label back" "add	11	garden-1
 remove	12	garden-2" "$(runner_label_plan "$(cat "$rl_dir/kept-offline.tsv")")"
 eq "with one runner online none is kept, so pull requests never wait for an offline one" "add	12	garden-2" "$(runner_label_plan "$(cat "$rl_dir/one-online.tsv")")"
+eq "no change waiting green: one machine kept; one waiting: two; four: three" "1 2 3" "$(keep_count 6 0) $(keep_count 6 1) $(keep_count 6 5)"
+eq "never the last machine, and none with fewer than two online" "2 0 1" "$(keep_count 3 9) $(keep_count 1 9) $(keep_count 2 9)"
+eq "green changes are counted by their open, non-draft head with a green run" "2" "$(green_waiting "$(printf '1\tfalse\taaa\n2\ttrue\tbbb\n3\tfalse\tccc\n4\tfalse\tddd')" "$(printf 'aaa\nbbb\nccc\nccc')")"
+eq "the Queue says how many machines are kept for landing" "3 machines kept for landing|1 machine kept for landing|" "$(kept_say 3)|$(kept_say 1)|$(kept_say 0)"
+eq "asking for two kept leaves the next runner bare too" "remove	12	garden-2" "$(runner_label_plan "$(cat "$rl_dir/right.tsv")" 2)"
+eq "asking for one again puts the label back on the second" "add	12	garden-2" "$(runner_label_plan "$(printf '11\tgarden-1\tonline\tself-hosted\n12\tgarden-2\tonline\tself-hosted\n13\tgarden-3\tonline\tself-hosted,pr')" 1)"
+eq "each drain reads how many wait green and keeps that many" "1" "$(sed -n '/^runner_labels_keep()/,/^}/p' "$qs_mq" | grep -c 'rk_want=\$(keep_count')"
 eq "the variable turns on once the labels are right, and is left alone when it is" "on " "$(keep_runner_var yes off) $(keep_runner_var yes on)"
 eq "a token without the right turns it off, so pull requests take any runner" "off" "$(keep_runner_var no on)"
 eq "and the Queue says so in what needs a person" "Nothing waits.

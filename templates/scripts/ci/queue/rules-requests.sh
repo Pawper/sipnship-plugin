@@ -193,20 +193,48 @@ runners_free() { printf '%s\n' "$1" | awk -F'\t' '$2 == "free" || $2 == "reserve
 # the labels itself; a person never sets them.
 KEEP_LABEL=pr
 
-# runner_label_plan RUNNERS: the label changes that leave exactly one
-# online runner without the label, one "add|remove<TAB>id<TAB>name" a
-# line, nothing when the labels are already right. RUNNERS is one runner
-# a line, "id<TAB>name<TAB>status<TAB>labels" (comma-joined). The kept one
-# is the online runner already without the label, the oldest by id when
-# there are several, so the role moves only when it goes offline; else the
-# oldest online. With fewer than two online, none is kept: all carry it.
+# keep_count ONLINE GREEN: how many machines to keep for landing. None with
+# fewer than two online; else one, a second while any change waits green
+# (the drain holds one and the batch's checks need another), a third when
+# four or more wait, and never the last machine, so changes' own checks
+# always have one. Both numbers are read from GitHub, never kept in a file.
+keep_count() {
+  awk -v on="${1:-0}" -v g="${2:-0}" 'BEGIN { if (on + 0 < 2) { print 0; exit }
+    k = 1 + (g + 0 > 0) + (g + 0 >= 4); if (k > on - 1) k = on - 1; print k }'
+}
+
+# green_waiting PULLS SUCCESSES: how many open, non-draft changes have a
+# green run of CI on their current head. PULLS is "number<TAB>draft<TAB>sha"
+# a line; SUCCESSES one head sha a line, from the workflow's green runs.
+green_waiting() {
+  printf '%s\n' "$2" | tr -d '\r' | awk -F'\t' -v pulls="$1" '
+    BEGIN { n = split(pulls, rows, "\n"); for (i = 1; i <= n; i++) { split(rows[i], f, "\t"); if (f[1] != "" && f[2] != "true") want[f[3]] = f[1] } }
+    $1 != "" && ($1 in want) && !seen[want[$1]]++ { c++ }
+    END { print c + 0 }'
+}
+
+# kept_say KEPT: the Queue's line about the machines kept for landing.
+kept_say() {
+  case "$1" in 0|"") return 0 ;; 1) echo "1 machine kept for landing" ;; *) echo "$1 machines kept for landing" ;; esac
+}
+
+# runner_label_plan RUNNERS [KEEP]: the label changes that leave exactly
+# KEEP (default one) online runners without the label, one
+# "add|remove<TAB>id<TAB>name" a line, nothing when the labels are already
+# right. RUNNERS is one runner a line, "id<TAB>name<TAB>status<TAB>labels"
+# (comma-joined). The kept ones are the online runners already without the
+# label, the oldest by id first, then the oldest online ones, so a role
+# moves only when its runner goes offline. With fewer than two online,
+# none is kept: all carry it.
 runner_label_plan() {
-  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v lab="$KEEP_LABEL" '
-    NF >= 3 && $1 != "" { n++; id[n] = $1 + 0; nm[n] = $2; on = ($3 == "online"); has[n] = index("," $4 ",", "," lab ",") > 0
-      if (on) { online++; if (!has[n] && (bare == "" || id[n] < bare)) bare = id[n]; if (old == "" || id[n] < old) old = id[n] } }
-    END { kept = (online < 2 ? "" : (bare != "" ? bare : old))
+  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v lab="$KEEP_LABEL" -v want="${2:-1}" '
+    NF >= 3 && $1 != "" { n++; id[n] = $1 + 0; nm[n] = $2; on[n] = ($3 == "online"); has[n] = (index("," $4 ",", "," lab ",") > 0) ? 1 : 0; if (on[n]) online++ }
+    END { if (online < 2) want = 0; if (want > online - 1) want = online - 1
+      for (i = 1; i <= n; i++) if (on[i]) { r = 1
+        for (j = 1; j <= n; j++) if (on[j] && j != i && (has[j] < has[i] || (has[j] == has[i] && id[j] < id[i]))) r++
+        rank[i] = r }
       for (i = 1; i <= n; i++) {
-        if (kept != "" && id[i] == kept) { if (has[i]) printf "remove\t%s\t%s\n", id[i], nm[i] }
+        if (on[i] && rank[i] <= want) { if (has[i]) printf "remove\t%s\t%s\n", id[i], nm[i] }
         else if (!has[i]) printf "add\t%s\t%s\n", id[i], nm[i] } }'
 }
 
@@ -234,5 +262,5 @@ runner_label_problem() {
     END { if (online < 2) exit
       if (!bare) print "No runner is kept for the batch and main: every online runner carries the " lab " label. The merge queue sets the labels at its next drain; if it cannot, its token cannot manage runners."
       else if (!carry) print "No online runner carries the " lab " label, so pull requests wait for a machine. The merge queue sets the labels at its next drain; if it cannot, its token cannot manage runners."
-      else if (bare > 1) print "More than one online runner lacks the " lab " label; one alone is kept for the batch and main. The merge queue sets the labels at its next drain." }'
+      else if (bare > 3) print "More than three online runners lack the " lab " label; at most three are kept for the batch and main. The merge queue sets the labels at its next drain." }'
 }
