@@ -7251,6 +7251,18 @@ eq "units in different areas stay apart" "2" "$(area_units "$da_list" "$(printf 
 eq "with no areas list the lines pass unchanged" "unit${da_t}402${da_t}Water${da_t}${da_t}x" "$(area_units '' "$(printf 'unit\t402\tWater\t\tx\n')" "$(printf '301\twatering\n')" '')"
 eq "a hold line passes through" "hold${da_t}9${da_t}Seeds${da_t}After: Pots" "$(area_units "$da_list" "$(printf 'hold\t9\tSeeds\tAfter: Pots\n')" '' '')"
 eq "plan.sh reads the running units' areas and plans by area" "1 1" "$(grep -c 'running_units "' "$root/scripts/drive/plan.sh") $(grep -c 'area_units "$areas_text"' "$root/scripts/drive/plan.sh")"
+. "$root/scripts/drive/plan-holds-lib.sh"
+dp_cm='x <!-- sipnship-proposal {"status":"started","units":[{"issues":[300],"areas":["watering"]}],"held":[]} -->'
+dp_unit=$(printf 'unit	402	Water the beds on a timer		src/water/timer.ts
+')
+# The plan freed unit 300 (nobody on it), so run_units is empty; publish still counts it from the label, so the plan holds 402 itself.
+dp_snap=$(printf 'issue	300	Water the beds	in-progress
+')
+eq "a unit publish counts as running, that the plan freed, holds a ready unit in its area instead of a refusal" "hold${da_t}402${da_t}Water the beds on a timer${da_t}After: Water the beds [area: watering] (after: 300)" "$(hold_for_publish_view "$da_list" "$dp_unit" "$dp_cm" "$dp_snap" '' "$(printf '300	Water the beds
+')")"
+eq "a unit the plan also counts as running is left to its own hold" "unit${da_t}402${da_t}Water the beds on a timer${da_t}${da_t}src/water/timer.ts" "$(hold_for_publish_view "$da_list" "$dp_unit" "$dp_cm" "$dp_snap" "$(printf '300	watering
+')" '')"
+eq "with no unit running the units pass unchanged" "$dp_unit" "$(hold_for_publish_view "$da_list" "$dp_unit" '' '' '' '')"
 # A file on no area never hides the areas of the others, so a unit beside a running unit is a hold, not a start the publisher refuses (areas file: Maya's rooftop-garden app).
 eq "a file on no area is left out, the others still name their areas" "watering,beds" "$(unit_areas "$da_list" 'src/water/timer.ts,notes/loose.txt,src/beds/tint.ts')"
 eq "files on no area at all name none" "" "$(unit_areas "$da_list" 'notes/loose.txt')"

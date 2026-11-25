@@ -92,13 +92,25 @@ function pushedIn(command) {
     const m = part.match(/\bgit\s+(?:-C\s+("[^"]+"|'[^']+'|\S+)\s+)?push\b([^|]*)/);
     if (!m) continue;
     // A redirect (2>&1, >/dev/null, >> log) belongs to the shell line, never to the refs.
-    const args = m[2].replace(/\d*[<>]+&?\s*\S*/g, ' ').trim().split(/\s+/).filter((a) => a && !a.startsWith('-'));
+    const args = m[2].replace(/(?:(?<![\w-])\d+|&)?[<>]+&?\s*[^\s;|&<>]*/g, ' ').trim().split(/\s+/).filter((a) => a && !a.startsWith('-'));
     const ref = args.length > 1 ? args[args.length - 1] : '';
     const branch = ref.includes(':') ? ref.split(':').pop() : ref;
     if (!branch || branch === 'HEAD' || branch === 'main') continue;
     out = { branch, tree: m[1] ? m[1].replace(/^["']|["']$/g, '') : undefined };
   }
   return out;
+}
+
+/**
+ * The branch a folder is on, read from git in that folder and never from a command line; nothing when the
+ * folder is gone, is not a work tree, or has no branch checked out (a detached head is no branch).
+ */
+function branchIn(dir) {
+  try {
+    if (!dir || !fs.existsSync(dir)) return undefined;
+    const out = execFileSync('git', ['-C', dir, 'symbolic-ref', '--short', '-q', 'HEAD'], { encoding: 'utf8', timeout: 3000, stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true }).trim();
+    return out || undefined;
+  } catch (e) { return undefined; }
 }
 
 /**
@@ -358,7 +370,9 @@ function readSessions({ root, logsDir, worktrees, localModels, now = Date.now(),
       if (meta.worktree) s.worktree = { name: path.basename(meta.worktree), path: meta.worktree };
       // An agent the runtime gave no worktree is on the branch it pushed, from the folder it pushed it in; never its parent's.
       if (log.parent && !meta.branch && s.pushed) {
-        s.branch = s.pushed.branch;
+        // Read from git in the folder it works in, never from the command it pushed with; a folder git cannot read leaves the branch out (#2670).
+        const read = branchIn(meta.worktree || s.pushed.tree);
+        if (read) s.branch = read; else delete s.branch;
         if (!meta.worktree && s.pushed.tree) s.worktree = { name: path.basename(s.pushed.tree), path: s.pushed.tree };
       }
       if (meta.task && !s.title) s.title = meta.task.slice(0, 120);
@@ -382,4 +396,4 @@ function readSessions({ root, logsDir, worktrees, localModels, now = Date.now(),
   return out.sort((a, b) => b._at - a._at).slice(0, SESSIONS_MAX).map(({ _at, ...s }) => s);
 }
 
-module.exports = { issuesIn, pushedIn, lastLine, fullLine, readSession, readSessions, issuesInBranch, issuesInBody, logFolder, logsIn, agentMeta, worktreesOf, endedAgents, modelId, isLocal, effortLevel, CATEGORIES, WORDS_MAX, SESSIONS_MAX, RECENT_MS, ENDED_SLACK_MS, FULL_LINE_MAX_CHARS };
+module.exports = { issuesIn, pushedIn, branchIn, lastLine, fullLine, readSession, readSessions, issuesInBranch, issuesInBody, logFolder, logsIn, agentMeta, worktreesOf, endedAgents, modelId, isLocal, effortLevel, CATEGORIES, WORDS_MAX, SESSIONS_MAX, RECENT_MS, ENDED_SLACK_MS, FULL_LINE_MAX_CHARS };

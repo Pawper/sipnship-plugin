@@ -25,3 +25,27 @@ test('a redirect on a push command is never taken for the branch', () => {
   assert.deepStrictEqual(sessions.pushedIn('git push origin frost >> push.log'), { branch: 'frost', tree: undefined });
   assert.strictEqual(sessions.pushedIn('git push origin 2>&1 >/dev/null'), undefined);
 });
+
+test('a redirect glued to the branch, or written as &>, is never taken for it (#2670)', () => {
+  assert.deepStrictEqual(sessions.pushedIn('git push origin issue-12-frost>&2'), { branch: 'issue-12-frost', tree: undefined });
+  assert.deepStrictEqual(sessions.pushedIn('git push origin frost &> push.log'), { branch: 'frost', tree: undefined });
+  assert.deepStrictEqual(sessions.pushedIn('git push origin frost 2>&1 | tail -3'), { branch: 'frost', tree: undefined });
+});
+
+test('the branch is read from git in the folder, and left out when git cannot read it (#2670)', () => {
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+  const { execFileSync } = require('child_process');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'branch-in-'));
+  try {
+    const git = (...a) => execFileSync('git', ['-C', dir, ...a], { stdio: 'ignore' });
+    git('init', '-q');
+    git('checkout', '-q', '-b', 'issue-12-frost');
+    assert.strictEqual(sessions.branchIn(dir), 'issue-12-frost');
+    assert.strictEqual(sessions.branchIn(path.join(dir, 'missing')), undefined);
+    assert.strictEqual(sessions.branchIn(undefined), undefined);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
