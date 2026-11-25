@@ -187,28 +187,51 @@ runner_rows() {
 # runners_free ROWS: how many machines runner_rows found with no job.
 runners_free() { printf '%s\n' "$1" | awk -F'\t' '$2 == "free" || $2 == "reserved" { c++ } END { print c + 0 }'; }
 
-# --- One runner kept for the batch and main (scripts/ci/RUNNERS.md) ---
-# Every runner carries the pr label but the kept one, so pull requests
+# --- Runners kept for the batch and main (scripts/ci/RUNNERS.md) ---
+# Every runner carries the pr label but the kept ones, so pull requests
 # never take the machine a batch or main is waiting for. The queue keeps
 # the labels itself; a person never sets them.
 KEEP_LABEL=pr
 
-# keep_count ONLINE GREEN: how many machines to keep for landing. None with
-# fewer than two online; else one, a second while any change waits green
-# (the drain holds one and the batch's checks need another), a third when
-# four or more wait, and never the last machine, so changes' own checks
-# always have one. Both numbers are read from GitHub, never kept in a file.
+# keep_count ONLINE GREEN [LANDING]: how many machines to keep for landing.
+# None with fewer than two online; one while nothing waits green and no
+# batch is in its checks; while either is so, half the online machines and
+# at least two (the drain holds one, and a batch's dozen jobs need the
+# rest); never the last machine, so changes' own checks always have one.
+# Every number is read from GitHub at the drain, never kept in a file.
 keep_count() {
-  awk -v on="${1:-0}" -v g="${2:-0}" 'BEGIN { if (on + 0 < 2) { print 0; exit }
-    k = 1 + (g + 0 > 0) + (g + 0 >= 4); if (k > on - 1) k = on - 1; print k }'
+  awk -v on="${1:-0}" -v g="${2:-0}" -v l="${3:-0}" 'BEGIN { if (on + 0 < 2) { print 0; exit }
+    k = 1; if (g + 0 > 0 || l + 0 > 0) { k = int(on / 2); if (k < 2) k = 2 }
+    if (k > on - 1) k = on - 1; print k }'
+}
+
+# landing_now PULLS: how many batches (or rush test heads) are in their
+# checks: open, non-draft pull requests from a batch-* or rush-* branch.
+# PULLS is "number<TAB>draft<TAB>sha<TAB>head branch" a line.
+landing_now() {
+  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' '$1 != "" && $2 != "true" && ($4 ~ /^batch-/ || $4 ~ /^rush-/) { c++ } END { print c + 0 }'
+}
+
+# keep_why ONLINE GREEN LANDING: the drain's log line, how many machines
+# are kept for landing and why.
+keep_why() {
+  kw_k=$(keep_count "$1" "$2" "$3")
+  awk -v on="${1:-0}" -v g="${2:-0}" -v l="${3:-0}" -v k="$kw_k" 'BEGIN {
+    if (k + 0 == 0) { print "none kept for landing: fewer than two machines online."; exit }
+    w = ""; if (g + 0 > 0) w = g " " (g + 0 == 1 ? "change waits" : "changes wait") " green"
+    if (l + 0 > 0) w = (w == "" ? "" : w " and ") "a batch is in its checks"
+    if (w == "") w = "nothing waits green"
+    print k " of " on " machines kept for landing: " w "." }'
 }
 
 # green_waiting PULLS SUCCESSES: how many open, non-draft changes have a
 # green run of CI on their current head. PULLS is "number<TAB>draft<TAB>sha"
-# a line; SUCCESSES one head sha a line, from the workflow's green runs.
+# a line, and a fourth field, the head branch, when known: a batch or rush
+# test head is not a change waiting (landing_now counts it). SUCCESSES is
+# one head sha a line, from the workflow's green runs.
 green_waiting() {
   printf '%s\n' "$2" | tr -d '\r' | awk -F'\t' -v pulls="$1" '
-    BEGIN { n = split(pulls, rows, "\n"); for (i = 1; i <= n; i++) { split(rows[i], f, "\t"); if (f[1] != "" && f[2] != "true") want[f[3]] = f[1] } }
+    BEGIN { n = split(pulls, rows, "\n"); for (i = 1; i <= n; i++) { split(rows[i], f, "\t"); if (f[1] != "" && f[2] != "true" && f[4] !~ /^(batch|rush)-/) want[f[3]] = f[1] } }
     $1 != "" && ($1 in want) && !seen[want[$1]]++ { c++ }
     END { print c + 0 }'
 }
@@ -270,5 +293,6 @@ runner_label_problem() {
     END { if (online < 2) exit
       if (!bare) print "No runner is kept for the batch and main: every online runner carries the " lab " label. The merge queue sets the labels at its next drain; if it cannot, its token cannot manage runners."
       else if (!carry) print "No online runner carries the " lab " label, so pull requests wait for a machine. The merge queue sets the labels at its next drain; if it cannot, its token cannot manage runners."
-      else if (bare > 3) print "More than three online runners lack the " lab " label; at most three are kept for the batch and main. The merge queue sets the labels at its next drain." }'
+      else { most = int(online / 2); if (most < 2) most = 2; if (most > online - 1) most = online - 1
+        if (bare > most) print "More than half the online runners lack the " lab " label; at most " most " of " online " are kept for the batch and main. The merge queue sets the labels at its next drain." } }'
 }
