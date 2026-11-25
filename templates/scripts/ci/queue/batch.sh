@@ -347,7 +347,7 @@ else
     [ -n "$run_id" ] && gh_write run rerun "$run_id" --failed >/dev/null 2>&1 || break
     echo "The batch's checks were stopped before they finished, with nothing wrong so far (try $batch_cancel_tries of ${QUEUE_CANCEL_RETRIES:-2}); re-ran them and waiting again."
     sleep 30
-    wait_for_run "$batch_pr" "$branch" && wait_required "$batch_sha" && batch_ok=yes
+    if wait_for_run "$batch_pr" "$branch" && wait_required "$batch_sha"; then batch_ok=yes; fi
   done
 fi
 printf '%s\n' "$(( $(date +%s) - bt_run_begin ))" > "$flaky_dir/batch-run.seconds" 2>/dev/null || true
