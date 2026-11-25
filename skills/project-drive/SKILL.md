@@ -116,6 +116,22 @@ plan of your own, no report. When it prints `start: ...`, go on, and read the pl
 task itself runs on `roundModel` (Config), so even a tick that goes on is not on a heavy model; a decision that
 needs one is a dispatched agent, which the model check can see.
 
+**The look keeps a floor of its own (#2863).** The PreToolUse hook that refuses a single `gh` command when the
+hour's budget is low never sees the many calls a look's own process makes once it has started, so the plan
+checks the same floor itself, before it reads the board: below it, it says so ("GitHub's hourly budget is
+nearly spent..."), stops before the GraphQL read, and skips to `not published:`, so a look never spends the
+rest of the hour to zero by its own doing. `wake-check.sh` reads that same line and ends the tick there too,
+rather than reading the drive issue and the approval afresh. This local floor runs on every tick, scheduled or
+not, since a scheduled workflow run has no Claude Code hook watching the calls its own shell makes.
+
+**An identity of its own, where one exists.** When the owner sets `SIPNSHIP_DRIVE_TOKEN` (as the queue's own
+`QUEUE_MERGE_TOKEN`, `scripts/ci/QUEUE.md`), `wake-check.sh`, `plan.sh` and `claim.sh` export it as `GH_TOKEN`
+at their very start, so every `gh` call that process and the scripts it runs make afterward sign in under it
+instead of the owner's: a builder's own hourly budget stays theirs. This machine's own tally of calls (kept
+locally, by kind, for the brief's spend line) is also posted once a tick to the service
+(`scripts/drive/spend-send.sh`, never a gate: a repository with no identity to sign in under, or a send that
+fails, is skipped quietly), so Cost shows the drive, the agents and check polling beside the app's own reads.
+
 First make sure the picture is complete. Labels and titles are not the state; bodies and comments are. Run
 `/project-status`, which has light readers summarize only the items that changed since their last summary and
 leaves you one line per item. On a quiet board that is no readers at all. A proposal made without it is made
@@ -298,6 +314,10 @@ The goal lines and what each means:
   before pushing, never run the queue or re-run CI), the pull request it must open with `Closes #N`, and, when
   it must ask the owner, to write the ask for a builder who is not technical as "How to write an ask" below
   says (what happened, the question about their project, short-named choices, the reason as their benefit).
+  **Hand the agent what the look already read (#2863).** When `/project-status` or the plan has the issue's
+  text (`.scratch/board/items/issue-N.md`), put it in the brief rather than telling the agent to read it again
+  over GitHub: the look paid for that read once, and a brief that only points at a `gh api` call makes every
+  agent of the round pay for it a second time.
   The brief also says: your first step, before a worktree or any work, is `sh "${CLAUDE_PLUGIN_ROOT}/scripts/drive/claim.sh" N check TOKEN`
   for each issue: when it prints `taken:` for an open pull request, a branch or another starter's claim, stop with one
   line saying so and build nothing; your own token is not a reason to stop.

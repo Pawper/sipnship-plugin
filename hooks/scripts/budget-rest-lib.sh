@@ -110,3 +110,15 @@ budget_spend_line() {
     }' "$1"
 }
 
+# budget_spend_by_kind FILE [SINCE]
+# Every caller counted (#2863): the "C" lines of FILE (budget_history_add's
+# log) with a time after SINCE (default 0, every line), summed by kind, one
+# "KIND<TAB>COUNT" a line; a kind of nothing counts as "agent", as
+# budget_history_add itself does. This is the local half, read by this
+# machine's own scripts; drive/spend-send.sh posts it to the service, so
+# Cost shows it beside the app's own count. Nothing for a missing file.
+budget_spend_by_kind() {
+  [ -f "$1" ] || return 0
+  awk -F'\t' -v since="${2:-0}" '$1 == "C" && $2 + 0 > since { k = ($3 == "" ? "agent" : $3); n[k]++ } END { for (k in n) printf "%s\t%s\n", k, n[k] }' "$1"
+}
+

@@ -645,6 +645,12 @@ eq "any other command is nobody's here" "" "$(gh_script_caller 'git status')"
 eq "no spend sentence while REST is plentiful" "" "$(budget_spend_line "$bh_log" 3500 0)"
 eq "the audit names the hour REST reached zero" "1" "$(NOW=4000 SIPNSHIP_BUDGET_LOG=$bh_log sh "$root/templates/scripts/ci/rest-zero-audit.sh" | grep -c 'reached zero.*3 of them reads made by this machine.s agents (agent 2, checks 1)')"
 eq "the audit says nothing when REST never reached zero" "" "$(NOW=5000 SIPNSHIP_BUDGET_LOG=$bh_log SINCE_HOURS=0 sh "$root/templates/scripts/ci/rest-zero-audit.sh")"
+# Every caller counted, not only the service (#2863): this machine's own tally summed by kind, for the
+# drive's own send to the service (spend-send.sh) to post beside the app's own count.
+eq "every caller is counted, summed by kind" "agent	2
+checks	1" "$(budget_spend_by_kind "$bh_log" 0 | sort)"
+eq "since cuts out what was already sent" "agent	1" "$(budget_spend_by_kind "$bh_log" 1600 | sort)"
+eq "a missing file counts nothing" "" "$(budget_spend_by_kind "$bh_log.none" 0)"
 # issue-open.sh passes each label as one argument, spaces and all.
 io_dir=$(mktemp -d)
 mkdir -p "$io_dir/bin"
@@ -1578,6 +1584,7 @@ eq "places counted" "2 2" "$(worktree_places "$pairs" | cut -f1 | tr '\n' ' ' | 
 section 'project drive'
 . "$root/scripts/drive/drive-lib.sh"
 . "$root/scripts/drive/auto-lib.sh"
+. "$root/scripts/drive/round-lib.sh"
 snap=$(cat "$fx/drive-snapshot.tsv")
 eq "a full proposal, in order" "merge-batch 41 42 45 46
 fix-pr 47	Broken build
@@ -1662,6 +1669,40 @@ eq "the snapshot says yes for a titled decision" "yes" "$(owner_issue_fields 165
 eq "an empty owner phrase is never found and never loops" "no" "$(timeout 20 sh -c '. "$0/scripts/drive/owner-lib.sh"; if owner_phrase_in_open "Pick the planter? Yes." "" body || owner_phrase_in_open "Pick the planter" "" title; then echo yes; else echo no; fi' "$root")"
 od_bound=$(mktemp -d); mkdir -p "$od_bound/bin"; printf '#!/bin/sh\nsleep 30\n' > "$od_bound/bin/gh"; chmod +x "$od_bound/bin/gh"
 eq "a plan that does not finish is stopped with one plain line" "stop: plan did not finish" "$(cd "$od_bound" && PATH="$od_bound/bin:$PATH" PLAN_SECONDS=2 timeout 60 sh "$root/scripts/drive/plan.sh" 2>/dev/null | grep '^stop:')"
+# The floor a look keeps for itself (#2863): the hook that refuses a single gh call never sees the many a
+# look's own process makes once it has started, so the look checks the same floor before it reads anything.
+eq "under the GraphQL floor, the floor waits" "GitHub's hourly budget is nearly spent; the drive is waiting until 09:19Z (in 23 min) before it reads again." "$(budget_floor_wait "312	5000	1760001540	3469	5000	1760001540" 1760000200)"
+eq "under the REST floor too" "GitHub's hourly budget is nearly spent; the drive is waiting until 09:19Z (in 23 min) before it reads again." "$(budget_floor_wait "4120	5000	1760001540	90	5000	1760001540" 1760000200)"
+eq "plenty of either, nothing" "" "$(budget_floor_wait "4120	5000	1760000000	3469	5000	1760000000" 1760000000)"
+eq "no reading taken, never block on what could not be read" "" "$(budget_floor_wait '' 1760000200)"
+eq "a custom floor is honoured" "GitHub's hourly budget is nearly spent; the drive is waiting until 09:19Z (in 23 min) before it reads again." "$(budget_floor_wait "600	5000	1760001540	3469	5000	1760001540" 1760000200 700)"
+eq "the plan keeps that floor before its board read, and the wake check reads the same word" "1 yes" "$(awk '/^floor_wait=\$\(budget_floor_wait/ { a = NR } /^  facts=\$\(sh "\$here/ { if (!b) b = NR } END { print (a && b && a < b) ? 1 : 0 }' "$root/scripts/drive/plan.sh") $(grep -q 'nearly spent' "$root/scripts/drive/wake-check.sh" && echo yes)"
+eq "the drive, the wake check and claim.sh take a token of their own where the owner set one, as the queue does" "1 1 1" "$(grep -c 'SIPNSHIP_DRIVE_TOKEN' "$root/scripts/drive/plan.sh") $(grep -c 'SIPNSHIP_DRIVE_TOKEN' "$root/scripts/drive/wake-check.sh") $(grep -c 'SIPNSHIP_DRIVE_TOKEN' "$root/scripts/drive/claim.sh")"
+pf_dir=$(mktemp -d); mkdir -p "$pf_dir/.scratch" "$pf_dir/bin"
+printf '#!/bin/sh\necho called >> "%s/gh-calls"\n' "$pf_dir" > "$pf_dir/bin/gh"; chmod +x "$pf_dir/bin/gh"
+printf '%s\t90\t5000\t1760001540\t4000\t5000\t1760001540\n' "$(date +%s)" > "$pf_dir/.scratch/gh-budget.txt"
+pf_out=$(cd "$pf_dir" && PATH="$pf_dir/bin:$PATH" timeout 30 sh "$root/scripts/drive/plan.sh" --fast 2>&1)
+eq "a look below the floor says so and stops before the board read" "yes" "$(printf '%s\n' "$pf_out" | grep -q 'nearly spent' && echo yes || echo no)"
+eq "...and makes no gh call at all, since the board's own read is the one it skipped" "no" "$([ -f "$pf_dir/gh-calls" ] && echo yes || echo no)"
+eq "...and still says not published, so the Work tab is not left silent about why" "1" "$(printf '%s\n' "$pf_out" | grep -c '^not published: ')"
+# spend-send.sh: this machine's own count, by kind, posted once to the service, never a gate (#2863).
+ss_dir=$(mktemp -d); mkdir -p "$ss_dir/bin"
+printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> "%s/curl.log"\n' "$ss_dir" > "$ss_dir/bin/curl"; chmod +x "$ss_dir/bin/curl"
+ss_log="$ss_dir/gh-budget-history.txt"
+printf 'C\t1000\tdrive\nC\t1001\tdrive\nC\t1002\tchecks\nC\t1003\n' > "$ss_log"
+ss_run() { (cd "$ss_dir" && SIPNSHIP_BUDGET_LOG="$ss_log" SIPNSHIP_REPO_TOKEN=tok123 SIPNSHIP_REPO_ID=4242 PATH="$ss_dir/bin:$PATH" sh "$root/scripts/drive/spend-send.sh" "$@") }
+ss_run
+eq "it posts one send per kind this machine saw" "3" "$(wc -l < "$ss_dir/curl.log" | tr -d ' ')"
+eq "each send names the repository and the kind it counted" "yes" "$(grep -q '{"caller":"drive","calls":2}' "$ss_dir/curl.log" && grep -q "/v1/repos/4242/spend/github" "$ss_dir/curl.log" && echo yes)"
+: > "$ss_dir/curl.log"; ss_run
+eq "a second run with nothing new since the last send sends nothing" "0" "$(wc -l < "$ss_dir/curl.log" | tr -d ' ')"
+ss_dir2=$(mktemp -d); mkdir -p "$ss_dir2/bin"
+printf '#!/bin/sh\necho called >> "%s/curl.log"\n' "$ss_dir2" > "$ss_dir2/bin/curl"; chmod +x "$ss_dir2/bin/curl"
+# Unset here too (ACTIONS_ID_TOKEN_REQUEST_URL is set when this suite itself runs inside a workflow job):
+# this case is for no identity at all, which service_sign_in's own OIDC branch would otherwise try first.
+ss_rc=$(cd "$ss_dir2" && unset ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_ID_TOKEN_REQUEST_TOKEN; SIPNSHIP_HOME="$ss_dir2/no-such-home" SIPNSHIP_BUDGET_LOG="$ss_log" PATH="$ss_dir2/bin:$PATH" sh "$root/scripts/drive/spend-send.sh" >/dev/null 2>&1; echo $?)
+eq "with no identity to sign in under, it exits quietly and sends nothing: never a gate on the tick" "0 no" "$ss_rc $([ -f "$ss_dir2/curl.log" ] && echo yes || echo no)"
+eq "the wake check posts this machine's own count, and never blocks on it" "1" "$(grep -c 'sh "\${WAKE_SPEND:-\$here/spend-send.sh}" >/dev/null 2>&1 || true' "$root/scripts/drive/wake-check.sh")"
 eq "report trimmed per section" "Merged:
 #1
 #2
@@ -8490,7 +8531,7 @@ eq "a look with nothing new still updates when it looked, in place" "published: 
 eq "a look that finds no ready work at all still publishes that it looked" "published: Published the round on #99: 0 agents, proposed.|Proposed next round: nothing to start; your drive looked and found no ready work.|1" "$(pp_pub "$(printf 'stop: nothing to propose\n')" "" "$pp_areas" "" "")|$(sed -n 1p "$pp_dir/comment")|$(grep -c '"units":\[\],"looked":"' "$pp_dir/comment")"
 mkdir -p "$pp_dir/nobin"; printf '#!/bin/sh\nexit 0\n' > "$pp_dir/nobin/gh"; chmod +x "$pp_dir/nobin/gh"
 eq "a publish that cannot go through is said, never passed over" "not published: The round was not published: no open issue is labeled drive. Pass --issue N to name the drive issue." "$(cd "$pp_dir/work" && here="$root/scripts/drive" PATH="$pp_dir/nobin:$PATH" publish_proposal "$pp_round" "$pp_units" "$pp_areas" "$pp_facts" "")"
-eq "plan.sh publishes at its end, a dry run skips it, and a stopped run says it did not" "1 1 2" "$(grep -c '^publish_proposal "\$round" "\$units" "\$areas_text" "\$facts" "\$sized_said"' "$root/scripts/drive/plan.sh") $(grep -c -- '--dry-run) PLAN_PUBLISH=no' "$root/scripts/drive/plan.sh") $(grep -c 'echo "not published: ' "$root/scripts/drive/plan.sh")"
+eq "plan.sh publishes at its end, a dry run skips it, and a stopped run says it did not" "1 1 3" "$(grep -c '^publish_proposal "\$round" "\$units" "\$areas_text" "\$facts" "\$sized_said"' "$root/scripts/drive/plan.sh") $(grep -c -- '--dry-run) PLAN_PUBLISH=no' "$root/scripts/drive/plan.sh") $(grep -c 'echo "not published: ' "$root/scripts/drive/plan.sh")"
 # A guess can place a unit in an area its own area_units check never saw (its files resolve to more, or
 # fewer, areas once read back the way publish-round.sh reads them): the unit publish-round.sh would refuse
 # for a running unit's area still reached round_file as a plain dispatch, and the whole round was refused for
@@ -8572,6 +8613,14 @@ eq "the wake runs the plan first and says what it published, then reads the appr
 nothing: gh is not available or not signed in|proposal for Friday" "$(cd "$pw_dir" && WAKE_UPDATE=/dev/null WAKE_PREPARE=/dev/null WAKE_PLAN="$pw_dir/plan.sh" PATH="$pw_dir/bin:$PATH" sh "$root/scripts/drive/wake-check.sh")|$(sed -n 1p "$pw_dir/.scratch/drive/plan.txt")"
 printf '#!/bin/sh\necho "stop: rate-limited"\n' > "$pw_dir/plan.sh"
 eq "a plan that printed no publish line is said as not published" "1" "$(cd "$pw_dir" && WAKE_UPDATE=/dev/null WAKE_PREPARE=/dev/null WAKE_PLAN="$pw_dir/plan.sh" PATH="$pw_dir/bin:$PATH" sh "$root/scripts/drive/wake-check.sh" | grep -c '^not published: ')"
+# When the plan's own floor (round-lib.sh, budget_floor_wait) already stopped it reading anything, the rest of
+# the tick waits for the same reason too, rather than reading the drive issue and the approval afresh (#2863).
+printf '#!/bin/sh\necho "not published: GitHub'"'"'s hourly budget is nearly spent, so this look read nothing fresh; the Work tab still shows the last round it was given."\n' > "$pw_dir/plan.sh"
+: > "$pw_dir/approval-called"; rm -f "$pw_dir/approval-called"
+printf '#!/bin/sh\necho called >> "%s/approval-called"\n' "$pw_dir" > "$pw_dir/approval.sh"
+pw_out=$(cd "$pw_dir" && WAKE_UPDATE=/dev/null WAKE_PREPARE=/dev/null WAKE_PLAN="$pw_dir/plan.sh" WAKE_APPROVAL="$pw_dir/approval.sh" PATH="$pw_dir/bin:$PATH" sh "$root/scripts/drive/wake-check.sh")
+eq "a tick whose plan found the floor low says so too and reads no further" "nothing: GitHub's hourly budget is nearly spent; waiting for it to reset before reading anything else" "$(printf '%s\n' "$pw_out" | tail -n 1)"
+eq "...and never reads the approval, since the plan already stopped before reading anything" "no" "$([ -f "$pw_dir/approval-called" ] && echo yes || echo no)"
 # The installed copy is brought up by script first thing, whoever started the tick, and a release is prepared by script (#2052).
 uf_dir=$(mktemp -d)
 uf_list() { printf '{\n "plugins": {\n  "sipnship@sipnship": [\n   { "scope": "user", "version": "%s" }\n  ]\n }\n}\n' "$1" > "$uf_dir/list.json"; }

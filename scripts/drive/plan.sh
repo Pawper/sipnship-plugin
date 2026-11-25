@@ -30,6 +30,11 @@ if [ -z "${PLAN_BOUNDED:-}" ] && command -v timeout >/dev/null 2>&1; then
 fi
 
 . "$here/../../hooks/scripts/lib.sh"
+. "$here/../../hooks/scripts/budget-rest-lib.sh"
+# A token of the drive's own, when the owner has set one up (as the queue
+# does, QUEUE_MERGE_TOKEN), so this look and every gh call its own process
+# makes afterward sign in under it instead of the owner's (#2863).
+[ -z "${SIPNSHIP_DRIVE_TOKEN:-}" ] || export GH_TOKEN="$SIPNSHIP_DRIVE_TOKEN"
 . "$here/../../hooks/scripts/session-brief-lib.sh"
 . "$here/../../hooks/scripts/board-checks-lib.sh"
 . "$here/../../hooks/scripts/session-brief-versions.sh"
@@ -92,6 +97,19 @@ if [ -f .claude/project-drive.json ]; then
   settings=$(drive_settings "$cfg"); priorities=$(drive_priorities "$cfg")
   owner_phrases=$(printf '%s' "$cfg" | awk 'BEGIN { RS = "\001" } { i = index($0, "\"ownerDecisions\""); if (!i) exit; s = substr($0, i); j = index(s, "["); k = index(s, "]"); if (!j || !k) exit; print substr(s, j + 1, k - j - 1) }' \
     | tr ',' '\n' | sed 's/^[ \t"]*//;s/[ \t"]*$//' | sed '/^$/d')
+fi
+
+# The guard that refuses a single gh call (require-gh-budget.sh) never sees
+# the many calls a look makes inside its own process once it has started
+# (#2863): below the same floor, the look itself stops before the board's
+# expensive GraphQL read and does only what lands and heals, so it never
+# spends the rest of the hour to zero by its own doing.
+floor_wait=$(budget_floor_wait "$(budget_read_logged .)" "$(date +%s)")
+if [ -n "$floor_wait" ]; then
+  echo "$floor_wait"
+  echo "stop: $floor_wait"
+  echo "not published: GitHub's hourly budget is nearly spent, so this look read nothing fresh; the Work tab still shows the last round it was given."
+  exit 0
 fi
 
 if [ -n "$facts_file" ] && [ -f "$facts_file" ]; then

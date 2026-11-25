@@ -15,6 +15,11 @@ here=$(dirname "$0")
 . "$here/round-state-lib.sh"
 . "$here/claim-lib.sh"
 . "$here/stale-lib.sh"
+# A token of the drive's own, when the owner has set one up (as the queue
+# does, QUEUE_MERGE_TOKEN): every starter calls this first, the agent
+# itself included, so this one line gives an identity of its own to both
+# (#2863).
+[ -z "${SIPNSHIP_DRIVE_TOKEN:-}" ] || export GH_TOKEN="$SIPNSHIP_DRIVE_TOKEN"
 type gitb >/dev/null 2>&1 || gitb() { if command -v timeout >/dev/null 2>&1; then timeout -k 5 "${GIT_BOUND_SECONDS:-120}" git "$@"; else git "$@"; fi; }
 usage() { echo "usage: claim.sh ISSUE claim [TOKEN] | check | release TOKEN" >&2; exit 2; }
 case "${1:-}" in ''|*[!0-9]*) usage ;; esac

@@ -16,7 +16,15 @@
 here=$(dirname "$0")
 . "$here/wake-lib.sh"
 . "$here/round-lib.sh"
+# A token of the drive's own, when the owner has set one up (as the queue
+# does, QUEUE_MERGE_TOKEN), so this tick and every script it runs sign in
+# under it instead of the owner's (#2863).
+[ -z "${SIPNSHIP_DRIVE_TOKEN:-}" ] || export GH_TOKEN="$SIPNSHIP_DRIVE_TOKEN"
 mkdir -p .scratch/drive 2>/dev/null
+# Every caller counted (#2863): this machine's own tally of GitHub calls is posted to the service, so Cost
+# shows the drive, the agents and check polling beside the app's own reads. Never a gate: a repository that
+# cannot sign in, or a send that fails, is skipped quietly, with no call of its own to GitHub either way.
+sh "${WAKE_SPEND:-$here/spend-send.sh}" >/dev/null 2>&1 || true
 # First thing, by script: a copy behind the published version is brought up, whoever started this run.
 sh "${WAKE_UPDATE:-$here/../release/update-if-behind.sh}" 2>/dev/null | tail -n 1
 # And a release is prepared by script when plugin changes sit on main with no release open; nothing is printed when there is none.
@@ -38,6 +46,14 @@ fi
 sh "${WAKE_PLAN:-$here/plan.sh}" --fast > .scratch/drive/plan.txt 2>/dev/null
 pub=$(grep -E '^(published|not published):' .scratch/drive/plan.txt | tail -n 1)
 echo "${pub:-not published: the plan printed no proposal, so the Work tab still shows the last round it was given.}"
+# The plan's own floor (round-lib.sh, budget_floor_wait, #2863) already stopped before it read anything: the
+# rest of this tick reads the drive issue and its comments afresh too, so it waits for the same reason rather
+# than spending what the plan just refused to.
+if grep -q "nearly spent" .scratch/drive/plan.txt 2>/dev/null; then
+  echo "nothing: GitHub's hourly budget is nearly spent; waiting for it to reset before reading anything else"
+  if [ -n "${GITHUB_OUTPUT:-}" ]; then echo "start=no" >> "$GITHUB_OUTPUT"; echo "why=GitHub's hourly budget is nearly spent" >> "$GITHUB_OUTPUT"; fi
+  exit 0
+fi
 # The drive issue and its tracking comment (wake_repeat_read, #2342) are read once, here, before the
 # approval runs rather than after: a round already proposed, with nothing started, for two looks running
 # (one short of the stall line, "proposed 3 times... ") is not made to wait a whole twenty minutes for
