@@ -274,6 +274,7 @@ scripts/ci/batch-lib.sh 95f24f172c0c37f7c273521a20b85fe25a3187f7
 scripts/ci/batch-lib.sh 9eefd77b3614fe95a30c612f5d7d98abea7d9fce
 scripts/ci/batch-lib.sh a10ebfa8e717f2e2936fb024cb356df5db4451a7
 scripts/ci/batch-lib.sh a4ae8b7620efdb357daaf4b22d0f701e29fb4207
+scripts/ci/batch-lib.sh a78874ce5e6112c11499a86536762f052b9db42f
 scripts/ci/batch-lib.sh a7be4d01a3846080b1ecf0277b8790cdcc6759a6
 scripts/ci/batch-lib.sh abd447b6013f9ca4909e2e7112c2ea4f8838b786
 scripts/ci/batch-lib.sh ad6dd423904a3dcdacf1ab772934950b8c1b4412
@@ -469,6 +470,7 @@ scripts/ci/merge-queue.sh 26028f2609ec6ca65f04f880e0a2566f4602f1a3
 scripts/ci/merge-queue.sh 27179d03fa79d1652cef1634d3e306093385ed3c
 scripts/ci/merge-queue.sh 27e5e330a91b708982360dc2a60e229316d57ae4
 scripts/ci/merge-queue.sh 29751d8120febaa13130c9fff88e9e4d6e803622
+scripts/ci/merge-queue.sh 2a5a925352cb6b8234a49d23847259ee1e928b72
 scripts/ci/merge-queue.sh 2d545e2ed00455f0a39d4a1fd4c66cf53595bfc9
 scripts/ci/merge-queue.sh 3116041cf5152ce3c676305a602d5e9b5dac6b91
 scripts/ci/merge-queue.sh 321e8772f39f021f6a9a800a03e4df2e41c1fda0
@@ -732,6 +734,7 @@ scripts/ci/queue/rules-drain.sh fbee41f7caa7175ef353f4fc0f9da0642e5a884f
 scripts/ci/queue/rules-due.sh 0e07a0aec3bfe9a790ebbe7c85e656338b582bb8
 scripts/ci/queue/rules-due.sh 652cacf0b3d6dd87e8d71087b90521c57689e167
 scripts/ci/queue/rules-due.sh a188ec7454d340440d9fbec0890b5e65a18edfcc
+scripts/ci/queue/rules-keep.sh 5ed209ed54047c5819779c4360968dcc30f3109e
 scripts/ci/queue/rules-place.sh 51e6e76972b9dd244b1c1f41847fcde94bcc3d41
 scripts/ci/queue/rules-place.sh cd9d8c218dc74b0ba4f1de893dbd81e0b5dabf5d
 scripts/ci/queue/rules-requests.sh 09bdcd8c4b7d9f05e861b0699bfd3c93e780e45e
