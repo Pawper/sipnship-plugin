@@ -138,7 +138,7 @@ workspace_install_command() {
 # reaches this write.
 install_record() {
   for ir_f in .package-lock.json .modules.yaml .yarn-integrity; do
-    [ -f "$1/node_modules/$ir_f" ] && { echo "$ir_f"; return 0; }
+    if [ -f "$1/node_modules/$ir_f" ]; then echo "$ir_f"; return 0; fi
   done
   return 0
 }
