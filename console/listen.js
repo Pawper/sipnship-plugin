@@ -141,6 +141,8 @@ async function listen({ env = process.env, out = process.stdout, once = false, i
     if (entries.length && !reachedAny && !down) { say('Could not reach SipNShip. Nothing runs until it can; it will keep trying every ten minutes.'); }
     down = entries.length > 0 && !reachedAny;
     if (reachedAny) writeState({ ...readState(env), can, aliveAt: new Date().toISOString() }, env);
+    // The listener the builder said Yes to also holds the wake for every project it serves, with no session open (#2791).
+    if (reachedAny && !once && !io.noWake) { try { require('./wake').startAll({ env, out }); } catch { /* the next poll tries again */ } }
     if (once) return 0;
     await sleep(down ? SLOW_POLL_MS : POLL_MS);
   }

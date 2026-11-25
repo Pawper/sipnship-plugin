@@ -6,6 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const tokens = require('../tokens');
 const wake = require('../wake');
+const listen = require('../listen');
 const { ticker, runTick, verdictOf, takeLock, PROMPT } = require('../wake-tick');
 
 const scratch = path.resolve(__dirname, '..', '..', '..', '.scratch');
@@ -209,4 +210,68 @@ test('waits a growing time between tries, at most a minute', () => {
 test("reads wake-check's verdict from its last line", () => {
   assert.deepStrictEqual(verdictOf('published: x\nstart: 1 request\n'), { start: true, why: '1 request' });
   assert.deepStrictEqual(verdictOf(''), { start: false, why: 'the check said nothing' });
+});
+
+// The listener holds the connection for every project the machine is connected to, with no session open anywhere (#2791).
+function twoProjects() {
+  const env = connected();
+  tokens.put({ repoId: 6161, fullName: 'maya/market-stall', token: 'sns_repo_' + 'b'.repeat(43), machine: "Maya's laptop", connectedAt: '2026-11-24T19:10:00Z' }, env);
+  const roots = { [String(REPO)]: home(), '6161': home() };
+  listen.writeState({ on: true, roots, can: [], aliveAt: new Date().toISOString() }, env);
+  return { env, roots };
+}
+
+test('a listener holding two projects starts the connection for each, with no session open in either', () => {
+  const { env, roots } = twoProjects();
+  const launched = [];
+  const { Socket } = sockets();
+  assert.strictEqual(wake.sessionsAlive(env), false);
+  const did = wake.startAll({ env, out: sink(), launch: (x) => launched.push(x), Socket });
+  assert.deepStrictEqual(launched.map((x) => x.repoId).sort(), [REPO, 6161]);
+  assert.strictEqual(launched.find((x) => x.repoId === 6161).root, wake.mainRoot(roots['6161']));
+  assert.deepStrictEqual(did.sort(), ['started', 'started']);
+  fs.mkdirSync(path.join(env.SIPNSHIP_HOME, 'wake'), { recursive: true });
+  fs.writeFileSync(path.join(env.SIPNSHIP_HOME, 'wake', `${REPO}.pid`), String(process.pid));
+  fs.writeFileSync(path.join(env.SIPNSHIP_HOME, 'wake', '6161.pid'), String(process.pid));
+  assert.deepStrictEqual(wake.startAll({ env, out: sink(), launch: (x) => launched.push(x), Socket }), ['running', 'running']);
+  assert.strictEqual(launched.length, 2);
+});
+
+test('a listener turned off starts nothing', () => {
+  const { env } = twoProjects();
+  listen.writeState({ ...listen.readState(env), on: false }, env);
+  const launched = [];
+  assert.deepStrictEqual(wake.startAll({ env, out: sink(), launch: (x) => launched.push(x), Socket: class {} }), []);
+  assert.strictEqual(launched.length, 0);
+});
+
+test('the connection stays while the listener runs, with no session seen, and looks on the usual beat', async () => {
+  const { env, roots } = twoProjects();
+  const { Socket, made } = sockets();
+  const t = timers();
+  let looks = 0;
+  const conn = wake.run({ env, repoId: 6161, root: roots['6161'], Socket, timers: t, tick: async () => { looks++; return { outcome: 'nothing to start', model: false }; } });
+  made[0].onopen();
+  for (let i = 0; i < 40; i++) await t.beat();
+  await settle();
+  assert.strictEqual(looks, 1);
+  conn.stop();
+  assert.strictEqual(await conn, 'stopped');
+});
+
+test('with neither a listener nor a session the connection ends, as before', async () => {
+  const env = connected();
+  const { Socket } = sockets();
+  const t = timers();
+  const conn = wake.run({ env, repoId: REPO, root: home(), Socket, timers: t, tick: async () => ({}) });
+  await t.beat();
+  assert.strictEqual(await conn, 'no session');
+});
+
+test('status says what is true when the listener holds the project and the connection is not up yet', () => {
+  const { env } = twoProjects();
+  const o = sink();
+  wake.status({ env, cwd: '.', out: o, repoOf: () => 'maya/market-stall' });
+  assert.ok(!/not listening now/.test(o.text));
+  assert.ok(/connecting|starts your drive here/.test(o.text));
 });

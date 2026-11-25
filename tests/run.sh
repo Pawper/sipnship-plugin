@@ -7257,7 +7257,7 @@ eq "the wake check tracks the round proposed and the start decided, on the drive
 # (node); each block runs its own cases by name, and checks the hook that starts the connection.
 section 'a press wakes the drive on the builder machine'
 . "$root/tests/node-cases-lib.sh"
-node_cases "a wake runs one look, a second waits behind it, nothing approved spends no model, a handled wake and another repository's are no-ops, a refused token is said once" "$root/console/test/wake.test.js" 'one message|one look|no model|headless|already handled|runner wake|lock|hears a wake|refused token|once per repository|growing|verdict'
+node_cases "a wake runs one look, a second waits behind it, nothing approved spends no model, a handled wake and another repository's are no-ops, a refused token is said once" "$root/console/test/wake.test.js" 'one message|one look|no model|headless|already handled|runner wake|lock|hears a wake|refused token|once per repository|growing|verdict|listener|neither a listener|status says'
 pw_hooks="$root/hooks/hooks.json"
 eq "the connection is started at a session's start and kept at each turn's end" "2" "$(grep -c 'wake-start.sh' "$pw_hooks")"
 pw_home=$(mktemp -d)
