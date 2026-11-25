@@ -8483,6 +8483,38 @@ eq "a look that finds no ready work at all still publishes that it looked" "publ
 mkdir -p "$pp_dir/nobin"; printf '#!/bin/sh\nexit 0\n' > "$pp_dir/nobin/gh"; chmod +x "$pp_dir/nobin/gh"
 eq "a publish that cannot go through is said, never passed over" "not published: The round was not published: no open issue is labeled drive. Pass --issue N to name the drive issue." "$(cd "$pp_dir/work" && here="$root/scripts/drive" PATH="$pp_dir/nobin:$PATH" publish_proposal "$pp_round" "$pp_units" "$pp_areas" "$pp_facts" "")"
 eq "plan.sh publishes at its end, a dry run skips it, and a stopped run says it did not" "1 1 2" "$(grep -c '^publish_proposal "\$round" "\$units" "\$areas_text" "\$facts" "\$sized_said"' "$root/scripts/drive/plan.sh") $(grep -c -- '--dry-run) PLAN_PUBLISH=no' "$root/scripts/drive/plan.sh") $(grep -c 'echo "not published: ' "$root/scripts/drive/plan.sh")"
+# A guess can place a unit in an area its own area_units check never saw (its files resolve to more, or
+# fewer, areas once read back the way publish-round.sh reads them): the unit publish-round.sh would refuse
+# for a running unit's area still reached round_file as a plain dispatch, and the whole round was refused for
+# it, including the units free of any conflict (#2820). round_areas_safe reads the round back through the
+# same round_areas and area_problem publish-round.sh itself calls, and holds that one unit behind the
+# running unit instead, in the shape area_problem already suggests, so the rest of the round still goes out.
+rs_list=$(printf 'watering src/water/\nbeds src/beds/\n')
+rs_round=$(printf 'dispatch 402\tWater the beds on a timer\ndispatch 500\tFix everything\nstop: proposal ready for approval\n')
+rs_units=$(printf 'unit\t402\tWater the beds on a timer\t\tsrc/beds/tint.ts\nunit\t500\tFix everything\t\tsrc/water/timer.ts\n')
+rs_running=$(printf '301\twatering\n')
+rs_titles=$(printf '301\tWater the beds\n')
+eq "without the fix, the plain round names an area a running unit owns and is refused" "1" "$(area_problem "$(round_areas "$rs_list" "$(round_file "$rs_round" "$rs_units" "$rs_list" "$(printf '402\n500\n')" "")")" "$rs_running" | grep -c 'is in the area watering, which the running unit')"
+eq "a unit a running unit owns becomes a hold behind it; the free unit keeps its own dispatch line" "dispatch 402${pp_t}Water the beds on a timer
+hold 500${pp_t}Fix everything${pp_t}After: Water the beds [area: watering] (after: 301)
+stop: proposal ready for approval" "$(round_areas_safe "$rs_round" "$rs_units" "$rs_list" "$rs_running" "$rs_titles")"
+eq "the round round_areas_safe built passes the very check that refused the plain one" "" "$(area_problem "$(round_areas "$rs_list" "$(round_file "$(round_areas_safe "$rs_round" "$rs_units" "$rs_list" "$rs_running" "$rs_titles")" "$rs_units" "$rs_list" "$(printf '402\n500\n')" "")")" "$rs_running")"
+eq "with nothing running, or no areas list, the round passes unchanged" "$rs_round|$rs_round" "$(round_areas_safe "$rs_round" "$rs_units" "$rs_list" '' "$rs_titles")|$(round_areas_safe "$rs_round" "$rs_units" '' "$rs_running" "$rs_titles")"
+rs_dir=$(mktemp -d); mkdir -p "$rs_dir/bin" "$rs_dir/work/.claude"
+printf '%s\n' "$rs_list" > "$rs_dir/work/.claude/areas.txt"
+cat > "$rs_dir/bin/gh" <<'FAKE'
+#!/bin/sh
+case "$*" in
+  *labels=drive*) printf '77\t0\n' ;;
+  *-X\ POST*comments*) for a in "$@"; do case "$a" in body=@*) cp "${a#body=@}" "$RS_DIR/comment" ;; esac; done ;;
+esac
+exit 0
+FAKE
+chmod +x "$rs_dir/bin/gh"
+rs_pub() { (cd "$rs_dir/work" && here="$root/scripts/drive" RS_DIR="$rs_dir" PATH="$rs_dir/bin:$PATH" publish_proposal "$@"); }
+eq "given the round's running units, publish_proposal still publishes the free unit" "published: Published the round on #77: 1 agent, proposed." "$(rs_pub "$rs_round" "$rs_units" "$rs_list" "$(printf 'issue\t402\nissue\t500\n')" "" "" "$rs_running" "$rs_titles")"
+eq "the published marker starts only the free issue, and holds the other behind the running one" "1 1" "$(grep -c '\"units\":\[{\"issues\":\[402\],\"areas\":\[\"beds\"\]}\]' "$rs_dir/comment") $(grep -c '\"held\":\[{\"issues\":\[500\],\"waitsOn\":\[301\]' "$rs_dir/comment")"
+eq "plan.sh hands the round's own running units and titles to publish_proposal (#2820)" "1" "$(grep -c 'publish_proposal "\$round" "\$units" "\$areas_text" "\$facts" "\$sized_said" "\$stall_said" "\${run_units:-}" "\${issue_titles:-}"' "$root/scripts/drive/plan.sh")"
 # A start asked for by name reshapes the proposal before anything starts.
 pp_c=$(printf '2026-11-20T21:00:00Z\tmaya\tQueue request: start-now #233 by maya\n2026-11-20T21:01:00Z\tmaya\tQueue request: start-now #217 by maya\n2026-11-20T21:02:00Z\tsipnship[bot]\tQueue answer: start-now #217: started-now\n2026-11-20T21:03:00Z\tmallory\tQueue request: start-now #9 by maya\n')
 eq "a Start now on one issue still owed leads the plan; an answered one and one in another's name do not" "233" "$(asked_now "$pp_c")"

@@ -296,5 +296,5 @@ held_wait_note "${held_since:-}" "$(date +%s)"
 summary_note
 health_note
 wake_note
-# The proposal is published by this run itself, never left to the round's model (propose-lib.sh, #2101): the report carries this line.
-publish_proposal "$round" "$units" "$areas_text" "$facts" "$sized_said" "$stall_said"
+# The proposal is published by this run itself, never left to the round's model (propose-lib.sh, #2101): the report carries this line. RUNNING, TITLES feed round_areas_safe's own check inside publish_proposal (#2820).
+publish_proposal "$round" "$units" "$areas_text" "$facts" "$sized_said" "$stall_said" "${run_units:-}" "${issue_titles:-}"

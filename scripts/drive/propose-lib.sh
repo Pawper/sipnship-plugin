@@ -4,7 +4,9 @@
 # run, with no model in between, so what the tab shows is what the plan made
 # and what a dispatch starts. A run with nothing new still publishes that it
 # looked. Sourced by plan.sh after round-sizing-lib.sh and area-plan-lib.sh;
-# round_file is pure and tests/run.sh covers it.
+# round_file is pure and tests/run.sh covers it. round_areas_safe needs
+# areas-lib.sh (round_areas, area_problem), already sourced by plan.sh before
+# this file; a caller that only wants round_file need not source it.
 
 # round_file ROUND UNITS AREAS ISSUES SIZED [STALL]
 # ROUND is the plan's goal lines, UNITS the plan_units/area_units lines
@@ -114,27 +116,79 @@ round_file_check() {
     { printf "a damaged line (line %d)", NR; exit 1 }'
 }
 
-# publish_proposal ROUND UNITS AREAS FACTS SIZED [STALL]
+# round_areas_safe ROUND UNITS LIST RUNNING [TITLES]
+# ROUND is apply_units' lines (plain, unnumbered: "dispatch NUMS\tTITLE[...]",
+# "hold NUM\tTITLE\tREASON", "defer ...", "stop: ..."), UNITS area_units'
+# lines, LIST the project's areas file's text, RUNNING running_units' lines.
+# A unit's own files can place it in an area area_units' own check (unit_areas)
+# did not see, once the round file resolves them the way publish-round.sh
+# will (round_file's own match, read fresh against the same list): a unit the
+# plan judged safe to dispatch can still name a running unit's area once
+# written out, and publish-round.sh then refuses the whole round for the one
+# unit it would never have let land (#2820). Before the round goes anywhere,
+# it is read back through round_areas and area_problem exactly as
+# publish-round.sh reads them; a dispatch they would refuse becomes a hold
+# behind the running unit instead, in the shape area_problem itself suggests
+# (hold: NUMS | after: NUMS | areas: NAME), so the rest of the round still
+# publishes. Bounded to the round's own dispatch count, so a round that still
+# fails some other way is returned as it came rather than looped forever.
+# With no areas list, or nothing running, the round passes unchanged: the
+# project's own area list is what publish-round.sh would read too, and a
+# round nothing runs beside is never refused this way.
+round_areas_safe() {
+  rs_round=$1; rs_units=$2; rs_list=$3; rs_running=${4:-}; rs_titles=${5:-}
+  if [ -z "$rs_list" ] || [ -z "$rs_running" ]; then printf '%s\n' "$rs_round"; return 0; fi
+  rs_bound=$(($(printf '%s\n' "$rs_round" | grep -c '^dispatch ') + 1))
+  rs_n=0
+  while [ "$rs_n" -lt "$rs_bound" ]; do
+    rs_n=$((rs_n + 1))
+    rs_file=$(round_file "$rs_round" "$rs_units" "$rs_list" "" "")
+    rs_err=$(area_problem "$(round_areas "$rs_list" "$rs_file")" "$rs_running")
+    rs_nums=$(printf '%s' "$rs_err" | sed -n 's/.*(hold: \([0-9][0-9 ]*\) | after: \([0-9][0-9 ]*\) | areas: \([^)]*\)).*/\1\t\2\t\3/p')
+    [ -n "$rs_nums" ] || break
+    rs_target=$(printf '%s' "$rs_nums" | cut -f1)
+    rs_after=$(printf '%s' "$rs_nums" | cut -f2)
+    rs_area=$(printf '%s' "$rs_nums" | cut -f3)
+    rs_first=${rs_after%% *}
+    rs_atitle=$(printf '%s\n' "$rs_titles" | awk -F'\t' -v n="$rs_first" '$1 == n { print $2; found = 1 } END { if (!found) print "#" n }')
+    rs_round=$(printf '%s\n' "$rs_round" | awk -F'\t' -v t="$rs_target" -v a="$rs_after" -v ar="$rs_area" -v at="$rs_atitle" '
+      function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s); return s }
+      BEGIN { tt = trim(t) }
+      $1 ~ /^dispatch [0-9]/ {
+        n = $1; sub(/^dispatch /, "", n)
+        if (trim(n) == tt) { print "hold " n "\t" $2 "\tAfter: " at " [area: " ar "] (after: " a ")"; next }
+      }
+      { print }')
+  done
+  printf '%s\n' "$rs_round"
+}
+
+# publish_proposal ROUND UNITS AREAS FACTS SIZED [STALL [RUNNING [TITLES]]]
 # Writes the round file to .scratch/drive/round.txt and publishes it with
 # publish-round.sh, then prints one line the round's report carries:
 #   published: <publish-round's own line>
 #   not published: <why, in its words>
 # PLAN_PUBLISH=no (a dry run, and the suite) writes the file and publishes
 # nothing, and says so. With no areas list the unit's own files are its areas,
-# written beside the round file for publish-round.sh to read.
+# written beside the round file for publish-round.sh to read. RUNNING and
+# TITLES, when given, run the round through round_areas_safe first, so a
+# unit that would still be refused for a running unit's area is held instead,
+# and the rest of the round publishes (#2820).
 publish_proposal() {
   mkdir -p .scratch/drive 2>/dev/null
-  pp_list=$3; pp_areas=.claude/areas.txt
+  pp_round=$1; pp_list=$3; pp_areas=.claude/areas.txt
   if [ -z "$pp_list" ]; then
     pp_areas=.scratch/drive/areas-guessed.txt
     { echo "# Guessed by the plan from each unit's files: this project keeps no list of areas."; echo "unplaced .scratch/drive/unplaced"
       printf '%s\n' "$2" | awk -F'\t' '$1 == "unit" { n = split($5, f, ","); for (i = 1; i <= n; i++) if (f[i] != "" && f[i] != "@tooling" && !(f[i] in s)) { s[f[i]] = 1; print f[i] " " f[i] } }'; } > "$pp_areas"
+  else
+    pp_round=$(round_areas_safe "$pp_round" "$2" "$pp_list" "${7:-}" "${8:-}")
   fi
   # The file is built beside the round file, read back and checked, and moved into place whole: a line spliced into another (#2540) is built again once and never published.
   pp_tmp=.scratch/drive/round.txt.$$; pp_try=0; pp_ok=no
   while [ "$pp_try" -lt 2 ] && [ "$pp_ok" = no ]; do
     pp_try=$((pp_try + 1))
-    round_file "$1" "$2" "$pp_list" "$(printf '%s\n' "$4" | awk -F'\t' '$1 == "issue" { print $2 }')" "$5" "${6:-}" > "$pp_tmp"
+    round_file "$pp_round" "$2" "$pp_list" "$(printf '%s\n' "$4" | awk -F'\t' '$1 == "issue" { print $2 }')" "$5" "${6:-}" > "$pp_tmp"
     round_file_check < "$pp_tmp" > /dev/null && pp_ok=yes
   done
   if [ "$pp_ok" = no ]; then echo "not published: the round file came out with $(round_file_check < "$pp_tmp"); the plan is read again next run"; return 0; fi
