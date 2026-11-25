@@ -36,3 +36,21 @@ test('the brief body carries the versions only when it is given them', () => {
   assert.deepStrictEqual(withIt.plugin, { installed: '0.43.2', released: '0.44.0' });
   assert.strictEqual('plugin' in send.briefBody('', {}), false);
 });
+
+// #2703: how far the project's shipped files are behind, kept by the last sync report and used only while it still holds.
+test('the shipped counts come from the last sync report while its commit and version still hold, else nothing', () => {
+  const { execFileSync } = require('child_process');
+  const root = folder();
+  const git = (...a) => execFileSync('git', ['-c', 'user.email=maya@example.com', '-c', 'user.name=Maya', ...a], { cwd: root, encoding: 'utf8' }).trim();
+  git('init', '-q');
+  git('commit', '-q', '--allow-empty', '-m', 'Start the rooftop-garden app');
+  const keep = (over) => fs.writeFileSync(path.join(root, '.git', 'sipnship-shipped.json'), JSON.stringify({ head: git('rev-parse', 'HEAD'), version: '0.43.1', older: 14, edited: 2, ...over }));
+  keep({});
+  assert.deepStrictEqual(versions.shippedFrom(root, '0.43.1'), { older: 14, edited: 2 });
+  assert.strictEqual(versions.shippedFrom(root, '0.43.2'), undefined);
+  keep({ head: 'abc' });
+  assert.strictEqual(versions.shippedFrom(root, '0.43.1'), undefined);
+  keep({ older: 'many' });
+  assert.strictEqual(versions.shippedFrom(root, '0.43.1'), undefined);
+  assert.strictEqual(versions.shippedFrom(folder(), '0.43.1'), undefined);
+});
