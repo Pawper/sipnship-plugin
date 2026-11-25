@@ -24,6 +24,7 @@ root=${RUN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}
 # Sourced again by their blocks; here too, so each part has them.
 . "$root/templates/scripts/ci/batch-lib.sh"
 . "$root/templates/scripts/ci/run-lib.sh"
+. "$root/templates/scripts/ci/drain-unmatched-lib.sh"
 . "$root/hooks/scripts/session-brief-lib.sh"
 . "$root/hooks/scripts/session-brief-fast.sh"
 . "$root/hooks/scripts/subscribed-lib.sh"

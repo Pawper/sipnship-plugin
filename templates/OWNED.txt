@@ -108,6 +108,7 @@ scripts/ci/queue/budget.sh
 scripts/ci/queue/lock.sh
 scripts/ci/queue/rules-said.sh
 scripts/ci/run-lib.sh
+scripts/ci/drain-unmatched-lib.sh
 scripts/ci/run-test-file.mjs
 scripts/ci/QUEUE.md
 scripts/ci/deploy-gate.sh

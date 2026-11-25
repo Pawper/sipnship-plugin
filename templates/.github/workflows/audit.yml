@@ -153,14 +153,17 @@ jobs:
               if [ -n "$problems" ]; then runner=$(printf '%s\n\n%s' "$runner" "$problems" | sed '/./,$!d'); fi
               # A queued Queue drain whose own runs-on label matches no registered runner: a
               # QUEUE_RUNS_ON written as a list can name a machine nobody has (#2817).
-              drain_runs=$(printf '%s\n' "$runs" | awk -F'\t' '$2 == "Queue drain" && ($4 == "queued" || $4 == "waiting" || $4 == "requested") { print $1 }')
-              if [ -n "$drain_runs" ]; then
-                runner_labels=$(GH_TOKEN="$ADMIN_TOKEN" gh api "repos/$GH_REPO/actions/runners" --jq '[.runners[].labels[].name] | join(",")' 2>/dev/null || true)
-                for dr in $drain_runs; do
-                  job_labels=$(gh api "repos/$GH_REPO/actions/runs/$dr/jobs" --jq '[.jobs[0].labels[]] | join(",")' 2>/dev/null || true)
-                  drain_unmatched=$(drain_unmatched_label "$job_labels" "$runner_labels")
-                  if [ -n "$drain_unmatched" ]; then runner=$(printf '%s\n\n- %s' "$runner" "$(drain_unmatched_line "$drain_unmatched")" | sed '/./,$!d'); break; fi
-                done
+              if [ -f scripts/ci/drain-unmatched-lib.sh ]; then
+                . scripts/ci/drain-unmatched-lib.sh
+                drain_runs=$(printf '%s\n' "$runs" | awk -F'\t' '$2 == "Queue drain" && ($4 == "queued" || $4 == "waiting" || $4 == "requested") { print $1 }')
+                if [ -n "$drain_runs" ]; then
+                  runner_labels=$(GH_TOKEN="$ADMIN_TOKEN" gh api "repos/$GH_REPO/actions/runners" --jq '[.runners[].labels[].name] | join(",")' 2>/dev/null || true)
+                  for dr in $drain_runs; do
+                    job_labels=$(gh api "repos/$GH_REPO/actions/runs/$dr/jobs" --jq '[.jobs[0].labels[]] | join(",")' 2>/dev/null || true)
+                    drain_unmatched=$(drain_unmatched_label "$job_labels" "$runner_labels")
+                    if [ -n "$drain_unmatched" ]; then runner=$(printf '%s\n\n- %s' "$runner" "$(drain_unmatched_line "$drain_unmatched")" | sed '/./,$!d'); break; fi
+                  done
+                fi
               fi
             fi
             # One runner kept for the batch and main, where ci.yml keeps one:
