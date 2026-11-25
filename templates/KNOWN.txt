@@ -792,6 +792,7 @@ scripts/ci/report-red.sh a4b8523b81919f6bdf0e9382d0e614f9c06b5244
 scripts/ci/report-red.sh a558b0e46839df53672ada1bc059a9436476eb76
 scripts/ci/required-parts-lib.sh 3a58ed5669a0b5a1327bae5bb10f9eb2b4576c80
 scripts/ci/rest-zero-audit.sh 0262dd31087aaaa59474269244a65363c49ebb77
+scripts/ci/rest-zero-audit.sh c03c9f83a86d4b4a2f7741b7471dc6167831af2e
 scripts/ci/rules-guard.sh 154af6622a5010a84e4be7f1cd1e42e5c24a5d10
 scripts/ci/rules-lib.sh 5e7e08e5ac635fdedd212a5680bcffe41e854a1b
 scripts/ci/rules-lib.sh 8802b5c9bb9341949d582f25cd7b93ddf6118910
