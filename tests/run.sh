@@ -3785,6 +3785,19 @@ eq "the template itself is not" "" "$(split_checks "$(cat "$root/templates/.gith
 eq "sync points a split ci.yml, and one without pull-requests: read, at the migration page" "2" "$(grep -c 'plugin/CI-MIGRATION.md' "$root/scripts/sync/sync-templates.sh")"
 eq "the migration page ships with the plugin" "yes" "$([ -f "$root/CI-MIGRATION.md" ] && echo yes || echo no)"
 
+# What a sync report keeps for the brief's "setup is current" item (#2703):
+# older splits from edited when the known list judged the files, and the
+# item reads "beyond the list" rather than a guessed count when the
+# installed plugin has no known-hash list to judge by at all.
+. "$root/scripts/sync/sync-shipped.sh"
+ks_d=$(mktemp -d)
+git -C "$ks_d" init -q -b main; git -C "$ks_d" config user.email t@example.com; git -C "$ks_d" config user.name t; git -C "$ks_d" commit -q --allow-empty -m start
+ks_head=$(git -C "$ks_d" rev-parse HEAD)
+ks_json() { (cd "$ks_d" && only="" && apply=no && changed="a.sh b.sh" && edited="b.sh" && missing="c.sh" && known="$1" && version=9.9.9 && keep_shipped && cat .git/sipnship-shipped.json); }
+eq "older (one changed, one missing) splits from edited, with the head and version" "{\"head\":\"$ks_head\",\"version\":\"9.9.9\",\"older\":2,\"edited\":1}" "$(ks_json 'a.sh deadbeef')"
+eq "no known list on this machine: beyond the list, not a guessed count" "{\"head\":\"$ks_head\",\"version\":\"9.9.9\",\"older\":0,\"edited\":0,\"beyondList\":true}" "$(ks_json '')"
+rm -rf "$ks_d"
+
 section 'the CI template is three jobs on a pull request, and the screens job where mocks have routes'
 . "$root/scripts/sync/sync-lib.sh"
 ciy=$(cat "$root/templates/.github/workflows/ci.yml")
