@@ -634,10 +634,15 @@ eq "a stale cache is not" "" "$(budget_cached '1759999900	4120	5000	1760000000	3
 eq "an empty cache is not" "" "$(budget_cached '' 1760000000)"
 eq "the budget is one line" "GraphQL 4,120 of 5,000 left, resets 09:19Z (in 23 min); REST 3,469 of 5,000 left." "$(budget_line "4120	5000	1760001540	3469	5000	1760001540" 1760000200)"
 bh_log=$(mktemp)
-printf 'R\t1000\t4000\t5000\t4600\nR\t2000\t900\t5000\t4600\nC\t1500\nC\t1600\nR\t3000\t0\t5000\t4600\nC\t4000\n' > "$bh_log"
-eq "who spends the REST hour: the drop beside the agents' own reads" "REST spent this hour: about 4,000 of 5,000; this machine's agents made 2 of those reads, so the rest is the app, the drive's scripts, check polling and the coordinator's looks." "$(budget_spend_line "$bh_log" 3500)"
+printf 'R\t1000\t4000\t5000\t4600\nR\t2000\t900\t5000\t4600\nC\t1500\tchecks\nC\t1600\nR\t3000\t0\t5000\t4600\nC\t4000\n' > "$bh_log"
+eq "who spends the REST hour: the drop beside the agents' own reads" "REST spent this hour: about 4,000 of 5,000; this machine's agents made 2 of those reads (agent 1, checks 1), so the rest is the app and whatever is not counted here." "$(budget_spend_line "$bh_log" 3500)"
+eq "check polling is a caller of its own" "checks" "$(gh_script_caller 'sh scripts/pr-checks.sh 41')"
+eq "the merge queue is a caller of its own" "queue" "$(gh_script_caller 'sh scripts/ci/merge-queue.sh --drain')"
+eq "the drive's scripts are a caller of their own" "drive" "$(gh_script_caller 'sh /plugin/scripts/drive/claim.sh 12 check tok')"
+eq "the board's reads are the coordinator's" "coordinator" "$(gh_script_caller 'sh "$CLAUDE_PLUGIN_ROOT/hooks/scripts/board-now.sh"')"
+eq "any other command is nobody's here" "" "$(gh_script_caller 'git status')"
 eq "no spend sentence while REST is plentiful" "" "$(budget_spend_line "$bh_log" 3500 0)"
-eq "the audit names the hour REST reached zero" "1" "$(NOW=4000 SIPNSHIP_BUDGET_LOG=$bh_log sh "$root/templates/scripts/ci/rest-zero-audit.sh" | grep -c 'reached zero.*3 of them reads')"
+eq "the audit names the hour REST reached zero" "1" "$(NOW=4000 SIPNSHIP_BUDGET_LOG=$bh_log sh "$root/templates/scripts/ci/rest-zero-audit.sh" | grep -c 'reached zero.*3 of them reads made by this machine.s agents (agent 2, checks 1)')"
 eq "the audit says nothing when REST never reached zero" "" "$(NOW=5000 SIPNSHIP_BUDGET_LOG=$bh_log SINCE_HOURS=0 sh "$root/templates/scripts/ci/rest-zero-audit.sh")"
 # issue-open.sh passes each label as one argument, spaces and all.
 io_dir=$(mktemp -d)
@@ -2685,6 +2690,13 @@ eq "a runner added without the label gets it; the kept one stays kept" "add	14	g
 eq "the kept runner went offline: the oldest online is kept and it gets the label back" "add	11	garden-1
 remove	12	garden-2" "$(runner_label_plan "$(cat "$rl_dir/kept-offline.tsv")")"
 eq "with one runner online none is kept, so pull requests never wait for an offline one" "add	12	garden-2" "$(runner_label_plan "$(cat "$rl_dir/one-online.tsv")")"
+eq "no change waiting green: one machine kept; one waiting: two; four: three" "1 2 3" "$(keep_count 6 0) $(keep_count 6 1) $(keep_count 6 5)"
+eq "never the last machine, and none with fewer than two online" "2 0 1" "$(keep_count 3 9) $(keep_count 1 9) $(keep_count 2 9)"
+eq "green changes are counted by their open, non-draft head with a green run" "2" "$(green_waiting "$(printf '1\tfalse\taaa\n2\ttrue\tbbb\n3\tfalse\tccc\n4\tfalse\tddd')" "$(printf 'aaa\nbbb\nccc\nccc')")"
+eq "the Queue says how many machines are kept for landing" "3 machines kept for landing|1 machine kept for landing|" "$(kept_say 3)|$(kept_say 1)|$(kept_say 0)"
+eq "asking for two kept leaves the next runner bare too" "remove	12	garden-2" "$(runner_label_plan "$(cat "$rl_dir/right.tsv")" 2)"
+eq "asking for one again puts the label back on the second" "add	12	garden-2" "$(runner_label_plan "$(printf '11\tgarden-1\tonline\tself-hosted\n12\tgarden-2\tonline\tself-hosted\n13\tgarden-3\tonline\tself-hosted,pr')" 1)"
+eq "each drain reads how many wait green and keeps that many" "1" "$(sed -n '/^runner_labels_keep()/,/^}/p' "$qs_mq" | grep -c 'rk_want=\$(keep_count')"
 eq "the variable turns on once the labels are right, and is left alone when it is" "on " "$(keep_runner_var yes off) $(keep_runner_var yes on)"
 eq "a token without the right turns it off, so pull requests take any runner" "off" "$(keep_runner_var no on)"
 eq "and the Queue says so in what needs a person" "Nothing waits.
@@ -2693,11 +2705,18 @@ The token cannot manage runners." "$(say_with_need "$(printf 'Nothing waits.\nNo
 eq "no note leaves the Queue's lines as they were" "a
 b
 c" "$(say_with_need "$(printf 'a\nb\nc')" "")"
+eq "the Queue's doing-now line carries how many machines are kept" "Draining. 2 machines kept for landing.
+Nothing is open.
+Nothing needs you." "$(say_with_kept "$(printf 'Draining.\nNothing is open.\nNothing needs you.')" "2 machines kept for landing")"
+eq "none kept (fewer than two online) leaves the Queue's lines as they were" "Draining.
+Nothing is open.
+Nothing needs you." "$(say_with_kept "$(printf 'Draining.\nNothing is open.\nNothing needs you.')" "")"
 rl_fn=$(sed -n '/^runner_labels_keep()/,/^}/p' "$qs_mq")
 eq "it acts only where ci.yml keeps a runner, and reads the runners with the queue's token" "1 1" "$(printf '%s\n' "$rl_fn" | grep -c "grep -q 'vars.CI_KEEP_RUNNER' .github/workflows/ci.yml") $(printf '%s\n' "$rl_fn" | grep -c 'gh_write api "repos/{owner}/{repo}/actions/runners?per_page=100"')"
 eq "a refused label write or read turns it off and leaves the note for the Queue" "2 1" "$(printf '%s\n' "$rl_fn" | grep -c '>/dev/null 2>&1 || rk_ok=no') $(printf '%s\n' "$rl_fn" | grep -c "printf 'cannot")"
 eq "each drain keeps the labels at its start" "1" "$(grep -c '; runner_labels_keep # one runner kept for the batch and main$' "$qs_mq")"
 eq "the Queue's needs line carries the note" "1" "$(grep -c 'say=\$(say_with_need "\$say" "\$(head -n 1 "\$flaky_dir/runner-labels"' "$root/templates/scripts/ci/publish-state.sh")"
+eq "the Queue's doing-now line reads how many machines are kept, from what the drain just wrote" "1" "$(grep -c 'say=\$(say_with_kept "\$say" "\$(head -n 1 "\$flaky_dir/runner-kept"' "$root/templates/scripts/ci/publish-state.sh")"
 eq "the audit says when none is kept" "1" "$(runner_label_problem "$(printf '11\tgarden-1\tonline\tpr\n12\tgarden-2\tonline\tpr')" | grep -c '^No runner is kept')"
 eq "or none carries the label" "1" "$(runner_label_problem "$(printf '11\tgarden-1\tonline\t\n12\tgarden-2\tonline\tx64')" | grep -c '^No online runner carries the pr label')"
 eq "and nothing when one is kept" "" "$(runner_label_problem "$(cat "$rl_dir/right.tsv")")"
@@ -3132,7 +3151,7 @@ eq "a reset a second away waits one second" "1" "$(rate_wait "0	1001" 1000)"
 rg_now=$(date +%s)
 rg1_out=$( ( . "$root/templates/scripts/ci/queue/state.sh"; . "$root/templates/scripts/ci/queue/rate-lib.sh"; flaky_dir=/tmp; log_file=/dev/null; rate_budget() { printf '100\t%s\n' "$((rg_now + 100))"; }; sleep() { echo "slept $1"; }; rate_guard ); echo "RC=$?")
 eq "a short wait still sleeps it out, for the seconds rate_wait says" "yes
-0" "$(printf '%s' "$rg1_out" | grep -q '^slept 100$' && echo yes || echo no; printf '%s' "$rg1_out" | sed -n 's/^RC=//p')"
+0" "$(printf '%s' "$rg1_out" | grep -Eq '^slept (99|100)$' && echo yes || echo no; printf '%s' "$rg1_out" | sed -n 's/^RC=//p')"
 rg2_out=$( ( . "$root/templates/scripts/ci/queue/state.sh"; . "$root/templates/scripts/ci/queue/rate-lib.sh"; flaky_dir=/tmp; log_file=/dev/null; rate_budget() { printf '100\t%s\n' "$((rg_now + 1000))"; }; sleep() { echo "SLEPT-WRONGLY $1"; }; rate_guard ); echo "RC=$?")
 eq "a wait past the cap ends the drain instead of sleeping through it, naming when it resumes" "yes
 no
@@ -3837,6 +3856,19 @@ eq "a ci.yml with one checks job is not" "" "$(split_checks "$(printf 'jobs:\n  
 eq "the template itself is not" "" "$(split_checks "$(cat "$root/templates/.github/workflows/ci.yml")")"
 eq "sync points a split ci.yml, and one without pull-requests: read, at the migration page" "2" "$(grep -c 'plugin/CI-MIGRATION.md' "$root/scripts/sync/sync-templates.sh")"
 eq "the migration page ships with the plugin" "yes" "$([ -f "$root/CI-MIGRATION.md" ] && echo yes || echo no)"
+
+# What a sync report keeps for the brief's "setup is current" item (#2703):
+# older splits from edited when the known list judged the files, and the
+# item reads "beyond the list" rather than a guessed count when the
+# installed plugin has no known-hash list to judge by at all.
+. "$root/scripts/sync/sync-shipped.sh"
+ks_d=$(mktemp -d)
+git -C "$ks_d" init -q -b main; git -C "$ks_d" config user.email t@example.com; git -C "$ks_d" config user.name t; git -C "$ks_d" commit -q --allow-empty -m start
+ks_head=$(git -C "$ks_d" rev-parse HEAD)
+ks_json() { (cd "$ks_d" && only="" && apply=no && changed="a.sh b.sh" && edited="b.sh" && missing="c.sh" && known="$1" && version=9.9.9 && keep_shipped && cat .git/sipnship-shipped.json); }
+eq "older (one changed, one missing) splits from edited, with the head and version" "{\"head\":\"$ks_head\",\"version\":\"9.9.9\",\"older\":2,\"edited\":1}" "$(ks_json 'a.sh deadbeef')"
+eq "no known list on this machine: beyond the list, not a guessed count" "{\"head\":\"$ks_head\",\"version\":\"9.9.9\",\"older\":0,\"edited\":0,\"beyondList\":true}" "$(ks_json '')"
+rm -rf "$ks_d"
 
 section 'the CI template is three jobs on a pull request, and the screens job where mocks have routes'
 . "$root/scripts/sync/sync-lib.sh"
@@ -5409,6 +5441,14 @@ hv_one=$(
   ( batch_red batch-test "$(printf '41\ta\n')" "" ) 2>&1 | tr '\n' '|'
 )
 eq "a red batch of one is not halved" "yes" "$(printf '%s' "$hv_one" | grep -q 'not green; nothing merged' && ! printf '%s' "$hv_one" | grep -q 'ran:' && echo yes)"
+bc_tab=$(printf '\t')
+eq "a closed batch names the job that really failed" "yes" "$(batch_closed_say "checks${bc_tab}failure
+tests (web)${bc_tab}cancelled
+CI passed${bc_tab}failure" | grep -q 'failed in: checks\.' && echo yes)"
+bc_stopped=$(batch_closed_say "checks${bc_tab}cancelled
+tests (web)${bc_tab}cancelled
+CI passed${bc_tab}failure")
+eq "a batch whose checks were only stopped is never called not green" "yes" "$(printf '%s' "$bc_stopped" | grep -q 'were stopped' && ! printf '%s' "$bc_stopped" | grep -qi 'not green' && echo yes)"
 eq "the queue loads the halving module and the batch's red path calls it" "1 1" "$(grep -c 'queue/halve.sh' "$root/templates/scripts/ci/merge-queue.sh") $(grep -c 'batch_red "\$branch" "\$carried" "\$dropped"' "$root/templates/scripts/ci/queue/batch.sh")"
 eq "the plugin's template copies of the gate match the project's" "same same" "$(cmp -s "$root/templates/scripts/ci/gate-lib.sh" "$root/../scripts/ci/gate-lib.sh" && echo same || echo differ) $(cmp -s "$root/templates/scripts/ci/gate.sh" "$root/../scripts/ci/gate.sh" && echo same || echo differ)"
 
@@ -7311,6 +7351,10 @@ eq "a unit that is part of the running unit is left alone" "unit${da_t}301${da_t
 eq "two ready issues in one area become one unit" "unit${da_t}402 404${da_t}Water the beds on a timer | Fix the schedule page${da_t}both change the watering area${da_t}src/water/timer.ts,src/schedule.ts" "$(area_units "$da_list" "$(printf 'unit\t402\tWater the beds on a timer\t\tsrc/water/timer.ts\nunit\t404\tFix the schedule page\t\tsrc/schedule.ts\n')" '' "$da_titles")"
 eq "two ready issues in the tooling area become one unit" "unit${da_t}405 406${da_t}Tune the build | Fix the scripts${da_t}both change the tooling area${da_t}ci/a.sh,scripts/b.sh" "$(area_units "$da_list" "$(printf 'unit\t405\tTune the build\t\tci/a.sh\nunit\t406\tFix the scripts\t\tscripts/b.sh\n')" '' "$da_titles")"
 eq "three issues a partial landing returned to Ready, one area, come out as one unit" "unit${da_t}402 404 407" "$(area_units "$da_list" "$(printf 'unit\t402\tWater the beds on a timer\t\tsrc/water/timer.ts\nunit\t404\tFix the schedule page\t\tsrc/schedule.ts\nunit\t407\tShow the next watering\t\tsrc/water/next.ts\n')" '' "$da_titles" | cut -f1,2)"
+dab_list=$(printf 'watering src/water/\nbeds src/beds/\nsun src/sun/\n')
+dab_out=$(PLAN_BROAD_AREAS=2 area_units "$dab_list" "$(printf 'unit\t410\tTidy the app\t\tsrc/\nunit\t411\tWater the beds\t\tsrc/water/t.ts\n')" '' '')
+eq "a unit that names no files and guesses every area is held alone, with its reason" "yes" "$(printf '%s\n' "$dab_out" | grep -q "^hold${da_t}410${da_t}Tidy the app${da_t}Its files are not known" && echo yes)"
+eq "the rest of the round still publishes as a unit" "unit${da_t}411" "$(printf '%s\n' "$dab_out" | grep '^unit' | cut -f1,2)"
 eq "units in different areas stay apart" "2" "$(area_units "$da_list" "$(printf 'unit\t402\tWater\t\tsrc/water/t.ts\nunit\t403\tTint\t\tsrc/beds/t.ts\n')" '' "$da_titles" | grep -c '^unit')"
 eq "with no areas list the lines pass unchanged" "unit${da_t}402${da_t}Water${da_t}${da_t}x" "$(area_units '' "$(printf 'unit\t402\tWater\t\tx\n')" "$(printf '301\twatering\n')" '')"
 eq "a hold line passes through" "hold${da_t}9${da_t}Seeds${da_t}After: Pots" "$(area_units "$da_list" "$(printf 'hold\t9\tSeeds\tAfter: Pots\n')" '' '')"

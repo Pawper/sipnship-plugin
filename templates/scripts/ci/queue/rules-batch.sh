@@ -246,3 +246,19 @@ batch_cancel_step() {
   [ "${1:-}" = cancelled ] || { echo done; return 0; }
   if [ "${2:-0}" -lt "${3:-2}" ]; then echo retry; else echo stopped; fi
 }
+
+# batch_closed_say CHECKS [SUMMARY]: the comment a batch pull request gets when
+# it is closed without merging. CHECKS is "name<TAB>outcome" per check run (the
+# outcomes check_lines gives: a cancelled job whose own step failed already
+# reads as failure). A real failure names its jobs; a run that was only
+# stopped says so and never says "not green", since nothing was wrong with it.
+batch_closed_say() {
+  bc_failed=$(printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v sum="${2:-CI passed}" 'NF >= 2 && $1 != sum && tolower($2) ~ /failure|timed_out|startup_failure/ { printf "%s%s", (n++ ? ", " : ""), $1 }')
+  if [ -n "$bc_failed" ]; then
+    printf "The batch's CI failed in: %s. Nothing merged; closed so the next batch starts clean. The member pull requests are untouched.\n" "$bc_failed"
+  elif printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' '$1 != "" && tolower($2) ~ /cancel/ { f = 1 } END { exit !f }'; then
+    printf "The batch's checks were stopped before they finished, even after one re-run, and no check failed. Nothing merged; closed so the next batch starts clean. The member pull requests are untouched.\n"
+  else
+    printf "The batch's checks did not finish in time. Nothing merged; closed so the next batch starts clean. The member pull requests are untouched.\n"
+  fi
+}

@@ -38,6 +38,7 @@ function fake({ pending = 1, connectStatus = 200, answer } = {}) {
         return reply(200, { state: reads < 3 ? 'waiting' : answer });
       }
       if (req.url === '/v1/repos/42/disconnect') return reply(204);
+      if (req.url === '/v1/repos/acme/shop/setup') return reply(200, { complete: false, done: 1, total: 3, briefLine: 'Setup: 1 of 3 done. Next, yours: Approve the machine on the dashboard.', items: [], advice: [] });
       reply(404, { code: 'not_found' });
     });
   });
@@ -53,13 +54,17 @@ test('connect runs the device flow, then the connect route, and keeps the token 
     const env = envAt(f.url); const out = sink();
     const code = await connect({ repo: 'acme/shop', env, out, machine: 'desk', pollMs: 5, offer: async () => 'no' });
     assert.strictEqual(code, 0);
-    assert.deepStrictEqual(f.seen.map((s) => s.url), ['/v1/device/code', '/v1/device/token', '/v1/device/token', '/v1/repos/acme/shop/connect', '/v1/repos/acme/shop/setup/machine/pending']);
+    assert.deepStrictEqual(f.seen.map((s) => s.url), ['/v1/device/code', '/v1/device/token', '/v1/device/token', '/v1/repos/acme/shop/connect', '/v1/repos/acme/shop/setup/machine/pending', '/v1/repos/acme/shop/setup']);
     const c = f.seen[3];
     assert.strictEqual(c.auth, 'Bearer gho_person');
     assert.deepStrictEqual(JSON.parse(c.body), { machine: 'desk' });
     assert.match(out.text, /enter the code WXYZ-1234/);
     assert.match(out.text, /Connected: desk\./);
     assert.doesNotMatch(out.text, /sns_repo_/);
+    // Connecting ends by reading the checklist itself, with the machine's own new token, and saying what is next.
+    const setupRead = f.seen[5];
+    assert.strictEqual(setupRead.auth, `Bearer ${T}`);
+    assert.match(out.text, /Setup: 1 of 3 done\. Next, yours: Approve the machine on the dashboard\./);
     const kept = tokens.find('acme/shop', env);
     assert.strictEqual(kept.repoId, 42);
     assert.strictEqual(kept.token, T);

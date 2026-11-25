@@ -20,11 +20,12 @@ cmd=$(json_field "$input" command)
 hit=$(gh_graphql_reason "$cmd")
 rest_hit=
 [ -n "$hit" ] || rest_hit=$(gh_rest_read_reason "$cmd")
-[ -n "$hit" ] || [ -n "$rest_hit" ] || exit 0
+kind=$(gh_script_caller "$cmd")  # who this command is: a script of the queue, the drive or check polling, else an agent (#2673)
+if [ -z "$hit" ] && [ -z "$rest_hit" ]; then [ -z "$kind" ] || budget_history_add C "$(date +%s)" "$kind"; exit 0; fi
 
 root=${CLAUDE_PROJECT_DIR:-$(json_field "$input" cwd)}
 [ -n "$root" ] || root=.
-budget_history_add C "$(date +%s)"  # an agent's own call, counted for who-spends-the-hour (#2607)
+budget_history_add C "$(date +%s)" "${kind:-agent}"  # a caller's own call, counted by kind for who-spends-the-hour (#2607, #2673)
 rec=$(budget_read_logged "$root")
 # REST (#2558): a read that is not needed to land or recover waits when the hour's REST requests run low; a write, and
 # the free reading of the budget itself, never do. The app's reads and the drive's scripts share the same hour.

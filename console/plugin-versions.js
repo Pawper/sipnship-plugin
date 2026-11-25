@@ -43,7 +43,9 @@ function releasedFrom(home) {
 /**
  * How many of this project's shipped files the last sync report found older than the plugin's, and how many the builder
  * changed (#2703). Read from what that report kept inside .git, and only while it still holds: the same plugin version and
- * the same commit. Nothing is run beyond one git call; when it cannot tell, nothing is said.
+ * the same commit. Nothing is run beyond one git call; when it cannot tell, nothing is said. "beyondList" carries through
+ * unchanged: the sync set it when the installed plugin had no known-hash list to judge by at all, so older and edited are
+ * not a count to trust, only the plain fact that the project is behind.
  */
 function shippedFrom(root, installed) {
   try {
@@ -52,7 +54,8 @@ function shippedFrom(root, installed) {
     const head = require('child_process').execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, timeout: 3000, encoding: 'utf8' }).trim();
     if (!head || kept.head !== head) return undefined;
     const whole = (n) => Number.isInteger(n) && n >= 0 && n < 100000;
-    return whole(kept.older) && whole(kept.edited) ? { older: kept.older, edited: kept.edited } : undefined;
+    if (!whole(kept.older) || !whole(kept.edited)) return undefined;
+    return kept.beyondList === true ? { older: kept.older, edited: kept.edited, beyondList: true } : { older: kept.older, edited: kept.edited };
   } catch { return undefined; }
 }
 
