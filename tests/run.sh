@@ -2167,7 +2167,7 @@ eq "and for a hold, why the green one is held" "One pull request is green and 2 
 mq_tpl="$root/templates/scripts/ci/merge-queue.sh"
 eq "the drain loop takes its step from drain_wait_step and ends on end-hold and end-wait" "1 2" "$(grep -c 'step=\$(drain_wait_step ' "$mq_tpl") $(grep -c 'end-hold)\|end-wait)' "$mq_tpl")"
 eq "the step is read before the round merges, never while its batch runs" "yes" "$(awk '/drain_wait_step /{ s = NR } /sh "\$0" --batch/{ b = NR } END { print (s && b && s < b) ? "yes" : "no" }' "$mq_tpl")"
-eq "the batch still waits for its own full run" "1" "$(grep -c 'if wait_for_run "\$batch_pr" "\$branch" && wait_required "\$batch_sha"; then batch_ok=yes' "$root/templates/scripts/ci/queue/batch.sh")"
+eq "the batch still waits for its own full run" "1" "$(grep -c '^if wait_for_run "\$batch_pr" "\$branch" && wait_required "\$batch_sha"; then batch_ok=yes' "$root/templates/scripts/ci/queue/batch.sh")"
 eq "a batch an earlier run left open is settled by the next drain" "1 1" "$(grep -c 'merged batch #\$bp, left green by an earlier run' "$mq_tpl") $(grep -c 'is still running CI; its members' "$mq_tpl")"
 eq "a batch left green by an earlier run tidies its members' worktrees too" "1" "$(sed -n '/left green by an earlier run/,/elif .\$bstate. = failed/p' "$mq_tpl" | grep -c 'tidy_worktree')"
 eq "the drain loads its waits" "1" "$(grep -c '\. "\$here/queue/wait.sh"' "$mq_tpl")"
@@ -2535,7 +2535,7 @@ eq "land next: beside a batch whose classes it does not share, at once" "serial-
 eq "land next: sharing the batch's classes, first after it" "after-batch" "$(land_next_step green "" yes yes)"
 eq "the drain reads requests at each round's start" "1" "$(grep -c 'requests_tick drain' "$mq_all")"
 eq "a batch's run reads them every two minutes" "1" "$(grep -c 'then requests_tick batch; fi' "$mq_all")"
-eq "land next runs the serial path, nothing else (a proven chain one too)" "2" "$(grep -c 'QUEUE_IN_REQUEST=1 sh "\$0" --serial' "$mq_all")"
+eq "land next runs the serial path, nothing else (a proven chain one too)" "3" "$(grep -c 'QUEUE_IN_REQUEST=1 sh "\$0" --serial' "$mq_all")"
 eq "a take-out goes through the close path with its reason" "1" "$(grep -c 'worktrees.sh" close "\$rq_pr" "Taken out of the queue at the request of \$rq_by: \$rq_why"' "$mq_all")"
 eq "a request never merges through the API itself" "0" "$(sed -n '/^requests_tick()/,/^}/p' "$mq_all" | grep -c '/merge')"
 eq "pause for two hours" "7200" "$(( $(pause_until 0 2h) ))"
@@ -2740,7 +2740,7 @@ eq "and with QUEUE_RUNS_ON unset the Windows job runs on a self-hosted Windows r
 eq "every job meant for the project's machines carries self-hosted in its labels, so GitHub's records and Cost never count it as hosted" "" "$(grep -H '^    runs-on:' "$root"/templates/.github/workflows/*.yml | grep -v 'RUNS_ON$' | grep -v 'ubuntu-latest' | grep -v 'self-hosted')"
 eq "the other drain job runs only for a label not naming Windows" "1" "$(grep -c "if: \${{ vars.QUEUE_RUNS_ON != '' && !contains(vars.QUEUE_RUNS_ON, 'windows')" "$root/templates/.github/workflows/queue-drain.yml")"
 eq "and skips itself after a recent drain, or while paused" "3" "$(grep -c 'skipping this one' "$root/templates/.github/workflows/queue-drain.yml")"
-eq "the batch checkout links packages only when the lockfiles match" "1" "$(grep -c 'if \[ "\$em_lock" = "\$em_main" \] && \[ -d "\$main_dir/\$d/node_modules" \]' "$mq_all")"
+eq "the batch checkout links packages only when the lockfiles match" "1" "$(grep -c 'if \[ "\$em_lock" = "\$em_main" \] && \[ -d "\$main_dir/\$d/node_modules" \] && \[ "\$em_main_ok" = yes \]' "$mq_all")"
 eq "a stale link is removed, never the packages behind it" "1" "$(grep -c 'cmd //c rmdir' "$mq_all")"
 eq "file: dependencies by path" "packages/core
 ../shared" "$(file_deps '{"dependencies": {"@app/core": "file:packages/core", "react": "^18"}, "devDependencies": {"@app/shared": "file:../shared"}}')"
@@ -2749,7 +2749,7 @@ eq "the file: trees are part of the install hash and a stale install is named, n
 eq "a member that changes dependencies is installed for" "1" "$(grep -c 'package.json"\*) ensure_modules' "$mq_all")"
 eq "the project's install command can be named" "1" "$(grep -c 'QUEUE_INSTALL_COMMAND:-npm ci' "$mq_all")"
 eq "a lagging pull ref falls back to the branch" "1" "$(grep -c 'fetch -q origin "+refs/heads/$fph_branch:refs/queue/pr-$1"' "$mq_all")"
-eq "and is said as lagging, never 'try again'" "0" "$(grep -c 'try again' "$mq_all")"
+eq "and is said as lagging, never 'try again'" "0" "$(grep -v '^[[:space:]]*#' "$mq_all" | grep -c 'try again')"
 eq "the gate and the batch use the same fetch, and the rush test head and the drain's end too" "5" "$(grep -c 'fetch_pr_head "' "$mq_all")"
 # A loop whose last command is "[ test ] && cmd" returns 1 when the test is
 # false; inside $(...) under set -e that ends the script without a word.
