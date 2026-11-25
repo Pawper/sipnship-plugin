@@ -112,7 +112,7 @@ export TMPDIR SUITE_TMP_ROOT GIT_CEILING_DIRECTORIES
 # Blocks that read its text read these two files: the libraries in sourcing
 # order, then the main script (so a function is defined before its call).
 mq_all=$SUITE_TMP_ROOT/merge-queue.all.sh
-cat "$root"/templates/scripts/ci/queue/state.sh "$root"/templates/scripts/ci/queue/rate-lib.sh "$root"/templates/scripts/ci/queue/requests.sh "$root"/templates/scripts/ci/queue/rush.sh "$root"/templates/scripts/ci/queue/runs.sh "$root"/templates/scripts/ci/queue/choose.sh "$root"/templates/scripts/ci/queue/held.sh "$root"/templates/scripts/ci/queue/rerun.sh "$root"/templates/scripts/ci/queue/rescue.sh "$root"/templates/scripts/ci/queue/serial.sh "$root"/templates/scripts/ci/queue/batch.sh "$root"/templates/scripts/ci/queue/deploy.sh "$root"/templates/scripts/ci/queue/attention.sh "$root"/templates/scripts/ci/queue/wait.sh "$root"/templates/scripts/ci/queue/passed.sh "$root"/templates/scripts/ci/merge-queue.sh > "$mq_all"
+cat "$root"/templates/scripts/ci/queue/state.sh "$root"/templates/scripts/ci/queue/rate-lib.sh "$root"/templates/scripts/ci/queue/requests.sh "$root"/templates/scripts/ci/queue/rush.sh "$root"/templates/scripts/ci/queue/runs.sh "$root"/templates/scripts/ci/queue/choose.sh "$root"/templates/scripts/ci/queue/held.sh "$root"/templates/scripts/ci/queue/rerun.sh "$root"/templates/scripts/ci/queue/rescue.sh "$root"/templates/scripts/ci/queue/serial.sh "$root"/templates/scripts/ci/queue/checkout.sh "$root"/templates/scripts/ci/queue/batch.sh "$root"/templates/scripts/ci/queue/deploy.sh "$root"/templates/scripts/ci/queue/attention.sh "$root"/templates/scripts/ci/queue/wait.sh "$root"/templates/scripts/ci/queue/passed.sh "$root"/templates/scripts/ci/merge-queue.sh > "$mq_all"
 bl_all=$SUITE_TMP_ROOT/batch-lib.all.sh
 cat "$root"/templates/scripts/ci/batch-lib.sh "$root"/templates/scripts/ci/queue/rules-*.sh > "$bl_all"
 
@@ -541,6 +541,19 @@ eq "a red half that is one pull request is the culprit" "culprit 41" "$(halving_
 eq "a green half sends the search to the other half" "other 45 47" "$(halving_next green '41 42' '45 47')"
 eq "a green half beside a lone member names that member" "culprit 47" "$(halving_next green '41 42 45' '47')"
 eq "a member dropped by halving is told which test" "#42 was dropped from the batch: the full run went red with it and green without it (the watering test). It goes through the serial queue." "$(halving_say 42 'the watering test')"
+# A batch whose checks were only stopped, nothing ever failing, is retried rather than halved (#2776): twice in
+# forty minutes the drain closed a batch as "not green" when its checks job had cancelled its own run after a real
+# check failed inside it; that already reads as a failure (job_outcome, rest_rollup_named), so batch_cancel_step
+# never retries one. A pure stoppage (a rush or a hold freeing the machine) is retried up to the limit, then closed
+# honestly, with no hunt for a culprit that was never there.
+eq "a real failure is never retried" "done" "$(batch_cancel_step red 0 2)"
+eq "a pure stoppage is retried while under the limit" "retry" "$(batch_cancel_step cancelled 0 2)"
+eq "and again on its second try" "retry" "$(batch_cancel_step cancelled 1 2)"
+eq "the limit reached with nothing ever failing is a stop, not a failure" "stopped" "$(batch_cancel_step cancelled 2 2)"
+eq "the default limit is two" "stopped" "$(batch_cancel_step cancelled 2)"
+eq "green never asks this, and reads as done either way" "done" "$(batch_cancel_step green 0 2)"
+eq "the batch only retries a pure stoppage, never a real failure" "1" "$(grep -c 'batch_cancel_step "\$bc_roll" "\$batch_cancel_tries"' "$mq_all")"
+eq "a stopped batch is not halved" "1" "$(grep -c 'not halved' "$mq_all")"
 # The round is the batch: the drain batches exactly the running round's pull requests.
 . "$root/templates/scripts/ci/queue/round.sh"
 rd_fx="$root/tests/fixtures/round"
@@ -1023,7 +1036,7 @@ chmod +x "$rn/bin/gh" "$rn/bin/curl"
 cat > "$rn/tick.sh" <<RNS
 #!/bin/sh
 here="$root/templates/scripts/ci"
-case "\$1" in --serial) printf 'serial %s\n' "\$*" >> "\$RN_LOG"; exit 0 ;; esac
+case "\$1" in --serial|--batch) printf '%s %s\n' "\${1#--}" "\$*" >> "\$RN_LOG"; exit 0 ;; esac
 set -e
 . "\$here/lib.sh"
 for rn_f in "\$here"/queue/rules-*.sh; do . "\$rn_f"; done
@@ -1044,6 +1057,46 @@ rn_run
 eq "a land-now open on the service road lands the change" "1" "$(grep -c '^serial --serial.* 1336' "$rn/log")"
 eq "the landed request is answered" "1" "$(grep -c 'requests/r9/outcome' "$rn/log")"
 eq "the tick returns to the drain" "1" "$(grep -c '^carried-on' "$rn/log")"
+# Land next is a list, not one slot (#2757): two asked for, both green and no batch
+# running, land together as one batch rather than one serial lock cycle each.
+cat > "$rn/bin/gh" <<'GH'
+#!/bin/sh
+printf 'gh %s\n' "$*" >> "$RN_LOG"
+case "$*" in
+  *"--jq .merged"*) echo true ;;
+  *"pulls/48"*) printf 'open\tsha48\tclean\n' ;;
+  *"pulls/51"*) printf 'open\tsha51\tclean\n' ;;
+esac
+exit 0
+GH
+cat > "$rn/bin/curl" <<'CURL'
+#!/bin/sh
+cat > /dev/null
+case "$*" in
+  *"-X POST"*) printf 'curl %s\n' "$*" >> "$RN_LOG" ;;
+  *"queue/requests/open"*) printf 'r1\tland-next\t48\tmaya\t\nr2\tland-next\t51\tmaya\t\n' ;;
+esac
+exit 0
+CURL
+chmod +x "$rn/bin/gh" "$rn/bin/curl"
+rn_run
+eq "two land-next asks land together as one batch, not one serial run each" "1" "$(grep -c '^batch --batch.* 48 51' "$rn/log")"
+eq "nothing of them runs a separate serial merge" "0" "$(grep -c '^serial ' "$rn/log")"
+eq "each is answered landed" "2" "$(grep -cE 'requests/r[12]/outcome' "$rn/log")"
+eq "the log names both together, in the order asked" "1" "$(grep -c 'landing next, together: #48 #51' "$rn/log")"
+# One land-next alone still lands on its own, as before: no batch for a single one.
+cat > "$rn/bin/curl" <<'CURL'
+#!/bin/sh
+cat > /dev/null
+case "$*" in
+  *"-X POST"*) printf 'curl %s\n' "$*" >> "$RN_LOG" ;;
+  *"queue/requests/open"*) printf 'r1\tland-next\t48\tmaya\t\n' ;;
+esac
+exit 0
+CURL
+chmod +x "$rn/bin/curl"
+rn_run
+eq "one land-next alone is a single serial merge, not a batch" "1 0" "$(grep -c '^serial --serial.* 48' "$rn/log") $(grep -c '^batch ' "$rn/log")"
 RN_BREAK=yes rn_run
 eq "a step that fails inside the tick is named, with its command" "1" "$(grep -c "^Requests could not be read through: reading the rush order (rush_order" "$rn/log")"
 eq "a failed step still lets the drain carry on" "1" "$(grep -c '^carried-on' "$rn/log")"
@@ -4996,6 +5049,22 @@ eq "yarn installs immutably" "yarn install --immutable" "$(workspace_install_com
 eq "npm installs with ci" "npm ci --no-audit --no-fund" "$(workspace_install_command "$ws/np" npm)"
 eq "pnpm installs frozen" "1" "$(workspace_install_command "$ws/pn" pnpm | grep -c 'pnpm install --frozen-lockfile\|pnpm@9 install --frozen-lockfile')"
 eq "the queue installs a workspace from its root" "1" "$(grep -c 'ensure_workspace "\$em_kind"' "$mq_all")"
+# A packages folder is reused only when an install finished in it (#2768):
+# one left half-built or emptied by an interrupted install once read main
+# as red in the batch checkout, because only the lockfile's hash was
+# checked, never whether the install behind it had completed.
+mkdir -p "$ws/unfinished/node_modules/some-dep" "$ws/finished-npm/node_modules" "$ws/finished-queue/node_modules" "$ws/empty/node_modules"
+echo '{}' > "$ws/finished-npm/node_modules/.package-lock.json"
+printf 'abc123' > "$ws/finished-queue/node_modules/.queue-lock-hash"
+eq "no node_modules at all is not finished" "no" "$(install_finished "$ws/missing")"
+eq "a node_modules with real files but no completion record is not finished: the install that was interrupted left it" "no" "$(install_finished "$ws/unfinished")"
+eq "an empty node_modules, same" "no" "$(install_finished "$ws/empty")"
+eq "npm's own record is a finished install, installed by hand outside the queue" "yes" "$(install_finished "$ws/finished-npm")"
+eq "npm's record names itself" ".package-lock.json" "$(install_record "$ws/finished-npm")"
+eq "the queue's own marker, matching the hash it was written for" "yes" "$(install_finished "$ws/finished-queue" abc123)"
+eq "the queue's own marker for a different hash is not this install, finished or not" "no" "$(install_finished "$ws/finished-queue" xyz789)"
+eq "the queue's own marker read with no hash to match, by its mere presence" "yes" "$(install_finished "$ws/finished-queue")"
+eq "the batch links main's packages only once main's own install is known finished" "1" "$(grep -c 'ew_main_ok=\$(install_finished "\$main_dir"' "$mq_all")"
 
 
 section 'a draft tokens file seeded from the mocks'

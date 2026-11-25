@@ -242,13 +242,50 @@ requests_tick_body() {
           conflicts) requests_answer "$rq_id" "$rq_kind" "$rq_pr" conflicts ;;
           after-batch) requests_answer "$rq_id" "$rq_kind" "$rq_pr" next-after-batch ;;
           serial-now)
-            say "request: landing #$rq_pr ${rq_kind#land-}, as $rq_by asked${rq_why:+ ($rq_why)}"
-            QUEUE_IN_DRAIN=1 QUEUE_IN_REQUEST=1 sh "$0" --serial --base "$base" --because "landing ${rq_kind#land-} at the request of $rq_by" "$rq_pr" 2>&1 | tee -a "$log_file" || true
-            rm -f "$flaky_dir/pr-$rq_pr.tsv" 2>/dev/null
-            if [ "$(gh api "repos/{owner}/{repo}/pulls/$rq_pr" --jq .merged 2>/dev/null)" = true ]; then requests_answer "$rq_id" "$rq_kind" "$rq_pr" landed; fi ;;
+            if [ "$rq_kind" = land-next ]; then
+              # Land next is a list, not one slot: every one this tick finds ready
+              # goes to the front together (requests_land_next_ready), one run for
+              # all of them rather than one lock cycle each, in the order asked
+              # (#2757). Land now stays immediate and alone: it reserves the
+              # machines for itself, which batching it with another would undo.
+              printf '%s\t%s\t%s\n' "$rq_id" "$rq_pr" "$rq_by" >> "$flaky_dir/requests.land-next-ready"
+            else
+              say "request: landing #$rq_pr now, as $rq_by asked${rq_why:+ ($rq_why)}"
+              QUEUE_IN_DRAIN=1 QUEUE_IN_REQUEST=1 sh "$0" --serial --base "$base" --because "landing now at the request of $rq_by" "$rq_pr" 2>&1 | tee -a "$log_file" || true
+              rm -f "$flaky_dir/pr-$rq_pr.tsv" 2>/dev/null
+              if [ "$(gh api "repos/{owner}/{repo}/pulls/$rq_pr" --jq .merged 2>/dev/null)" = true ]; then requests_answer "$rq_id" "$rq_kind" "$rq_pr" landed; fi
+            fi ;;
           *) : ;;
         esac ;;
     esac
+  done
+  requests_land_next_ready
+  return 0
+}
+
+# requests_land_next_ready: lands every "land next" request this tick found
+# ready to go (requests_tick_body's "serial-now" case, kept in
+# requests.land-next-ready instead of landed inline), together: one serial
+# merge for a single one, one batch for two or more, in the order asked, so
+# several asked for close together cost one run and one lock cycle rather
+# than one each (#2757). Never for "land now", which lands on its own.
+requests_land_next_ready() {
+  [ -s "$flaky_dir/requests.land-next-ready" ] || return 0
+  rl_rows=$(cat "$flaky_dir/requests.land-next-ready")
+  : > "$flaky_dir/requests.land-next-ready"
+  rl_prs=$(printf '%s\n' "$rl_rows" | cut -f2 | tr '\n' ' ')
+  rl_n=$(printf '%s\n' "$rl_rows" | grep -c .)
+  if [ "$rl_n" -gt 1 ]; then
+    say "request: landing next, together:$(printf ' #%s' $rl_prs)"
+    QUEUE_IN_DRAIN=1 QUEUE_IN_REQUEST=1 sh "$0" --batch --base "$base" $rl_prs 2>&1 | tee -a "$log_file" || true
+  else
+    rl_by=$(printf '%s\n' "$rl_rows" | cut -f3)
+    say "request: landing #$rl_prs next, as $rl_by asked"
+    QUEUE_IN_DRAIN=1 QUEUE_IN_REQUEST=1 sh "$0" --serial --base "$base" --because "landing next at the request of $rl_by" $rl_prs 2>&1 | tee -a "$log_file" || true
+  fi
+  printf '%s\n' "$rl_rows" | while IFS="$tab" read -r rl_id rl_pr rl_by2; do
+    rm -f "$flaky_dir/pr-$rl_pr.tsv" 2>/dev/null
+    if [ "$(gh api "repos/{owner}/{repo}/pulls/$rl_pr" --jq .merged 2>/dev/null)" = true ]; then requests_answer "$rl_id" land-next "$rl_pr" landed; fi
   done
   return 0
 }

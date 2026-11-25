@@ -229,3 +229,20 @@ halving_next() {
 halving_say() {
   printf '#%s was dropped from the batch: the full run went red with it and green without it%s. It goes through the serial queue.\n' "$1" "${2:+ ($2)}"
 }
+
+# batch_cancel_step ROLLUP TRIES LIMIT: what the batch does about a run that
+# did not pass. ROLLUP is rest_rollup_named's own word for the required
+# check ("cancelled" is a pure stoppage, nothing of the batch's content
+# failed: a job cancelled after one of its own steps failed already reads
+# as the failure it is, so ROLLUP is never "cancelled" for one). "retry"
+# while it is cancelled and TRIES (so far) has not reached LIMIT (default
+# 2): re-run it and wait again. "stopped" once TRIES has reached LIMIT and
+# it is still only cancelled, nothing ever having failed: not a failed
+# batch, so the caller closes it honestly and does not halve hunting a
+# culprit that was never there. "done" otherwise (a real failure, which the
+# caller's own halving handles, or green already, which the caller never
+# asks this for).
+batch_cancel_step() {
+  [ "${1:-}" = cancelled ] || { echo done; return 0; }
+  if [ "${2:-0}" -lt "${3:-2}" ]; then echo retry; else echo stopped; fi
+}

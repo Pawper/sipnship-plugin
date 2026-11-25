@@ -129,6 +129,39 @@ workspace_install_command() {
   esac
 }
 
+# install_record DIR: the name of the one file npm, pnpm or yarn each write
+# into node_modules only once an install has reached a state it trusts
+# enough to record (npm's node_modules/.package-lock.json, pnpm's
+# node_modules/.modules.yaml, yarn classic's node_modules/.yarn-integrity),
+# when DIR's node_modules carries one; nothing otherwise, including when
+# node_modules itself is missing. An install killed partway through never
+# reaches this write.
+install_record() {
+  for ir_f in .package-lock.json .modules.yaml .yarn-integrity; do
+    [ -f "$1/node_modules/$ir_f" ] && { echo "$ir_f"; return 0; }
+  done
+  return 0
+}
+
+# install_finished DIR HASH: "yes" when DIR's node_modules was left by an
+# install that finished: the queue's own completion marker
+# (.queue-lock-hash, written by install_here only at the end of a
+# successful install there, matching HASH) or the package manager's own
+# completion record (install_record, for packages a person installed by
+# hand, outside the queue). "no" otherwise, including when node_modules is
+# missing: a folder "no" leaves is never reused, there or linked from
+# elsewhere (#2768). HASH is optional; without it the queue's own marker is
+# read by its mere presence, not matched.
+install_finished() {
+  [ -d "$1/node_modules" ] || { echo no; return 0; }
+  if_mark=$(cat "$1/node_modules/.queue-lock-hash" 2>/dev/null || true)
+  if [ -n "$2" ]; then [ "$if_mark" = "$2" ] && { echo yes; return 0; }
+  else [ -n "$if_mark" ] && { echo yes; return 0; }
+  fi
+  [ -n "$(install_record "$1")" ] && { echo yes; return 0; }
+  echo no
+}
+
 # waits_append FILE NOW JOB BUSY TOTAL MINUTES
 # Keep one row per wait the queue saw for a runner, in FILE (the project's
 # .scratch/queue/waits.tsv): epoch, local time, which job, runners busy,
