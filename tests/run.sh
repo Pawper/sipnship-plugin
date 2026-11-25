@@ -6562,6 +6562,14 @@ ja_prop_listed="2026-11-20T21:30:00Z${hr_t}bot${hr_t}"'<!-- sipnship-proposal {"
 eq "proposed_units carries the listed flag as a third column" "2302${hr_t}work${hr_t}yes" "$(proposed_units "$ja_prop_listed")"
 eq "a listed dispatch joins the running round instead of waiting for its area" "dispatch 2302" "$(join_dispatch "$(printf 'dispatch 2302\n')" 1434 "$ja_ru" "$(proposed_units "$ja_prop_listed")")"
 eq "without the listed flag the same dispatch still waits" "held: 1 dispatch goal(s) wait for the running round (#1434) to land" "$(join_dispatch "$(printf 'dispatch 2302\n')" 1434 "$ja_ru" "$(proposed_units "$ja_prop")")"
+# A started bundle with no agent on it is picked up in the same look, or the round stops waiting for it, and the band says which (#2828).
+ja_units_run="${hr_t}2300 2301
+${hr_t}1434"
+eq "a bundle whose every issue has no agent is said picked up, with the round no longer waiting for it" "stale: the bundle #2300, #2301 had no agent on it, so this look picked it up: both are back to Ready and planned with the rest, and the round does not wait for it." "$(bundle_idle_notes "$ja_units_run" "2300 2301")"
+eq "a bundle with one issue freed says which, and that the round waits for the rest alone" "stale: in the bundle #2300, #2301 no agent was on #2301, so it is back to Ready and planned; the round waits for #2300 alone." "$(bundle_idle_notes "$ja_units_run" "2301")"
+eq "a single issue's unit has its own stale line, so no bundle line" "" "$(bundle_idle_notes "$ja_units_run" "1434")"
+eq "a bundle with an agent on every issue says nothing" "" "$(bundle_idle_notes "$ja_units_run" "")"
+eq "the plan says it after it frees the idle issues, from the lines it freed" "1" "$(grep -c 'bundle_idle_notes' "$root/scripts/drive/plan.sh")"
 eq "publishing a started round while another runs keeps the running unit in it, with its pull request" "unit: 2300 2301 | areas: other
 unit: 1434 | areas: work | pr: 2100" "$(keep_running_units "$(printf 'status: started\nunit: 2300 2301 | areas: other\n')" "$(printf '1434\twork\t2100\n')" | sed -n '2,3p')"
 eq "a running unit the round already names is not added twice" "1" "$(keep_running_units "$(printf 'status: started\nunit: 1434 | areas: work\n')" "$(printf '1434\twork\t\n')" | grep -c '^unit:')"
@@ -7759,7 +7767,7 @@ eq "a pull request that only says Part of no longer keeps it from going stale" "
 eq "the unit's own pull request, named by the started round, keeps all its issues" "0" "$(stale_lines "$gs_facts" "$(printf '71\tno\t9\n')" '' "$gs_now" 2 "$(printf '71\t1 2 3\n')" | grep -c '^stale')"
 eq "an issue of a unit whose pull request has merged goes back to Ready at once, though a closing note touched it a minute ago" "stale: #1 \"One\" was In progress, but its unit's pull request has merged or closed and did not name it, so nobody is on it; it is back to Ready." "$(stale_say "$(stale_lines "$(printf 'issue\t1\tOne\tstate:in-progress\t%s\tb\n' "$(date -u -d "@$(( gs_now - 60 ))" +%Y-%m-%dT%H:%M:%SZ)")" '' '' "$gs_now" 2 "$(printf '71\t1 2\n')" "$(( gs_now - 600 ))")" 2)"
 eq "a unit pull request that is no longer open does not" "3" "$(stale_lines "$gs_facts" "$(printf '72\tno\t9\n')" '' "$gs_now" 2 "$(printf '71\t1 2 3\n')" | grep -c '^stale')"
-eq "plan.sh hands the started round's units to the stale reading and to the unit filter" "4" "$(grep -c 'started_units "$drive_comments")' "$root/scripts/drive/plan.sh")"
+eq "plan.sh hands the started round's units to the stale reading and to the unit filter" "5" "$(grep -c 'started_units "$drive_comments")' "$root/scripts/drive/plan.sh")"
 # A running unit gets no ask about a held pull request that only mentions its issues; one held pull request gets one ask.
 eq "a held pull request that only mentions the issue does not move it to waiting" "0" "$(stale_lines "$gs_facts" "$(printf '80\tyes\t\t1 2 3\n')" '' "$gs_now" 2 '' | grep -c 'waiting')"
 eq "a held pull request that closes two issues asks once, on the first" "1" "$(stale_lines "$(printf 'issue\t1\tOne\tstate:in-progress\t%s\tb\nissue\t2\tTwo\tstate:in-progress\t%s\tb\n' "$gs_old" "$gs_old")" "$(printf '80\tyes\t1,2\n')" '' "$gs_now" 2 '' | grep -c 'waiting')"

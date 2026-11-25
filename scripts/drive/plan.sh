@@ -43,7 +43,7 @@ fi
 . "$here/round-words-lib.sh"
 . "$here/round-sizing-lib.sh"
 . "$here/round-state-lib.sh"
-. "$here/areas-lib.sh"
+. "$here/areas-lib.sh"; . "$here/join-round-lib.sh"
 . "$here/area-plan-lib.sh"
 . "$here/plan-read-lib.sh"
 . "$here/plan-green-lib.sh"
@@ -177,7 +177,7 @@ drive_started_at=$(started_at "$drive_comments"); stale=$(stale_lines "$facts" "
 # An issue In progress with no claim, no branch, no open pull request and no unit of the round, past a short grace, has nobody on it: it is set to Ready and planned as ready work in this same run, so the drive never says "no ready work" with it waiting (#2365).
 stale=$(idle_freed "$facts" "$pull_links" "$(gitb for-each-ref --format='%(committerdate:unix)%09%(refname:short)' refs/heads refs/remotes 2>/dev/null)" "$(started_units "$drive_comments")" "$stale" "$drive_started_at")
 if [ -n "$stale" ]; then
-  stale_say "$stale" 2
+  stale_say "$stale" 2; bundle_idle_notes "$(started_units "$drive_comments")" "$(printf '%s\n' "$stale" | awk -F'\t' '$1 == "stale" && $6 == "idle" { print $2 }')"  # a started bundle nobody works is picked up, or no longer waited for, said plainly (#2828)
   stale_apply "$stale" "$facts"
   facts=$(stale_facts "$facts" "$stale"); snapshot=$(stale_snapshot "$snapshot" "$stale")
 fi

@@ -87,3 +87,28 @@ join_dispatch() {
     NF > 0 { print }
     END { if (held) { gsub(/ /, ", #", r); print "held: " held " dispatch goal(s) wait for the running round (#" r ") to land" } }'
 }
+
+# bundle_idle_notes UNITS FREED
+# UNITS are started_units' lines ("PR<TAB>ISSUES", ISSUES spaced); FREED the issues this
+# same look found no agent on and set back to Ready (the `idle` stale lines, idle-lib.sh),
+# spaced or one a line. A started bundle (a unit of two issues or more) that has no agent
+# on it is not a unit the round keeps waiting for: its freed issues are Ready again and
+# planned in this look (running_units counts only issues with evidence), so the round
+# stops holding it. Prints one plain `stale:` line a bundle, saying which happened: all
+# of it picked up, or some issues freed and the rest still at work (#2828). A unit of one
+# issue has its own line already (stale_say), so it is not said twice.
+bundle_idle_notes() {
+  printf '%s\n' "$1" | tr -d '\r' | awk -F'\t' -v freed="$(printf '%s\n' "$2" | tr -d '\r' | tr '\n' ' ')" '
+    BEGIN { n = split(freed, a, " "); for (i = 1; i <= n; i++) if (a[i] != "") fr[a[i]] = 1 }
+    {
+      k = split($2, t, " "); if (k < 2) next
+      nf = 0; nl = 0; fl = ""; ll = ""; all = ""
+      for (i = 1; i <= k; i++) {
+        all = all (i > 1 ? ", " : "") "#" t[i]
+        if (t[i] in fr) { nf++; fl = fl (nf > 1 ? ", " : "") "#" t[i] } else { nl++; ll = ll (nl > 1 ? ", " : "") "#" t[i] }
+      }
+      if (nf == 0) next
+      if (nl == 0) printf "stale: the bundle %s had no agent on it, so this look picked it up: %s back to Ready and planned with the rest, and the round does not wait for it.\n", all, (k == 2 ? "both are" : "all are")
+      else printf "stale: in the bundle %s no agent was on %s, so %s back to Ready and planned; the round waits for %s alone.\n", all, fl, (nf == 1 ? "it is" : "they are"), ll
+    }'
+}
