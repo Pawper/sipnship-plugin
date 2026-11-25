@@ -578,6 +578,24 @@ issue. Answering Done on a step ends the step: the issue moves on to what the st
 nothing is left, and never goes back to Ready as if unbuilt. The nightly audit names any confirmation ask that
 reached the builder another way.
 
+**A question reaches the builder only when its answers lead to different products.** Before a design or an
+ask puts a question to the builder, apply two tests: would the builder's product differ between the choices,
+in a way they could see? Would changing the answer later cost real work? When one answer is plainly right, or
+cheap to change later, or about work nobody has started (which adapter comes third, what a case that does not
+exist yet should show, whether to keep old words after a rename is public), the writer takes it: it goes under
+"Choices made here" in the design, with its reason in one line, and nothing waits. The decisions check says so on
+the pull request when a design holds more than a few open decisions, naming those that offer a choice with no
+difference a builder could see, so a writer cuts before it reaches the builder.
+
+**What the app can read, it shows and never asks.** A setting whose answer the service or the machine already
+knows (which coding agent the project uses, its language, its default branch) is a field the app fills in, not a
+question or a setup step. The decisions check names a decision that asks for such a fact.
+
+**An agent's loose end is never an ask.** An observation an agent made along the way is filed as an issue, not
+put to the builder as a question. An issue too big to finish in one go, or one that goes round without
+finishing, is split by the drive into pieces that each finish; never ask the builder to "try again" or "set it
+aside". The ask check refuses that pair of choices, in the words of `ask-fix`.
+
 **A design's approval leaves its build.** A design opened for a read names the issue that holds its build in its
 description from the start (a `Build: #N` line, or a new Ready issue filed with the design when none exists), and
 the check that reads the description says so when it names none. When the builder approves a design, make sure,

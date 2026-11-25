@@ -6999,7 +6999,7 @@ section 'an ask with choices recommends one'
 # The shared cases: the dashboard's reader is tested against the same list.
 ak_fx="$fx/ask"
 ak_cases=$(grep -v '^#' "$ak_fx/verdicts.txt" | tr -d '\r')
-eq "the shared list has its cases" "17" "$(printf '%s\n' "$ak_cases" | grep -c .)"
+eq "the shared list has its cases" "18" "$(printf '%s\n' "$ak_cases" | grep -c .)"
 printf '%s\n' "$ak_cases" | while read -r ak_name ak_want; do
   [ -n "$ak_name" ] || continue
   eq "the shared case $ak_name reads $ak_want" "$ak_want" "$(ask_verdict < "$ak_fx/$ak_name.md")"
@@ -7019,6 +7019,8 @@ eq "Instructions needs no fix" "" "$(ask_fix instructions)"
 eq "an action and a deferral says to write Instructions" "yes" "$(ask_fix actiondefer | grep -q 'Write it as Instructions instead' && echo yes)"
 eq "a choice that is only to read it, or to decide later, is fixed by naming what to read and offering outcomes" "putoff putoff one" "$(ask_verdict < "$ak_fx/read-first.md") $(ask_verdict < "$ak_fx/decide-later.md") $(ask_verdict < "$ak_fx/read-then-land.md")"
 eq "a put-off says reading is never a choice and what to write" "yes" "$(ask_fix putoff | grep -q 'Reading is never a choice' && ask_fix putoff | grep -q 'Ask for changes' && echo yes)"
+eq "an ask of try again or set it aside is a loose end, and says the drive splits the issue" "looseend yes" "$(ask_verdict < "$ak_fx/try-again-or-aside.md") $(ask_fix looseend | grep -q "split by the drive" && echo yes)"
+eq "the skill says a question reaches the builder only when its answers differ, and a loose end is never an ask" "1 1 1" "$(grep -c 'only when its answers lead to different products' "$root/skills/project-drive/SKILL.md") $(grep -c 'What the app can read, it shows and never asks' "$root/skills/project-drive/SKILL.md") $(grep -c "An agent's loose end is never an ask" "$root/skills/project-drive/SKILL.md")"
 eq "an ask that only checks a fix works is a confirmation, and says no fix is confirmed with the builder" "confirmation yes" "$(ask_verdict < "$ak_fx/confirm-fix.md") $(ask_fix confirmation | grep -q "Never ask the builder to confirm a fix" && echo yes)"
 eq "a real decision with Done in it is not a confirmation" "one" "$(printf 'Which bed first?
 
@@ -7326,7 +7328,7 @@ eq "the wake check tracks the round proposed and the start decided, on the drive
 # (node); each block runs its own cases by name, and checks the hook that starts the connection.
 section 'a press wakes the drive on the builder machine'
 . "$root/tests/node-cases-lib.sh"
-node_cases "a wake runs one look, a second waits behind it, nothing approved spends no model, a handled wake and another repository's are no-ops, a refused token is said once" "$root/console/test/wake.test.js" 'one message|one look|no model|headless|already handled|runner wake|lock|hears a wake|refused token|once per repository|growing|verdict'
+node_cases "a wake runs one look, a second waits behind it, nothing approved spends no model, a handled wake and another repository's are no-ops, a refused token is said once" "$root/console/test/wake.test.js" 'one message|one look|no model|headless|already handled|runner wake|lock|hears a wake|refused token|once per repository|growing|verdict|listener|neither a listener|status says'
 pw_hooks="$root/hooks/hooks.json"
 eq "the connection is started at a session's start and kept at each turn's end" "2" "$(grep -c 'wake-start.sh' "$pw_hooks")"
 pw_home=$(mktemp -d)

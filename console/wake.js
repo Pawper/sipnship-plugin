@@ -50,6 +50,23 @@ const touchSeen = (env = process.env, now = Date.now()) => touch(env, SEEN, now)
 /** The mark a running connection touches each half minute; the turn-end hook starts one again when it is old. */
 const touchAlive = (env = process.env, now = Date.now()) => touch(env, 'alive', now);
 
+/** How long the listener's last sign of life counts: as listen.js reads it for the brief. */
+const LISTENER_ALIVE_MS = 6 * 60000;
+/** Heartbeats between two looks the connection makes on its own while the listener holds it: twenty minutes, the timed drive's beat. */
+const LOOK_EVERY = 40;
+
+/** The listener's state on this machine: whether the person said Yes to it, and the projects it holds with their folders. */
+function listenerState(env = process.env) {
+  try { return require('./listen').readState(env); } catch { return { on: false, roots: {} }; }
+}
+
+/** Whether the listener the builder turned on is running now: it holds every project it has a folder for, with no session open. */
+function listenerAlive(env = process.env, now = Date.now()) {
+  const s = listenerState(env);
+  const t = Date.parse(s.aliveAt || '');
+  return s.on === true && !Number.isNaN(t) && now - t < LISTENER_ALIVE_MS;
+}
+
 /** Whether a session was seen recently enough to keep the connection. */
 function sessionsAlive(env = process.env, now = Date.now()) {
   try { return now - fs.statSync(file(env, SEEN)).mtimeMs < LIVE_MS; } catch { return false; }
@@ -103,6 +120,11 @@ function start({ env = process.env, cwd = process.cwd(), out = process.stdout, l
   touchSeen(env, now);
   const entry = tokens.find(repoOf(cwd), env);
   if (!entry) return 'none';
+  return open({ env, entry, root: rootOf(cwd), out, launch, Socket });
+}
+
+/** The part of a start both roads share: one connection per repository, said once when its token was refused. */
+function open({ env, entry, root, out, launch, Socket }) {
   const refused = readRefused(env, entry.repoId);
   if (refused && refused.connectedAt === entry.connectedAt) {
     if (!refused.said) {
@@ -115,8 +137,25 @@ function start({ env = process.env, cwd = process.cwd(), out = process.stdout, l
   if (typeof Socket !== 'function') return 'none';
   const pid = readPid(env, entry.repoId);
   if (pid && pidAlive(pid)) return 'running';
-  launch({ env, repoId: entry.repoId, root: rootOf(cwd) });
+  launch({ env, repoId: entry.repoId, root });
   return 'started';
+}
+
+/**
+ * Every project the running listener holds (#2791): the machine keeps one connection for each, in that project's own
+ * folder, with no session open in any of them. Returns what it did for each, for tests; nothing when the listener is off.
+ */
+function startAll({ env = process.env, out = process.stdout, launch = launchRun, Socket = globalThis.WebSocket } = {}) {
+  if (!fs.existsSync(tokens.file(env))) return [];
+  const s = listenerState(env);
+  if (s.on !== true) return [];
+  const held = tokens.read(env).repos;
+  const did = [];
+  for (const [id, root] of Object.entries(s.roots || {})) {
+    if (!held[id] || !root || !fs.existsSync(root)) continue;
+    did.push(open({ env, entry: { repoId: Number(id), ...held[id] }, root: mainRoot(root), out, launch, Socket }));
+  }
+  return did;
 }
 
 /** Starts `wake run` on its own, out of the session's way, in the plugin's home folder rather than the project. */
@@ -130,7 +169,7 @@ function launchRun({ env, repoId, root }) {
  * The connection itself. Everything it touches is handed in, so the suite runs it with a stand-in socket, clock
  * and drive look. Resolves when it ends: no session for a while, the token refused, or `stop()`.
  */
-function run({ env = process.env, repoId, root, plugin = path.resolve(__dirname, '..'), Socket = globalThis.WebSocket, fetchFn = (u, i) => fetch(u, i), tick, timers = { setTimeout, clearTimeout, setInterval, clearInterval }, now = Date.now, alive = () => sessionsAlive(env, now()), log = () => {} } = {}) {
+function run({ env = process.env, repoId, root, plugin = path.resolve(__dirname, '..'), Socket = globalThis.WebSocket, fetchFn = (u, i) => fetch(u, i), tick, timers = { setTimeout, clearTimeout, setInterval, clearInterval }, now = Date.now, alive = () => sessionsAlive(env, now()) || listenerAlive(env, now()), log = () => {} } = {}) {
   const entry = tokens.find(String(repoId), env);
   if (!entry || typeof Socket !== 'function') return Promise.resolve('none');
   ensureDir(env);
@@ -198,7 +237,9 @@ function run({ env = process.env, repoId, root, plugin = path.resolve(__dirname,
     touchAlive(env, now());
     say({ beat: true });
     looks.retry();
-    if (++beats % CHECK_EVERY === 0) await refusedNow();
+    // Held by the listener alone (no session), the connection looks on the usual beat, as a timed drive would.
+    if (++beats % LOOK_EVERY === 0 && !sessionsAlive(env, now()) && listenerAlive(env, now())) looks.wake();
+    if (beats % CHECK_EVERY === 0) await refusedNow();
   }, BEAT_MS);
 
   connect();
@@ -206,17 +247,19 @@ function run({ env = process.env, repoId, root, plugin = path.resolve(__dirname,
 }
 
 /** What this machine's connection is doing, for a person asking. */
-function status({ env = process.env, cwd = process.cwd(), out = process.stdout } = {}) {
-  const { remoteRepo } = require('./connect');
-  const entry = tokens.find(remoteRepo(cwd), env);
+function status({ env = process.env, cwd = process.cwd(), out = process.stdout, repoOf = (d) => require('./connect').remoteRepo(d) } = {}) {
+  const entry = tokens.find(repoOf(cwd), env);
   if (!entry) { out.write('This machine is not connected to a repository yet. Run npx sipnship connect --repo first.\n'); return 2; }
   const refused = readRefused(env, entry.repoId);
   if (refused && refused.connectedAt === entry.connectedAt) { out.write(`${NOT_CONNECTED}\n`); return 0; }
   const pid = readPid(env, entry.repoId);
+  const holds = listenerAlive(env) && !!listenerState(env).roots[String(entry.repoId)];
   out.write(pid && pidAlive(pid)
     ? `This machine is listening for ${entry.fullName}: a press on the dashboard starts your drive here.\n`
-    : `This machine is not listening now. It listens while a Claude session or your timed drive runs here; until then a press waits for your drive's next look.\n`);
+    : holds
+      ? `This machine is connecting for ${entry.fullName}: a press on the dashboard starts your drive here within a minute.\n`
+      : `This machine is not listening for ${entry.fullName} now. Turn the listener on here (npx sipnship listen on) and a press starts your drive here, with no session open; until then a press waits for your drive's next look.\n`);
   return 0;
 }
 
-module.exports = { start, run, status, readWake, retryMs, touchSeen, sessionsAlive, mainRoot, launchRun, BEAT_MS, LIVE_MS, NOT_CONNECTED };
+module.exports = { start, startAll, listenerAlive, run, status, readWake, retryMs, touchSeen, sessionsAlive, mainRoot, launchRun, BEAT_MS, LIVE_MS, NOT_CONNECTED };
