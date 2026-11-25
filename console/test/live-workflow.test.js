@@ -133,7 +133,9 @@ test('the workflow runs on the builder\'s own runner, always succeeds, and never
   assert.doesNotMatch(live, /\bsleep\b/);
   assert.match(live, /cron: "3,13,23,33,43,53 \* \* \* \*"/);
   assert.match(live, /CLOUDFLARE_API_TOKEN: \$\{\{ secrets\.CLOUDFLARE_API_TOKEN \}\}/);
-  assert.match(live, /SIPNSHIP_REPO_TOKEN: \$\{\{ secrets\.SIPNSHIP_REPO_TOKEN \}\}/);
+  // #2704: signs in with GitHub's own identity for the run (id-token: write), never a secret made and pasted by hand.
+  assert.match(live, /id-token: write/);
+  assert.doesNotMatch(live, /SIPNSHIP_REPO_TOKEN/);
 });
 
 test('Workers Logs are on with request logs off in the Cloudflare block', () => {
