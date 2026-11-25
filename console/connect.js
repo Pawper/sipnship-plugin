@@ -134,6 +134,11 @@ async function connect({ repo, token, env = process.env, out = process.stdout, c
   if (answer === 'declined') return 1;
   // The one question: off unless the person says yes, here, on this machine (spec 012).
   await require('./listen').offerOn({ env, out, cwd, repo: fullName, ask: offer }).catch(() => false);
+  // Reads the checklist itself, with this machine's own new token (#2759), so an agent has nothing left to work
+  // out: just the next step, in the checklist's own words. A failed read says nothing more; the agent still has
+  // "sipnship setup" to ask again.
+  const checklist = await require('./setup').readSetup((u, i) => fetch(u, { ...i, signal: AbortSignal.timeout(15000) }), url, fullName, c.body.token).catch(() => undefined);
+  if (checklist && checklist.ok) out.write(`${checklist.text.split('\n')[0]}\n`);
   return 0;
 }
 

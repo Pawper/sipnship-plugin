@@ -210,6 +210,8 @@ stopped_line=""; [ "$mode" = idle ] && stopped_line=$(head -n 1 "$flaky_dir/stop
 say=$(publish_say "$open_tsv" "$batch_tsv" "$building" "$clashes_tsv" "$attention_tsv" "$runners_tsv" "$deploy_line" "$mode" "$paused_until" "$stopped_line")
 # A token that cannot keep a runner for the batch and main (runs.sh, runner_labels_keep).
 say=$(say_with_need "$say" "$(head -n 1 "$flaky_dir/runner-labels" 2>/dev/null | cut -f2)")
+# How many machines are kept for landing right now (runs.sh, runner_labels_keep; rules-requests.sh, keep_count).
+say=$(say_with_kept "$say" "$(head -n 1 "$flaky_dir/runner-kept" 2>/dev/null | tr -d '\r')")
 # A line the queue left for the Queue tab (queue_notice in queue/lock.sh: a takeover, a serial landing as a batch) leads for fifteen minutes.
 nt=$(awk -F'\t' -v now="$now_epoch" 'NF >= 2 && now - $1 < 900 { l = $2 } END { print l }' "$flaky_dir/notice.tsv" 2>/dev/null); [ -z "$nt" ] || say="$nt $say"
 now_iso=$(date -u +%Y-%m-%dT%H:%M:%SZ)
