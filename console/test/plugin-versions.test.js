@@ -54,3 +54,18 @@ test('the shipped counts come from the last sync report while its commit and ver
   assert.strictEqual(versions.shippedFrom(root, '0.43.1'), undefined);
   assert.strictEqual(versions.shippedFrom(folder(), '0.43.1'), undefined);
 });
+
+// #2703: a plugin copy old enough to have no known-hash list at all cannot judge any file, so the sync reports
+// the item as "beyond the list" (older and edited both 0) rather than a guessed count, and the flag carries through.
+test('beyond the list carries through; a normal count does not carry a flag it was never given', () => {
+  const { execFileSync } = require('child_process');
+  const root = folder();
+  const git = (...a) => execFileSync('git', ['-c', 'user.email=maya@example.com', '-c', 'user.name=Maya', ...a], { cwd: root, encoding: 'utf8' }).trim();
+  git('init', '-q');
+  git('commit', '-q', '--allow-empty', '-m', 'Start the rooftop-garden app');
+  const keep = (over) => fs.writeFileSync(path.join(root, '.git', 'sipnship-shipped.json'), JSON.stringify({ head: git('rev-parse', 'HEAD'), version: '0.43.1', older: 0, edited: 0, ...over }));
+  keep({ beyondList: true });
+  assert.deepStrictEqual(versions.shippedFrom(root, '0.43.1'), { older: 0, edited: 0, beyondList: true });
+  keep({ older: 14, edited: 2 });
+  assert.deepStrictEqual(versions.shippedFrom(root, '0.43.1'), { older: 14, edited: 2 });
+});
