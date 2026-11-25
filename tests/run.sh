@@ -2585,6 +2585,29 @@ eq "main red: the fix's line never says it waits for the next round" "0" "$(prin
 eq "main red: the line says the fix lands first, alone" "1" "$(printf '%s\n' "$rm_out" | grep -c 'landing #1816, which closes it, first and alone')"
 rm_red= rm_out=$(rm_round)
 eq "main green: a green change outside the round still waits for the next round, and is said" "1" "$(printf '%s\n' "$rm_out" | grep -c '#1816 is green but not in the round the drive named, so it waits for the next round')"
+# #2871: a red-main issue whose run link lives only in the issue's body, never
+# as a comment. The old redmain_found read comments alone, and its last pipe
+# command ("grep -o '[0-9]*\$'") found nothing and exited 1; under set -e that
+# silently killed the whole drain for 45 minutes, nothing landing, because
+# nobody added the link as a comment. redmain_found now reads the body too,
+# and the same search finding nothing returns cleanly rather than aborting.
+rf_out=$(
+  gh() {
+    case "$*" in
+      *"issues/1900/comments"*) printf '' ;;
+      *"issues/1900 --jq"*) printf 'Main is red. The run: https://github.com/o/r/actions/runs/555222\n' ;;
+      *"run view 555222"*) printf 'FAIL packages/core/src/watering.test.ts > schedules\n' ;;
+      *"pulls/1820/files"*) printf 'packages/core/src/watering.test.ts' ;;
+    esac
+  }
+  redmain_found 1900 1820
+)
+eq "redmain_found reads the run's link from the issue's body, not only its comments" "1820" "$rf_out"
+rf_empty=$(
+  gh() { printf '' ; }
+  (set -e; redmain_found 1900 1820; echo survived)
+)
+eq "a run link found nowhere returns cleanly rather than aborting the drain under set -e" "survived" "$(printf '%s\n' "$rf_empty" | tail -n 1)"
 # A whole part runs one at a time on a machine, and never beside a runner's job (tests/turn-lib.sh).
 tn_dir=$(mktemp -d)/turn
 eq "the first whole run takes the turn; the second, started beside it, ends with the reason" "0 1 yes" "$(
@@ -3925,6 +3948,14 @@ eq "worktrees.sh never stops without a word" "1" "$(grep -c 'stopped with exit \
 eq "no loop in worktrees.sh ends on a bare test" "0" "$(grep -c '^ *\[ [^]]*\] && printf' "$root/templates/scripts/worktrees.sh")"
 eq "close says a pull request was already closed" "1" "$(grep -c 'was already closed; added the reason' "$root/templates/scripts/worktrees.sh")"
 eq "close reads and closes over REST" "0" "$(grep -c 'gh pr view\|gh pr close' "$root/templates/scripts/worktrees.sh")"
+# #2871's audit of every function in halve.sh for the same shape (a pipe
+# ending in grep -c or grep -o that returns nonzero on an empty, legitimate
+# answer): the two more it found, beside redmain_found's own run-link read
+# (tested with its block, above).
+eq "batch_red's member count never aborts the batch when none are carried" "1" "$(sed -n '/^batch_red()/,/^}/p' "$root/templates/scripts/ci/queue/halve.sh" | grep -c 'grep -c \.) || true')"
+eq "batch_suspect's main-commit lookup never aborts when the base ref is not fetched" "1" "$(sed -n '/^batch_suspect()/,/^}/p' "$root/templates/scripts/ci/queue/halve.sh" | grep -c "rev-parse.*|| true")"
+eq "the project's halve.sh and the plugin's shipped copy still match" "0" "$(diff "$root/templates/scripts/ci/queue/halve.sh" "$root/../scripts/ci/queue/halve.sh" | wc -l | tr -d ' ')"
+
 
 
 section 'what an agent did after a refusal'

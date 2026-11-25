@@ -41,7 +41,9 @@ batch_suspect() {
   bs_sha=$(gh api "repos/{owner}/{repo}/pulls/$1" --jq .head.sha 2>/dev/null | tr -d '\r')
   [ -n "$bs_sha" ] || return 0
   printf '%s\t%s\n' "$1" "$bs_sha" >> "$flaky_dir/suspects.tsv" 2>/dev/null || true
-  bs_main=$(git rev-parse -q --verify "origin/${base:-main}" 2>/dev/null)
+  # || true: a base the checkout has not fetched (a shallow or renamed
+  # base) answers nothing, not a batch to abort over.
+  bs_main=$(git rev-parse -q --verify "origin/${base:-main}" 2>/dev/null) || true
   printf '%s\t%s\t%s\t%s\n' "$1" "$bs_sha" "$bs_main" "$(printf '%s' "$2" | tr '\t\r\n' '   ' | cut -c1-300)" >> "$flaky_dir/red-batches.tsv" 2>/dev/null || true
 }
 
@@ -100,7 +102,9 @@ main_red_issue() {
 batch_red() {
   br_dropped=$3
   br_members=$(printf '%s' "$2" | cut -f1 | sed '/^$/d' | tr '\n' ' ')
-  br_n=$(printf '%s\n' $br_members | grep -c .)
+  # || true: grep -c exits 1 when it counts zero lines (no members carried),
+  # and that empty count is a real answer, not a reason to abort the batch.
+  br_n=$(printf '%s\n' $br_members | grep -c .) || true
   br_test=$(batch_failed_test "$1"); br_why=$br_test; [ -n "$br_why" ] || br_why=$(batch_failed_why "$1")
   [ -z "$br_test" ] || echo "The batch's full run failed at: $br_test"
   br_main=$(main_red_issue)
@@ -156,11 +160,18 @@ redmain_diff_fixes() {
 
 # redmain_found ISSUE CANDIDATES: the green CANDIDATES (one number a line) whose
 # diff already fixes the check main's last red run failed, read from the run the
-# red-main issue names. REST only; the log is read once, and only when a
-# candidate exists. One a line, or nothing.
+# red-main issue names, its link read from the issue's body as well as its
+# comments (the opener puts it in the body; a later note adds it as a
+# comment). REST only; the log is read once, and only when a candidate
+# exists. One a line, or nothing. The search ending with nothing is a real
+# answer, never a reason to abort: under set -e, a once-off pipe ending in
+# grep with no match (exit 1) silently killed the whole drain for 45
+# minutes (#2871) because the link lived only in the body and this read
+# only its comments; every function below that ends a pipe the same way is
+# guarded with "|| true" for the same reason.
 redmain_found() {
   [ -n "$2" ] || return 0
-  rf_run=$(gh api "repos/{owner}/{repo}/issues/$1/comments?per_page=100" --jq '.[].body' 2>/dev/null | tr -d '\r' | grep -o '/actions/runs/[0-9]*' | tail -n 1 | grep -o '[0-9]*$')
+  rf_run=$({ gh api "repos/{owner}/{repo}/issues/$1" --jq '.body' 2>/dev/null; gh api "repos/{owner}/{repo}/issues/$1/comments?per_page=100" --jq '.[].body' 2>/dev/null; } | tr -d '\r' | grep -o '/actions/runs/[0-9]*' | tail -n 1 | grep -o '[0-9]*$') || true
   [ -n "$rf_run" ] || return 0
   rf_failed=$(failed_tests_from_log "$(gh run view "$rf_run" --log-failed 2>/dev/null)")
   [ -n "$rf_failed" ] || return 0
