@@ -2,6 +2,19 @@
 # The REST half of the API budget guard (#2558), kept apart from lib.sh, which only shrinks. Sourced by
 # require-gh-budget.sh and the plugin tests after lib.sh; the record it reads is the one budget_read in lib.sh gives.
 
+# gh_script_caller COMMAND
+# Who a command is when it runs one of the scripts that spend the REST hour without a visible `gh` call (#2673): check
+# polling, the merge queue, the board's own reads, the drive's scripts. Prints the kind, or nothing for any other command
+# (an agent's own `gh` call is counted as the agent's).
+gh_script_caller() {
+  case "$1" in
+    *pr-checks.sh*) echo checks ;;
+    *merge-queue*) echo queue ;;
+    *board-now.sh*|*scripts/board/*|*board-sync.sh*) echo coordinator ;;
+    *scripts/drive/*|*drive/claim.sh*) echo drive ;;
+  esac
+}
+
 # gh_rest_read_reason COMMAND
 # Print "gh api PATH" for the first gh api call in COMMAND that only reads over
 # REST (#2558): a path that is not graphql or rate_limit, with no write method
@@ -87,11 +100,13 @@ budget_spend_line() {
   awk -F'\t' -v now="$2" -v under="${3:-2500}" '
     function commas(n,  s) { s = sprintf("%d", n); while (s ~ /[0-9][0-9][0-9][0-9]/) sub(/[0-9][0-9][0-9]$|[0-9][0-9][0-9],/, ",&", s); return s }
     $1 == "R" && NF >= 5 && now - $2 >= 0 && now - $2 < 3600 { if (n == 0 || $3 + 0 > max) max = $3 + 0; last = $3 + 0; lim = $4 + 0; n++ }
-    $1 == "C" && NF >= 2 && now - $2 >= 0 && now - $2 < 3600 { calls++ }
+    $1 == "C" && NF >= 2 && now - $2 >= 0 && now - $2 < 3600 { calls++; kinds[($3 == "" ? "agent" : $3)]++ }
     END {
       if (n < 2 || last >= under) exit
       used = max - last; if (used <= 0) exit
-      printf "REST spent this hour: about %s of %s; this machine'"'"'s agents made %d of those reads, so the rest is the app, the drive'"'"'s scripts, check polling and the coordinator'"'"'s looks.\n", commas(used), commas(lim), calls
+      split("agent checks queue drive coordinator", order, " "); by = ""
+      for (i = 1; i <= 5; i++) if (kinds[order[i]] > 0) by = by (by == "" ? "" : ", ") order[i] " " kinds[order[i]]
+      printf "REST spent this hour: about %s of %s; this machine'"'"'s agents made %d of those reads%s, so the rest is the app and whatever is not counted here.\n", commas(used), commas(lim), calls, (by == "" ? "" : " (" by ")")
     }' "$1"
 }
 
