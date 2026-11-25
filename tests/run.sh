@@ -5340,6 +5340,14 @@ hv_one=$(
   ( batch_red batch-test "$(printf '41\ta\n')" "" ) 2>&1 | tr '\n' '|'
 )
 eq "a red batch of one is not halved" "yes" "$(printf '%s' "$hv_one" | grep -q 'not green; nothing merged' && ! printf '%s' "$hv_one" | grep -q 'ran:' && echo yes)"
+bc_tab=$(printf '\t')
+eq "a closed batch names the job that really failed" "yes" "$(batch_closed_say "checks${bc_tab}failure
+tests (web)${bc_tab}cancelled
+CI passed${bc_tab}failure" | grep -q 'failed in: checks\.' && echo yes)"
+bc_stopped=$(batch_closed_say "checks${bc_tab}cancelled
+tests (web)${bc_tab}cancelled
+CI passed${bc_tab}failure")
+eq "a batch whose checks were only stopped is never called not green" "yes" "$(printf '%s' "$bc_stopped" | grep -q 'were stopped' && ! printf '%s' "$bc_stopped" | grep -qi 'not green' && echo yes)"
 eq "the queue loads the halving module and the batch's red path calls it" "1 1" "$(grep -c 'queue/halve.sh' "$root/templates/scripts/ci/merge-queue.sh") $(grep -c 'batch_red "\$branch" "\$carried" "\$dropped"' "$root/templates/scripts/ci/queue/batch.sh")"
 eq "the plugin's template copies of the gate match the project's" "same same" "$(cmp -s "$root/templates/scripts/ci/gate-lib.sh" "$root/../scripts/ci/gate-lib.sh" && echo same || echo differ) $(cmp -s "$root/templates/scripts/ci/gate.sh" "$root/../scripts/ci/gate.sh" && echo same || echo differ)"
 

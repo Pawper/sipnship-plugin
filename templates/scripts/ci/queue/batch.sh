@@ -445,7 +445,7 @@ else
 fi
 printf '%s\n' "$(( $(date +%s) - bt_run_begin ))" > "$flaky_dir/batch-run.seconds" 2>/dev/null || true
 if [ "$batch_ok" != yes ]; then
-  close_pr "$batch_pr" "The batch's CI was not green, so nothing merged; closed so the next batch starts clean. The member pull requests are untouched."
+  close_pr "$batch_pr" "$(batch_closed_say "$(check_lines "$batch_sha" 2>/dev/null)" "${QUEUE_SUMMARY_CHECK:-CI passed}")"
   batch_red "$branch" "$carried" "$dropped"
 fi
 wait_quiet_main; batch_members_open "$batch_pr" "$carried" || exit 0
