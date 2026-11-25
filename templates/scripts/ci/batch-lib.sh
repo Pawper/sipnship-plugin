@@ -18,6 +18,7 @@ if [ -z "$bl_dir" ]; then echo "batch-lib.sh: the queue/ folder beside it was no
 . "$bl_dir/queue/rules-rerun.sh"
 . "$bl_dir/queue/rules-serial.sh"
 . "$bl_dir/queue/rules-requests.sh"
+. "$bl_dir/queue/rules-keep.sh"
 . "$bl_dir/queue/rules-deploy.sh"
 . "$bl_dir/queue/rules-checkout.sh"
 . "$bl_dir/queue/rules-place.sh"

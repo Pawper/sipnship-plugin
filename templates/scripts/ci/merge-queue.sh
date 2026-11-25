@@ -219,11 +219,8 @@ if [ "$mode" = drain ]; then
     # Requests to the queue, at every tick: this round's start, which each
     # two-minute hold also comes back to. A "land this next" left waiting
     # behind a batch lands here first, ahead of any other green one.
-    # The kept machines follow the line during the drain, not only at its start: back to one as soon as the line
-    # is clear, more while a batch is in its checks (#2856). Says only what changed.
-    [ "$round" -le 1 ] || runner_labels_keep
     queue_step="drain round $round: reading requests"
-    requests_tick drain
+    requests_tick drain; [ "$round" -le 1 ] || runner_labels_keep # the kept machines follow the line each round (#2856)
     queue_step="drain round $round: reading the open pull requests"
     # One REST list, then one metadata call and one check-runs call per
     # open pull request, each on the REST budget and cached for the round.

@@ -93,6 +93,7 @@ scripts/ci/queue/rules-drain.sh
 scripts/ci/queue/rules-rerun.sh
 scripts/ci/queue/rerun.sh
 scripts/ci/queue/rules-serial.sh
+scripts/ci/queue/rules-keep.sh
 scripts/ci/queue/rules-requests.sh
 scripts/ci/queue/rules-deploy.sh
 scripts/ci/queue/rules-checkout.sh
