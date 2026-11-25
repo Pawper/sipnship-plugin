@@ -1243,6 +1243,12 @@ eq "more registered than the cores allow" "3 of 3 online; 4 cores allow 2 (one p
 eq "none registered" "no runner registered" "$(runner_status "" 16)"
 eq "an old runners key is named once" "1" "$(runner_key_note '{ "runners": 4 }' | grep -c 'no longer read')"
 eq "a file without it says nothing" "" "$(runner_key_note '{ "_comment": "x" }')"
+# #2817: a queued drain job whose label matches no registered runner, whether QUEUE_RUNS_ON was a plain label or a list written as text.
+eq "a label no runner has is named" "maya-desktop-9" "$(drain_unmatched_label "self-hosted,maya-desktop-9" "self-hosted,windows,self-hosted,windows")"
+eq "a runner that has the label matches" "" "$(drain_unmatched_label "self-hosted,maya-desktop-9" "self-hosted,windows,maya-desktop-9")"
+eq "only default labels asks nothing" "" "$(drain_unmatched_label "self-hosted,windows" "self-hosted,windows")"
+eq "the one sentence names the machine" "This drain asks for a machine named maya-desktop-9; none of your machines has that name." "$(drain_unmatched_line "maya-desktop-9")"
+eq "an empty label says nothing" "" "$(drain_unmatched_line "")"
 eq "the doctor and the watch hold no count" "0" "$(cat "$root/templates/scripts/ci/runner-doctor.sh" "$root/templates/scripts/ci/runner-watch.sh" | grep -c 'runner_count')"
 eq "the template file has no runners key" "0" "$(grep -c '"runners"[[:space:]]*:' "$root/templates/.claude/runners.json")"
 eq "the doctor checks every runner folder's scan exclusion, named by hand too" "1" "$(grep -c 'exclusion_lines "\$excl"' "$root/templates/scripts/ci/runner-doctor.sh")"
