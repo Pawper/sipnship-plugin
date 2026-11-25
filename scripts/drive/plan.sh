@@ -29,7 +29,7 @@ if [ -z "${PLAN_BOUNDED:-}" ] && command -v timeout >/dev/null 2>&1; then
   exit "$plan_rc"
 fi
 
-. "$here/../../hooks/scripts/lib.sh"
+. "$here/../../hooks/scripts/lib.sh"; . "$here/../../hooks/scripts/budget-rest-lib.sh"; [ -z "${SIPNSHIP_DRIVE_TOKEN:-}" ] || export GH_TOKEN="$SIPNSHIP_DRIVE_TOKEN"; budget_floor_stop "$(budget_read_logged .)" "$(date +%s)"  # #2863: an identity of the drive's own where the owner set one, and the floor budget-rest-lib.sh keeps for a look the single-call guard cannot see once it has started
 . "$here/../../hooks/scripts/session-brief-lib.sh"
 . "$here/../../hooks/scripts/board-checks-lib.sh"
 . "$here/../../hooks/scripts/session-brief-versions.sh"
