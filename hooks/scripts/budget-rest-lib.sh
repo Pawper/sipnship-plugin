@@ -47,6 +47,36 @@ budget_rest_low() {
     NR == 1 && NF >= 6 && $4 != "" && $4 + 0 < floor { low = 1 } END { print (low ? "yes" : "no") }'
 }
 
+# budget_floor_wait RECORD NOW [FLOOR] [REST_FLOOR]
+# RECORD is budget_read's shape (lib.sh). The guard a `gh` command passes through (require-gh-budget.sh)
+# never sees the many calls a look makes once it has started, inside its own process (#2863); this is the
+# floor a look keeps for itself before it spends them. One line, "GitHub's hourly budget is nearly spent;
+# the drive is waiting until HH:MMZ before it reads again.", when RECORD shows fewer than FLOOR (default 500)
+# GraphQL points or fewer than REST_FLOOR (default 150) REST requests left this hour; nothing when RECORD is
+# empty (no reading taken: never block on what could not be read) or neither is low.
+budget_floor_wait() {
+  bf_rec=$1; bf_now=$2; bf_floor=${3:-500}; bf_rest=${4:-150}
+  [ -n "$bf_rec" ] || return 0
+  bf_low=no; [ "$(budget_low "$bf_rec" "$bf_floor")" = yes ] && bf_low=yes
+  [ "$(budget_rest_low "$bf_rec" "$bf_rest")" = yes ] && bf_low=yes
+  [ "$bf_low" = yes ] || return 0
+  printf '%s\n' "$bf_rec" | tr -d '\r' | awk -F'\t' -v now="$bf_now" '
+    NR == 1 && NF >= 6 { r = ($3 + 0 > $6 + 0) ? $3 + 0 : $6 + 0; mins = int((r - now + 59) / 60); if (mins < 0) mins = 0
+      printf "GitHub'"'"'s hourly budget is nearly spent; the drive is waiting until %s (in %d min) before it reads again.\n", sprintf("%02d:%02dZ", int((r % 86400) / 3600), int((r % 3600) / 60)), mins }'
+}
+
+# budget_floor_stop RECORD NOW
+# Called directly (never inside $(...)), so a look that is below budget_floor_wait's own floor prints its
+# line, "stop: " + that line, and "not published: ..." and exits the caller's whole process with 0, before
+# it reads the board (#2863); does nothing otherwise.
+budget_floor_stop() {
+  bs_wait=$(budget_floor_wait "$1" "$2")
+  [ -n "$bs_wait" ] || return 0
+  echo "$bs_wait"; echo "stop: $bs_wait"
+  echo "not published: GitHub's hourly budget is nearly spent, so this look read nothing fresh; the Work tab still shows the last round it was given."
+  exit 0
+}
+
 # budget_rest_line RECORD NOW
 # One sentence for a refused REST read: how many are left and when the hour returns them.
 budget_rest_line() {
