@@ -19,8 +19,21 @@ numbering_glob() {
 # numbered_names: only the paths whose file name starts with a digit, the
 # only ones a number can be read from. One awk instead of a shell loop
 # over every tracked file, which took seconds on a large checkout.
+# A numbered folder (specs/032-name/spec.md) is numbered by its folder, so a
+# file whose own name has no number takes its folder's.
 numbered_names() {
-  awk '{ n = $0; sub(/.*\//, "", n) } n ~ /^[0-9]/'
+  awk '{ n = $0; sub(/.*\//, "", n) } n ~ /^[0-9]/ { print; next } { d = $0; sub(/\/[^\/]*$/, "", d); sub(/.*\//, "", d); if (d ~ /^[0-9]/) print }'
+}
+
+# numbered_base PATH: the name the number is read from, the file's own or,
+# when it starts with no digit, its folder's.
+numbered_base() {
+  nb_b=${1##*/}
+  case "$nb_b" in
+    [0-9]*) ;;
+    *) nb_d=${1%/*}; nb_b=${nb_d##*/} ;;
+  esac
+  printf '%s\n' "$nb_b"
 }
 
 # numbers_in PATHS GLOB
@@ -31,7 +44,7 @@ numbers_in() {
   ni_out=$(printf '%s\n' "$1" | tr -d '\r' | tr '\\' '/' | numbered_names | while IFS= read -r ni_p; do
     [ -n "$ni_p" ] || continue
     case "$ni_p" in $2) ;; *) continue ;; esac
-    ni_base=${ni_p##*/}
+    ni_base=$(numbered_base "$ni_p")
     ni_num=${ni_base%%[!0-9]*}
     if [ -n "$ni_num" ]; then printf '%s\n' "$ni_num"; fi
   done)
@@ -59,7 +72,7 @@ duplicate_numbers() {
   dn_rows=$(printf '%s\n' "$1" | tr -d '\r' | tr '\\' '/' | numbered_names | while IFS= read -r dn_p; do
     [ -n "$dn_p" ] || continue
     case "$dn_p" in $2) ;; *) continue ;; esac
-    dn_b=${dn_p##*/}
+    dn_b=$(numbered_base "$dn_p")
     dn_num=${dn_b%%[!0-9]*}
     if [ -n "$dn_num" ]; then printf '%s\t%s\n' "$dn_num" "$dn_b"; fi
   done)
